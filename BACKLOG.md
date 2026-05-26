@@ -13,6 +13,12 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B14] Move tag controls down beside the tag display area
+
+- **Why:** Current sidebar order is matchup → navigation → tag controls (+ Tag this frame / prev tag / next tag) → game log → tag display. Tag controls being between navigation and game log makes them feel disconnected from the tag list they actually act on. Should sit immediately adjacent to the tag display so the affordance reads naturally.
+- **Acceptance:** Sidebar order top-to-bottom: matchup → navigation → game log → tag controls (the row B12 built: + Tag this frame, ‹ Prev tag, Next tag › ) → tag display (THIS FRAME callout + All tags list). The inline-comment form that opens when "+ Tag this frame" is clicked still appears directly under the button. No behavior change — purely a section-reorder.
+- **Refs:** `app/(app)/r/[slug]/TagSidebar.tsx`. The tag controls + form live in the section currently rendered before FrameLog; FrameLog + tag display are in the section after. Reorder the JSX so the tag-controls section + the form render between FrameLog and the tag display sections.
+
 ### [B13] Wire `[` / `]` keyboard shortcuts for prev/next tag in the viewer
 
 - **Why:** Viewer tooltips reference `[` / `]` keyboard shortcuts for tag navigation, but the `ReplayViewer.tsx` keydown handler doesn't actually wire them — only ArrowLeft/Right/Home/End are handled. Surfaced as a B12 punt.
