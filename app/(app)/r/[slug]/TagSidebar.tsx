@@ -256,8 +256,8 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
       <section style={{ padding: '12px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Navigation</div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <FooterBtn onClick={() => onStep(-1)}>←</FooterBtn>
-          <FooterBtn onClick={() => onStep(1)}>→</FooterBtn>
+          <FooterBtn onClick={() => onStep(-1)} title="Previous frame (←)">←</FooterBtn>
+          <FooterBtn onClick={() => onStep(1)} title="Next frame (→)">→</FooterBtn>
           <span style={{ fontSize: 12, color: '#d6d6d6', fontWeight: 600, marginLeft: 6 }}>
             {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
           </span>
@@ -272,6 +272,9 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
         <div style={{ display: 'flex', gap: 6 }}>
           <FooterBtn onClick={() => jumpToAdjacent(-1)} variant="ghost">‹ Prev tag</FooterBtn>
           <FooterBtn onClick={() => jumpToAdjacent(1)} variant="ghost">Next tag ›</FooterBtn>
+        </div>
+        <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
+          Or use arrow keys to step.
         </div>
       </section>
 
@@ -437,11 +440,13 @@ function FooterBtn({
   onClick,
   variant = 'primary',
   alignSelf = false,
+  title,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   variant?: 'primary' | 'ghost' | 'outline';
   alignSelf?: boolean;
+  title?: string;
 }) {
   const base: React.CSSProperties = {
     border: 0,
@@ -467,7 +472,7 @@ function FooterBtn({
   }
   if (alignSelf) base.alignSelf = 'flex-start';
   return (
-    <button type="button" style={base} onClick={onClick}>
+    <button type="button" style={base} onClick={onClick} title={title}>
       {children}
     </button>
   );
