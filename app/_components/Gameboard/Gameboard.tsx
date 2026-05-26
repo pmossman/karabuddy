@@ -37,7 +37,10 @@ const Gameboard: React.FC = () => {
             pr: sidebarOpen ? 'min(20%, 280px)' : '0',
             width: '100%',
             transition: 'padding-right 0.3s ease-in-out',
-            height: '100dvh',
+            // Subtract the persistent (app) layout header height so the
+            // bottom player tray isn't clipped. `--kb-header-h` is set in
+            // app/globals.css; defaults to 0 if absent. See B1.
+            height: 'calc(100dvh - var(--kb-header-h, 0px))',
             position: 'relative',
             backgroundImage: backgroundUrl,
             backgroundColor: '#0b0b12',
@@ -56,9 +59,12 @@ const Gameboard: React.FC = () => {
     );
 
     return (
-        <Grid container sx={{ height: '100dvh', overflow: 'hidden' }}>
+        <Grid container sx={{ height: 'calc(100dvh - var(--kb-header-h, 0px))', overflow: 'hidden' }}>
             <Box component="main" sx={styles.mainBoxStyle} data-testid="gameboard-main-box">
-                <Box sx={{ height: '15dvh' }}>
+                {/* Row heights are percentages of the parent (was 15/67/18 dvh)
+                    so the tray-board-tray stack fits inside the header-aware
+                    container instead of overflowing by --kb-header-h. */}
+                <Box sx={{ height: '15%' }}>
                     {playerExists && (
                         <OpponentCardTray
                             trayPlayer={getOpponent(connectedPlayer)}
@@ -66,10 +72,10 @@ const Gameboard: React.FC = () => {
                         />
                     )}
                 </Box>
-                <Box sx={{ height: '67dvh', position: 'relative', zIndex: 2 }}>
+                <Box sx={{ height: '67%', position: 'relative', zIndex: 2 }}>
                     {playerExists && <Board sidebarOpen={sidebarOpen} />}
                 </Box>
-                <Box sx={{ height: '18dvh' }}>
+                <Box sx={{ height: '18%' }}>
                     {playerExists && (
                         <PlayerCardTray
                             trayPlayer={connectedPlayer}
