@@ -380,6 +380,13 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         </div>
       </section>
 
+      <FrameLog
+        messagesByFrame={messagesByFrame}
+        currentIndex={currentIndex}
+        lastTransition={lastTransition}
+        frames={frames}
+      />
+
       <section style={{ padding: '14px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {/* B12: tag-nav buttons share this row with "+ Tag this frame" —
             keeps all tag actions clustered above the All Tags list. The
@@ -432,13 +439,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           </div>
         )}
       </section>
-
-      <FrameLog
-        messagesByFrame={messagesByFrame}
-        currentIndex={currentIndex}
-        lastTransition={lastTransition}
-        frames={frames}
-      />
 
       <section style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
         {tagsAtCurrent.length > 0 && (
