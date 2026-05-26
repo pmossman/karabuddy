@@ -12,6 +12,7 @@ import {
     isSetCodeCard,
     parseSetId
 } from '@/app/_components/_sharedcomponents/Cards/cardUtils';
+import { HIDDEN_SET } from '@/lib/replayDecoder';
 
 export const s3ImageURL = (path: string) => {
     const s3Bucket = 'https://karabast-data.s3.amazonaws.com/';
@@ -25,6 +26,15 @@ export function s3CardImageURL(
 ): string {
     const isGameOrSetCard = isGameCard(card) || isSetCodeCard(card) || isPreviewCard(card);
     if ((isGameOrSetCard && !card?.setId) && !card?.id) {
+        return cardback ? cardback : s3ImageURL('game/swu-cardback.webp');
+    }
+    // karabuddy: opponent-hand stubs get tagged with the HIDDEN_SET sentinel
+    // by lib/replayDecoder.ts so they survive type checks. There's no real S3
+    // art for that pseudo-set, so render the cardback the same as an empty stub.
+    const sentinelSet = isGameOrSetCard
+        ? card?.setId?.set
+        : (card?.id ? parseSetId(card.id).set : undefined);
+    if (sentinelSet === HIDDEN_SET) {
         return cardback ? cardback : s3ImageURL('game/swu-cardback.webp');
     }
     const setId = isGameOrSetCard ? card.setId : parseSetId(card.id);
