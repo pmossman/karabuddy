@@ -255,25 +255,34 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
         {tags.length === 0 ? (
           <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No tags yet. Click &quot;+ Tag this frame&quot; to add one.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[...tags].sort((a, b) => a.frameIndex - b.frameIndex).map((t) => {
-              const isCurrent = t.frameIndex === currentIndex;
-              const isOwn = t.authorToken === installToken;
-              const c = tagColor(t.authorName, playerUsernames);
+          (() => {
+            const otherTags = tags.filter((t) => t.frameIndex !== currentIndex);
+            if (otherTags.length === 0) {
               return (
-                <TagRowView
-                  key={t.id}
-                  tag={t}
-                  color={c}
-                  isCurrent={isCurrent}
-                  isOwn={isOwn}
-                  onJumpTo={() => onJump(t.frameIndex)}
-                  onDelete={() => deleteTag(t.id)}
-                  onUpdate={(comment) => updateComment(t.id, comment)}
-                />
+                <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No other tags on this replay.</div>
               );
-            })}
-          </div>
+            }
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {[...otherTags].sort((a, b) => a.frameIndex - b.frameIndex).map((t) => {
+                  const isOwn = t.authorToken === installToken;
+                  const c = tagColor(t.authorName, playerUsernames);
+                  return (
+                    <TagRowView
+                      key={t.id}
+                      tag={t}
+                      color={c}
+                      isCurrent={false}
+                      isOwn={isOwn}
+                      onJumpTo={() => onJump(t.frameIndex)}
+                      onDelete={() => deleteTag(t.id)}
+                      onUpdate={(comment) => updateComment(t.id, comment)}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })()
         )}
       </section>
     </aside>
