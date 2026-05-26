@@ -13,7 +13,17 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B11] Game log highlight follows "what's new since last step", not current frame only
+### [B12] Sidebar polish: tag nav near tags, usernames under thumbs, drag-to-resize width
+
+- **Why:** Three UX gaps after the B10 compaction:
+  1. Prev/Next-tag buttons live in the navigation section near the frame stepper but the tags themselves are far below — the buttons should sit next to or directly above the tag list.
+  2. Usernames were inlined with the matchup thumbs in B10 but truncate when long (e.g. `anonymous 95d0c6` clipped). Move them to their own line under each player's base thumb.
+  3. The sidebar is a fixed 360px — needs a drag handle on the right edge so users can widen it for long tag comments / log entries.
+- **Acceptance:** All three:
+  - Prev/Next-tag buttons relocate from the Navigation section to immediately above the All Tags list (or share a row with the "+ Tag this frame" button). Buttons still navigate to adjacent tag frames; keyboard `[` / `]` shortcuts still work.
+  - In the header's MatchupRow, the username lives on its own line below the leader+base thumbs for that player, centered under the thumbs. No truncation on usernames up to ~20 chars at the default sidebar width.
+  - Sidebar gets a 4-6px-wide vertical drag handle pinned to its right edge. Drag adjusts width between a sensible min (e.g. 280px) and max (e.g. 50% of viewport). Width persists per-browser via localStorage. The gameboard's flex layout already grows to fill — the existing `flex: '0 0 360px'` becomes `flex: 0 0 <var>px` driven by state.
+- **Refs:** `app/(app)/r/[slug]/TagSidebar.tsx` for all three. The extension's sidebar at `extension/replays/05-footer.js` has a working drag-to-resize implementation (look for `onDragStart` / `setExpandedPanelWidth` / `karabast-replays-panel-width` localStorage key) — port the logic, adapt the style to React. localStorage key for karabuddy can be `karabuddy:viewerSidebarWidth`.
 
 - **Why:** B2 ported the per-frame log but highlights only entries whose `frameIndex === currentIndex`. Actions can span multiple frames, so when the user steps from frame 5 → frame 12 (action mode skipping intervening gamestates), only frame 12's messages light up and everything in between goes fully dim. The extension behaves differently — it tracks the last transition and highlights every frame's messages that fall in the `(from, to]` range. This is what users actually want: "what just happened" since they pressed the arrow.
 - **Acceptance:**
