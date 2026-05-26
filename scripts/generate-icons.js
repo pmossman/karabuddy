@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /*
- * Generates extension/icons/{16,48,128}.png from extension/icons/source-512.png.
+ * Generates extension/icons/{16,48,128}.png from the per-size 2× raw
+ * screenshots in extension/icons/raw-{16,48,128}@2x.png.
  *
- * The source PNG is a screenshot of /tmp/karabuddy-icon-source.html captured
- * in headless Chrome so the rendering uses the real Barlow webfont loaded from
- * Google Fonts (matching the in-page launcher exactly). libvips' built-in font
- * rendering doesn't have Barlow installed locally, so we can't generate the
- * source from an inline SVG.
+ * The raw PNGs are captured in headless Chrome from extension/icons/source.html
+ * at viewport <size>×<size>×2 — so the browser does the layout pass at the
+ * target's native pixel density and renders Barlow + Georgia properly from
+ * Google Fonts. Sharp then downsamples 2× → 1× with lanczos3 supersampling
+ * for an extra-crisp result at the canonical icon dimension.
  *
- * To regenerate the source PNG: open /tmp/karabuddy-icon-source.html in Chrome
- * at viewport 512×512 and screenshot the full page into extension/icons/source-512.png.
+ * To re-capture the raw PNGs: open the source HTML in Chrome, set the
+ * viewport to each target size × 2 DPR (e.g. 256×256, 96×96, 32×32),
+ * screenshot the viewport into the matching raw file. See ICON-WORKFLOW.md
+ * (or commit history) for the chrome-devtools MCP command sequence.
  *
- * Run: node scripts/generate-icons.js  (or `npm run package:extension` which calls this)
+ * Run: node scripts/generate-icons.js
  */
 
 const fs = require('node:fs');
@@ -19,21 +22,20 @@ const path = require('node:path');
 const sharp = require('sharp');
 
 const ICONS_DIR = path.join(__dirname, '..', 'extension', 'icons');
-const SOURCE = path.join(ICONS_DIR, 'source-512.png');
 const SIZES = [16, 48, 128];
 
 (async () => {
-  if (!fs.existsSync(SOURCE)) {
-    console.error(`missing source: ${SOURCE}`);
-    console.error('Re-capture it by opening /tmp/karabuddy-icon-source.html in Chrome at 512x512 and saving the screenshot here.');
-    process.exit(1);
-  }
   for (const size of SIZES) {
-    const outPath = path.join(ICONS_DIR, `${size}.png`);
-    await sharp(SOURCE)
+    const src = path.join(ICONS_DIR, `raw-${size}@2x.png`);
+    const out = path.join(ICONS_DIR, `${size}.png`);
+    if (!fs.existsSync(src)) {
+      console.error(`missing raw: ${src}`);
+      process.exit(1);
+    }
+    await sharp(src)
       .resize(size, size, { kernel: 'lanczos3' })
       .png({ compressionLevel: 9 })
-      .toFile(outPath);
-    console.log(`wrote ${outPath}`);
+      .toFile(out);
+    console.log(`wrote ${out}`);
   }
 })();
