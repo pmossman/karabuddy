@@ -945,28 +945,53 @@
     // the sidebar permanently occupying screen real estate. The mark mirrors
     // the logo (bold K, italic b) so the launcher reads as KaraBuddy at a
     // glance, with a gear badge to signal "click to toggle".
+    //
+    // Draggable: mousedown starts tracking; if the cursor moves more than
+    // LAUNCHER_DRAG_THRESHOLD pixels before mouseup we treat the gesture as
+    // a drag (no click), otherwise we open the sidebar as before. Final
+    // position is clamped to viewport and persisted to chrome.storage.local.
+    const LAUNCHER_POS_STORAGE_KEY = 'karabuddyLauncherPos';
+    const LAUNCHER_DRAG_THRESHOLD = 4; // pixels of total movement before click → drag
+    const LAUNCHER_SIZE = 42;
+
+    const clampLauncherPos = (x, y) => {
+        const maxX = Math.max(0, window.innerWidth - LAUNCHER_SIZE);
+        const maxY = Math.max(0, window.innerHeight - LAUNCHER_SIZE);
+        return {
+            x: Math.min(Math.max(0, x), maxX),
+            y: Math.min(Math.max(0, y), maxY)
+        };
+    };
+
+    const applyLauncherPos = (b, x, y) => {
+        const { x: cx, y: cy } = clampLauncherPos(x, y);
+        b.style.left = cx + 'px';
+        b.style.top = cy + 'px';
+    };
+
     const buildLauncher = () => {
         const b = document.createElement('button');
         b.id = 'karabast-replays-launcher';
         b.type = 'button';
-        b.title = 'Open KaraBuddy';
+        b.title = 'Open KaraBuddy (drag to move)';
         b.setAttribute('style', [
             'position: fixed',
             'top: 10px',
             'left: 10px',
             'z-index: 2147483646',
-            'width: 42px',
-            'height: 42px',
+            'width: ' + LAUNCHER_SIZE + 'px',
+            'height: ' + LAUNCHER_SIZE + 'px',
             'border-radius: 10px',
             'background: linear-gradient(140deg, #243044 0%, #1a1d23 100%)',
             'border: 1px solid rgba(74, 124, 255, 0.5)',
             'padding: 0',
-            'cursor: pointer',
+            'cursor: grab',
             'box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0,0,0,0.3)',
             'display: none',
             'align-items: center',
             'justify-content: center',
-            'transition: transform 120ms ease, border-color 120ms ease'
+            'transition: transform 120ms ease, border-color 120ms ease',
+            'touch-action: none'
         ].join(';'));
         b.addEventListener('mouseenter', () => {
             b.style.transform = 'scale(1.06)';
@@ -975,6 +1000,70 @@
         b.addEventListener('mouseleave', () => {
             b.style.transform = '';
             b.style.borderColor = 'rgba(74, 124, 255, 0.5)';
+        });
+
+        // Restore persisted position. chrome.storage.local is async, so the
+        // launcher initially renders at the default top:10/left:10 and
+        // snaps to the stored position on the next frame.
+        try {
+            chrome.storage.local.get([LAUNCHER_POS_STORAGE_KEY], (res) => {
+                const pos = res && res[LAUNCHER_POS_STORAGE_KEY];
+                if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+                    applyLauncherPos(b, pos.x, pos.y);
+                }
+            });
+        } catch {}
+
+        // Drag state: track total movement so we can distinguish click vs drag.
+        // Listeners are attached to window during the gesture so the drag
+        // continues even if the cursor strays off the button.
+        let launcherDrag = null;
+        const onMove = (e) => {
+            if (!launcherDrag) return;
+            const dx = e.clientX - launcherDrag.startX;
+            const dy = e.clientY - launcherDrag.startY;
+            launcherDrag.moved = Math.max(launcherDrag.moved, Math.hypot(dx, dy));
+            if (launcherDrag.moved >= LAUNCHER_DRAG_THRESHOLD) {
+                launcherDrag.dragging = true;
+                b.style.cursor = 'grabbing';
+            }
+            if (launcherDrag.dragging) {
+                applyLauncherPos(b, launcherDrag.startLeft + dx, launcherDrag.startTop + dy);
+            }
+        };
+        const onUp = () => {
+            if (!launcherDrag) return;
+            const wasDrag = launcherDrag.dragging;
+            launcherDrag = null;
+            b.style.cursor = 'grab';
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (wasDrag) {
+                const rect = b.getBoundingClientRect();
+                try {
+                    chrome.storage.local.set({
+                        [LAUNCHER_POS_STORAGE_KEY]: { x: rect.left, y: rect.top }
+                    });
+                } catch {}
+            } else {
+                setPanelCollapsed(false);
+            }
+        };
+        b.addEventListener('mousedown', (e) => {
+            // Only react to left mouse button.
+            if (e.button !== 0) return;
+            e.preventDefault();
+            const rect = b.getBoundingClientRect();
+            launcherDrag = {
+                startX: e.clientX,
+                startY: e.clientY,
+                startLeft: rect.left,
+                startTop: rect.top,
+                moved: 0,
+                dragging: false
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
         });
 
         // Tiny stacked KARA/buddy — same DNA as the full header logo,
@@ -1033,7 +1122,15 @@
 
         b.appendChild(mono);
         b.appendChild(recDot);
-        b.addEventListener('click', () => setPanelCollapsed(false));
+        // Click → open sidebar is handled in the mouseup handler above
+        // (only when the gesture wasn't a drag). We still suppress any
+        // synthetic click that follows a drag, defensively.
+        b.addEventListener('click', (e) => {
+            // If a drag just happened the mouseup handler already cleared
+            // launcherDrag — but block the click anyway to avoid double-toggling.
+            e.preventDefault();
+            e.stopPropagation();
+        });
         return b;
     };
 
