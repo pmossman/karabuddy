@@ -13,44 +13,7 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B20] Extension: collapse to floating-button-only + cut in-place playback + cut popup
-
-- **Why:** Now that karabuddy.app owns replay browsing, playback, sharing, account, and settings, the extension's only unique value is what it can do *on karabast.net* (capture WebSocket frames, inject UI, tag mid-game) plus the karabuddy.app bridge for install-token claim and solo testing. The current slide-in sidebar is overkill for the one mid-game affordance we actually need, and the in-place playback code (`04-playback.js`, ~713 lines) duplicates karabuddy.app's `/r/[slug]` viewer with a fragile dependency on karabast.net's socket.io protocol. The toolbar popup is a glorified bookmark. Lock the extension down to its minimum surface.
-- **Acceptance:**
-  - **Sidebar deleted, replaced by an expanding floating panel anchored to the launcher button.**
-    - When no match is active (recorder hasn't seen a gamestate): launcher button is **hidden entirely**. Zero karabuddy footprint on karabast.net until capture begins.
-    - When match is active: launcher shows the existing REC indicator + event count, collapsed.
-    - Click the launcher → expands to a small floating panel anchored to the launcher's current bounding rect, with smart edge-detection so it doesn't overflow the viewport (open leftward if the launcher is near the right edge; upward if near the bottom).
-    - Expanded panel contents (top to bottom): compact REC + event count header, prominent `+ Tag this moment` button that toggles an inline textarea + Save/Cancel, recent tags list (last 5, compact), and a `Open this replay on karabuddy →` link that's hidden until `R().getCurrentKarabuddyUrl()` returns a string.
-    - Collapse triggers: click outside the panel, OR an explicit `×` button in the panel's top-right corner. Pressing the launcher button while expanded does NOT collapse (avoids confusing toggle-on-self semantics since the button is inside the panel anchor).
-    - Drag (B16) still works on the collapsed launcher; while expanded the panel follows the launcher's position. If the user drags the launcher while expanded, collapse first.
-    - The idle-state link buttons (`Open my replays →`, `Link this extension →`) are **gone** — `Open my replays` is just a bookmark, and `Link this extension` is redundant with karabuddy.app/claim's `AutoDetectExtension` flow (uses the same bridge protocol). Discoverability lives on karabuddy.app, not karabast.net.
-    - The footer's contextual exit button goes away (no sidebar to exit).
-  - **In-place replay playback cut entirely:**
-    - Delete `extension/replays/04-playback.js`.
-    - Remove it from `manifest.json`'s MAIN-world `content_scripts.js` list.
-    - Remove `REPLAY_FLAG` / `installFrame` / `extReplay`-URL handling from `extension/replays/06-bootstrap.js`.
-    - Remove any `P()` references / playback-state DOM in `05-footer.js`.
-    - Remove the `Tag saved` toast trigger that B18 wired into `P().addTag()` (it goes with the playback delete).
-    - Any background.js code that exists solely to support in-place playback can go too.
-  - **Popup cut, replaced with single-click toolbar action:**
-    - Delete `extension/popup.html`, `popup.js`, `popup.css`.
-    - Remove `action.default_popup` from `manifest.json` (keep `default_title` + `default_icon`).
-    - Add a `chrome.action.onClicked` listener in `background.js` that opens `<karabuddyEndpoint>/replays?tab=mine` in a new tab (re-use the tab-reuse logic from `openReplaysPage`).
-    - Remove the `getKarabuddyEndpoint` message handler from `background.js` (it was added in B19 solely for the popup; background can call `getKarabuddyEndpoint()` directly now).
-  - **Implement `R().getCurrentKarabuddyUrl()`:**
-    - In `extension/replays/03-recorder.js`, cache `result.url` on the recorder's state after a successful `B().uploadReplay(...)` call. Expose via a `R().getCurrentKarabuddyUrl()` method that returns the cached URL or null.
-    - The expanded panel's `Open this replay on karabuddy →` link unhides once this returns a string.
-    - Clear the cached URL when a new match starts (first gamestate of a new recording).
-- **What to preserve:**
-  - `extension/replays/02-decoder.js` — WebSocket decoder.
-  - `extension/replays/03-recorder.js` — recording + upload logic (just add the URL cache + getter).
-  - `extension/karabuddy-bridge.js` — install-token bridge on karabuddy.app.
-  - Solo testing: `solo-main.js`, `content.js`, `options.html`/`js`/`css`, DNR rules in `background.js`.
-  - `extension/replays/07-toast.js` — toasts still anchor to the launcher's current position; verify they still work after the launcher gains expand/collapse states.
-  - B18 toast triggers in `03-recorder.js`: `Recording…`, `Tag saved` (recording state only after the playback cut), `Replay uploaded`, `Upload failed`, `Replay saved`.
-  - B16 drag + persistence to `chrome.storage.local.karabuddyLauncherPos`.
-- **Refs:** `extension/replays/05-footer.js` (heavy rewrite — most of this file's idle/playback DOM goes; rebuild as a floating expandable panel). `extension/replays/06-bootstrap.js` (drop REPLAY_FLAG branching). `extension/background.js` (chrome.action.onClicked addition + getKarabuddyEndpoint handler removal + cleanup of any playback-only handlers). `extension/manifest.json` (drop popup, drop 04-playback.js). After this lands the extension is ~2400-2600 lines, down from ~4650.
+_empty_
 
 ## Continuation prompt
 
@@ -63,6 +26,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B20] Extension: collapse to floating-button-only + cut in-place playback + cut popup
+_completed: 2026-05-26 by autonomous-loop_
+Net -1236 lines. Slide-in sidebar gone — replaced by an expanding floating panel anchored to the launcher: collapsed shows REC + event count (hidden entirely until the recorder sees its first gamestate via new `R().isRecordingActive()`); expanded contains REC header, `+ Tag this moment` (inline textarea + Save/Cancel), recent tags list (last 5), and a hidden `Open on karabuddy →` link gated on a new `R().getCurrentKarabuddyUrl()` (cached on upload success, cleared at the start of each new recording). Edge-detection opens the panel leftward/upward when near the viewport edge. Dismiss: outside-mousedown or explicit `×`. Drag (B16) disabled while expanded. Launcher element identity preserved so B18 toasts keep anchoring; toasts no longer suppressed (no sidebar to suppress against). **Deleted:** `extension/replays/04-playback.js` (in-place playback was duplicated by karabuddy.app's `/r/[slug]` viewer with a fragile dep on karabast.net's socket.io protocol), `extension/popup.html|js|css` (replaced by a `chrome.action.onClicked` handler in `background.js` opening `<endpoint>/replays?tab=mine`). Also dropped: `REPLAY_FLAG` / `extReplay` URL flag / `consumePendingReplay` bridge in `01-namespace.js` + `06-bootstrap.js`, `playReplay`/`consumePendingReplay` handlers in `background.js`, `getKarabuddyEndpoint` message handler (popup-only, no longer needed). Preserved: solo testing functional path (`Cmd+Shift+S` hotkey + options-page config), DNR cookie-strip rules, recorder + upload + decoder, karabuddy-bridge.js. **Punted/regression flag:** the in-page solo-state controls that lived in the old sidebar (side card, swap/configure buttons) went with the rewrite; solo still works via hotkey + options page but has no in-page surface anymore. **Polish flag:** 05-footer.js (685 lines) uses an inline-styles-as-array-joins pattern that could be trimmed with an injected stylesheet.
 
 ### [B17] Extension: strip the sidebar down to recording-only
 _completed: 2026-05-26 by autonomous-loop_
