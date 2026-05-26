@@ -9,9 +9,13 @@
 //    still mounts at /test-board for verification.
 //  - Background falls back to a plain dark color when the cosmetics stub
 //    returns no path.
+//  - B5: stripped the X / gear / chat-bubble controls that the lifted trays
+//    used to render. They were non-functional in a replay context. The
+//    `sidebarOpen` state is gone with them — the viewer always lays out
+//    space for the TagSidebar, so the right-padding is fixed.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
-import React, { useState } from 'react';
+import React from 'react';
 import { Box, Grid2 as Grid } from '@mui/material';
 import OpponentCardTray from './OpponentCardTray/OpponentCardTray';
 import Board from './Board/Board';
@@ -22,15 +26,12 @@ import { useCosmetics } from '@/app/_contexts/CosmeticsContext';
 const Gameboard: React.FC = () => {
     const { getOpponent, connectedPlayer, gameState, isSpectator } = useGame();
     const { getBackground } = useCosmetics();
-    // localStorage is unavailable during SSR; default true and skip the read.
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    // B5: sidebar is always open (TagSidebar is always rendered in the viewer).
+    const sidebarOpen = true;
 
     const user = gameState?.players?.[connectedPlayer]?.user;
     const background = getBackground(isSpectator ? null : user?.cosmetics?.background ?? null);
     const backgroundUrl = background?.path ? `url(${background.path}?v=2)` : undefined;
-
-    const toggleSidebar = () => setSidebarOpen((open) => !open);
-    const handlePreferenceToggle = () => { /* TODO(karabuddy): wire prefs panel */ };
 
     const styles = {
         mainBoxStyle: {
@@ -68,7 +69,6 @@ const Gameboard: React.FC = () => {
                     {playerExists && (
                         <OpponentCardTray
                             trayPlayer={getOpponent(connectedPlayer)}
-                            preferenceToggle={handlePreferenceToggle}
                         />
                     )}
                 </Box>
@@ -79,7 +79,6 @@ const Gameboard: React.FC = () => {
                     {playerExists && (
                         <PlayerCardTray
                             trayPlayer={connectedPlayer}
-                            toggleSidebar={toggleSidebar}
                         />
                     )}
                 </Box>

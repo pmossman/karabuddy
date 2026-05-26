@@ -1,7 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid2';
-import { ChatBubbleOutline } from '@mui/icons-material';
 import Resources from '../_subcomponents/PlayerTray/Resources';
 import Credits from '../_subcomponents/PlayerTray/Credits';
 import DeckDiscard from '../_subcomponents/PlayerTray/DeckDiscard';
@@ -12,7 +11,10 @@ import { useGame } from '@/app/_contexts/Game.context';
 import { debugBorder } from '@/app/_utils/debug';
 import useScreenOrientation from '@/app/_utils/useScreenOrientation';
 
-const PlayerCardTray: React.FC<IPlayerCardTrayProps> = ({ trayPlayer, toggleSidebar }) => {
+// karabuddy: dropped the chat-expand bubble (toggleSidebar) — see B5.
+// Non-functional in the replay viewer; sidebar visibility is now fixed
+// by the parent Gameboard.
+const PlayerCardTray: React.FC<IPlayerCardTrayProps> = ({ trayPlayer }) => {
     const { gameState, connectedPlayer, isSpectator } = useGame();
     const { isPortrait } = useScreenOrientation();
 
@@ -61,15 +63,6 @@ const PlayerCardTray: React.FC<IPlayerCardTrayProps> = ({ trayPlayer, toggleSide
             display: 'flex',
             alignItems: 'flex-end',
             zIndex: '1',
-        },
-        chatColumn: {
-            ...debugBorder('yellow'),
-            display: 'flex',
-            alignItems: 'center',
-            alignSelf: 'flex-end',
-            height: { xs: '2.5rem', sm: '3rem', md: '3.8rem' },
-            width: 'auto',
-            marginBottom: { xs: '0.25rem', md: '0.5rem' }, // Match the padding of actionContainer
         },
         playerTurnAura: {
             height: '100px',
@@ -134,9 +127,6 @@ const PlayerCardTray: React.FC<IPlayerCardTrayProps> = ({ trayPlayer, toggleSide
                 }}
             >
                 <CardActionTray />
-                <Box ml={2} sx={styles.chatColumn}>
-                    <ChatBubbleOutline onClick={toggleSidebar} />
-                </Box>
             </Grid>
         </Grid>
     );
