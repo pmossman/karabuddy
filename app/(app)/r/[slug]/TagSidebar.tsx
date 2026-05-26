@@ -57,6 +57,28 @@ const TAG_REVIEWER = '#e0c64a';
 const tagColor = (authorName: string, players: Set<string>) =>
   players.has(authorName) ? TAG_PLAYER : TAG_REVIEWER;
 
+// B12: drag-to-resize sidebar — values mirror the chrome extension's panel
+// (see ~/code/karabuddy/extension/replays/05-footer.js), adapted to React
+// state. Width persists across reloads via localStorage and clamps to a
+// readable min plus half-viewport max so the gameboard always stays visible.
+const SIDEBAR_WIDTH_MIN = 280;
+const SIDEBAR_WIDTH_DEFAULT = 360;
+const SIDEBAR_WIDTH_STORAGE_KEY = 'karabuddy:viewerSidebarWidth';
+
+const clampSidebarWidth = (w: number) =>
+  Math.max(SIDEBAR_WIDTH_MIN, Math.min(window.innerWidth * 0.5, w));
+
+const loadStoredSidebarWidth = (): number => {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    if (!raw) return SIDEBAR_WIDTH_DEFAULT;
+    const v = Number(raw);
+    return Number.isFinite(v) && v > 0 ? v : SIDEBAR_WIDTH_DEFAULT;
+  } catch {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+};
+
 export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, tags, setTags, playerUsernames, mode, setMode, messagesByFrame }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
@@ -66,12 +88,62 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [visibility, setVisibility] = useState(replay.visibility);
   const [copied, setCopied] = useState(false);
   const [visBusy, setVisBusy] = useState(false);
+  // B12: sidebar width starts at the default during SSR/first paint, then
+  // hydrates from localStorage in an effect to avoid hydration mismatch.
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_WIDTH_DEFAULT);
+  const [resizeHandleHover, setResizeHandleHover] = useState(false);
+  const [resizeHandleActive, setResizeHandleActive] = useState(false);
+  const dragStateRef = useRef<{ startX: number; startW: number } | null>(null);
   const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
 
   useEffect(() => {
     setInstallToken(getOrCreateInstallToken());
     setAuthorName(getOrCreateAuthorName());
+    setSidebarWidth(clampSidebarWidth(loadStoredSidebarWidth()));
   }, []);
+
+  // B12: install global mousemove/mouseup listeners while a drag is in
+  // progress. Ported from the extension's onDragStart loop — using a ref for
+  // dragState so React state updates don't recreate the listeners.
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const s = dragStateRef.current;
+      if (!s) return;
+      const next = clampSidebarWidth(s.startW + (e.clientX - s.startX));
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      if (!dragStateRef.current) return;
+      dragStateRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setResizeHandleActive(false);
+      try {
+        // Use the latest width directly off the DOM-style; React state is
+        // already in sync because setSidebarWidth ran on every mousemove.
+        // Persist by reading state via a functional setState so we capture
+        // the most recent value without depending on closures.
+        setSidebarWidth((w) => {
+          try { localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(w)); } catch {}
+          return w;
+        });
+      } catch {}
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  const onResizeHandleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStateRef.current = { startX: e.clientX, startW: sidebarWidth };
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    setResizeHandleActive(true);
+  };
 
   // Owner = session user owns the replay OR this browser's installToken
   // matches the upload's ownerToken. Mirrors the server's canMutate check
@@ -213,8 +285,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   return (
     <aside
       style={{
-        width: 360,
-        flex: '0 0 360px',
+        width: sidebarWidth,
+        flex: `0 0 ${sidebarWidth}px`,
         background: 'rgba(17, 20, 26, 0.95)',
         borderRight: '1px solid #2e333c',
         color: '#e6e6e6',
@@ -222,16 +294,20 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        position: 'relative',
       }}
     >
-      {/* B10: compact header — leader+base inline per player, username
-          inline, share collapsed into a top-right popover. Drops the
-          old subline (username + action count) to reclaim vertical
-          space — usernames now sit inline with the cards. */}
-      <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+      {/* B10: compact header — leader+base per player, share collapsed
+          into a top-right popover. B12: usernames now wrap to their own
+          line beneath the thumbs, so the row aligns to the top of the
+          thumbs to keep VS visually centered against the cards (not the
+          taller two-line player column). */}
+      <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1, minWidth: 0 }}>
           <MatchupRow player={p1} />
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto' }}>VS</span>
+          {/* Sits vertically aligned with the 32px-tall thumb row above the
+              username — pad-top half the thumb height minus half text. */}
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto', paddingTop: 11 }}>VS</span>
           <MatchupRow player={p2} />
         </div>
         <Popover
@@ -270,7 +346,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
       {/* B10: nav row tightens — arrows flank an inline frame counter,
           arrow-key hint becomes tooltips on the arrows. Step-mode toggle
-          hides behind a gear popover next to the counter. */}
+          hides behind a gear popover next to the counter. B12: prev/next-tag
+          buttons moved out of here and down next to "+ Tag this frame" so all
+          tag-related actions cluster together. */}
       <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <FooterBtn onClick={() => onStep(-1)} title="Previous frame (←)">←</FooterBtn>
@@ -300,16 +378,22 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             </div>
           </Popover>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <FooterBtn onClick={() => jumpToAdjacent(-1)} variant="ghost">‹ Prev tag</FooterBtn>
-          <FooterBtn onClick={() => jumpToAdjacent(1)} variant="ghost">Next tag ›</FooterBtn>
-        </div>
       </section>
 
       <section style={{ padding: '14px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <FooterBtn variant="outline" onClick={() => setFormOpen((v) => !v)} alignSelf>
-          + Tag this frame
-        </FooterBtn>
+        {/* B12: tag-nav buttons share this row with "+ Tag this frame" —
+            keeps all tag actions clustered above the All Tags list. The
+            [ / ] keyboard shortcuts (wired separately in ReplayViewer) still
+            invoke jumpToAdjacent. */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FooterBtn variant="outline" onClick={() => setFormOpen((v) => !v)}>
+            + Tag this frame
+          </FooterBtn>
+          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+            <FooterBtn onClick={() => jumpToAdjacent(-1)} variant="ghost" title="Previous tag ([)">‹ Prev tag</FooterBtn>
+            <FooterBtn onClick={() => jumpToAdjacent(1)} variant="ghost" title="Next tag (])">Next tag ›</FooterBtn>
+          </div>
+        </div>
         {formOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: 'rgba(74, 124, 255, 0.08)', border: '1px solid rgba(74, 124, 255, 0.3)', borderRadius: 6 }}>
             <div style={{ fontSize: 11, color: '#a0a8b8', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -419,6 +503,41 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           })()
         )}
       </section>
+
+      {/* B12: drag handle pinned to the sidebar's right edge. Sits above the
+          right border with a transparent default; the inner pill brightens on
+          hover and becomes a solid accent when actively dragging so the
+          affordance is discoverable without being noisy. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onMouseDown={onResizeHandleMouseDown}
+        onMouseEnter={() => setResizeHandleHover(true)}
+        onMouseLeave={() => setResizeHandleHover(false)}
+        onDoubleClick={() => {
+          const next = SIDEBAR_WIDTH_DEFAULT;
+          setSidebarWidth(next);
+          try { localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next)); } catch {}
+        }}
+        title="Drag to resize (double-click to reset)"
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          width: 6,
+          height: '100%',
+          cursor: 'ew-resize',
+          userSelect: 'none',
+          background: resizeHandleActive
+            ? 'rgba(74, 124, 255, 0.45)'
+            : resizeHandleHover
+            ? 'rgba(74, 124, 255, 0.18)'
+            : 'transparent',
+          transition: 'background 120ms ease',
+          zIndex: 10,
+        }}
+      />
     </aside>
   );
 }
@@ -585,33 +704,38 @@ function renderMessage(msg: any, playerColor: Map<string, string>): React.ReactN
   });
 }
 
-// B10: compact single-row variant — leader and base side-by-side at a
-// smaller thumb size, plus the username inline. Replaces the old two-row
-// stacked Matchup which dominated the sidebar header.
+// B10: compact variant — leader and base side-by-side at a smaller thumb
+// size. B12: username moved onto its own line below the thumbs, centered,
+// so longer handles (e.g. `anonymous 95d0c6`) render in full at the default
+// 360px sidebar width without ellipsis. Replaces the old two-row stacked
+// Matchup which dominated the sidebar header.
 function MatchupRow({ player }: { player: any }) {
   if (!player) return <div style={{ flex: 1, minWidth: 0 }} />;
   return (
     <div
       style={{
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: 4,
+        gap: 3,
         flex: 1,
         minWidth: 0,
       }}
       title={`${player.leader?.name || '?'} / ${player.base?.name || '?'} — ${player.username || 'anon'}`}
     >
-      <CardImg src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
-      <CardImg src={cardImageUrl(player.base, false)} alt={player.base?.name} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <CardImg src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
+        <CardImg src={cardImageUrl(player.base, false)} alt={player.base?.name} />
+      </div>
       <span
         style={{
           fontSize: 11,
           color: '#a0a8b8',
+          textAlign: 'center',
+          maxWidth: '100%',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          minWidth: 0,
-          flex: 1,
         }}
       >
         {player.username || 'anon'}
