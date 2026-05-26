@@ -7,103 +7,18 @@
         <link rel="stylesheet" href="popup.css" />
     </head>
     <body>
-        <header>
-            <div class="brand-block">
-                <div class="kb-brand kb-brand--sm">
-                    <span class="kb-brand__main">KARA</span>
-                    <span class="kb-brand__sub">buddy</span>
-                </div>
-                <span class="kb-page-label">Solo</span>
+        <header class="brand-block">
+            <div class="kb-brand kb-brand--sm">
+                <span class="kb-brand__main">KARA</span>
+                <span class="kb-brand__sub">buddy</span>
             </div>
         </header>
 
-        <section class="warning">
-            Solo sessions run anonymously in their own windows. Your karabast.net
-            login in other tabs is untouched.
-        </section>
-
-        <section id="empty-decks" class="empty" hidden>
-            No decks saved yet. Add one or import from karabast.net.
-            <button id="open-options-empty" type="button" class="secondary">Manage decks</button>
-        </section>
-
-        <form id="config-form">
-            <fieldset>
-                <legend>Side A</legend>
-                <div class="cs-label">Deck</div>
-                <div class="custom-select" data-side="A">
-                    <button class="cs-trigger" type="button">
-                        <img class="cs-leader" alt="" />
-                        <img class="cs-base" alt="" />
-                        <span class="cs-text">Choose a deck</span>
-                        <span class="cs-chevron">▾</span>
-                    </button>
-                    <div class="cs-options" hidden></div>
-                </div>
-                <label class="custom-link" data-side="A" hidden>
-                    <span>Custom URL</span>
-                    <input type="url" name="A_customDeckLink" placeholder="https://swudb.com/deck/…" />
-                </label>
-            </fieldset>
-
-            <fieldset>
-                <legend>Side B</legend>
-                <div class="cs-label">Deck</div>
-                <div class="custom-select" data-side="B">
-                    <button class="cs-trigger" type="button">
-                        <img class="cs-leader" alt="" />
-                        <img class="cs-base" alt="" />
-                        <span class="cs-text">Choose a deck</span>
-                        <span class="cs-chevron">▾</span>
-                    </button>
-                    <div class="cs-options" hidden></div>
-                </div>
-                <label class="custom-link" data-side="B" hidden>
-                    <span>Custom URL</span>
-                    <input type="url" name="B_customDeckLink" placeholder="https://swudb.com/deck/…" />
-                </label>
-            </fieldset>
-
-            <fieldset>
-                <legend>Match</legend>
-                <label>
-                    <span>Format</span>
-                    <select name="format">
-                        <option value="premier">Premier</option>
-                        <option value="open">Open</option>
-                        <option value="eternal">Eternal</option>
-                        <option value="limited">Limited</option>
-                    </select>
-                </label>
-                <label>
-                    <span>Card pool</span>
-                    <select name="cardPool">
-                        <option value="current">Current</option>
-                        <option value="nextSet">Next Set</option>
-                        <option value="unlimited">Unlimited</option>
-                    </select>
-                </label>
-                <label>
-                    <span>Games to win</span>
-                    <select name="gamesToWinMode">
-                        <option value="bestOfOne">Best of One</option>
-                        <option value="bestOfThree">Best of Three</option>
-                    </select>
-                </label>
-            </fieldset>
-        </form>
-
-        <div class="actions">
-            <button id="start" type="button">Start solo session</button>
-            <button id="stop" type="button" class="secondary">Stop session</button>
-        </div>
-
-        <div id="status" class="status"></div>
-
-        <footer>
-            <a href="#" id="open-options">Manage decks</a>
-            <span>Swap: Space / configurable in chrome://extensions/shortcuts</span>
-        </footer>
+        <nav class="launch">
+            <button id="open-mine" type="button" class="launch-btn">My replays</button>
+            <button id="open-public" type="button" class="launch-btn">Browse public</button>
+            <button id="open-solo" type="button" class="launch-btn launch-btn--secondary">Solo testing</button>
+        </nav>
 
         <script src="popup.js"></script>
     </body>

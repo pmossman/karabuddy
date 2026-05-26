@@ -511,6 +511,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'saveMatch') {
                 await saveMatch(msg.match);
                 sendResponse({ ok: true });
+            } else if (msg.type === 'getKarabuddyEndpoint') {
+                sendResponse({ ok: true, endpoint: await getKarabuddyEndpoint() });
             } else if (msg.type === 'openKarabuddyClaim') {
                 const result = await openKarabuddyClaim();
                 sendResponse({ ok: true, data: result });
