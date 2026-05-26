@@ -19,9 +19,16 @@ Hosted companion to karabast.net for Star Wars Unlimited. Replays, tags, solo te
 
 No login system yet. Each extension install generates an opaque `installToken` stored in localStorage; uploads + tags are attributed to that token. Add Discord/Google OAuth when moderation or profile-claiming demands it — not before.
 
+## Extension
+
+The Chrome MV3 extension lives at `./extension/` (in-tree). It captures replays from karabast.net and uploads them to this app, and runs a small bridge content script on karabuddy origins for the claim flow.
+
+- **Load unpacked for dev:** `chrome://extensions` → enable Developer mode → "Load unpacked" → pick `./extension/`. Reload the extension from `chrome://extensions` after editing files (no build step — it's MV3 + plain JS).
+- **Package for distribution:** zip the contents of `./extension/` (not the folder itself — Chrome wants `manifest.json` at the zip root). E.g. `cd extension && zip -r ../karabuddy-extension.zip . -x '.*'`.
+- **Deploy isolation:** `extension/` is listed in `.vercelignore` and excluded from `tsconfig.json` — it's never bundled into the Next.js build.
+
 ## Related repos
 
-- `~/code/karabast-extension/` — the Chrome MV3 extension. Captures replays from karabast.net and uploads them here.
 - `~/code/karabast-dev/forceteki-client/` — karabast's open-source frontend (MIT). We lift the gameboard renderer from it for the `/r/[slug]` viewer; **don't** maintain a literal fork — copy what we need, keep their LICENSE for the lifted files, evolve independently.
 
 ## Backlog

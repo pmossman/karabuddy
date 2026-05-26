@@ -140,7 +140,14 @@
     // ----- Metadata extraction (live + file) -----
 
     const sanitizeFilenamePart = (s) =>
-        (s || '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+        (s || '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+
+    // YYMMDD-HHMM in local time, compact and naturally sortable per-year.
+    const formatFilenameTimestamp = (ms) => {
+        const d = new Date(ms);
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+    };
 
     const isAnonymousUsername = (u) => !u || /^anonymous\s/i.test(u);
 
@@ -183,18 +190,19 @@
         };
     };
 
-    const buildReplayFilename = (ts, meta) => {
-        if (!meta || meta.length < 2) return `karabast-${ts}.karareplay`;
+    const buildReplayFilename = (whenMs, meta) => {
+        const ts = formatFilenameTimestamp(whenMs);
+        if (!meta || meta.length < 2) return `${ts}.karareplay`;
         const parts = meta.map((p) => {
             const user = isAnonymousUsername(p.username)
-                ? ''
+                ? 'anon'
                 : sanitizeFilenamePart(p.username);
             const leader = sanitizeFilenamePart(p.leader?.name);
             const base = sanitizeFilenamePart(p.base?.name);
             const deck = [leader, base].filter(Boolean).join('-');
-            return [user, deck].filter(Boolean).join('-') || 'unknown';
+            return [deck, user].filter(Boolean).join('_') || 'unknown';
         });
-        return `karabast-${ts}-${parts.join('__vs__')}.karareplay`;
+        return `${ts}_${parts.join('_vs_')}.karareplay`;
     };
 
     // ----- Frame transforms for playback rendering -----
@@ -348,6 +356,73 @@
         };
     };
 
+    // ----- Tag identity, author, color -----
+    //
+    // Tags are user-curated annotations anchored to a frame in the replay.
+    // They live inside the replay payload (additive JSON field) and survive
+    // round-tripping through the file. Each tag knows its author so multiple
+    // reviewers' marks remain distinguishable when a replay is passed around.
+
+    const TAG_AUTHOR_KEY = 'karabuddyTagAuthor';
+
+    const makeTagId = () => {
+        if (crypto?.randomUUID) return crypto.randomUUID();
+        return 'tag-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
+    };
+
+    // Try the in-game username first; fall back to a persisted anon-XXXX
+    // handle. The anon handle is generated once per browser profile and
+    // reused so the same person's tags are color-stable across replays.
+    const getOrCreateAuthor = (livePlayers) => {
+        // Path 1: live recording or playback — sniff the gamestate for a
+        // real karabast username.
+        if (livePlayers && typeof livePlayers === 'object') {
+            for (const p of Object.values(livePlayers)) {
+                const u = p?.user?.username;
+                if (u && !isAnonymousUsername(u)) return u;
+            }
+        }
+        // Path 2: persisted anon handle.
+        try {
+            const stored = localStorage.getItem(TAG_AUTHOR_KEY);
+            if (stored) return stored;
+            const fresh = 'anon-' + Math.random().toString(36).slice(2, 6);
+            localStorage.setItem(TAG_AUTHOR_KEY, fresh);
+            return fresh;
+        } catch {
+            return 'anon-' + Math.random().toString(36).slice(2, 6);
+        }
+    };
+
+    // Two-color scheme for tag attribution at render time. We don't store
+    // the color on the tag — it's derived from whether the author was one
+    // of the game's actual players (read off the snapshot in the payload)
+    // or a 3rd-party reviewer. Letting the reader's view decide keeps the
+    // scheme stable when replays are shared between people.
+    const TAG_COLOR_PLAYER = '#6bd968';   // green — was at the table
+    const TAG_COLOR_REVIEWER = '#e0c64a'; // yellow — added after the fact
+
+    const playerColorFor = (author, playerUsernames) => {
+        if (!playerUsernames) return TAG_COLOR_REVIEWER;
+        const set = playerUsernames instanceof Set
+            ? playerUsernames
+            : new Set(Array.isArray(playerUsernames) ? playerUsernames : Object.values(playerUsernames || {}));
+        return set.has(author) ? TAG_COLOR_PLAYER : TAG_COLOR_REVIEWER;
+    };
+
+    // Build a Set of usernames participating in a game from a snapshot's
+    // players map. Drops blank/anonymous entries so the comparison doesn't
+    // mark a 3rd-party "anonymous" as a player.
+    const playerUsernamesFromPlayers = (players) => {
+        const out = new Set();
+        if (!players || typeof players !== 'object') return out;
+        for (const p of Object.values(players)) {
+            const u = p?.user?.username;
+            if (u && !isAnonymousUsername(u)) out.add(u);
+        }
+        return out;
+    };
+
     NS.Decoder = {
         RECORDED_EVENTS,
         TOP_NOISE,
@@ -366,6 +441,12 @@
         injectDefaultPromptState,
         installHiddenCardStyles,
         decodeReplay,
-        EMPTY_PROMPT_STATE
+        EMPTY_PROMPT_STATE,
+        makeTagId,
+        getOrCreateAuthor,
+        playerColorFor,
+        playerUsernamesFromPlayers,
+        TAG_COLOR_PLAYER,
+        TAG_COLOR_REVIEWER
     };
 })();

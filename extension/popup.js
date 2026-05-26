@@ -229,8 +229,4 @@ document.getElementById('open-options').addEventListener('click', (e) => {
 });
 document.getElementById('open-options-empty').addEventListener('click', openOptions);
 
-document.getElementById('home-link').addEventListener('click', () => {
-    chrome.tabs.create({ url: 'https://karabast.net/' });
-});
-
 hydrate();

@@ -12,15 +12,28 @@
 
     // ----- Module state -----
     const recording = [];
+    const tags = [];
+    let gamestateCount = 0;          // anchor for "tag at this moment"
     let recordingStart = Date.now();
     let autoDownloadScheduled = false;
     let prevNormalizedGamestate = null;
+    let lastFullGamestate = null;    // most recent full snapshot, for author sniffing
     let currentGameId = null;
+    // After a successful auto-finalize, karabast often sends a couple more
+    // gamestate events (cleanup, lobby return). They look like game-end and
+    // would re-trigger scheduleAutoDownload on the SAME gameId, finalizing
+    // a one-event "recording" that then fails the distinct-players check.
+    // Track the just-finalized id and ignore further events for it; a new
+    // gameId resets this and the next game records normally.
+    let finalizedGameId = null;
 
     const resetRecording = () => {
         recording.length = 0;
+        tags.length = 0;
+        gamestateCount = 0;
         recordingStart = Date.now();
         prevNormalizedGamestate = null;
+        lastFullGamestate = null;
         autoDownloadScheduled = false;
     };
 
@@ -35,7 +48,9 @@
                 gameId: currentGameId,
                 recordingStart,
                 recording,
-                prevNormalizedGamestate
+                prevNormalizedGamestate,
+                tags,
+                gamestateCount
             }));
         } catch {
             // Quota or serialization failure — give up persistence for this game.
@@ -69,8 +84,11 @@
         recording.push(...data.recording);
         recordingStart = data.recordingStart || Date.now();
         prevNormalizedGamestate = data.prevNormalizedGamestate || null;
+        tags.length = 0;
+        if (Array.isArray(data.tags)) tags.push(...data.tags);
+        gamestateCount = Number.isFinite(data.gamestateCount) ? data.gamestateCount : recording.filter((e) => e.event === 'gamestate').length;
         currentGameId = data.gameId;
-        NS.dlog(`[karabuddy] resumed recording — ${recording.length} events for game ${incomingGameId}`);
+        NS.dlog(`[karabuddy] resumed recording — ${recording.length} events, ${tags.length} tags for game ${incomingGameId}`);
         return true;
     };
 
@@ -83,6 +101,11 @@
         if (frame.event === 'gamestate') {
             const original = frame.args[0];
             const incomingId = original.id || null;
+
+            // Post-finalize cleanup events for the same gameId — ignore.
+            // (If a new game starts, incomingId differs and we fall through
+            // to the normal flow.)
+            if (incomingId && incomingId === finalizedGameId) return;
 
             // First gamestate of this page load: maybe a mid-game refresh.
             // If localStorage has a persisted recording for the same gameId,
@@ -107,12 +130,16 @@
             if (prevNormalizedGamestate === null) {
                 recording.push({ t, dir, event: 'gamestate', args: [{ full: norm }] });
                 prevNormalizedGamestate = norm;
+                gamestateCount++;
             } else {
                 const patch = d.makePatch(prevNormalizedGamestate, norm);
                 if (Object.keys(patch).length === 0) return;
                 recording.push({ t, dir, event: 'gamestate', args: [{ patch }] });
                 prevNormalizedGamestate = norm;
+                gamestateCount++;
             }
+            // Keep a live full snapshot for author sniffing when a tag is added.
+            lastFullGamestate = norm;
             if (d.looksLikeGameEnd(original)) scheduleAutoDownload();
         } else {
             const t = Date.now() - recordingStart;
@@ -169,6 +196,7 @@
         if (!isManual && distinctActivePlayers < 2) {
             console.log(`[karabuddy] skipped save (${reason}) — only ${distinctActivePlayers} distinct active player(s)`);
             clearPersistedRecording();
+            if (currentGameId) finalizedGameId = currentGameId;
             resetRecording();
             currentGameId = null;
             F()?.refreshOverlay?.();
@@ -187,11 +215,11 @@
                 strippedTopLevel: [...d.TOP_NOISE],
                 strippedPerPlayer: [...d.PLAYER_NOISE]
             },
-            events: recording
+            events: recording,
+            tags: tags.slice()
         };
         const payloadText = JSON.stringify(payload);
-        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const filename = d.buildReplayFilename(ts, meta);
+        const filename = d.buildReplayFilename(Date.now(), meta);
 
         // Manual download → trigger a file save so the user can grab the file.
         if (isManual) {
@@ -206,18 +234,46 @@
         }
         console.log(`[karabuddy] finalized (${reason}) — ${recording.length} events, ${actionCount} actions, ${durationMs}ms`);
 
+        // Capture everything the async upload .then() needs into locals.
+        // The module-scope `currentGameId` / `recordingStart` get reset by
+        // resetRecording() before the upload resolves, so reading them
+        // lazily inside the .then would land null/0.
+        const gameIdLocal = currentGameId;
+        const recordingStartLocal = recordingStart;
+
         // Always stash in the service-worker IDB so the replays page lists it.
-        if (currentGameId) {
+        if (gameIdLocal) {
             B().saveReplay({
-                gameId: currentGameId,
+                gameId: gameIdLocal,
                 savedAt: Date.now(),
-                startedAt: recordingStart,
+                startedAt: recordingStartLocal,
                 durationMs,
                 actionCount,
                 filename,
                 players: meta,
                 payload: payloadText
             }).then(() => F()?.refreshReplayBrowser?.());
+
+            // Fire-and-forget upload to karabuddy.com. Doesn't block local
+            // save; failure just leaves the replay local-only. On success
+            // we patch the IDB entry with the hosted slug so the replays
+            // browser can surface a "View on karabuddy" link.
+            B().uploadReplay(payloadText).then((result) => {
+                if (!result || !result.slug) return;
+                console.log(`[karabuddy] uploaded to ${result.url}${result.deduped ? ' (already existed)' : ''}`);
+                B().saveReplay({
+                    gameId: gameIdLocal,
+                    savedAt: Date.now(),
+                    startedAt: recordingStartLocal,
+                    durationMs,
+                    actionCount,
+                    filename,
+                    players: meta,
+                    payload: payloadText,
+                    karabuddySlug: result.slug,
+                    karabuddyUrl: result.url
+                }).then(() => F()?.refreshReplayBrowser?.());
+            });
         }
 
         // The game we just persisted is in IDB now; don't restore it on the
@@ -228,6 +284,7 @@
         // sidebar transitions out of recording once the game has actually
         // ended. Manual keeps recording intact so events keep streaming in.
         if (!isManual) {
+            if (currentGameId) finalizedGameId = currentGameId;
             resetRecording();
             currentGameId = null;
             F()?.refreshOverlay?.();
@@ -238,6 +295,48 @@
         if (autoDownloadScheduled) return;
         autoDownloadScheduled = true;
         setTimeout(() => download('auto'), 1500);
+    };
+
+    // ----- Tag API -----
+    // addTag(comment?) anchors at the current frame (latest gamestate seen).
+    // Returns the freshly-created tag so the UI can scroll to it / focus its
+    // comment editor.
+    const addTag = (comment = '') => {
+        const d = D();
+        const author = d.getOrCreateAuthor(lastFullGamestate?.players);
+        const frameIndex = Math.max(0, gamestateCount - 1);
+        // No color stored on the tag — derived at render time from author
+        // vs the game's player roster so the scheme stays consistent when
+        // replays change hands between players and reviewers.
+        const tag = {
+            id: d.makeTagId(),
+            frameIndex,
+            author,
+            comment: String(comment || ''),
+            createdAt: Date.now()
+        };
+        tags.push(tag);
+        schedulePersist();
+        F()?.refreshOverlay?.();
+        return tag;
+    };
+
+    const updateTagComment = (id, comment) => {
+        const tag = tags.find((t) => t.id === id);
+        if (!tag) return null;
+        tag.comment = String(comment || '');
+        schedulePersist();
+        F()?.refreshOverlay?.();
+        return tag;
+    };
+
+    const deleteTag = (id) => {
+        const i = tags.findIndex((t) => t.id === id);
+        if (i < 0) return false;
+        tags.splice(i, 1);
+        schedulePersist();
+        F()?.refreshOverlay?.();
+        return true;
     };
 
     // ----- attachInterceptor(ws): wire a real WebSocket up to the recorder. -----
@@ -259,8 +358,19 @@
         download,
         scheduleAutoDownload,
         resetRecording,
+        addTag,
+        updateTagComment,
+        deleteTag,
         // Reads — Footer uses these to populate the recording state UI.
         getRecordingLength: () => recording.length,
-        getCurrentGameId: () => currentGameId
+        getCurrentGameId: () => currentGameId,
+        getTags: () => tags.slice(),
+        getCurrentFrameIndex: () => Math.max(0, gamestateCount - 1),
+        // Latest gamestate's players map — Footer uses it to preview the
+        // tag author ("Tagging as <username>") before the tag is saved.
+        getCurrentPlayers: () => lastFullGamestate?.players || null,
+        // Set of player usernames in this game — drives tag color (player
+        // vs reviewer) at render time.
+        getPlayerUsernames: () => D().playerUsernamesFromPlayers(lastFullGamestate?.players)
     };
 })();

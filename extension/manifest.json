@@ -4,7 +4,14 @@
     "version": "0.2.0",
     "description": "Solo deck testing + match recording and replay playback for karabast.net.",
     "permissions": ["storage", "tabs", "declarativeNetRequest"],
-    "host_permissions": ["https://karabast.net/*", "https://api.karabast.net/*"],
+    "host_permissions": [
+        "https://karabast.net/*",
+        "https://api.karabast.net/*",
+        "https://karabuddy.com/*",
+        "https://*.karabuddy.com/*",
+        "https://*.vercel.app/*",
+        "http://localhost:3000/*"
+    ],
     "action": {
         "default_popup": "popup.html",
         "default_title": "KaraBuddy"
@@ -34,6 +41,17 @@
             "matches": ["https://karabast.net/*"],
             "js": ["content.js"],
             "run_at": "document_start",
+            "all_frames": false
+        },
+        {
+            "matches": [
+                "https://karabuddy.com/*",
+                "https://*.karabuddy.com/*",
+                "https://*.vercel.app/*",
+                "http://localhost:3000/*"
+            ],
+            "js": ["karabuddy-bridge.js"],
+            "run_at": "document_idle",
             "all_frames": false
         }
     ],

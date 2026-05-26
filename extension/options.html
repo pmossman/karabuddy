@@ -3,12 +3,19 @@
     <head>
         <meta charset="utf-8" />
         <title>KaraBuddy — Setup</title>
+        <link rel="stylesheet" href="shared.css" />
         <link rel="stylesheet" href="options.css" />
     </head>
     <body>
         <main>
             <header>
-                <h1>KaraBuddy</h1>
+                <div class="brand-block">
+                    <div class="kb-brand">
+                        <span class="kb-brand__main">KARA</span>
+                        <span class="kb-brand__sub">buddy</span>
+                    </div>
+                    <span class="kb-page-label">Setup</span>
+                </div>
                 <p>Solo testing setup + deck library.</p>
             </header>
 
@@ -158,10 +165,6 @@
 
             <div id="status" class="status"></div>
         </main>
-
-        <button id="home-link" class="home-link" type="button" title="Go to karabast.net">
-            ← Karabast home
-        </button>
 
         <script src="options.js"></script>
     </body>

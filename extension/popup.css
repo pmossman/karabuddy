@@ -1,56 +1,50 @@
-:root {
-    color-scheme: dark;
-}
-
 body {
-    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    margin: 0;
-    padding: 16px;
+    padding: var(--space-4);
     width: 360px;
-    background: #1a1d23;
-    color: #e6e6e6;
+    background: var(--surface-card);
 }
 
-h1 {
-    margin: 0 0 12px;
-    font-size: 16px;
-    font-weight: 600;
+.brand-block {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-bottom: var(--space-3);
 }
 
 .warning {
-    font-size: 12px;
-    background: #3a2a16;
-    border: 1px solid #6b4a1f;
-    padding: 8px 10px;
-    border-radius: 6px;
-    margin-bottom: 12px;
+    font-size: var(--text-sm);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    padding: var(--space-2) 10px;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
 }
 
 fieldset {
-    border: 1px solid #2e333c;
-    border-radius: 6px;
-    padding: 10px 12px 12px;
-    margin: 0 0 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 10px var(--space-3) var(--space-3);
+    margin: 0 0 var(--space-3);
 }
 
 legend {
-    font-size: 12px;
+    font-size: var(--text-sm);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #a0a8b8;
+    color: var(--text-muted);
     padding: 0 6px;
 }
 
 label {
     display: block;
-    font-size: 12px;
-    color: #a0a8b8;
-    margin-bottom: 8px;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
 }
 
 label > span {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
 }
 
 label:last-child {
@@ -58,26 +52,26 @@ label:last-child {
 }
 
 .cs-label {
-    font-size: 12px;
-    color: #a0a8b8;
-    margin-bottom: 4px;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-1);
 }
 
 .custom-select {
     position: relative;
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
 }
 
 .cs-trigger {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     width: 100%;
-    padding: 6px 8px;
-    background: #11141a;
-    border: 1px solid #2e333c;
-    border-radius: 4px;
-    color: #e6e6e6;
+    padding: 6px var(--space-2);
+    background: var(--surface-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
     font: inherit;
     text-align: left;
     cursor: pointer;
@@ -85,77 +79,77 @@ label:last-child {
 
 .cs-trigger:hover,
 .custom-select.open .cs-trigger {
-    border-color: #4a7cff;
+    border-color: var(--border-focus);
 }
 
 .cs-trigger img {
-    width: 36px;
-    height: 50px;
-    object-fit: cover;
-    border-radius: 3px;
-    background: #0a0c10;
+    width: 52px;
+    height: 36px;
+    object-fit: contain;
+    border-radius: var(--radius-xs);
+    background: var(--surface-inset);
     flex-shrink: 0;
 }
 
 .cs-text {
     flex: 1;
-    font-size: 13px;
+    font-size: var(--text-base);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .cs-chevron {
-    color: #6c7588;
+    color: var(--text-dim);
     font-size: 10px;
 }
 
 .cs-options {
     position: absolute;
-    top: calc(100% + 4px);
+    top: calc(100% + var(--space-1));
     left: 0;
     right: 0;
     z-index: 10;
     max-height: 280px;
     overflow-y: auto;
-    background: #11141a;
-    border: 1px solid #4a7cff;
-    border-radius: 4px;
+    background: var(--surface-input);
+    border: 1px solid var(--border-focus);
+    border-radius: var(--radius-sm);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    padding: 4px;
+    padding: var(--space-1);
 }
 
 .cs-option {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     width: 100%;
     padding: 5px 6px;
     background: transparent;
     border: 0;
-    border-radius: 3px;
-    color: #e6e6e6;
+    border-radius: var(--radius-xs);
+    color: var(--text);
     font: inherit;
     text-align: left;
     cursor: pointer;
 }
 
 .cs-option:hover {
-    background: #1f242d;
+    background: var(--surface-hover);
 }
 
 .cs-option img {
-    width: 32px;
-    height: 44px;
-    object-fit: cover;
-    border-radius: 3px;
-    background: #0a0c10;
+    width: 44px;
+    height: 32px;
+    object-fit: contain;
+    border-radius: var(--radius-xs);
+    background: var(--surface-inset);
     flex-shrink: 0;
 }
 
 .cs-option-text {
     flex: 1;
-    font-size: 12px;
+    font-size: var(--text-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -163,21 +157,21 @@ label:last-child {
 
 .cs-divider {
     border: 0;
-    border-top: 1px solid #2e333c;
-    margin: 4px 0;
+    border-top: 1px solid var(--border);
+    margin: var(--space-1) 0;
 }
 
 .empty {
-    background: #11141a;
-    border: 1px dashed #2e333c;
-    border-radius: 6px;
+    background: var(--surface-input);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
     padding: 10px;
-    margin-bottom: 12px;
-    font-size: 12px;
-    color: #a0a8b8;
+    margin-bottom: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: flex-start;
 }
 
@@ -185,15 +179,15 @@ footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    color: #6c7588;
-    border-top: 1px solid #2e333c;
-    padding-top: 8px;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-2);
 }
 
 footer a {
-    color: #4a7cff;
+    color: var(--accent);
     text-decoration: none;
 }
 
@@ -205,44 +199,44 @@ input,
 select {
     display: block;
     width: 100%;
-    margin-top: 4px;
-    padding: 6px 8px;
-    background: #11141a;
-    border: 1px solid #2e333c;
-    border-radius: 4px;
-    color: #e6e6e6;
-    font-size: 13px;
+    margin-top: var(--space-1);
+    padding: 6px var(--space-2);
+    background: var(--surface-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--text-base);
     box-sizing: border-box;
 }
 
 input:focus,
 select:focus {
     outline: none;
-    border-color: #4a7cff;
+    border-color: var(--border-focus);
 }
 
 .actions {
     display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
 }
 
 button {
     flex: 1;
-    padding: 8px 12px;
-    background: #4a7cff;
+    padding: var(--space-2) var(--space-3);
+    background: var(--accent);
     color: #fff;
     border: 0;
-    border-radius: 4px;
-    font-size: 13px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-base);
     font-weight: 600;
     cursor: pointer;
 }
 
 button.secondary {
     background: transparent;
-    border: 1px solid #2e333c;
-    color: #a0a8b8;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
 }
 
 button:hover {
@@ -250,51 +244,25 @@ button:hover {
 }
 
 .status {
-    font-size: 12px;
+    font-size: var(--text-sm);
     min-height: 16px;
-    color: #a0a8b8;
-    margin-bottom: 8px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
 }
 
 .status.error {
-    color: #ff6b6b;
+    color: var(--danger);
 }
 
 .status.success {
-    color: #6bd968;
-}
-
-footer {
-    font-size: 11px;
-    color: #6c7588;
-    border-top: 1px solid #2e333c;
-    padding-top: 8px;
+    color: var(--success);
 }
 
 kbd {
-    font-family: ui-monospace, monospace;
-    background: #11141a;
-    border: 1px solid #2e333c;
-    border-radius: 3px;
-    padding: 1px 4px;
+    font-family: var(--font-mono);
+    background: var(--surface-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 1px var(--space-1);
 }
 
-.home-link {
-    display: block;
-    width: 100%;
-    margin-top: 12px;
-    padding: 8px 12px;
-    background: transparent;
-    color: #a0a8b8;
-    border: 1px solid #2e333c;
-    border-radius: 6px;
-    font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif;
-    cursor: pointer;
-    text-align: center;
-}
-
-.home-link:hover {
-    color: #e6e6e6;
-    border-color: #4a4e56;
-    filter: none;
-}

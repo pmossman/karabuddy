@@ -11,11 +11,11 @@
     const P = () => NS.Playback;
     const R = () => NS.Recorder;
     const B = () => NS.bridge;
+    const D = () => NS.Decoder;
 
     // ----- Panel constants + persisted geometry -----
     const PANEL_WIDTH_MIN = 200;
     const PANEL_WIDTH_DEFAULT = 320;
-    const PANEL_WIDTH_COLLAPSED = 60;
     const PANEL_WIDTH_STORAGE_KEY = 'karabast-replays-panel-width';
     const PANEL_COLLAPSED_STORAGE_KEY = 'karabast-replays-panel-collapsed';
 
@@ -93,18 +93,17 @@
         if (document.getElementById('karabast-replays-frame-styles')) return;
         const style = document.createElement('style');
         style.id = 'karabast-replays-frame-styles';
-        // Two compression strategies for the karabast UI:
+        // Playback (#karabast-replays-frame wrapper exists): position:absolute
+        // so it sizes to viewport minus the sidebar, and transform makes it
+        // the containing block for karabast's position:fixed descendants so
+        // cards don't escape under our sidebar.
         //
-        // 1. Playback (#karabast-replays-frame wrapper exists): position:absolute
-        //    so it sizes to viewport minus the sidebar, and transform makes it
-        //    the containing block for karabast's position:fixed descendants so
-        //    cards don't escape under our sidebar.
-        //
-        // 2. Everywhere else (homepage, lobby, etc.): use body padding-left so
-        //    karabast's normal-flow content gets pushed right. We don't wrap the
-        //    karabast root because that confuses React's reconciler (it holds
-        //    refs to children of body and chokes on insertBefore/removeChild
-        //    when those children have been moved).
+        // Outside playback the sidebar is an OVERLAY — we don't push body
+        // content, because the resulting viewport mismatch causes karabast's
+        // position:fixed modals/popovers to center on the full window and end
+        // up clipped behind the sidebar. The user opens/closes the sidebar
+        // via the floating launcher button (top-left); when open they accept
+        // that karabast's leftmost ~panel-width is covered.
         style.textContent = `
             body.karabast-replays-panel-active > #karabast-replays-frame {
                 position: absolute;
@@ -114,10 +113,6 @@
                 width: calc(100vw - var(--karabast-panel-w, ${PANEL_WIDTH_DEFAULT}px));
                 transform: translateZ(0);
                 overflow: hidden;
-            }
-            body.karabast-replays-panel-active:not(:has(> #karabast-replays-frame)) {
-                padding-left: var(--karabast-panel-w, ${PANEL_WIDTH_DEFAULT}px) !important;
-                box-sizing: border-box;
             }
             @keyframes karabast-rec-pulse {
                 0%, 100% { opacity: 1; }
@@ -159,6 +154,256 @@
         b.setAttribute('style', btnStyle);
         b.addEventListener('click', onClick);
         return b;
+    };
+
+    // ----- Tag UI primitives -----
+    //
+    // buildTagBlock builds: "+ Tag …" button + inline comment editor + list
+    // container. Both recording and playback state use it; the only
+    // differences are the callbacks (which subsystem owns the data) and
+    // whether clicking a tag jumps to its frame (playback only).
+    //
+    // renderTagList(blockEl, tags, currentFrame) repaints the list portion
+    // — called from refreshFooter on each refresh.
+    const buildTagBlock = ({
+        buttonLabel,
+        inputPlaceholder,
+        listId,
+        onSubmit,
+        onDelete,
+        onUpdateComment,
+        onJumpTo,
+        getCurrentAuthor,
+        getPlayerUsernames
+    }) => {
+        const wrap = document.createElement('div');
+        wrap.setAttribute('style', 'display: flex; flex-direction: column; gap: 8px;');
+
+        const form = document.createElement('div');
+        const formLabel = document.createElement('div');
+        const formAuthorDot = document.createElement('span');
+        const formAuthorText = document.createElement('span');
+        const input = document.createElement('textarea');
+
+        const openForm = () => {
+            const author = getCurrentAuthor();
+            const playerUsernames = getPlayerUsernames ? getPlayerUsernames() : null;
+            formAuthorDot.style.background = D().playerColorFor(author, playerUsernames);
+            formAuthorText.textContent = `Tagging as ${author}`;
+            form.style.display = 'flex';
+            input.value = '';
+            setTimeout(() => input.focus(), 0);
+        };
+        const closeForm = () => { form.style.display = 'none'; };
+
+        const addBtn = makeFooterBtn(buttonLabel, () => {
+            if (form.style.display !== 'none') closeForm();
+            else openForm();
+        });
+        addBtn.style.alignSelf = 'flex-start';
+        addBtn.style.background = 'transparent';
+        addBtn.style.border = '1px solid #4a7cff';
+        addBtn.style.color = '#5da9ff';
+
+        form.setAttribute('style', [
+            'display: none',
+            'flex-direction: column',
+            'gap: 6px',
+            'padding: 8px',
+            'background: rgba(74, 124, 255, 0.08)',
+            'border: 1px solid rgba(74, 124, 255, 0.3)',
+            'border-radius: 6px'
+        ].join(';'));
+
+        formLabel.setAttribute('style', 'font-size: 11px; color: #a0a8b8; display: flex; align-items: center; gap: 6px;');
+        formAuthorDot.setAttribute('style', 'display: inline-block; width: 8px; height: 8px; border-radius: 50%;');
+        formLabel.appendChild(formAuthorDot);
+        formLabel.appendChild(formAuthorText);
+
+        input.placeholder = inputPlaceholder;
+        input.rows = 2;
+        input.setAttribute('style', [
+            'background: #11141a',
+            'color: #e6e6e6',
+            'border: 1px solid #2e333c',
+            'border-radius: 4px',
+            'padding: 6px 8px',
+            'font: 12px -apple-system, BlinkMacSystemFont, sans-serif',
+            'resize: vertical',
+            'outline: none',
+            'min-height: 50px'
+        ].join(';'));
+        input.addEventListener('keydown', (e) => {
+            // Cmd/Ctrl+Enter to save; Esc to cancel.
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                onSubmit(input.value.trim());
+                closeForm();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeForm();
+            }
+        });
+
+        const btnRow = document.createElement('div');
+        btnRow.setAttribute('style', 'display: flex; gap: 6px; align-self: flex-end;');
+        const cancelBtn = makeFooterBtn('Cancel', closeForm);
+        cancelBtn.style.background = 'transparent';
+        cancelBtn.style.border = '1px solid #4a4e56';
+        cancelBtn.style.color = '#a0a8b8';
+        const saveBtn = makeFooterBtn('Save tag', () => {
+            onSubmit(input.value.trim());
+            closeForm();
+        });
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(saveBtn);
+
+        form.appendChild(formLabel);
+        form.appendChild(input);
+        form.appendChild(btnRow);
+
+        const list = document.createElement('div');
+        list.id = listId;
+        list.setAttribute('style', 'display: flex; flex-direction: column; gap: 4px;');
+        list._handlers = { onDelete, onUpdateComment, onJumpTo };
+
+        wrap.appendChild(addBtn);
+        wrap.appendChild(form);
+        wrap.appendChild(list);
+        return wrap;
+    };
+
+    const renderTagList = (listEl, tags, currentFrame, currentAuthor, playerUsernames) => {
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        if (!tags || tags.length === 0) {
+            const empty = document.createElement('div');
+            empty.setAttribute('style', 'font-size: 11px; color: #6c7588; font-style: italic; padding: 4px 0;');
+            empty.textContent = 'No tags yet.';
+            listEl.appendChild(empty);
+            return;
+        }
+        const handlers = listEl._handlers || {};
+        // Sort by frameIndex for a natural chronological reading order.
+        const sorted = [...tags].sort((a, b) => a.frameIndex - b.frameIndex);
+        for (const tag of sorted) {
+            const row = document.createElement('div');
+            const isCurrent = tag.frameIndex === currentFrame;
+            const isOwn = tag.author === currentAuthor;
+            const color = D().playerColorFor(tag.author, playerUsernames);
+            // Non-current-frame tags fade like log history entries — only
+            // the one(s) anchored at the current frame are at full prominence.
+            const opacity = isCurrent ? '1' : '0.45';
+            row.setAttribute('style', [
+                'display: grid',
+                'grid-template-columns: 4px 1fr auto',
+                'gap: 8px',
+                'padding: 6px 8px',
+                'border-radius: 4px',
+                'background: ' + (isCurrent ? 'rgba(74, 124, 255, 0.12)' : 'rgba(255, 255, 255, 0.025)'),
+                'border-left: 3px solid ' + color,
+                'opacity: ' + opacity,
+                'cursor: ' + (handlers.onJumpTo ? 'pointer' : 'default')
+            ].join(';'));
+            if (handlers.onJumpTo) {
+                row.addEventListener('click', () => handlers.onJumpTo(tag.frameIndex));
+            }
+
+            const _gutter = document.createElement('span'); // empty filler for the 4px column
+            row.appendChild(_gutter);
+
+            const body = document.createElement('div');
+            body.setAttribute('style', 'display: flex; flex-direction: column; gap: 2px; min-width: 0;');
+            const head = document.createElement('div');
+            head.setAttribute('style', 'display: flex; align-items: center; gap: 8px; font-size: 11px; color: #a0a8b8;');
+            const author = document.createElement('span');
+            author.setAttribute('style', `color: ${color}; font-weight: 600;`);
+            author.textContent = tag.author;
+            const sep = document.createElement('span');
+            sep.textContent = '·';
+            sep.style.color = '#4a4e56';
+            const frameRef = document.createElement('span');
+            frameRef.textContent = `frame ${tag.frameIndex + 1}`;
+            head.appendChild(author);
+            head.appendChild(sep);
+            head.appendChild(frameRef);
+            body.appendChild(head);
+
+            // Comment — editable in place for own tags. Click to edit.
+            const comment = document.createElement('div');
+            comment.setAttribute('style', 'font-size: 12px; color: #d6d6d6; line-height: 1.35; word-wrap: break-word; white-space: pre-wrap;');
+            comment.textContent = tag.comment || (isOwn ? '(click to add comment)' : '(no comment)');
+            if (!tag.comment && !isOwn) comment.style.color = '#6c7588';
+            else if (!tag.comment && isOwn) comment.style.color = '#6c7588';
+            if (isOwn && handlers.onUpdateComment) {
+                comment.style.cursor = 'text';
+                comment.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const ta = document.createElement('textarea');
+                    ta.value = tag.comment || '';
+                    ta.rows = 2;
+                    ta.setAttribute('style', [
+                        'width: 100%',
+                        'box-sizing: border-box',
+                        'background: #11141a',
+                        'color: #e6e6e6',
+                        'border: 1px solid #4a7cff',
+                        'border-radius: 4px',
+                        'padding: 4px 6px',
+                        'font: 12px -apple-system, BlinkMacSystemFont, sans-serif',
+                        'resize: vertical',
+                        'outline: none'
+                    ].join(';'));
+                    const finish = (save) => {
+                        if (save) handlers.onUpdateComment(tag.id, ta.value.trim());
+                        else renderTagList(listEl, tags, currentFrame, currentAuthor, playerUsernames);
+                    };
+                    ta.addEventListener('keydown', (ev) => {
+                        if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+                            ev.preventDefault();
+                            finish(true);
+                        } else if (ev.key === 'Escape') {
+                            ev.preventDefault();
+                            finish(false);
+                        }
+                    });
+                    ta.addEventListener('blur', () => finish(true));
+                    comment.replaceWith(ta);
+                    ta.focus();
+                    ta.select();
+                });
+            }
+            body.appendChild(comment);
+            row.appendChild(body);
+
+            const actions = document.createElement('div');
+            actions.setAttribute('style', 'display: flex; align-items: flex-start;');
+            if (isOwn && handlers.onDelete) {
+                const del = document.createElement('button');
+                del.type = 'button';
+                del.textContent = '✕';
+                del.title = 'Delete this tag';
+                del.setAttribute('style', [
+                    'background: transparent',
+                    'border: 0',
+                    'color: #6c7588',
+                    'cursor: pointer',
+                    'padding: 0 4px',
+                    'font: 13px -apple-system, BlinkMacSystemFont, sans-serif',
+                    'line-height: 1'
+                ].join(';'));
+                del.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handlers.onDelete(tag.id);
+                });
+                del.addEventListener('mouseenter', () => { del.style.color = '#ff6b6b'; });
+                del.addEventListener('mouseleave', () => { del.style.color = '#6c7588'; });
+                actions.appendChild(del);
+            }
+            row.appendChild(actions);
+
+            listEl.appendChild(row);
+        }
     };
 
     // ----- Full footer DOM construction -----
@@ -224,129 +469,7 @@
             'z-index: 2'
         ].join(';'));
         collapseBtn.textContent = '◀';
-        collapseBtn.addEventListener('click', () => setPanelCollapsed(!P().replayState.panelCollapsed));
-
-        // Collapsed mode: minimal control stack (data-when-collapsed)
-        const collapsedStack = document.createElement('div');
-        collapsedStack.dataset.whenCollapsed = '1';
-        collapsedStack.setAttribute('style', [
-            'position: absolute',
-            'top: 50%',
-            'left: 0',
-            'right: 0',
-            'transform: translateY(-50%)',
-            'display: none',
-            'flex-direction: column',
-            'align-items: center',
-            'gap: 14px',
-            'padding: 8px 0'
-        ].join(';'));
-
-        const makeMiniBtn = (text, onClick) => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.textContent = text;
-            b.setAttribute('style', [
-                'background: #4a7cff',
-                'color: white',
-                'border: 0',
-                'border-radius: 4px',
-                'width: 32px',
-                'height: 26px',
-                'padding: 0',
-                'font: 600 13px -apple-system, BlinkMacSystemFont, sans-serif',
-                'cursor: pointer',
-                'line-height: 1',
-                'display: inline-flex',
-                'align-items: center',
-                'justify-content: center'
-            ].join(';'));
-            b.addEventListener('click', onClick);
-            return b;
-        };
-
-        // Playback collapsed-controls: arrows, frame counter, mode label.
-        const cPlaybackPrev = makeMiniBtn('←', () => P().advance(-1));
-        cPlaybackPrev.dataset.showState = 'playback';
-        const cPlaybackNext = makeMiniBtn('→', () => P().advance(1));
-        cPlaybackNext.dataset.showState = 'playback';
-
-        const cFrameGroup = document.createElement('div');
-        cFrameGroup.dataset.showState = 'playback';
-        cFrameGroup.setAttribute('style', 'display: flex; flex-direction: column; align-items: center; gap: 2px;');
-        const cFrameSub = document.createElement('div');
-        cFrameSub.setAttribute('style', 'font-size: 8px; color: #6c7588; text-transform: uppercase; letter-spacing: 0.06em;');
-        cFrameSub.textContent = 'Frame';
-        const cFrameLabel = document.createElement('div');
-        cFrameLabel.id = 'karabast-replays-collapsed-frame';
-        cFrameLabel.setAttribute('style', 'font-size: 11px; color: #d6d6d6; text-align: center; line-height: 1.1; font-weight: 600;');
-        cFrameGroup.appendChild(cFrameSub);
-        cFrameGroup.appendChild(cFrameLabel);
-
-        const cModeGroup = document.createElement('div');
-        cModeGroup.dataset.showState = 'playback';
-        cModeGroup.setAttribute('style', 'display: flex; flex-direction: column; align-items: center; gap: 2px;');
-        const cModeSub = document.createElement('div');
-        cModeSub.setAttribute('style', 'font-size: 8px; color: #6c7588; text-transform: uppercase; letter-spacing: 0.06em;');
-        cModeSub.textContent = 'Step';
-        const cModeLabel = document.createElement('div');
-        cModeLabel.id = 'karabast-replays-collapsed-mode';
-        cModeLabel.setAttribute('style', 'font-size: 11px; color: #d6d6d6; text-align: center; font-weight: 600;');
-        cModeGroup.appendChild(cModeSub);
-        cModeGroup.appendChild(cModeLabel);
-
-        // Recording collapsed-indicator: pulsing red dot + event count.
-        const cRecGroup = document.createElement('div');
-        cRecGroup.dataset.showState = 'recording';
-        cRecGroup.setAttribute('style', 'display: flex; flex-direction: column; align-items: center; gap: 4px;');
-        const cRecDot = document.createElement('span');
-        cRecDot.setAttribute('style', 'display: block; width: 10px; height: 10px; border-radius: 50%; background: #ff4040; box-shadow: 0 0 6px #ff4040; animation: karabast-rec-pulse 1.4s ease-in-out infinite;');
-        const cRecLabel = document.createElement('div');
-        cRecLabel.setAttribute('style', 'font-size: 9px; color: #d6d6d6; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;');
-        cRecLabel.textContent = 'REC';
-        const cRecCount = document.createElement('div');
-        cRecCount.id = 'karabast-replays-collapsed-rec-count';
-        cRecCount.setAttribute('style', 'font-size: 10px; color: #6c7588;');
-        cRecGroup.appendChild(cRecDot);
-        cRecGroup.appendChild(cRecLabel);
-        cRecGroup.appendChild(cRecCount);
-
-        // Idle collapsed: just the brand mark; the expand arrow above is enough cue.
-        const cIdleMark = document.createElement('div');
-        cIdleMark.dataset.showState = 'idle';
-        cIdleMark.setAttribute('style', 'font-size: 9px; color: #6c7588; text-transform: uppercase; letter-spacing: 0.1em; writing-mode: vertical-rl; transform: rotate(180deg);');
-        cIdleMark.textContent = 'Replays';
-
-        // Solo collapsed indicator: small Side N pill + a swap mini-button.
-        const cSoloGroup = document.createElement('div');
-        cSoloGroup.dataset.showState = 'solo';
-        cSoloGroup.setAttribute('style', 'display: flex; flex-direction: column; align-items: center; gap: 8px;');
-        const cSoloBadge = document.createElement('div');
-        cSoloBadge.setAttribute('style', [
-            'background: #4a7cff',
-            'color: white',
-            'font: 700 10px -apple-system, BlinkMacSystemFont, sans-serif',
-            'padding: 3px 8px',
-            'border-radius: 999px',
-            'letter-spacing: 0.05em'
-        ].join(';'));
-        cSoloBadge.textContent = SOLO_SIDE ? SOLO_SIDE : '?';
-        const cSoloSwap = makeMiniBtn('⇄', () => {
-            window.dispatchEvent(new CustomEvent('karabast-companion-action', {
-                detail: { type: 'swapFocus' }
-            }));
-        });
-        cSoloSwap.title = 'Swap to other window';
-        cSoloGroup.appendChild(cSoloBadge);
-        cSoloGroup.appendChild(cSoloSwap);
-
-        collapsedStack.appendChild(cPlaybackPrev);
-        collapsedStack.appendChild(cPlaybackNext);
-        collapsedStack.appendChild(cFrameGroup);
-        collapsedStack.appendChild(cModeGroup);
-        collapsedStack.appendChild(cRecGroup);
-        collapsedStack.appendChild(cIdleMark);
-        collapsedStack.appendChild(cSoloGroup);
+        collapseBtn.addEventListener('click', () => setPanelCollapsed(true));
 
         // Hidden file input (always present, triggered by Load buttons across states)
         const fileInput = document.createElement('input');
@@ -363,7 +486,6 @@
 
         // Header — always-visible title + state-conditional content below.
         const header = document.createElement('div');
-        header.dataset.collapsible = '1';
         header.setAttribute('style', [
             'padding: 16px 22px 12px',
             'border-bottom: 1px solid #2e333c',
@@ -373,9 +495,44 @@
             'flex: 0 0 auto'
         ].join(';'));
 
+        // Logo: "KARA" mirrors the karabast.net wordmark (heavy uppercase sans);
+        // "buddy" is our own voice — Georgia italic in accent blue — to read as
+        // a companion mark, not a clone.
         const title = document.createElement('div');
-        title.setAttribute('style', 'font-size: 13px; color: #d6d6d6; font-weight: 700; letter-spacing: 0.02em; padding-right: 28px; margin-bottom: 6px;');
-        title.textContent = 'KaraBuddy';
+        title.setAttribute('style', [
+            'display: flex',
+            'flex-direction: column',
+            'line-height: 0.95',
+            'padding-right: 28px',
+            'margin-bottom: 10px',
+            'user-select: none'
+        ].join(';'));
+
+        const titleMain = document.createElement('div');
+        titleMain.setAttribute('style', [
+            // Match karabast.net's wordmark: Barlow regular (weight 400),
+            // not bold. The --font-barlow CSS variable is set on <html>
+            // by their Next.js font loader, so it's available to our
+            // content-script-injected DOM for free.
+            'font: 400 34px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
+            'color: #ffffff',
+            'letter-spacing: 0',
+            'text-transform: uppercase'
+        ].join(';'));
+        titleMain.textContent = 'KARA';
+
+        const titleSub = document.createElement('div');
+        titleSub.setAttribute('style', [
+            'font: italic 600 24px Georgia, "Times New Roman", serif',
+            'color: #5a8cff',
+            'letter-spacing: -0.005em',
+            'margin-left: 42px',
+            'margin-top: -2px'
+        ].join(';'));
+        titleSub.textContent = 'buddy';
+
+        title.appendChild(titleMain);
+        title.appendChild(titleSub);
 
         // --- Idle state: replays + saved replays + solo entry.
         const idleSection = document.createElement('div');
@@ -443,9 +600,32 @@
         soloGroup.appendChild(soloDesc);
         soloGroup.appendChild(soloStartBtn);
 
+        // Account group — one-time setup to link this extension install to
+        // a karabuddy account. Bridges anonymous extension uploads into a
+        // signed-in user's "My replays" list, and makes future uploads
+        // auto-attribute.
+        const accountGroup = document.createElement('div');
+        accountGroup.setAttribute('style', sectionStyle + 'border-top: 1px solid #2e333c;');
+        const accountLabel = document.createElement('div');
+        accountLabel.setAttribute('style', sectionLabelStyle);
+        accountLabel.textContent = 'Account';
+        const accountDesc = document.createElement('div');
+        accountDesc.setAttribute('style', 'font-size: 12px; color: #a0a8b8; line-height: 1.5;');
+        accountDesc.textContent = 'Link this extension to your karabuddy account so uploaded replays appear under your name.';
+        const linkAccountBtn = makeFooterBtn('Link to karabuddy', () => {
+            B().openKarabuddyClaim().catch((err) =>
+                console.error('[karabuddy] failed to open claim:', err)
+            );
+        });
+        linkAccountBtn.style.alignSelf = 'flex-start';
+        accountGroup.appendChild(accountLabel);
+        accountGroup.appendChild(accountDesc);
+        accountGroup.appendChild(linkAccountBtn);
+
         idleSection.appendChild(replaysGroup);
         idleSection.appendChild(recentGroup);
         idleSection.appendChild(soloGroup);
+        idleSection.appendChild(accountGroup);
 
         // --- Solo state: this window is one of the two solo-session tabs.
         const soloSection = document.createElement('div');
@@ -481,9 +661,8 @@
         soloSwapBtn.style.padding = '8px 12px';
         soloSwapBtn.style.fontSize = '13px';
 
-        const soloFooterRow = document.createElement('div');
-        soloFooterRow.setAttribute('style', 'display: flex; flex-direction: column; gap: 6px;');
-
+        // "Stop session" moved to the contextual footer exit button so we
+        // don't render two exits for the same state.
         const soloNewSessionBtn = makeFooterBtn('Configure new session…', () => {
             window.dispatchEvent(new CustomEvent('karabast-companion-action', {
                 detail: { type: 'openOptions' }
@@ -494,28 +673,14 @@
         soloNewSessionBtn.style.color = '#a0a8b8';
         soloNewSessionBtn.style.whiteSpace = 'nowrap';
 
-        const soloStopBtn = makeFooterBtn('Stop session', () => {
-            if (!confirm('Stop the solo session? Both windows will close.')) return;
-            window.dispatchEvent(new CustomEvent('karabast-companion-action', {
-                detail: { type: 'stopSession' }
-            }));
-        });
-        soloStopBtn.style.background = 'transparent';
-        soloStopBtn.style.border = '1px solid #5a2a2a';
-        soloStopBtn.style.color = '#ff6b6b';
-        soloStopBtn.style.whiteSpace = 'nowrap';
-
-        soloFooterRow.appendChild(soloNewSessionBtn);
-        soloFooterRow.appendChild(soloStopBtn);
-
         soloSection.appendChild(soloSideCard);
         soloSection.appendChild(soloSwapBtn);
-        soloSection.appendChild(soloFooterRow);
+        soloSection.appendChild(soloNewSessionBtn);
 
-        // --- Recording state: REC indicator + event count + download/load row.
+        // --- Recording state: REC status + tagging controls.
         const recSection = document.createElement('div');
         recSection.dataset.showState = 'recording';
-        recSection.setAttribute('style', 'display: flex; flex-direction: column; gap: 10px;');
+        recSection.setAttribute('style', 'display: flex; flex-direction: column; gap: 12px;');
         const recStatus = document.createElement('div');
         recStatus.setAttribute('style', 'display: flex; align-items: center; gap: 8px; font-size: 13px; color: #d6d6d6; font-weight: 600;');
         const recDot = document.createElement('span');
@@ -527,16 +692,22 @@
         recStatus.appendChild(recLabel);
         const recHint = document.createElement('div');
         recHint.setAttribute('style', 'font-size: 11px; color: #6c7588; line-height: 1.4;');
-        recHint.textContent = 'Saved to the replay browser when the game ends. Use Download to grab a file for sharing.';
-        const recBtnRow = document.createElement('div');
-        recBtnRow.setAttribute('style', 'display: flex; gap: 6px; flex-wrap: wrap;');
-        const recDownloadBtn = makeFooterBtn('Download', () => R().download('manual'));
-        const recLoadBtn = makeFooterBtn('Load replay…', triggerLoad);
-        recBtnRow.appendChild(recDownloadBtn);
-        recBtnRow.appendChild(recLoadBtn);
+        recHint.textContent = 'Saved to the replay browser when the game ends.';
+        const recTagBlock = buildTagBlock({
+            buttonLabel: '+ Tag moment',
+            inputPlaceholder: 'Optional comment for this moment…',
+            listId: 'karabast-replays-rec-tag-list',
+            onSubmit: (comment) => R().addTag(comment),
+            onDelete: (id) => R().deleteTag(id),
+            onUpdateComment: (id, comment) => R().updateTagComment(id, comment),
+            // No jump-to-frame in recording (we're at the head).
+            onJumpTo: null,
+            getCurrentAuthor: () => D().getOrCreateAuthor(R().getCurrentPlayers()),
+            getPlayerUsernames: () => R().getPlayerUsernames()
+        });
         recSection.appendChild(recStatus);
         recSection.appendChild(recHint);
-        recSection.appendChild(recBtnRow);
+        recSection.appendChild(recTagBlock);
 
         // --- Playback state: frame counter + step controls + mode segmented control.
         const playbackSection = document.createElement('div');
@@ -552,6 +723,30 @@
         btnRow.appendChild(makeFooterBtn('←', () => P().advance(-1)));
         btnRow.appendChild(makeFooterBtn('→', () => P().advance(1)));
         btnRow.appendChild(makeFooterBtn('Load…', triggerLoad));
+
+        // Tag nav row: jump to prev/next tag + download annotated file.
+        const tagNavRow = document.createElement('div');
+        tagNavRow.setAttribute('style', 'display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px;');
+        const prevTagBtn = makeFooterBtn('‹ Prev tag', () => P().jumpToAdjacentTag(-1));
+        prevTagBtn.id = 'karabast-replays-prev-tag';
+        prevTagBtn.title = 'Jump to the previous tag ([)';
+        prevTagBtn.style.background = 'transparent';
+        prevTagBtn.style.border = '1px solid #4a4e56';
+        prevTagBtn.style.color = '#a0a8b8';
+        const nextTagBtn = makeFooterBtn('Next tag ›', () => P().jumpToAdjacentTag(1));
+        nextTagBtn.id = 'karabast-replays-next-tag';
+        nextTagBtn.title = 'Jump to the next tag (])';
+        nextTagBtn.style.background = 'transparent';
+        nextTagBtn.style.border = '1px solid #4a4e56';
+        nextTagBtn.style.color = '#a0a8b8';
+        const downloadBtn = makeFooterBtn('⬇ Download', () => P().downloadCurrent());
+        downloadBtn.title = 'Download this replay (with any tags you added)';
+        downloadBtn.style.background = 'transparent';
+        downloadBtn.style.border = '1px solid #4a4e56';
+        downloadBtn.style.color = '#a0a8b8';
+        tagNavRow.appendChild(prevTagBtn);
+        tagNavRow.appendChild(nextTagBtn);
+        tagNavRow.appendChild(downloadBtn);
 
         const modeSeg = document.createElement('div');
         modeSeg.id = 'karabast-replays-footer-mode-seg';
@@ -596,9 +791,23 @@
         stepBlock.appendChild(modeSeg);
         stepBlock.appendChild(stepHint);
 
+        const playbackTagBlock = buildTagBlock({
+            buttonLabel: '+ Tag this frame',
+            inputPlaceholder: 'Your note about this moment…',
+            listId: 'karabast-replays-playback-tag-list',
+            onSubmit: (comment) => P().addTag(comment),
+            onDelete: (id) => P().deleteTag(id),
+            onUpdateComment: (id, comment) => P().updateTagComment(id, comment),
+            onJumpTo: (i) => P().jumpTo(i),
+            getCurrentAuthor: () => D().getOrCreateAuthor(P().getCurrentPlayers()),
+            getPlayerUsernames: () => P().getPlayerUsernames()
+        });
+
         playbackSection.appendChild(frameLabel);
         playbackSection.appendChild(btnRow);
+        playbackSection.appendChild(tagNavRow);
         playbackSection.appendChild(stepBlock);
+        playbackSection.appendChild(playbackTagBlock);
 
         header.appendChild(title);
         header.appendChild(idleSection);
@@ -610,7 +819,6 @@
         // Body: log (only meaningful in playback).
         const panel = document.createElement('div');
         panel.id = 'karabast-replays-footer-panel';
-        panel.dataset.collapsible = '1';
         panel.dataset.showState = 'playback';
         panel.setAttribute('style', [
             'flex: 1 1 auto',
@@ -625,10 +833,17 @@
         logHeader.id = 'karabast-replays-footer-log-header';
         logHeader.setAttribute('style', 'font-size: 11px; color: #6c7588; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;');
         logHeader.textContent = 'What happened at this frame';
+        // Tag callout — rendered above the log when the current frame has
+        // any tags. Populated in refreshFooter from replayState.tags.
+        const tagCallout = document.createElement('div');
+        tagCallout.id = 'karabast-replays-tag-callout';
+        tagCallout.setAttribute('style', 'display: none; flex-direction: column; gap: 6px; margin-bottom: 10px;');
+
         const logBody = document.createElement('div');
         logBody.id = 'karabast-replays-footer-log';
         logBody.setAttribute('style', 'display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.4;');
 
+        panel.appendChild(tagCallout);
         panel.appendChild(logHeader);
         panel.appendChild(logBody);
 
@@ -637,11 +852,11 @@
         preview.id = 'karabast-replays-footer-preview';
         preview.style.display = 'none';
 
-        // Persistent footer bar — back to karabast home regardless of state.
-        const goHome = () => { location.href = `${location.origin}/`; };
-
+        // Contextual exit bar — only shown in playback / solo. Label and
+        // action are wired in refreshFooter() based on currentPanelState().
+        // Idle and recording states get no footer (nothing meaningful to exit).
         const footerBar = document.createElement('div');
-        footerBar.dataset.collapsible = '1';
+        footerBar.dataset.showState = 'playback solo';
         footerBar.setAttribute('style', [
             'padding: 10px 22px',
             'border-top: 1px solid #2e333c',
@@ -652,11 +867,10 @@
             'align-items: center',
             'justify-content: flex-start'
         ].join(';'));
-        const homeBtn = document.createElement('button');
-        homeBtn.type = 'button';
-        homeBtn.title = 'Go to karabast.net home';
-        homeBtn.textContent = '← Karabast home';
-        homeBtn.setAttribute('style', [
+        const exitBtn = document.createElement('button');
+        exitBtn.id = 'karabast-replays-footer-exit';
+        exitBtn.type = 'button';
+        exitBtn.setAttribute('style', [
             'background: transparent',
             'color: #a0a8b8',
             'border: 0',
@@ -664,43 +878,12 @@
             'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif',
             'cursor: pointer'
         ].join(';'));
-        homeBtn.addEventListener('mouseenter', () => { homeBtn.style.color = '#e6e6e6'; });
-        homeBtn.addEventListener('mouseleave', () => { homeBtn.style.color = '#a0a8b8'; });
-        homeBtn.addEventListener('click', goHome);
-        footerBar.appendChild(homeBtn);
-
-        // Collapsed-mode home button — pinned to bottom-center.
-        const collapsedHome = document.createElement('button');
-        collapsedHome.dataset.whenCollapsed = '1';
-        collapsedHome.type = 'button';
-        collapsedHome.title = 'Go to karabast.net home';
-        collapsedHome.textContent = '←';
-        collapsedHome.setAttribute('style', [
-            'position: absolute',
-            'bottom: 10px',
-            'left: 50%',
-            'transform: translateX(-50%)',
-            'display: none',
-            'background: transparent',
-            'color: #a0a8b8',
-            'border: 1px solid #4a4e56',
-            'border-radius: 4px',
-            'width: 32px',
-            'height: 26px',
-            'padding: 0',
-            'font: 600 13px -apple-system, BlinkMacSystemFont, sans-serif',
-            'cursor: pointer',
-            'align-items: center',
-            'justify-content: center'
-        ].join(';'));
-        collapsedHome.addEventListener('mouseenter', () => { collapsedHome.style.color = '#e6e6e6'; collapsedHome.style.borderColor = '#7a8090'; });
-        collapsedHome.addEventListener('mouseleave', () => { collapsedHome.style.color = '#a0a8b8'; collapsedHome.style.borderColor = '#4a4e56'; });
-        collapsedHome.addEventListener('click', goHome);
+        exitBtn.addEventListener('mouseenter', () => { exitBtn.style.color = '#e6e6e6'; });
+        exitBtn.addEventListener('mouseleave', () => { exitBtn.style.color = '#a0a8b8'; });
+        footerBar.appendChild(exitBtn);
 
         el.appendChild(handle);
         el.appendChild(collapseBtn);
-        el.appendChild(collapsedStack);
-        el.appendChild(collapsedHome);
         el.appendChild(header);
         el.appendChild(panel);
         el.appendChild(footerBar);
@@ -713,27 +896,17 @@
     const applyPanelLayout = () => {
         const rs = P().replayState;
         const collapsed = !!rs.panelCollapsed;
-        const w = collapsed
-            ? PANEL_WIDTH_COLLAPSED
-            : (rs.panelWidth || PANEL_WIDTH_DEFAULT);
+        const w = rs.panelWidth || PANEL_WIDTH_DEFAULT;
         const el = document.getElementById('karabast-replays-footer');
         if (el) {
             el.style.width = w + 'px';
-            const state = el.dataset.state || 'idle';
-            for (const c of el.querySelectorAll('[data-collapsible]')) {
-                const stateOk = !c.dataset.showState
-                    || c.dataset.showState.split(/\s+/).includes(state);
-                c.style.display = (collapsed || !stateOk) ? 'none' : '';
-            }
-            for (const c of el.querySelectorAll('[data-when-collapsed]')) {
-                c.style.display = collapsed ? 'flex' : 'none';
-            }
-            const handle = document.getElementById('karabast-replays-footer-handle');
-            if (handle) handle.style.display = collapsed ? 'none' : '';
-            const collapseBtn = document.getElementById('karabast-replays-collapse-btn');
-            if (collapseBtn) collapseBtn.textContent = collapsed ? '▶' : '◀';
+            el.style.display = collapsed ? 'none' : 'flex';
         }
-        document.documentElement.style.setProperty('--karabast-panel-w', w + 'px');
+        const launcher = document.getElementById('karabast-replays-launcher');
+        if (launcher) launcher.style.display = collapsed ? 'flex' : 'none';
+        // Zero out the panel-width var when collapsed so the playback frame
+        // (width: 100vw - --karabast-panel-w) stretches edge-to-edge.
+        document.documentElement.style.setProperty('--karabast-panel-w', (collapsed ? 0 : w) + 'px');
     };
     const setExpandedPanelWidth = (w) => {
         const rs = P().replayState;
@@ -767,10 +940,108 @@
         persistPanelWidth();
     });
 
+    // Floating "open sidebar" button — shown only when the sidebar is collapsed.
+    // Sits at top-left so the user always has a way back to KaraBuddy without
+    // the sidebar permanently occupying screen real estate. The mark mirrors
+    // the logo (bold K, italic b) so the launcher reads as KaraBuddy at a
+    // glance, with a gear badge to signal "click to toggle".
+    const buildLauncher = () => {
+        const b = document.createElement('button');
+        b.id = 'karabast-replays-launcher';
+        b.type = 'button';
+        b.title = 'Open KaraBuddy';
+        b.setAttribute('style', [
+            'position: fixed',
+            'top: 10px',
+            'left: 10px',
+            'z-index: 2147483646',
+            'width: 42px',
+            'height: 42px',
+            'border-radius: 10px',
+            'background: linear-gradient(140deg, #243044 0%, #1a1d23 100%)',
+            'border: 1px solid rgba(74, 124, 255, 0.5)',
+            'padding: 0',
+            'cursor: pointer',
+            'box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0,0,0,0.3)',
+            'display: none',
+            'align-items: center',
+            'justify-content: center',
+            'transition: transform 120ms ease, border-color 120ms ease'
+        ].join(';'));
+        b.addEventListener('mouseenter', () => {
+            b.style.transform = 'scale(1.06)';
+            b.style.borderColor = 'rgba(90, 140, 255, 0.85)';
+        });
+        b.addEventListener('mouseleave', () => {
+            b.style.transform = '';
+            b.style.borderColor = 'rgba(74, 124, 255, 0.5)';
+        });
+
+        // Tiny stacked KARA/buddy — same DNA as the full header logo,
+        // shrunk to fit the launcher. Avoids "Kb" since karabast already
+        // uses that as its own shorthand.
+        const mono = document.createElement('span');
+        mono.setAttribute('style', [
+            'display: flex',
+            'flex-direction: column',
+            'align-items: flex-start',
+            'line-height: 0.95',
+            'padding: 0 4px'
+        ].join(';'));
+
+        const monoMain = document.createElement('span');
+        monoMain.setAttribute('style', [
+            'font: 400 12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
+            'color: #ffffff',
+            'letter-spacing: 0',
+            'text-transform: uppercase'
+        ].join(';'));
+        monoMain.textContent = 'KARA';
+
+        const monoSub = document.createElement('span');
+        monoSub.setAttribute('style', [
+            'font: italic 700 10px Georgia, "Times New Roman", serif',
+            'color: #5a8cff',
+            'letter-spacing: -0.01em',
+            'margin-left: 6px',
+            'margin-top: -1px'
+        ].join(';'));
+        monoSub.textContent = 'buddy';
+
+        mono.appendChild(monoMain);
+        mono.appendChild(monoSub);
+
+        // Recording badge: pulsing red dot in bottom-right corner. Only
+        // visible while the recorder is active. Useful when the user has
+        // collapsed the sidebar mid-game — otherwise they'd have no way to
+        // know a recording is still capturing.
+        const recDot = document.createElement('span');
+        recDot.id = 'karabast-replays-launcher-rec';
+        recDot.setAttribute('style', [
+            'position: absolute',
+            'bottom: -3px',
+            'right: -3px',
+            'width: 12px',
+            'height: 12px',
+            'border-radius: 50%',
+            'background: #ff4040',
+            'box-shadow: 0 0 6px #ff4040',
+            'border: 2px solid #11141a',
+            'display: none',
+            'animation: karabast-rec-pulse 1.4s ease-in-out infinite'
+        ].join(';'));
+
+        b.appendChild(mono);
+        b.appendChild(recDot);
+        b.addEventListener('click', () => setPanelCollapsed(false));
+        return b;
+    };
+
     const installFooter = () => {
         if (!document.body) return;
         if (document.getElementById('karabast-replays-footer')) return;
         document.body.appendChild(buildFooter());
+        document.body.appendChild(buildLauncher());
         document.body.classList.add('karabast-replays-panel-active');
         installFrame();
         refreshFooter();
@@ -797,7 +1068,7 @@
         el.style.display = 'flex';
         document.body.classList.add('karabast-replays-panel-active');
 
-        // Show/hide state-conditional sections (header, body, collapsed children).
+        // Show/hide state-conditional sections (header, body, footer).
         const state = currentPanelState();
         el.dataset.state = state;
         for (const c of el.querySelectorAll('[data-show-state]')) {
@@ -805,12 +1076,103 @@
             c.style.display = states.includes(state) ? '' : 'none';
         }
 
-        // Recording-state labels.
+        // Recording-state label.
         const recCount = R().getRecordingLength();
         const recLabel = document.getElementById('karabast-replays-footer-rec-label');
         if (recLabel) recLabel.textContent = `Recording — ${recCount} events`;
-        const cRecCount = document.getElementById('karabast-replays-collapsed-rec-count');
-        if (cRecCount) cRecCount.textContent = String(recCount);
+
+        // Launcher recording badge — visible whenever the recorder is
+        // active, regardless of whether the launcher itself is currently
+        // shown (it'll appear the moment the user collapses the sidebar).
+        const launcherRec = document.getElementById('karabast-replays-launcher-rec');
+        if (launcherRec) launcherRec.style.display = state === 'recording' ? 'block' : 'none';
+
+        // Repaint tag lists based on which state's section is visible.
+        // Author resolution uses live players from whichever subsystem owns
+        // the data so tags created under a real karabast username register
+        // as own-author for edit/delete affordances. Color is derived from
+        // the player roster (green = player, yellow = reviewer).
+        if (state === 'recording') {
+            const currentAuthor = D().getOrCreateAuthor(R().getCurrentPlayers());
+            const playerUsernames = R().getPlayerUsernames();
+            const recList = document.getElementById('karabast-replays-rec-tag-list');
+            renderTagList(recList, R().getTags(), R().getCurrentFrameIndex(), currentAuthor, playerUsernames);
+        } else if (state === 'playback') {
+            const currentAuthor = D().getOrCreateAuthor(P().getCurrentPlayers());
+            const playerUsernames = P().getPlayerUsernames();
+            const pbList = document.getElementById('karabast-replays-playback-tag-list');
+            const pbTags = P().replayState.tags;
+            const pbFrame = P().replayState.currentIndex;
+            renderTagList(pbList, pbTags, pbFrame, currentAuthor, playerUsernames);
+
+            // Prev/Next tag button enabled state — visually dim when there's
+            // nothing to navigate to in that direction.
+            const sortedFrames = pbTags.map((t) => t.frameIndex).sort((a, b) => a - b);
+            const hasPrev = sortedFrames.some((i) => i < pbFrame);
+            const hasNext = sortedFrames.some((i) => i > pbFrame);
+            const prevBtn = document.getElementById('karabast-replays-prev-tag');
+            const nextBtn = document.getElementById('karabast-replays-next-tag');
+            if (prevBtn) prevBtn.style.opacity = hasPrev ? '1' : '0.4';
+            if (nextBtn) nextBtn.style.opacity = hasNext ? '1' : '0.4';
+
+            // Current-frame tag callout: full-size display of any tag(s)
+            // anchored at the current playback frame, rendered above the log.
+            const callout = document.getElementById('karabast-replays-tag-callout');
+            if (callout) {
+                callout.innerHTML = '';
+                const atFrame = pbTags.filter((t) => t.frameIndex === pbFrame);
+                if (atFrame.length === 0) {
+                    callout.style.display = 'none';
+                } else {
+                    callout.style.display = 'flex';
+                    for (const tag of atFrame) {
+                        const tagColor = D().playerColorFor(tag.author, playerUsernames);
+                        const card = document.createElement('div');
+                        card.setAttribute('style', [
+                            'padding: 8px 10px',
+                            'border-radius: 6px',
+                            'background: rgba(255, 255, 255, 0.04)',
+                            'border-left: 4px solid ' + tagColor,
+                            'display: flex',
+                            'flex-direction: column',
+                            'gap: 4px'
+                        ].join(';'));
+                        const head = document.createElement('div');
+                        head.setAttribute('style', `font: 600 11px -apple-system, BlinkMacSystemFont, sans-serif; color: ${tagColor}; text-transform: uppercase; letter-spacing: 0.05em;`);
+                        head.textContent = `${tag.author}'s note`;
+                        const body = document.createElement('div');
+                        body.setAttribute('style', 'font-size: 13px; color: #e6e6e6; line-height: 1.4; white-space: pre-wrap;');
+                        body.textContent = tag.comment || '(no comment)';
+                        if (!tag.comment) body.style.color = '#6c7588';
+                        card.appendChild(head);
+                        card.appendChild(body);
+                        callout.appendChild(card);
+                    }
+                }
+            }
+        }
+
+        // Contextual exit button — label + handler change with state.
+        // Stable handler closes over el so we can re-wire each refresh
+        // without leaking listeners.
+        const exitBtn = document.getElementById('karabast-replays-footer-exit');
+        if (exitBtn) {
+            exitBtn.onclick = null;
+            if (state === 'playback') {
+                exitBtn.textContent = '← Exit replay';
+                exitBtn.title = 'Leave playback and return to karabast.net';
+                exitBtn.onclick = () => { location.href = `${location.origin}/`; };
+            } else if (state === 'solo') {
+                exitBtn.textContent = '⨯ Quit solo session';
+                exitBtn.title = 'Stop both solo windows';
+                exitBtn.onclick = () => {
+                    if (!confirm('Stop the solo session? Both windows will close.')) return;
+                    window.dispatchEvent(new CustomEvent('karabast-companion-action', {
+                        detail: { type: 'stopSession' }
+                    }));
+                };
+            }
+        }
 
         const rs = P().replayState;
         if (rs.panelWidth == null) rs.panelWidth = loadStoredPanelWidth();
@@ -826,14 +1188,6 @@
         const frameEl = document.getElementById('karabast-replays-footer-frame');
         if (frameEl) {
             frameEl.textContent = `Frame ${rs.currentIndex + 1} / ${rs.frames.length}`;
-        }
-        const cFrame = document.getElementById('karabast-replays-collapsed-frame');
-        if (cFrame) {
-            cFrame.textContent = `${rs.currentIndex + 1} / ${rs.frames.length}`;
-        }
-        const cMode = document.getElementById('karabast-replays-collapsed-mode');
-        if (cMode) {
-            cMode.textContent = rs.mode === 'action' ? 'Act' : 'Frm';
         }
         const modeSeg = document.getElementById('karabast-replays-footer-mode-seg');
         if (modeSeg) {

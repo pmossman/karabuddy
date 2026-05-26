@@ -41,6 +41,54 @@ const DEFAULT_CONFIG = {
 
 const API_ORIGIN = 'https://api.karabast.net';
 
+// karabuddy.com upload endpoint. Defaults to localhost for dev — override
+// via chrome.storage.local.karabuddyEndpoint once the prod site is live.
+const KARABUDDY_DEFAULT = 'http://localhost:3000';
+
+const getKarabuddyEndpoint = async () => {
+    try {
+        const { karabuddyEndpoint } = await chrome.storage.local.get('karabuddyEndpoint');
+        return karabuddyEndpoint || KARABUDDY_DEFAULT;
+    } catch {
+        return KARABUDDY_DEFAULT;
+    }
+};
+
+const getKarabuddyInstallToken = async () => {
+    try {
+        const { karabuddyInstallToken } = await chrome.storage.local.get('karabuddyInstallToken');
+        if (karabuddyInstallToken) return karabuddyInstallToken;
+        const fresh = 'kbx_' + crypto.randomUUID();
+        await chrome.storage.local.set({ karabuddyInstallToken: fresh });
+        return fresh;
+    } catch {
+        return 'kbx_ephemeral';
+    }
+};
+
+const openKarabuddyClaim = async () => {
+    const endpoint = await getKarabuddyEndpoint();
+    const installToken = await getKarabuddyInstallToken();
+    const url = `${endpoint}/claim?token=${encodeURIComponent(installToken)}`;
+    await chrome.tabs.create({ url });
+    return { url };
+};
+
+const uploadReplayToKarabuddy = async (payloadText) => {
+    const endpoint = await getKarabuddyEndpoint();
+    const installToken = await getKarabuddyInstallToken();
+    const res = await fetch(`${endpoint}/api/replays`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installToken, payload: payloadText })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) {
+        throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    return { slug: body.slug, url: `${endpoint}/r/${body.slug}`, deduped: !!body.deduped };
+};
+
 const generateId = () => crypto.randomUUID();
 
 const migrateSide = (raw, defaults) => {
@@ -463,6 +511,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'saveMatch') {
                 await saveMatch(msg.match);
                 sendResponse({ ok: true });
+            } else if (msg.type === 'openKarabuddyClaim') {
+                const result = await openKarabuddyClaim();
+                sendResponse({ ok: true, data: result });
+            } else if (msg.type === 'uploadReplay') {
+                // Best-effort push to karabuddy.com. Doesn't block local saves;
+                // failure just means the replay stays local-only and the user
+                // can retry from the replays page (TODO when that UI exists).
+                try {
+                    const result = await uploadReplayToKarabuddy(msg.payload);
+                    sendResponse({ ok: true, data: result });
+                } catch (err) {
+                    console.warn('[karabuddy] upload to karabuddy failed:', err);
+                    sendResponse({ ok: false, error: err.message });
+                }
             } else if (msg.type === 'saveReplay') {
                 await idbSaveReplay(msg.entry);
                 sendResponse({ ok: true });

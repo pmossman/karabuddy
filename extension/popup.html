@@ -3,11 +3,18 @@
     <head>
         <meta charset="utf-8" />
         <title>KaraBuddy</title>
+        <link rel="stylesheet" href="shared.css" />
         <link rel="stylesheet" href="popup.css" />
     </head>
     <body>
         <header>
-            <h1>KaraBuddy — Solo</h1>
+            <div class="brand-block">
+                <div class="kb-brand kb-brand--sm">
+                    <span class="kb-brand__main">KARA</span>
+                    <span class="kb-brand__sub">buddy</span>
+                </div>
+                <span class="kb-page-label">Solo</span>
+            </div>
         </header>
 
         <section class="warning">
@@ -97,10 +104,6 @@
             <a href="#" id="open-options">Manage decks</a>
             <span>Swap: Space / configurable in chrome://extensions/shortcuts</span>
         </footer>
-
-        <button id="home-link" class="home-link" type="button" title="Go to karabast.net">
-            ← Karabast home
-        </button>
 
         <script src="popup.js"></script>
     </body>

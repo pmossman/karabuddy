@@ -75,6 +75,19 @@
                 return null;
             }),
         consumePendingReplay: (gameId) =>
-            companionRequest({ type: 'consumePendingReplay', gameId })
+            companionRequest({ type: 'consumePendingReplay', gameId }),
+        // Push a finalized replay to karabuddy.com. Best-effort; resolves to
+        // { slug, url } on success or null on failure (already logged by the
+        // background's catch block).
+        uploadReplay: (payload) =>
+            companionRequest({ type: 'uploadReplay', payload }, 15000)
+                .catch((err) => {
+                    console.warn('[karabuddy] upload bridge failed:', err);
+                    return null;
+                }),
+        // Open karabuddy's claim page in a new tab with this install's token.
+        // User signs in (or already is), confirms the link, and going forward
+        // their uploads from this extension auto-attribute to their account.
+        openKarabuddyClaim: () => companionRequest({ type: 'openKarabuddyClaim' })
     };
 })();

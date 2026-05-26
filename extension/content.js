@@ -225,10 +225,16 @@ const installCompanionBridge = () => {
     });
 };
 
+// The companion bridge is just a window event listener — install synchronously
+// so MAIN-world scripts can fire requests immediately (e.g. the sidebar's
+// first refreshReplayBrowser() runs at DOMContentLoaded; if the bridge isn't
+// listening yet, that request times out and the count shows "none yet" until
+// the next state change).
+installCompanionBridge();
+
 const onReady = () => {
     main();
     installSpacebarSwap();
-    installCompanionBridge();
 };
 
 if (document.readyState === 'loading') {

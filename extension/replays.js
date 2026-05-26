@@ -39,7 +39,7 @@ const triggerFileDownload = (filename, payloadText) => {
     const blob = new Blob([payloadText], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = filename || 'karabuddy-replay.karareplay';
+    a.download = filename || 'replay.karareplay';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -56,25 +56,40 @@ const replayMatchesFilter = (entry, filter) => {
     return haystack.includes(filter.toLowerCase().trim());
 };
 
-const sideText = (p) => {
-    const lname = p.leader?.name || 'Unknown';
-    const uname = p.username && !isAnonymousUsername(p.username) ? p.username : '';
-    return uname ? `${uname} (${lname})` : lname;
+const deckText = (p) => {
+    const lname = p.leader?.name || 'Unknown leader';
+    const lset = p.leader?.set ? ` (${p.leader.set})` : '';
+    const bname = p.base?.name || 'Unknown base';
+    return `${lname}${lset} / ${bname}`;
+};
+
+const usernameText = (p) => {
+    if (!p.username || isAnonymousUsername(p.username)) return 'anonymous';
+    return p.username;
+};
+
+const buildPlaceholder = (label) => {
+    const el = document.createElement('div');
+    el.className = 'placeholder';
+    el.textContent = label || '—';
+    return el;
+};
+
+const buildSlot = (url, alt) => {
+    if (!url) return buildPlaceholder(alt);
+    const img = document.createElement('img');
+    img.alt = alt || '';
+    img.loading = 'lazy';
+    img.src = url;
+    img.onerror = () => img.replaceWith(buildPlaceholder(alt));
+    return img;
 };
 
 const buildSideEl = (p) => {
     const wrap = document.createElement('div');
     wrap.className = 'side';
-    const mkImg = (url, alt) => {
-        const img = document.createElement('img');
-        img.alt = alt || '';
-        img.loading = 'lazy';
-        if (url) img.src = url;
-        img.onerror = () => { img.style.visibility = 'hidden'; };
-        return img;
-    };
-    wrap.appendChild(mkImg(cardImageUrl(p.leader, true), p.leader?.name));
-    wrap.appendChild(mkImg(cardImageUrl(p.base, false), p.base?.name));
+    wrap.appendChild(buildSlot(cardImageUrl(p.leader, true), p.leader?.name));
+    wrap.appendChild(buildSlot(cardImageUrl(p.base, false), p.base?.name));
     return wrap;
 };
 
@@ -97,10 +112,16 @@ const buildCard = (entry) => {
     matchup.appendChild(versus);
     matchup.appendChild(buildSideEl(entry.players[1] || {}));
 
-    const matchupText = document.createElement('div');
-    matchupText.className = 'matchup-text';
-    matchupText.textContent =
-        `${sideText(entry.players[0] || {})}  vs  ${sideText(entry.players[1] || {})}`;
+    const p0 = entry.players[0] || {};
+    const p1 = entry.players[1] || {};
+
+    const deckLine = document.createElement('div');
+    deckLine.className = 'deck-line';
+    deckLine.textContent = `${deckText(p0)}  vs  ${deckText(p1)}`;
+
+    const usernameLine = document.createElement('div');
+    usernameLine.className = 'username-line';
+    usernameLine.textContent = `${usernameText(p0)} vs ${usernameText(p1)}`;
 
     const meta = document.createElement('div');
     meta.className = 'meta-row';
@@ -111,7 +132,7 @@ const buildCard = (entry) => {
     actions.className = 'meta-actions';
     const dl = document.createElement('button');
     dl.type = 'button';
-    dl.className = 'meta-btn';
+    dl.className = 'kb-btn kb-btn--ghost';
     dl.title = 'Download this replay as a .karareplay file';
     dl.textContent = '⬇';
     dl.addEventListener('click', async (e) => {
@@ -126,7 +147,7 @@ const buildCard = (entry) => {
     });
     const del = document.createElement('button');
     del.type = 'button';
-    del.className = 'meta-btn delete';
+    del.className = 'kb-btn kb-btn--ghost delete';
     del.title = 'Delete this saved replay';
     del.textContent = '✕';
     del.addEventListener('click', async (e) => {
@@ -142,10 +163,96 @@ const buildCard = (entry) => {
     meta.appendChild(actions);
 
     card.appendChild(matchup);
-    card.appendChild(matchupText);
+    card.appendChild(deckLine);
+    card.appendChild(usernameLine);
     card.appendChild(meta);
     return card;
 };
+
+// ---------- File upload ----------
+// Replays.html runs in chrome-extension://, away from the karabast.net
+// Decoder module. Inline the minimum parsing needed to extract gameId +
+// player metadata so we can save into the same IDB the recorder writes to.
+const extractMetaFromUploadedFile = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return { gameId: null, players: [] };
+    if (parsed.version !== 1 && parsed.version !== 2) {
+        throw new Error(`Unsupported replay version: ${parsed.version}`);
+    }
+    const events = Array.isArray(parsed.events) ? parsed.events : [];
+    const firstGamestate = events.find((e) => e.event === 'gamestate' && e.args?.[0]);
+    if (!firstGamestate) return { gameId: null, players: [] };
+    const arg = firstGamestate.args[0];
+    const snapshot = arg.full || (parsed.version === 1 ? arg : null);
+    if (!snapshot) return { gameId: null, players: [] };
+    const players = snapshot.players
+        ? Object.values(snapshot.players).map((p) => ({
+              username: p.user?.username || '',
+              leader: p.leader ? {
+                  name: p.leader.name || '',
+                  set: p.leader.setId?.set || '',
+                  number: p.leader.setId?.number || 0
+              } : null,
+              base: p.base ? {
+                  name: p.base.name || '',
+                  set: p.base.setId?.set || '',
+                  number: p.base.setId?.number || 0
+              } : null
+          }))
+        : [];
+    return { gameId: snapshot.id || null, players };
+};
+
+const uploadStatusEl = document.getElementById('upload-status');
+const setUploadStatus = (text, kind = '') => {
+    if (!text) {
+        uploadStatusEl.hidden = true;
+        uploadStatusEl.textContent = '';
+        return;
+    }
+    uploadStatusEl.hidden = false;
+    uploadStatusEl.textContent = text;
+    const variant = kind ? ` kb-banner--${kind}` : '';
+    uploadStatusEl.className = `upload-status kb-banner${variant}`;
+};
+
+const handleUpload = (file) => {
+    setUploadStatus(`Reading ${file.name}…`);
+    const reader = new FileReader();
+    reader.onload = async () => {
+        try {
+            const parsed = JSON.parse(reader.result);
+            const { gameId, players } = extractMetaFromUploadedFile(parsed);
+            if (!gameId) throw new Error('No gameId found in replay (missing initial snapshot?)');
+            const entry = {
+                gameId,
+                savedAt: Date.now(),
+                startedAt: parsed.startedAt ? (Date.parse(parsed.startedAt) || Date.now()) : Date.now(),
+                durationMs: parsed.durationMs || 0,
+                actionCount: parsed.actionCount,
+                filename: file.name,
+                players,
+                payload: reader.result
+            };
+            const res = await send({ type: 'saveReplay', entry });
+            if (!res?.ok) throw new Error(res?.error || 'background save failed');
+            setUploadStatus(`Uploaded "${file.name}".`, 'success');
+            await refresh();
+        } catch (err) {
+            console.error('[karabuddy] upload failed:', err);
+            setUploadStatus(`Upload failed: ${err.message}`, 'error');
+        }
+    };
+    reader.onerror = () => setUploadStatus('Failed to read file.', 'error');
+    reader.readAsText(file);
+};
+
+const uploadInputEl = document.getElementById('upload-input');
+document.getElementById('upload').addEventListener('click', () => uploadInputEl.click());
+uploadInputEl.addEventListener('change', (e) => {
+    const f = e.target.files?.[0];
+    if (f) handleUpload(f);
+    e.target.value = '';
+});
 
 let cache = [];
 
@@ -189,9 +296,5 @@ const render = () => {
 };
 
 document.getElementById('filter').addEventListener('input', render);
-
-document.getElementById('home-link').addEventListener('click', () => {
-    chrome.tabs.create({ url: 'https://karabast.net/' });
-});
 
 refresh();

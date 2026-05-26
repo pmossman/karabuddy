@@ -7,6 +7,7 @@
     const NS = ((window.__KaraBuddy ||= {}).replays ||= {});
     const { REPLAY_FLAG } = NS.flags;
     const { Decoder, Playback, Footer } = NS;
+    const R = () => NS.Recorder;
 
     const isTextInputFocused = () => {
         const el = document.activeElement;
@@ -25,9 +26,39 @@
             'keydown',
             (e) => {
                 const rs = Playback.replayState;
-                if (!rs.loaded) return;
                 if (isTextInputFocused()) return;
                 if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+                // T → tag at the current moment. Works in both recording
+                // and playback states; otherwise ignored.
+                if ((e.key === 't' || e.key === 'T') && !e.shiftKey) {
+                    if (rs.loaded) {
+                        e.preventDefault();
+                        Playback.addTag('');
+                        return;
+                    }
+                    if (R() && R().getRecordingLength() > 0) {
+                        e.preventDefault();
+                        R().addTag('');
+                        return;
+                    }
+                }
+
+                // Tag navigation (playback only).
+                if (rs.loaded) {
+                    if (e.key === '[') {
+                        e.preventDefault();
+                        Playback.jumpToAdjacentTag(-1);
+                        return;
+                    }
+                    if (e.key === ']') {
+                        e.preventDefault();
+                        Playback.jumpToAdjacentTag(1);
+                        return;
+                    }
+                }
+
+                if (!rs.loaded) return;
                 if (e.key === 'ArrowRight') {
                     e.preventDefault();
                     const otherMode = rs.mode === 'action' ? 'frame' : 'action';
@@ -97,6 +128,14 @@
             Footer.installFrame();
         });
         if (document.body) observer.observe(document.body, { childList: true });
+        // Must run AFTER content.js has had a chance to attach its bridge
+        // listener. content.js installs synchronously at script load, so by
+        // DOMContentLoaded it's guaranteed to be ready. Firing earlier (at
+        // script load) races the cross-world execution order: when MAIN-world
+        // loads first, the dispatched event has no listener and times out.
+        // (The fake transport at 04-playback.js's top-level still installs at
+        // script-load — that part has to be early.)
+        Playback.initReplayFromSession();
     };
 
     if (document.readyState === 'loading') {
@@ -104,8 +143,6 @@
     } else {
         mountAndWatch();
     }
-
-    Playback.initReplayFromSession();
 
     console.log('[karabuddy] loaded', REPLAY_FLAG ? '(playback mode)' : '');
 })();

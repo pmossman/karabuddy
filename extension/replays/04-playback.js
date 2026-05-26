@@ -25,6 +25,11 @@
         messagesByFrame: null,
         meta: null,
         currentIndex: 0,
+        // Parsed replay payload — kept around so tag edits can be
+        // re-serialized into the .karareplay file when sharing.
+        payload: null,
+        gameId: null,
+        tags: [],
         mode: (() => {
             try {
                 const v = localStorage.getItem('karabast-replays-mode');
@@ -518,6 +523,11 @@
         try {
             const parsed = JSON.parse(text);
             const result = D().decodeReplay(parsed);
+            // Tags are stored on the parsed payload as an additive top-level
+            // field. Old replays without tags get an empty array. We keep
+            // both the parsed payload and a direct ref to its tags array so
+            // edits mutate the source of truth before re-serializing.
+            if (!Array.isArray(parsed.tags)) parsed.tags = [];
             Object.assign(replayState, {
                 loaded: true,
                 frames: result.frames,
@@ -525,10 +535,13 @@
                 activeByFrame: result.activeByFrame,
                 messagesByFrame: result.messagesByFrame,
                 meta: result.meta,
-                currentIndex: 0
+                currentIndex: 0,
+                payload: parsed,
+                gameId: parsed?.events?.find((e) => e.event === 'gamestate' && e.args?.[0]?.full)?.args?.[0]?.full?.id || null,
+                tags: parsed.tags
             });
             window.__karabastReplay = result;
-            console.log(`[karabuddy] playback ready — ${result.frames.length} frames`);
+            console.log(`[karabuddy] playback ready — ${result.frames.length} frames, ${parsed.tags.length} tags`);
             pushFrame(0);
         } catch (err) {
             console.error('[karabuddy] failed to restore replay:', err);
@@ -537,30 +550,136 @@
 
     const initReplayFromSession = async () => {
         if (!REPLAY_FLAG) return;
-        // Path 1: payload already stashed in sessionStorage (file-picker flow).
+        // The URL is canonical when present: extReplayId means the replays
+        // page launched us pointing at a specific entry. Tabs are reused
+        // across replays, so sessionStorage may still hold the previous
+        // replay — checking extReplayId first prevents loading the wrong file.
+        const extReplayId = new URLSearchParams(location.search).get('extReplayId');
+        if (extReplayId) {
+            try {
+                const entry = await B().consumePendingReplay(extReplayId);
+                if (!entry || !entry.payload) {
+                    console.warn('[karabuddy] no pending payload for', extReplayId);
+                    return;
+                }
+                sessionStorage.setItem(SESSION_KEY, entry.payload);
+                startPlayback(entry.payload);
+            } catch (err) {
+                console.error('[karabuddy] failed to fetch pending replay:', err);
+            }
+            return;
+        }
+        // No extReplayId → file-picker / drag-drop flow stashed the payload
+        // in sessionStorage. Survives refreshes.
         const text = sessionStorage.getItem(SESSION_KEY);
         if (text) {
             startPlayback(text);
             return;
         }
-        // Path 2: launched from the replays page — background has stored the
-        // payload in chrome.storage.session under the gameId from the URL.
-        const extReplayId = new URLSearchParams(location.search).get('extReplayId');
-        if (!extReplayId) {
-            console.warn('[karabuddy] extReplay flag set but no payload available');
-            return;
-        }
-        try {
-            const entry = await B().consumePendingReplay(extReplayId);
-            if (!entry || !entry.payload) {
-                console.warn('[karabuddy] no pending payload for', extReplayId);
-                return;
-            }
-            sessionStorage.setItem(SESSION_KEY, entry.payload);
-            startPlayback(entry.payload);
-        } catch (err) {
-            console.error('[karabuddy] failed to fetch pending replay:', err);
-        }
+        console.warn('[karabuddy] extReplay flag set but no payload available');
+    };
+
+    // ----- Tag API (playback side) -----
+    //
+    // Tags during playback edit the in-memory parsed payload. Every change
+    // re-serializes the payload and pushes it back to IDB so the replay
+    // browser keeps the latest annotations even after a page reload. The
+    // download-with-tags path simply serializes the same parsed payload.
+
+    const persistPayload = () => {
+        const p = replayState.payload;
+        const id = replayState.gameId;
+        if (!p || !id) return;
+        const text = JSON.stringify(p);
+        sessionStorage.setItem(SESSION_KEY, text);
+        const meta = D().extractMetaFromFile(p).players;
+        B().saveReplay({
+            gameId: id,
+            savedAt: Date.now(),
+            startedAt: p.startedAt ? Date.parse(p.startedAt) || Date.now() : Date.now(),
+            durationMs: p.durationMs || 0,
+            actionCount: p.actionCount,
+            filename: p.filename || D().buildReplayFilename(Date.now(), meta),
+            players: meta,
+            payload: text
+        }).then(() => F()?.refreshOverlay?.());
+    };
+
+    const playerFromCurrentFrame = () => {
+        const f = replayState.frames?.[replayState.currentIndex];
+        return f?.state?.players || null;
+    };
+
+    const addTag = (comment = '') => {
+        const d = D();
+        const author = d.getOrCreateAuthor(playerFromCurrentFrame());
+        const tag = {
+            id: d.makeTagId(),
+            frameIndex: replayState.currentIndex,
+            author,
+            comment: String(comment || ''),
+            createdAt: Date.now()
+        };
+        replayState.tags.push(tag);
+        persistPayload();
+        F()?.refreshOverlay?.();
+        return tag;
+    };
+
+    const updateTagComment = (id, comment) => {
+        const tag = replayState.tags.find((t) => t.id === id);
+        if (!tag) return null;
+        tag.comment = String(comment || '');
+        persistPayload();
+        F()?.refreshOverlay?.();
+        return tag;
+    };
+
+    const deleteTag = (id) => {
+        const i = replayState.tags.findIndex((t) => t.id === id);
+        if (i < 0) return false;
+        replayState.tags.splice(i, 1);
+        persistPayload();
+        F()?.refreshOverlay?.();
+        return true;
+    };
+
+    const tagsAtFrame = (i) =>
+        replayState.tags.filter((t) => t.frameIndex === i);
+
+    // Jump to the tag whose frameIndex is nearest in the given direction.
+    // dir > 0 → next tag at frame > currentIndex; dir < 0 → previous.
+    const jumpToAdjacentTag = (dir) => {
+        if (!replayState.tags.length) return false;
+        const sorted = replayState.tags
+            .map((t) => t.frameIndex)
+            .filter((i) => i >= 0 && i < (replayState.frames?.length || 0))
+            .sort((a, b) => a - b);
+        if (!sorted.length) return false;
+        const cur = replayState.currentIndex;
+        let target = null;
+        if (dir > 0) target = sorted.find((i) => i > cur);
+        else target = [...sorted].reverse().find((i) => i < cur);
+        if (target == null) return false;
+        jumpTo(target);
+        return true;
+    };
+
+    // Download the current replay (with any added tags) as a .karareplay file.
+    const downloadCurrent = () => {
+        const p = replayState.payload;
+        if (!p) return;
+        const text = JSON.stringify(p);
+        const meta = D().extractMetaFromFile(p).players;
+        const filename = D().buildReplayFilename(Date.now(), meta);
+        const blob = new Blob([text], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     };
 
     NS.Playback = {
@@ -574,6 +693,19 @@
         enterPlaybackMode,
         loadReplayFromFile,
         startPlayback,
-        initReplayFromSession
+        initReplayFromSession,
+        addTag,
+        updateTagComment,
+        deleteTag,
+        tagsAtFrame,
+        jumpToAdjacentTag,
+        downloadCurrent,
+        getCurrentPlayers: playerFromCurrentFrame,
+        // Player set — pulled from the first gamestate's players map. Stable
+        // for the whole replay, no need to re-sniff per frame.
+        getPlayerUsernames: () => {
+            const players = replayState.frames?.[0]?.state?.players;
+            return D().playerUsernamesFromPlayers(players);
+        }
     };
 })();

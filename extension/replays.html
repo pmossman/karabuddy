@@ -3,15 +3,27 @@
     <head>
         <meta charset="utf-8" />
         <title>KaraBuddy — Replays</title>
+        <link rel="stylesheet" href="shared.css" />
         <link rel="stylesheet" href="replays.css" />
     </head>
     <body>
         <header>
-            <h1>KaraBuddy — Replays</h1>
+            <div class="brand-block">
+                <div class="kb-brand">
+                    <span class="kb-brand__main">KARA</span>
+                    <span class="kb-brand__sub">buddy</span>
+                </div>
+                <span class="kb-page-label">Replays</span>
+            </div>
             <div class="header-meta">
-                <span id="count" class="count">0 replays</span>
+                <span id="count" class="kb-pill">0 replays</span>
+                <button id="upload" class="kb-btn" type="button" title="Add a .karareplay file to your library">
+                    + Upload replay
+                </button>
+                <input id="upload-input" type="file" accept=".karareplay,.json,application/json" hidden />
                 <input id="filter" type="search" placeholder="Filter by name, leader, base, or date…" />
             </div>
+            <div id="upload-status" class="upload-status" hidden></div>
         </header>
 
         <main>
@@ -24,10 +36,6 @@
             </div>
             <div id="loading" class="empty">Loading…</div>
         </main>
-
-        <button id="home-link" class="home-link" type="button" title="Go to karabast.net">
-            ← Karabast home
-        </button>
 
         <script src="replays.js"></script>
     </body>

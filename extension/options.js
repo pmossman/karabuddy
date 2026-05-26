@@ -462,10 +462,6 @@ const refresh = async () => {
     renderSessionState(config.session);
 };
 
-document.getElementById('home-link').addEventListener('click', () => {
-    chrome.tabs.create({ url: 'https://karabast.net/' });
-});
-
 // ---------- Karabast import picker ----------
 const importStatusEl = document.getElementById('import-status');
 const importResultsEl = document.getElementById('import-results');
