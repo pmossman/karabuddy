@@ -13,7 +13,15 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-_empty_
+### [B11] Game log highlight follows "what's new since last step", not current frame only
+
+- **Why:** B2 ported the per-frame log but highlights only entries whose `frameIndex === currentIndex`. Actions can span multiple frames, so when the user steps from frame 5 → frame 12 (action mode skipping intervening gamestates), only frame 12's messages light up and everything in between goes fully dim. The extension behaves differently — it tracks the last transition and highlights every frame's messages that fall in the `(from, to]` range. This is what users actually want: "what just happened" since they pressed the arrow.
+- **Acceptance:**
+  - Forward step (current=lo, target=hi where hi > lo): messages on frames `lo+1 .. hi` render at full opacity; everything earlier dimmed.
+  - Backward step (target < lo) OR initial load: messages on the current frame only render at full opacity; everything else dimmed. (Matches extension behavior — "stepping back doesn't re-narrate; just show what's there.")
+  - Header copy adapts: forward over multiple frames → "What happened (over N frames)"; single-frame forward or backward → "What happened at this frame" (current copy).
+  - Tracking the "last transition" needs new state. Recommend `lastTransition: {from: number, to: number} | null` in `ReplayViewer`'s state, set whenever `setCurrentIndex` is called. Pass `lastTransition` to `TagSidebar` alongside `currentIndex`.
+- **Refs:** Extension reference: `~/code/karabuddy/extension/replays/05-footer.js` — search `lastTransition` and `logFrames` for the exact logic. Karabuddy files: `app/(app)/r/[slug]/ReplayViewer.tsx` (introduces `lastTransition` state + wires it on every step) and `app/(app)/r/[slug]/TagSidebar.tsx` (consumes it in the FrameLog section to compute the highlight set).
 
 ## In Progress
 
