@@ -13,6 +13,23 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B15] Extension publication prep + install instructions on the homepage
+
+- **Why:** The chrome extension is mature enough to share more broadly, but there's no obvious install path for new users and no submission-ready packaging. Need both the extension polished for the Chrome Web Store submission flow AND a clear "Install" walkthrough surfaced on karabuddy's homepage.
+- **Acceptance:**
+  - **Extension prep:**
+    - `extension/manifest.json` cleaned up for submission: descriptive `name` and `description`, sensible `version` (start at 0.3.0 to mark "ready-for-store"), bumped `version_name` if used.
+    - Add icon assets if missing (`icons/16.png`, `48.png`, `128.png` referenced from `manifest.json` → `action.default_icon` and top-level `icons`). If existing assets are missing, generate placeholders from the KARA/buddy logo or leave a TODO note specifying the exact files to produce.
+    - Add `extension/README.md` with: what the extension does, current features (replay record/play/tag, solo testing, sidebar overlay on karabast.net), build/load instructions (load-unpacked vs zip), known limitations.
+    - Add a `scripts/package-extension.sh` (or npm script) that zips `extension/` into a release-ready bundle — strip dev-only files, ensure manifest.json is at zip root.
+  - **Install instructions on the site:**
+    - New `/install` route (or section on the homepage) with a step-by-step walkthrough for Chrome (the only supported browser at launch). Cover: download the zip, unzip, `chrome://extensions`, enable Developer Mode, Load unpacked, point at the unzipped folder. Once we have a Chrome Web Store listing, swap the steps for "Install from the Store" with the marketplace link.
+    - Header tile or footer link on the homepage pointing at `/install`.
+    - Mention Firefox / Edge as "coming later" with a brief note that we'd port the MV3 manifest with minor tweaks. Don't write install steps for them yet.
+  - **Punt explicitly if blocked:**
+    - Chrome Web Store submission itself (requires the user's $5 developer account + screenshots + privacy policy text) — out of scope. The task here is "submission-ready", not "submitted".
+- **Refs:** Extension lives at `~/code/karabuddy/extension/` (post-B9). Homepage: `app/(app)/page.tsx`. Existing `Tile` component is a good pattern for the homepage "Install" entry point.
+
 ### [B14] Move tag controls down beside the tag display area
 
 - **Why:** Current sidebar order is matchup → navigation → tag controls (+ Tag this frame / prev tag / next tag) → game log → tag display. Tag controls being between navigation and game log makes them feel disconnected from the tag list they actually act on. Should sit immediately adjacent to the tag display so the affordance reads naturally.
