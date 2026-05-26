@@ -13,33 +13,21 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B10] Compact the viewer sidebar — give the log + tags more vertical room
-
-- **Why:** Above-the-fold in the sidebar is dominated by matchup card, share controls, navigation, and step-mode toggle. The actual high-value content (per-frame log + tag comments) gets pushed below the fold and feels cramped. We need to reclaim height for the scrollable content area.
-- **Acceptance:** All of the following:
-  - Matchup card shrinks (smaller card thumbs, single-row layout). Or replace with a one-line summary (leader names + usernames) that expands on click into the full card view. Pick whichever reads cleaner.
-  - Share section (Copy link + visibility pill + hint copy) tucks behind a single button — e.g., a small "Share" button in a top-right corner of the sidebar that opens a popover with the copy/visibility controls. Don't lose the functionality, just the persistent vertical space.
-  - Step-mode toggle ("STEP BY: Action / Frame" + the "Hold ⇧" hint) moves behind a settings/gear button or merges into a single icon-toggle next to the frame counter. The Hold-Shift hint can become a tooltip on the toggle.
-  - Navigation row tightens — the "Frame 24 / 208" label can sit inline between the arrows; the "Or use arrow keys to step" hint can become a tooltip.
-  - Net result: the log + tags section gets at least ~150px more visible space without scrolling on a standard 1080p viewport.
-- **Refs:** Screenshot in the conversation shows the current layout heavy with chrome above the log. `app/(app)/r/[slug]/TagSidebar.tsx` is the file. Existing primitives: `FooterBtn` for buttons, `VisibilityPill` (added in B6) for the visibility state. May want a small reusable Popover component for the Share menu — file under `app/_components/` if so.
-
-### [B9] Monorepo: bring the chrome extension into the karabuddy repo
-
-- **Why:** Today the extension lives at `~/code/karabast-extension/` and karabuddy at `~/code/karabuddy/`. They're co-evolving (bridge content script, upload endpoint, claim flow) and the cross-repo coupling already requires juggling two checkouts. A monorepo keeps the API contract + extension client + bridge content script in one place.
-- **Acceptance:**
-  - Extension code lives under `~/code/karabuddy/extension/` (or similar — pick a name).
-  - Build/dev scripts adapted (the extension's "build" is just zipping/loading-unpacked; doc the workflow in karabuddy's CLAUDE.md).
-  - Shared types between extension uploads and the API can live in a `packages/shared/` or `lib/shared/` dir if useful (not required for v1).
-  - Existing standalone `~/code/karabast-extension/` git history is preserved via subtree merge OR a clean migration commit that notes the source provenance.
-  - Karabuddy's deploy is unaffected (extension files aren't bundled into the Next.js build).
-- **Refs:** Extension currently at `~/code/karabast-extension/`. Two cross-repo touchpoints we maintain manually today: `karabast-extension/karabuddy-bridge.js` (talks to karabuddy origins) and `karabast-extension/background.js`'s `KARABUDDY_DEFAULT` endpoint.
+_empty_
 
 ## In Progress
 
 _empty_
 
 ## Done
+
+### [B10] Compact the viewer sidebar — give the log + tags more vertical room
+_completed: 2026-05-26 by autonomous-loop_
+Inline single-row matchup (32×32 thumbs + usernames). Share controls collapsed behind a top-right Share icon button + popover. Step-mode toggle (Action/Frame + Shift hint) tucked into a gear popover next to the frame counter. Navigation tightened to a single `← [Frame N/M] → [gear]` row. New reusable `app/_components/Popover.tsx`. Net ~170–180px reclaimed above the fold.
+
+### [B9] Monorepo: chrome extension brought into karabuddy
+_completed: 2026-05-26 by autonomous-loop_
+`git subtree add --squash` from `~/code/karabast-extension` + working-tree overlay (the source repo had 18 uncommitted modifications) → `extension/` subdir at repo root (22 files). `.vercelignore` added (excludes `extension/` from deploy bundle). `tsconfig.json` excludes `extension/` defensively. `CLAUDE.md` updated with load-unpacked + zip-packaging workflow. `~/code/karabast-extension/` left untouched for the user to archive.
 
 ### [B1] Game board bottom is clipped under the persistent header
 _completed: 2026-05-26 by subagent_
