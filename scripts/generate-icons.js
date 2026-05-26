@@ -1,130 +1,57 @@
 #!/usr/bin/env node
 /*
- * Generates extension/icons/{16,48,128}.png — placeholder app icons.
- * Dark square (#11141a) with a brand-blue (#5a8cff) "Kb" rendered from a
- * small bitmap font, scaled up by nearest-neighbour for each size.
+ * Renders extension/icons/{16,48,128}.png from an inline SVG so the icons
+ * use the actual KARA/buddy brand typography (Barlow K + Georgia italic b
+ * on a dark rounded-square) rather than the previous pixel-art placeholder.
  *
- * Uses only Node built-ins (zlib, fs, crypto). No external deps.
- * Re-run any time you want to regenerate the placeholders. Replace with
- * polished artwork before Chrome Web Store submission.
+ * Sharp does the SVG → PNG raster via libvips. Composed once at 256px then
+ * downsampled with lanczos3 for crisp output at every target size.
+ *
+ * Run:  node scripts/generate-icons.js
+ *
+ * Caveat: relies on Sharp/libvips font rendering. Barlow and Georgia may
+ * fall back to system fonts on machines without them installed; the letter-
+ * forms still read as the brand mark, just less polished. Swap in hand-
+ * designed artwork before any Chrome Web Store submission.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
-const zlib = require('node:zlib');
+const sharp = require('sharp');
 
-// --- Tiny PNG encoder (truecolor + alpha, 8-bit) ----------------------
-function crc32(buf) {
-  let c;
-  const table = crc32._t || (crc32._t = (() => {
-    const t = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      c = n;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-      t[n] = c >>> 0;
-    }
-    return t;
-  })());
-  c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = table[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
+const OUT_DIR = path.join(__dirname, '..', 'extension', 'icons');
+const SIZES = [16, 48, 128];
 
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length, 0);
-  const typeBuf = Buffer.from(type, 'ascii');
-  const crcBuf = Buffer.alloc(4);
-  crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
-  return Buffer.concat([len, typeBuf, data, crcBuf]);
-}
+// Mirrors the floating launcher button from extension/replays/05-footer.js
+// at 6× scale (42px → 256px). Same gradient, same brand-blue border, same
+// stacked KARA / buddy mark with the buddy indented + tucked tight under
+// the KARA — so the installed extension icon reads identically to the
+// in-page launcher.
+const SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#243044"/>
+      <stop offset="100%" stop-color="#1a1d23"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="60" fill="url(#bg)"/>
+  <rect x="3" y="3" width="250" height="250" rx="57" fill="none" stroke="#5a8cff" stroke-opacity="0.5" stroke-width="6"/>
+  <g>
+    <text x="30" y="132" font-family="'Barlow','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="72" fill="#ffffff" letter-spacing="0">KARA</text>
+    <text x="66" y="198" font-family="Georgia,'Times New Roman',serif" font-style="italic" font-weight="700" font-size="60" fill="#5a8cff" letter-spacing="-0.5">buddy</text>
+  </g>
+</svg>
+`.trim();
 
-function encodePng(width, height, rgba) {
-  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 6;  // truecolor + alpha
-  ihdr[10] = 0; // compression
-  ihdr[11] = 0; // filter
-  ihdr[12] = 0; // interlace
-
-  // One filter byte (0 = None) per scanline.
-  const stride = width * 4;
-  const raw = Buffer.alloc((stride + 1) * height);
-  for (let y = 0; y < height; y++) {
-    raw[y * (stride + 1)] = 0;
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, y * stride + stride);
+(async () => {
+  await fs.promises.mkdir(OUT_DIR, { recursive: true });
+  for (const size of SIZES) {
+    const outPath = path.join(OUT_DIR, `${size}.png`);
+    await sharp(Buffer.from(SVG))
+      .resize(size, size, { kernel: 'lanczos3' })
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
+    console.log(`wrote ${outPath}`);
   }
-  const idat = zlib.deflateSync(raw);
-  return Buffer.concat([
-    sig,
-    chunk('IHDR', ihdr),
-    chunk('IDAT', idat),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-// --- Logo bitmap ------------------------------------------------------
-// 16x16 grid. '#' = brand blue, '.' = background.
-// Approximate "Kb" monogram — readable at 16, looks fine scaled to 128.
-const LOGO = [
-  '................',
-  '................',
-  '..#...#.........',
-  '..#..#..#.......',
-  '..#.#...#.......',
-  '..##....####....',
-  '..##....#...#...',
-  '..##....#...#...',
-  '..#.#...#...#...',
-  '..#..#..####....',
-  '..#...#.........',
-  '..#...#.........',
-  '................',
-  '................',
-  '................',
-  '................',
-];
-
-const BG = [0x11, 0x14, 0x1a, 0xff];      // #11141a (matches site dark)
-const FG = [0x5a, 0x8c, 0xff, 0xff];      // #5a8cff (brand blue)
-
-function renderSquare(size) {
-  const rgba = Buffer.alloc(size * size * 4);
-  // Fill background.
-  for (let i = 0; i < size * size; i++) {
-    rgba[i * 4 + 0] = BG[0];
-    rgba[i * 4 + 1] = BG[1];
-    rgba[i * 4 + 2] = BG[2];
-    rgba[i * 4 + 3] = BG[3];
-  }
-  // Nearest-neighbour scale the 16x16 logo up to `size`.
-  const src = LOGO.length;
-  const scale = size / src;
-  for (let y = 0; y < size; y++) {
-    const sy = Math.floor(y / scale);
-    for (let x = 0; x < size; x++) {
-      const sx = Math.floor(x / scale);
-      if (LOGO[sy][sx] === '#') {
-        const i = (y * size + x) * 4;
-        rgba[i + 0] = FG[0];
-        rgba[i + 1] = FG[1];
-        rgba[i + 2] = FG[2];
-        rgba[i + 3] = FG[3];
-      }
-    }
-  }
-  return encodePng(size, size, rgba);
-}
-
-const outDir = path.resolve(__dirname, '..', 'extension', 'icons');
-fs.mkdirSync(outDir, { recursive: true });
-
-for (const size of [16, 48, 128]) {
-  const buf = renderSquare(size);
-  const file = path.join(outDir, `${size}.png`);
-  fs.writeFileSync(file, buf);
-  console.log(`wrote ${file} (${buf.length} bytes)`);
-}
+})();
