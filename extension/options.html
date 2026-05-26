@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>KaraBuddy — Setup</title>
+        <link rel="stylesheet" href="options.css" />
+    </head>
+    <body>
+        <main>
+            <header>
+                <h1>KaraBuddy</h1>
+                <p>Solo testing setup + deck library.</p>
+            </header>
+
+            <section class="card" id="match-setup">
+                <h2>Match setup</h2>
+                <form id="setup-form">
+                    <div class="two-col">
+                        <div>
+                            <span class="cs-label">Side A deck</span>
+                            <div class="custom-select" data-side="A">
+                                <button class="cs-trigger" type="button">
+                                    <img class="cs-leader" alt="" />
+                                    <img class="cs-base" alt="" />
+                                    <span class="cs-text">Choose a deck</span>
+                                    <span class="cs-chevron">▾</span>
+                                </button>
+                                <div class="cs-options" hidden></div>
+                            </div>
+                            <label class="custom-link" data-side="A" hidden>
+                                <span>Custom URL</span>
+                                <input type="url" name="A_customDeckLink" placeholder="https://swudb.com/deck/…" />
+                            </label>
+                        </div>
+                        <div>
+                            <span class="cs-label">Side B deck</span>
+                            <div class="custom-select" data-side="B">
+                                <button class="cs-trigger" type="button">
+                                    <img class="cs-leader" alt="" />
+                                    <img class="cs-base" alt="" />
+                                    <span class="cs-text">Choose a deck</span>
+                                    <span class="cs-chevron">▾</span>
+                                </button>
+                                <div class="cs-options" hidden></div>
+                            </div>
+                            <label class="custom-link" data-side="B" hidden>
+                                <span>Custom URL</span>
+                                <input type="url" name="B_customDeckLink" placeholder="https://swudb.com/deck/…" />
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="three-col">
+                        <label>
+                            <span>Format</span>
+                            <select name="format">
+                                <option value="premier">Premier</option>
+                                <option value="open">Open</option>
+                                <option value="eternal">Eternal</option>
+                                <option value="limited">Limited</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>Card pool</span>
+                            <select name="cardPool">
+                                <option value="current">Current</option>
+                                <option value="nextSet">Next Set</option>
+                                <option value="unlimited">Unlimited</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>Games to win</span>
+                            <select name="gamesToWinMode">
+                                <option value="bestOfOne">Best of One</option>
+                                <option value="bestOfThree">Best of Three</option>
+                            </select>
+                        </label>
+                    </div>
+                </form>
+                <div class="launch-row">
+                    <button id="launch" type="button" class="primary-launch">Launch session</button>
+                    <button id="stop" type="button" class="secondary" hidden>Stop session</button>
+                    <span id="launch-status" class="status"></span>
+                </div>
+                <p class="muted">
+                    Saves automatically. Hotkey to swap focus between windows is configurable
+                    at chrome://extensions/shortcuts.
+                </p>
+            </section>
+
+            <section class="card">
+                <h2>Import from karabast.net</h2>
+                <p class="muted">
+                    Lists decks saved on your karabast.net account. You must be
+                    signed in at karabast.net first (in a normal tab — not a solo
+                    session window). Choose which decks to add.
+                </p>
+                <div class="row">
+                    <button id="import" type="button">Fetch decks</button>
+                    <span id="import-status" class="muted"></span>
+                </div>
+                <div id="import-results" hidden>
+                    <div class="row between import-toolbar">
+                        <label class="checkbox-line">
+                            <input id="import-select-all" type="checkbox" />
+                            <span>Select all (not already added)</span>
+                        </label>
+                        <button id="import-add" type="button" disabled>Add selected</button>
+                    </div>
+                    <div id="import-set-filter" class="set-filter"></div>
+                    <ul id="import-list"></ul>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Add deck by link</h2>
+                <form id="add-form">
+                    <label>
+                        <span>Deck URL</span>
+                        <input
+                            type="url"
+                            name="deckLink"
+                            placeholder="https://swudb.com/deck/…"
+                            required
+                        />
+                    </label>
+                    <label>
+                        <span>Name (optional — taken from the deck if blank)</span>
+                        <input type="text" name="name" placeholder="e.g. Boba LC tournament" />
+                    </label>
+                    <div class="row">
+                        <button type="submit">Add deck</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="card">
+                <div class="row between">
+                    <h2>Saved decks</h2>
+                    <span id="count" class="muted"></span>
+                </div>
+                <div id="deck-toolbar" class="row between deck-toolbar" hidden>
+                    <label class="checkbox-line">
+                        <input id="deck-select-all" type="checkbox" />
+                        <span>Select all</span>
+                    </label>
+                    <div class="row">
+                        <span id="deck-selection-count" class="muted"></span>
+                        <button id="deck-delete-selected" type="button" class="danger-bulk" disabled>
+                            Delete selected
+                        </button>
+                    </div>
+                </div>
+                <div id="deck-set-filter" class="set-filter"></div>
+                <ul id="deck-list"></ul>
+                <p id="empty" class="muted" hidden>No decks saved yet.</p>
+            </section>
+
+            <div id="status" class="status"></div>
+        </main>
+
+        <button id="home-link" class="home-link" type="button" title="Go to karabast.net">
+            ← Karabast home
+        </button>
+
+        <script src="options.js"></script>
+    </body>
+</html>
