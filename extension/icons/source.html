@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>KaraBuddy icon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  /* Render at 512x512 — sharp downscales to 128/48/16 with high-quality
+     anti-aliasing. This matches the floating launcher in
+     extension/replays/05-footer.js scaled 12.2× (42px → 512px). */
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body { width: 512px; height: 512px; }
+  .icon {
+    width: 512px;
+    height: 512px;
+    border-radius: 122px; /* launcher 10px × 12.2 */
+    background: linear-gradient(140deg, #243044 0%, #1a1d23 100%);
+    border: 12px solid rgba(74, 124, 255, 0.5); /* launcher 1px × 12.2 */
+    box-shadow: 0 24px 144px rgba(0, 0, 0, 0.55), 0 0 0 12px rgba(0,0,0,0.3);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .mono {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 0.95;
+    padding: 0 48px; /* launcher 4px × 12 */
+  }
+  .kara {
+    font-family: 'Barlow', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 400;
+    font-size: 146px; /* launcher 12px × 12.2 */
+    color: #ffffff;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+  .buddy {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 122px; /* launcher 10px × 12.2 */
+    color: #5a8cff;
+    letter-spacing: -0.01em;
+    margin-left: 72px; /* launcher 6px × 12 */
+    margin-top: -12px; /* launcher -1px × 12 */
+  }
+</style>
+</head>
+<body>
+<div class="icon"><div class="mono"><span class="kara">KARA</span><span class="buddy">buddy</span></div></div>
+</body>
+</html>
