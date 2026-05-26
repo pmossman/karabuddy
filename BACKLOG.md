@@ -13,31 +13,25 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B12] Sidebar polish: tag nav near tags, usernames under thumbs, drag-to-resize width
+### [B13] Wire `[` / `]` keyboard shortcuts for prev/next tag in the viewer
 
-- **Why:** Three UX gaps after the B10 compaction:
-  1. Prev/Next-tag buttons live in the navigation section near the frame stepper but the tags themselves are far below — the buttons should sit next to or directly above the tag list.
-  2. Usernames were inlined with the matchup thumbs in B10 but truncate when long (e.g. `anonymous 95d0c6` clipped). Move them to their own line under each player's base thumb.
-  3. The sidebar is a fixed 360px — needs a drag handle on the right edge so users can widen it for long tag comments / log entries.
-- **Acceptance:** All three:
-  - Prev/Next-tag buttons relocate from the Navigation section to immediately above the All Tags list (or share a row with the "+ Tag this frame" button). Buttons still navigate to adjacent tag frames; keyboard `[` / `]` shortcuts still work.
-  - In the header's MatchupRow, the username lives on its own line below the leader+base thumbs for that player, centered under the thumbs. No truncation on usernames up to ~20 chars at the default sidebar width.
-  - Sidebar gets a 4-6px-wide vertical drag handle pinned to its right edge. Drag adjusts width between a sensible min (e.g. 280px) and max (e.g. 50% of viewport). Width persists per-browser via localStorage. The gameboard's flex layout already grows to fill — the existing `flex: '0 0 360px'` becomes `flex: 0 0 <var>px` driven by state.
-- **Refs:** `app/(app)/r/[slug]/TagSidebar.tsx` for all three. The extension's sidebar at `extension/replays/05-footer.js` has a working drag-to-resize implementation (look for `onDragStart` / `setExpandedPanelWidth` / `karabast-replays-panel-width` localStorage key) — port the logic, adapt the style to React. localStorage key for karabuddy can be `karabuddy:viewerSidebarWidth`.
-
-- **Why:** B2 ported the per-frame log but highlights only entries whose `frameIndex === currentIndex`. Actions can span multiple frames, so when the user steps from frame 5 → frame 12 (action mode skipping intervening gamestates), only frame 12's messages light up and everything in between goes fully dim. The extension behaves differently — it tracks the last transition and highlights every frame's messages that fall in the `(from, to]` range. This is what users actually want: "what just happened" since they pressed the arrow.
-- **Acceptance:**
-  - Forward step (current=lo, target=hi where hi > lo): messages on frames `lo+1 .. hi` render at full opacity; everything earlier dimmed.
-  - Backward step (target < lo) OR initial load: messages on the current frame only render at full opacity; everything else dimmed. (Matches extension behavior — "stepping back doesn't re-narrate; just show what's there.")
-  - Header copy adapts: forward over multiple frames → "What happened (over N frames)"; single-frame forward or backward → "What happened at this frame" (current copy).
-  - Tracking the "last transition" needs new state. Recommend `lastTransition: {from: number, to: number} | null` in `ReplayViewer`'s state, set whenever `setCurrentIndex` is called. Pass `lastTransition` to `TagSidebar` alongside `currentIndex`.
-- **Refs:** Extension reference: `~/code/karabuddy/extension/replays/05-footer.js` — search `lastTransition` and `logFrames` for the exact logic. Karabuddy files: `app/(app)/r/[slug]/ReplayViewer.tsx` (introduces `lastTransition` state + wires it on every step) and `app/(app)/r/[slug]/TagSidebar.tsx` (consumes it in the FrameLog section to compute the highlight set).
+- **Why:** Viewer tooltips reference `[` / `]` keyboard shortcuts for tag navigation, but the `ReplayViewer.tsx` keydown handler doesn't actually wire them — only ArrowLeft/Right/Home/End are handled. Surfaced as a B12 punt.
+- **Acceptance:** Pressing `[` jumps to the prev tag (same target as the Prev tag button); `]` jumps to next. No-ops when no tag exists in that direction. Ignored when a TEXTAREA / INPUT is focused, matching the existing arrow-key handler's guard.
+- **Refs:** `app/(app)/r/[slug]/ReplayViewer.tsx` keydown handler. The `jumpToAdjacent(dir)` helper currently lives inside `TagSidebar.tsx` — pull it up into `ReplayViewer.tsx` (or pass a callback prop) so the keydown handler can call it without DOM querying.
 
 ## In Progress
 
 _empty_
 
 ## Done
+
+### [B12] Sidebar polish: tag nav near tags, usernames under thumbs, drag-to-resize width
+_completed: 2026-05-26 by autonomous-loop_
+Prev/Next tag buttons share a row with "+ Tag this frame" (right-aligned). MatchupRow refactored: thumbs in a row, username on its own centered line below per player. 6px right-edge drag handle with hover/active accent-blue treatment, double-click resets to 360px default, width clamped 280px ↔ 50vw, persisted to `localStorage['karabuddy:viewerSidebarWidth']`. Flagged: `[` / `]` keyboard shortcuts not wired in `ReplayViewer.tsx` — tracked as B13.
+
+### [B11] Game log highlight follows transition, not just current frame
+_completed: 2026-05-26 by autonomous-loop_
+Added `lastTransition: { from: number; to: number } | null` state in `ReplayViewer.tsx`, recorded on every `setCurrentIndex` call. Plumbed into `TagSidebar.tsx`'s FrameLog: forward steps (lo → hi where hi > lo) highlight messages on frames `lo+1..hi`; backward steps or initial load highlight only the current frame. Header copy switches to "What happened (over N frames)" when the range spans multiple frames. Transition gated on `lt.to === currentIndex` so stale transitions don't leak after intervening state changes.
 
 ### [B10] Compact the viewer sidebar — give the log + tags more vertical room
 _completed: 2026-05-26 by autonomous-loop_
