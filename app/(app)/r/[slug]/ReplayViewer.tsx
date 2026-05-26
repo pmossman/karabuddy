@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ThemeContextProvider } from '@/app/_contexts/Theme.context';
 import { CosmeticsProvider } from '@/app/_contexts/CosmeticsContext';
 import { UserProvider } from '@/app/_contexts/User.context';
@@ -60,7 +60,20 @@ type StepMode = 'action' | 'frame';
 function ViewerShell({ replay, initialTags }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<DecodedReplay | null>(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndexRaw] = useState(0);
+  // B11: track the most recent frame transition so FrameLog can highlight
+  // the range of frames a single action stepped across. Null on initial
+  // mount (and after backward jumps — handled inside the setter).
+  const [lastTransition, setLastTransition] = useState<{ from: number; to: number } | null>(null);
+  const setCurrentIndex = useCallback((next: number | ((cur: number) => number)) => {
+    setCurrentIndexRaw((cur) => {
+      const target = typeof next === 'function' ? (next as (c: number) => number)(cur) : next;
+      if (target !== cur) {
+        setLastTransition({ from: cur, to: target });
+      }
+      return target;
+    });
+  }, []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tagState, setTagState] = useState<TagRow[]>(initialTags);
   const [mode, setMode] = useState<StepMode>(() => {
@@ -191,6 +204,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         replay={replay}
         frames={frames}
         currentIndex={currentIndex}
+        lastTransition={lastTransition}
         onStep={step}
         onJump={setCurrentIndex}
         tags={tagState}

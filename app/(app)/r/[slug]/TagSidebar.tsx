@@ -36,6 +36,11 @@ interface Props {
   replay: ReplayRow;
   frames: Frame[] | null;
   currentIndex: number;
+  // B11: most recent frame transition. Null on initial mount; otherwise
+  // `{from, to}` describes the last `setCurrentIndex` call. Forward
+  // transitions (to > from) tell FrameLog to highlight the whole frame
+  // range so action-mode jumps don't black out intermediate messages.
+  lastTransition: { from: number; to: number } | null;
   onStep: (dir: 1 | -1) => void;
   onJump: (i: number) => void;
   tags: TagRow[];
@@ -52,7 +57,7 @@ const TAG_REVIEWER = '#e0c64a';
 const tagColor = (authorName: string, players: Set<string>) =>
   players.has(authorName) ? TAG_PLAYER : TAG_REVIEWER;
 
-export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags, setTags, playerUsernames, mode, setMode, messagesByFrame }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, tags, setTags, playerUsernames, mode, setMode, messagesByFrame }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -347,6 +352,7 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
       <FrameLog
         messagesByFrame={messagesByFrame}
         currentIndex={currentIndex}
+        lastTransition={lastTransition}
         frames={frames}
       />
 
@@ -418,9 +424,14 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
 }
 
 // Per-frame "what happened" log. Renders cumulative messages from frame 0
-// up through `currentIndex`, with the current frame's batch at full opacity
-// and prior frames dimmed for historical context — mirrors the chrome
-// extension's logBody (see ~/code/karabast-extension/replays/05-footer.js).
+// up through `currentIndex`, with the most recent action's batch at full
+// opacity and prior frames dimmed for historical context — mirrors the
+// chrome extension's logBody (see ~/code/karabuddy/extension/replays/05-footer.js).
+//
+// B11: highlight set is driven by `lastTransition`, not just `currentIndex`.
+// Forward jumps (e.g. action-mode 5 -> 12) light up messages on frames
+// 6..12 so the player can read everything the step covered. Backward jumps
+// and the initial mount fall back to highlighting only the current frame.
 //
 // Player names inside messages are color-coded: first player in the frame-0
 // players map is blue, second is red. Matches setConnectedPlayer in
@@ -431,10 +442,12 @@ const PLAYER_COLOR_OPPONENT = '#ff6b6b';
 function FrameLog({
   messagesByFrame,
   currentIndex,
+  lastTransition,
   frames,
 }: {
   messagesByFrame: any[][] | null;
   currentIndex: number;
+  lastTransition: { from: number; to: number } | null;
   frames: Frame[] | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -450,18 +463,38 @@ function FrameLog({
     return m;
   }, [frames]);
 
+  // Compute the range of frames whose messages we should highlight.
+  // Forward step (from→to where to>from): highlight frames (from+1..to)
+  //   — "what just happened" to land here.
+  // Backward step OR initial load: just highlight the current frame.
+  const { highlightFrames, isForward } = useMemo(() => {
+    if (lastTransition && lastTransition.to > lastTransition.from && lastTransition.to === currentIndex) {
+      const lo = lastTransition.from;
+      const hi = lastTransition.to;
+      const range: number[] = [];
+      for (let i = lo + 1; i <= hi; i++) range.push(i);
+      return { highlightFrames: range, isForward: true };
+    }
+    return { highlightFrames: [currentIndex], isForward: false };
+  }, [lastTransition, currentIndex]);
+
+  const headerText = isForward && highlightFrames.length > 1
+    ? `What happened (over ${highlightFrames.length} frames)`
+    : 'What happened at this frame';
+
   const entries = useMemo(() => {
     if (!messagesByFrame) return [];
+    const highlightSet = new Set(highlightFrames);
     const out: { frame: number; msg: any; highlighted: boolean }[] = [];
     const upTo = Math.min(currentIndex, messagesByFrame.length - 1);
     for (let i = 0; i <= upTo; i++) {
       const fmsgs = messagesByFrame[i] || [];
       for (const msg of fmsgs) {
-        out.push({ frame: i, msg, highlighted: i === currentIndex });
+        out.push({ frame: i, msg, highlighted: highlightSet.has(i) });
       }
     }
     return out;
-  }, [messagesByFrame, currentIndex]);
+  }, [messagesByFrame, currentIndex, highlightFrames]);
 
   // Scroll the first highlighted row into view whenever the current frame
   // (or the log contents) change. Falls back to scrolling to the bottom
@@ -494,7 +527,7 @@ function FrameLog({
           flex: '0 0 auto',
         }}
       >
-        What happened at this frame
+        {headerText}
       </div>
       <div
         ref={scrollRef}
