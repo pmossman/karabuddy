@@ -1,0 +1,17 @@
+:root {
+    color-scheme: dark;
+    /* Persistent header height — viewer pages use calc(100vh - var) so the
+       full-bleed sidebar+gameboard fit beneath the header without overflow. */
+    --kb-header-h: 57px;
+}
+
+body {
+    margin: 0;
+    color: #e6e6e6;
+    font-family: var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    /* MUI CssBaseline applies a karabast starfield bg on body via the lifted
+       theme (url(/default-background.webp)). Keep a dark fallback for slow
+       loads but don't override the theme's image. */
+    background-color: #11141a;
+}
