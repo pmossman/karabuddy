@@ -13,6 +13,17 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B10] Compact the viewer sidebar — give the log + tags more vertical room
+
+- **Why:** Above-the-fold in the sidebar is dominated by matchup card, share controls, navigation, and step-mode toggle. The actual high-value content (per-frame log + tag comments) gets pushed below the fold and feels cramped. We need to reclaim height for the scrollable content area.
+- **Acceptance:** All of the following:
+  - Matchup card shrinks (smaller card thumbs, single-row layout). Or replace with a one-line summary (leader names + usernames) that expands on click into the full card view. Pick whichever reads cleaner.
+  - Share section (Copy link + visibility pill + hint copy) tucks behind a single button — e.g., a small "Share" button in a top-right corner of the sidebar that opens a popover with the copy/visibility controls. Don't lose the functionality, just the persistent vertical space.
+  - Step-mode toggle ("STEP BY: Action / Frame" + the "Hold ⇧" hint) moves behind a settings/gear button or merges into a single icon-toggle next to the frame counter. The Hold-Shift hint can become a tooltip on the toggle.
+  - Navigation row tightens — the "Frame 24 / 208" label can sit inline between the arrows; the "Or use arrow keys to step" hint can become a tooltip.
+  - Net result: the log + tags section gets at least ~150px more visible space without scrolling on a standard 1080p viewport.
+- **Refs:** Screenshot in the conversation shows the current layout heavy with chrome above the log. `app/(app)/r/[slug]/TagSidebar.tsx` is the file. Existing primitives: `FooterBtn` for buttons, `VisibilityPill` (added in B6) for the visibility state. May want a small reusable Popover component for the Share menu — file under `app/_components/` if so.
+
 ### [B9] Monorepo: bring the chrome extension into the karabuddy repo
 
 - **Why:** Today the extension lives at `~/code/karabast-extension/` and karabuddy at `~/code/karabuddy/`. They're co-evolving (bridge content script, upload endpoint, claim flow) and the cross-repo coupling already requires juggling two checkouts. A monorepo keeps the API contract + extension client + bridge content script in one place.
