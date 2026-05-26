@@ -9,6 +9,7 @@
     const D = () => NS.Decoder;
     const F = () => NS.Footer;
     const B = () => NS.bridge;
+    const T = () => NS.toast;
 
     // ----- Module state -----
     const recording = [];
@@ -131,6 +132,9 @@
                 recording.push({ t, dir, event: 'gamestate', args: [{ full: norm }] });
                 prevNormalizedGamestate = norm;
                 gamestateCount++;
+                // First gamestate of this recording — surface a toast so the
+                // user knows the recorder is live even with the sidebar closed.
+                T()?.show?.('Recording…', { kind: 'info' });
             } else {
                 const patch = d.makePatch(prevNormalizedGamestate, norm);
                 if (Object.keys(patch).length === 0) return;
@@ -252,15 +256,24 @@
                 filename,
                 players: meta,
                 payload: payloadText
-            }).then(() => F()?.refreshReplayBrowser?.());
+            }).then(() => {
+                F()?.refreshReplayBrowser?.();
+                // Only toast for non-manual saves — a manual save already
+                // triggers a file download which is its own feedback.
+                if (!isManual) T()?.show?.('Replay saved', { kind: 'success' });
+            });
 
             // Fire-and-forget upload to karabuddy.com. Doesn't block local
             // save; failure just leaves the replay local-only. On success
             // we patch the IDB entry with the hosted slug so the replays
             // browser can surface a "View on karabuddy" link.
             B().uploadReplay(payloadText).then((result) => {
-                if (!result || !result.slug) return;
+                if (!result || !result.slug) {
+                    T()?.show?.('Upload failed', { kind: 'error' });
+                    return;
+                }
                 console.log(`[karabuddy] uploaded to ${result.url}${result.deduped ? ' (already existed)' : ''}`);
+                T()?.show?.('Replay uploaded', { kind: 'success', tooltip: result.url });
                 B().saveReplay({
                     gameId: gameIdLocal,
                     savedAt: Date.now(),
@@ -318,6 +331,7 @@
         tags.push(tag);
         schedulePersist();
         F()?.refreshOverlay?.();
+        T()?.show?.('Tag saved', { kind: 'success' });
         return tag;
     };
 

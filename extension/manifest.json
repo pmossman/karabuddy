@@ -40,6 +40,7 @@
                 "replays/03-recorder.js",
                 "replays/04-playback.js",
                 "replays/05-footer.js",
+                "replays/07-toast.js",
                 "replays/06-bootstrap.js"
             ],
             "run_at": "document_start",

@@ -15,6 +15,7 @@
     const F = () => NS.Footer;
     const B = () => NS.bridge;
     const R = () => NS.Recorder;
+    const T = () => NS.toast;
 
     // ----- replayState: what's loaded + where the cursor is -----
     const replayState = {
@@ -623,6 +624,7 @@
         replayState.tags.push(tag);
         persistPayload();
         F()?.refreshOverlay?.();
+        T()?.show?.('Tag saved', { kind: 'success' });
         return tag;
     };
 
