@@ -13,23 +13,17 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B16] Make the extension launcher button click+draggable
-
-- **Why:** The KARA/buddy launcher floats at `top: 10px; left: 10px` over karabast.net. Karabast's own UI can sit under that corner (lobby controls, nav menu, etc) and the launcher covers it. Letting the user drag it out of the way is a quick quality-of-life win.
-- **Acceptance:**
-  - mousedown on the launcher starts a drag. mousemove updates the launcher's position. mouseup ends the drag.
-  - Click vs drag heuristic: if total cursor movement during the down→up cycle is less than ~4px, treat as a click and open the sidebar as before. Otherwise treat as a drag and don't open the sidebar.
-  - Clamp position so the button stays fully within the viewport (no dragging off-screen).
-  - Persist the final position to `chrome.storage.local` (key: `karabuddyLauncherPos = {x, y}`) so it survives page reloads.
-  - On load, restore the persisted position if present; else default to `top: 10px; left: 10px`.
-  - Cursor changes to `move` (or `grab` / `grabbing`) during hover/drag to signal draggability.
-- **Refs:** `extension/replays/05-footer.js` — `buildLauncher()` is where the launcher is created. The existing collapse-button drag-to-resize handle in the same file (`onDragStart`) is a good pattern reference for the drag mechanics. Persistence pattern: see `extension/background.js`'s `getKarabuddyInstallToken` for the `chrome.storage.local` access pattern (the launcher itself can read directly since content scripts have access).
+_empty_
 
 ## In Progress
 
 _empty_
 
 ## Done
+
+### [B16] Make the extension launcher button click+draggable
+_completed: 2026-05-26 by autonomous-loop_
+mousedown on the launcher captures start coords + bounding rect; window-level mousemove/mouseup so drag survives leaving the button. 4px Euclidean threshold flips click→drag (so short drags still open the sidebar). Cursor `grab` idle / `grabbing` mid-drag; `touch-action: none`. Position clamped to viewport, persisted to `chrome.storage.local.karabuddyLauncherPos`; restored on load. Synthetic click suppressed since open-path moved to mouseup. Punted: touch/pointer events, window-resize re-clamp.
 
 ### [B15] Extension publication prep + install instructions on the homepage
 _completed: 2026-05-26 by autonomous-loop_
