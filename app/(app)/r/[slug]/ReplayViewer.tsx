@@ -108,6 +108,18 @@ function ViewerShell({ replay, initialTags }: Props) {
     }
   }, [frames, activeByFrame, currentIndex, mode]);
 
+  // B13: jump to the previous/next tagged frame. Lifted out of TagSidebar so
+  // the keydown handler below can invoke it for `[` / `]` without DOM
+  // querying; TagSidebar's prev/next-tag buttons now call this via prop.
+  const jumpToAdjacentTag = useCallback((dir: 1 | -1) => {
+    const sorted = tagState.map((t) => t.frameIndex).sort((a, b) => a - b);
+    const target =
+      dir > 0
+        ? sorted.find((i) => i > currentIndex)
+        : [...sorted].reverse().find((i) => i < currentIndex);
+    if (target != null) setCurrentIndex(target);
+  }, [tagState, currentIndex, setCurrentIndex]);
+
   // Fetch + decode the payload from Blob.
   useEffect(() => {
     let cancelled = false;
@@ -176,11 +188,15 @@ function ViewerShell({ replay, initialTags }: Props) {
       } else if (e.key === 'End') {
         e.preventDefault();
         setCurrentIndex((frames?.length || 1) - 1);
+      } else if (e.key === '[' || e.key === ']') {
+        // B13: prev/next tag — no-op when no tag exists in that direction.
+        e.preventDefault();
+        jumpToAdjacentTag(e.key === ']' ? 1 : -1);
       }
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [frames, activeByFrame, currentIndex, mode, step]);
+  }, [frames, activeByFrame, currentIndex, mode, step, jumpToAdjacentTag]);
 
   const playerUsernames = useMemo(() => {
     const set = new Set<string>();
@@ -207,6 +223,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         lastTransition={lastTransition}
         onStep={step}
         onJump={setCurrentIndex}
+        onJumpToAdjacentTag={jumpToAdjacentTag}
         tags={tagState}
         setTags={setTagState}
         playerUsernames={playerUsernames}

@@ -43,6 +43,9 @@ interface Props {
   lastTransition: { from: number; to: number } | null;
   onStep: (dir: 1 | -1) => void;
   onJump: (i: number) => void;
+  // B13: parent owns the prev/next-tag jump so the ReplayViewer's keydown
+  // handler can wire `[` / `]` to the same logic these buttons use.
+  onJumpToAdjacentTag: (dir: 1 | -1) => void;
   tags: TagRow[];
   setTags: React.Dispatch<React.SetStateAction<TagRow[]>>;
   playerUsernames: Set<string>;
@@ -79,7 +82,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, tags, setTags, playerUsernames, mode, setMode, messagesByFrame }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -271,15 +274,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     setTags((prev) => prev.map((t) => (t.id === id ? { ...t, comment } : t)));
   };
 
-  const jumpToAdjacent = (dir: 1 | -1) => {
-    const sorted = tags.map((t) => t.frameIndex).sort((a, b) => a - b);
-    const target =
-      dir > 0
-        ? sorted.find((i) => i > currentIndex)
-        : [...sorted].reverse().find((i) => i < currentIndex);
-    if (target != null) onJump(target);
-  };
-
   const tagsAtCurrent = tagsByFrame.get(currentIndex) || [];
 
   return (
@@ -397,8 +391,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             + Tag this frame
           </FooterBtn>
           <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-            <FooterBtn onClick={() => jumpToAdjacent(-1)} variant="ghost" title="Previous tag ([)">‹ Prev tag</FooterBtn>
-            <FooterBtn onClick={() => jumpToAdjacent(1)} variant="ghost" title="Next tag (])">Next tag ›</FooterBtn>
+            <FooterBtn onClick={() => onJumpToAdjacentTag(-1)} variant="ghost" title="Previous tag ([)">‹ Prev tag</FooterBtn>
+            <FooterBtn onClick={() => onJumpToAdjacentTag(1)} variant="ghost" title="Next tag (])">Next tag ›</FooterBtn>
           </div>
         </div>
         {formOpen && (
