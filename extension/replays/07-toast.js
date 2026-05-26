@@ -2,22 +2,22 @@
 //
 // When status changes happen in the background (recording started, tag saved,
 // upload succeeded/failed, replay saved) the user has no feedback unless the
-// sidebar is open. This module renders a small pill that emerges from the
+// panel is open. This module renders a small pill that emerges from the
 // right edge of the launcher button, holds briefly, then fades out. Multiple
 // toasts stack vertically with the newest on top, older pushed down.
 //
 // Triggers wired into existing code paths:
 //   - Recording started (first gamestate)    → "Recording…"        (info)
-//   - Tag added (recording OR playback)      → "Tag saved"         (success)
+//   - Tag added (recording)                  → "Tag saved"         (success)
 //   - Upload to karabuddy succeeded          → "Replay uploaded"   (success)
 //   - Upload to karabuddy failed             → "Upload failed"     (error)
 //   - Replay finalized + saved to IDB        → "Replay saved"      (success)
 //
-// Suppressed when the sidebar is open — the sidebar already surfaces live
-// state, so toasts would be redundant noise.
+// Post-B20: the always-visible sidebar is gone — the launcher only appears
+// while recording, and the expanding panel is dismissed by default. Toasts
+// are now the primary out-of-band feedback channel and no longer suppressed.
 (() => {
     const NS = ((window.__KaraBuddy ||= {}).replays ||= {});
-    const P = () => NS.Playback;
 
     const CONTAINER_ID = 'karabast-replays-toast-stack';
     const LAUNCHER_ID = 'karabast-replays-launcher';
@@ -31,20 +31,6 @@
         info:    { dot: '#5da9ff', border: 'rgba(74, 124, 255, 0.55)' },
         success: { dot: '#4ade80', border: 'rgba(74, 222, 128, 0.55)' },
         error:   { dot: '#ff6b6b', border: 'rgba(255, 107, 107, 0.55)' }
-    };
-
-    // Is the sidebar visible? We suppress toasts in that case — the sidebar
-    // already shows live state. We use the launcher's display style as the
-    // proxy: the launcher is shown only when the sidebar is collapsed
-    // (applyPanelLayout flips this).
-    const isSidebarOpen = () => {
-        const launcher = document.getElementById(LAUNCHER_ID);
-        if (!launcher) {
-            // Sidebar collapsed flag hasn't been read yet; assume open so we
-            // don't spam toasts before the launcher exists.
-            return true;
-        }
-        return launcher.style.display === 'none';
     };
 
     const ensureContainer = () => {
@@ -134,7 +120,6 @@
     // show(text, opts?) — opts: { kind: 'info'|'success'|'error', durationMs, tooltip }
     const show = (text, opts = {}) => {
         try {
-            if (isSidebarOpen()) return;
             const kind = opts.kind || 'info';
             const duration = Number.isFinite(opts.durationMs) ? opts.durationMs : DEFAULT_DURATION_MS;
             const tooltip = opts.tooltip || null;

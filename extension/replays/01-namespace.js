@@ -10,10 +10,8 @@
 
     const params = new URLSearchParams(location.search);
     NS.flags = {
-        REPLAY_FLAG: params.get('extReplay') === '1',
         SOLO_SIDE: params.get('extSide'),
-        SOLO_MODE: !!params.get('extSide'),
-        SESSION_KEY: 'karabast-replays-pending'
+        SOLO_MODE: !!params.get('extSide')
     };
 
     // ---------- Debug logging (off by default) ----------
@@ -74,8 +72,6 @@
                 console.error('[karabuddy] get failed:', err);
                 return null;
             }),
-        consumePendingReplay: (gameId) =>
-            companionRequest({ type: 'consumePendingReplay', gameId }),
         // Push a finalized replay to karabuddy.com. Best-effort; resolves to
         // { slug, url } on success or null on failure (already logged by the
         // background's catch block).

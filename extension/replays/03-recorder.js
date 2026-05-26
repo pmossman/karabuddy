@@ -27,6 +27,12 @@
     // Track the just-finalized id and ignore further events for it; a new
     // gameId resets this and the next game records normally.
     let finalizedGameId = null;
+    // karabuddy.com URL of the most recently uploaded replay for THIS
+    // recording session. Surfaces in the launcher's expanded panel as a
+    // "Open this replay on karabuddy →" link. Cleared at the start of every
+    // new recording (first gamestate after a previous finalize / reset); set
+    // inside the uploadReplay success branch below.
+    let currentKarabuddyUrl = null;
 
     const resetRecording = () => {
         recording.length = 0;
@@ -36,6 +42,9 @@
         prevNormalizedGamestate = null;
         lastFullGamestate = null;
         autoDownloadScheduled = false;
+        // Note: currentKarabuddyUrl intentionally NOT cleared here — keeps
+        // the "Open on karabuddy" link visible after a match finalizes
+        // until the next gamestate of a new match starts (which clears it).
     };
 
     // ----- Persistence: mid-game refresh wipes the in-memory recording. -----
@@ -132,8 +141,10 @@
                 recording.push({ t, dir, event: 'gamestate', args: [{ full: norm }] });
                 prevNormalizedGamestate = norm;
                 gamestateCount++;
-                // First gamestate of this recording — surface a toast so the
-                // user knows the recorder is live even with the sidebar closed.
+                // First gamestate of this recording — clear the prior match's
+                // karabuddy URL (if any) and surface a toast so the user knows
+                // the recorder is live even with the launcher collapsed.
+                currentKarabuddyUrl = null;
                 T()?.show?.('Recording…', { kind: 'info' });
             } else {
                 const patch = d.makePatch(prevNormalizedGamestate, norm);
@@ -273,6 +284,11 @@
                     return;
                 }
                 console.log(`[karabuddy] uploaded to ${result.url}${result.deduped ? ' (already existed)' : ''}`);
+                // Cache so the launcher's expanded panel can surface a
+                // "Open this replay on karabuddy →" link until the next
+                // recording starts.
+                currentKarabuddyUrl = result.url;
+                F()?.refreshOverlay?.();
                 T()?.show?.('Replay uploaded', { kind: 'success', tooltip: result.url });
                 B().saveReplay({
                     gameId: gameIdLocal,
@@ -385,6 +401,15 @@
         getCurrentPlayers: () => lastFullGamestate?.players || null,
         // Set of player usernames in this game — drives tag color (player
         // vs reviewer) at render time.
-        getPlayerUsernames: () => D().playerUsernamesFromPlayers(lastFullGamestate?.players)
+        getPlayerUsernames: () => D().playerUsernamesFromPlayers(lastFullGamestate?.players),
+        // Has the recorder seen at least one gamestate this session? The
+        // floating launcher uses this to decide whether to render itself
+        // (hidden entirely between matches so the extension has zero
+        // footprint on karabast.net until capture begins).
+        isRecordingActive: () => gamestateCount > 0,
+        // karabuddy.com URL of the most recent successful upload for the
+        // current recording session. Returns null until uploadReplay resolves
+        // with a slug, and is cleared again when a new recording starts.
+        getCurrentKarabuddyUrl: () => currentKarabuddyUrl
     };
 })();

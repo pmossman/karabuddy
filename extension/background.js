@@ -442,34 +442,6 @@ const openReplaysPage = async () => {
     await chrome.tabs.create({ url });
 };
 
-// Hand a replay payload to a karabast tab for playback. Uses chrome.storage.session
-// keyed by gameId so the MAIN-world script can fetch it on load.
-const playReplay = async (gameId) => {
-    const entry = await idbGetReplay(gameId);
-    if (!entry || !entry.payload) throw new Error('Replay not found');
-    await chrome.storage.session.set({
-        [`pendingReplay:${gameId}`]: { gameId, payload: entry.payload, queuedAt: Date.now() }
-    });
-    const url = `${ORIGIN}/GameBoard?spectator=true&extReplay=1&extReplayId=${encodeURIComponent(gameId)}`;
-    // Prefer reusing a karabast tab if one is already open.
-    const existing = await chrome.tabs.query({ url: `${ORIGIN}/*` });
-    if (existing.length > 0) {
-        await chrome.tabs.update(existing[0].id, { active: true, url });
-        await chrome.windows.update(existing[0].windowId, { focused: true });
-    } else {
-        await chrome.tabs.create({ url });
-    }
-};
-
-const consumePendingReplay = async (gameId) => {
-    const key = `pendingReplay:${gameId}`;
-    const stored = await chrome.storage.session.get(key);
-    const entry = stored[key];
-    if (!entry) return null;
-    await chrome.storage.session.remove(key);
-    return entry;
-};
-
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
         try {
@@ -515,8 +487,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'saveMatch') {
                 await saveMatch(msg.match);
                 sendResponse({ ok: true });
-            } else if (msg.type === 'getKarabuddyEndpoint') {
-                sendResponse({ ok: true, endpoint: await getKarabuddyEndpoint() });
             } else if (msg.type === 'openKarabuddyClaim') {
                 const result = await openKarabuddyClaim();
                 sendResponse({ ok: true, data: result });
@@ -546,12 +516,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'openReplaysPage') {
                 await openReplaysPage();
                 sendResponse({ ok: true });
-            } else if (msg.type === 'playReplay') {
-                await playReplay(msg.gameId);
-                sendResponse({ ok: true });
-            } else if (msg.type === 'consumePendingReplay') {
-                const entry = await consumePendingReplay(msg.gameId);
-                sendResponse({ ok: true, data: entry });
             } else {
                 sendResponse({ ok: false, error: `Unknown message type: ${msg.type}` });
             }
@@ -560,6 +524,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
     })();
     return true;
+});
+
+// Toolbar icon click → open the user's karabuddy replays tab. Reuses the
+// existing tab-reuse logic from openReplaysPage (B19 replaced the popup; B20
+// dropped the popup entirely in favor of single-click). With default_popup
+// removed from manifest.action, this listener fires.
+chrome.action.onClicked.addListener(() => {
+    openReplaysPage().catch((err) => console.error('[karabuddy] openReplaysPage failed:', err));
 });
 
 chrome.commands.onCommand.addListener((command) => {

@@ -17,7 +17,6 @@
         "http://localhost:3000/*"
     ],
     "action": {
-        "default_popup": "popup.html",
         "default_title": "KaraBuddy",
         "default_icon": {
             "16": "icons/16.png",
@@ -38,7 +37,6 @@
                 "replays/01-namespace.js",
                 "replays/02-decoder.js",
                 "replays/03-recorder.js",
-                "replays/04-playback.js",
                 "replays/05-footer.js",
                 "replays/07-toast.js",
                 "replays/06-bootstrap.js"
