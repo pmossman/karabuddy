@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "package:extension": "bash scripts/package-extension.sh"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",

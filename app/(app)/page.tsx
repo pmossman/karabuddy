@@ -45,11 +45,10 @@ export default async function Home() {
           />
         )}
         <Tile
-          title="Chrome extension"
-          desc="Record karabast.net games as you play. Replays upload here automatically and you can tag moments mid-game."
-          href="https://github.com/pmossman/karabast-extension"
+          title="Install the extension"
+          desc="Record karabast.net games as you play. Replays upload here automatically and you can tag moments mid-game. Chrome only for now."
+          href="/install"
           cta="Install"
-          external
         />
       </section>
 

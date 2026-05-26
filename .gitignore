@@ -9,6 +9,9 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
+# Extension release zips (produced by scripts/package-extension.sh)
+dist/
+
 # Env
 .env*.local
 .env

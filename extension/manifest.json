@@ -1,8 +1,14 @@
 {
     "manifest_version": 3,
     "name": "KaraBuddy",
-    "version": "0.2.0",
-    "description": "Solo deck testing + match recording and replay playback for karabast.net.",
+    "version": "0.3.0",
+    "version_name": "0.3.0 (store-ready)",
+    "description": "Companion for karabast.net: record matches, replay them with tags, and run solo (one-window) test sessions for Star Wars Unlimited.",
+    "icons": {
+        "16": "icons/16.png",
+        "48": "icons/48.png",
+        "128": "icons/128.png"
+    },
     "permissions": ["storage", "tabs", "declarativeNetRequest"],
     "host_permissions": [
         "https://karabast.net/*",
@@ -14,7 +20,12 @@
     ],
     "action": {
         "default_popup": "popup.html",
-        "default_title": "KaraBuddy"
+        "default_title": "KaraBuddy",
+        "default_icon": {
+            "16": "icons/16.png",
+            "48": "icons/48.png",
+            "128": "icons/128.png"
+        }
     },
     "options_page": "options.html",
     "background": {
