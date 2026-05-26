@@ -198,6 +198,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         playerUsernames={playerUsernames}
         mode={mode}
         setMode={setMode}
+        messagesByFrame={decoded?.messagesByFrame || null}
       />
       <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
         {frames ? (

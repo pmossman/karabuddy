@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import type { Frame } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
@@ -42,6 +42,7 @@ interface Props {
   playerUsernames: Set<string>;
   mode: StepMode;
   setMode: (m: StepMode) => void;
+  messagesByFrame: any[][] | null;
 }
 
 const TAG_PLAYER = '#6bd968';
@@ -50,7 +51,7 @@ const TAG_REVIEWER = '#e0c64a';
 const tagColor = (authorName: string, players: Set<string>) =>
   players.has(authorName) ? TAG_PLAYER : TAG_REVIEWER;
 
-export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags, setTags, playerUsernames, mode, setMode }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags, setTags, playerUsernames, mode, setMode, messagesByFrame }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -321,7 +322,13 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
         )}
       </section>
 
-      <section style={{ flex: '1 1 auto', overflowY: 'auto', padding: '14px 22px' }}>
+      <FrameLog
+        messagesByFrame={messagesByFrame}
+        currentIndex={currentIndex}
+        frames={frames}
+      />
+
+      <section style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
         {tagsAtCurrent.length > 0 && (
           <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This frame</div>
@@ -386,6 +393,141 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
       </section>
     </aside>
   );
+}
+
+// Per-frame "what happened" log. Renders cumulative messages from frame 0
+// up through `currentIndex`, with the current frame's batch at full opacity
+// and prior frames dimmed for historical context — mirrors the chrome
+// extension's logBody (see ~/code/karabast-extension/replays/05-footer.js).
+//
+// Player names inside messages are color-coded: first player in the frame-0
+// players map is blue, second is red. Matches setConnectedPlayer in
+// ReplayViewer (which picks the first player as the viewer perspective).
+const PLAYER_COLOR_USER = '#5da9ff';
+const PLAYER_COLOR_OPPONENT = '#ff6b6b';
+
+function FrameLog({
+  messagesByFrame,
+  currentIndex,
+  frames,
+}: {
+  messagesByFrame: any[][] | null;
+  currentIndex: number;
+  frames: Frame[] | null;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const currentRowRef = useRef<HTMLDivElement>(null);
+
+  const playerIdToColor = useMemo(() => {
+    const m = new Map<string, string>();
+    const players = frames?.[0]?.state?.players;
+    if (!players) return m;
+    const keys = Object.keys(players);
+    if (keys[0]) m.set(keys[0], PLAYER_COLOR_USER);
+    if (keys[1]) m.set(keys[1], PLAYER_COLOR_OPPONENT);
+    return m;
+  }, [frames]);
+
+  const entries = useMemo(() => {
+    if (!messagesByFrame) return [];
+    const out: { frame: number; msg: any; highlighted: boolean }[] = [];
+    const upTo = Math.min(currentIndex, messagesByFrame.length - 1);
+    for (let i = 0; i <= upTo; i++) {
+      const fmsgs = messagesByFrame[i] || [];
+      for (const msg of fmsgs) {
+        out.push({ frame: i, msg, highlighted: i === currentIndex });
+      }
+    }
+    return out;
+  }, [messagesByFrame, currentIndex]);
+
+  // Scroll the first highlighted row into view whenever the current frame
+  // (or the log contents) change. Falls back to scrolling to the bottom
+  // when the current frame has no messages of its own.
+  useEffect(() => {
+    if (currentRowRef.current) {
+      currentRowRef.current.scrollIntoView({ block: 'center', behavior: 'auto' });
+    } else if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [entries]);
+
+  return (
+    <section
+      style={{
+        flex: '1 1 0',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        borderTop: '1px solid #2e333c',
+      }}
+    >
+      <div
+        style={{
+          padding: '12px 22px 6px',
+          fontSize: 11,
+          color: '#6c7588',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          flex: '0 0 auto',
+        }}
+      >
+        What happened at this frame
+      </div>
+      <div
+        ref={scrollRef}
+        style={{
+          flex: '1 1 0',
+          minHeight: 0,
+          overflowY: 'auto',
+          padding: '0 22px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          fontSize: 13,
+          lineHeight: 1.4,
+        }}
+      >
+        {entries.length === 0 ? (
+          <div style={{ color: '#6c7588', fontStyle: 'italic' }}>(no log entries yet)</div>
+        ) : (
+          entries.map((entry, idx) => {
+            const isFirstHighlighted =
+              entry.highlighted && (idx === 0 || !entries[idx - 1].highlighted);
+            return (
+              <div
+                key={`${entry.frame}-${idx}`}
+                ref={isFirstHighlighted ? currentRowRef : null}
+                style={{ opacity: entry.highlighted ? 1 : 0.45, transition: 'opacity 120ms ease' }}
+              >
+                {renderMessage(entry.msg, playerIdToColor)}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
+function renderMessage(msg: any, playerColor: Map<string, string>): React.ReactNode {
+  if (!msg) return null;
+  if (typeof msg === 'string') return msg;
+  if (!Array.isArray(msg.message)) return null;
+  return msg.message.map((part: any, i: number) => {
+    if (typeof part === 'string') return <React.Fragment key={i}>{part}</React.Fragment>;
+    const name = part?.name ?? '';
+    if (!name) return null;
+    const color = part?.type === 'player' ? playerColor.get(part.id) : null;
+    if (color) {
+      return (
+        <span key={i} style={{ color, fontWeight: 600 }}>
+          {name}
+        </span>
+      );
+    }
+    return <React.Fragment key={i}>{name}</React.Fragment>;
+  });
 }
 
 function Matchup({ player }: { player: any }) {
