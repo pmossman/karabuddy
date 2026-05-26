@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import type { Frame } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
+import { Popover } from '@/app/_components/Popover';
 
 interface ReplayRow {
   slug: string;
@@ -218,64 +219,85 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
         overflow: 'hidden',
       }}
     >
-      <header style={{ padding: '16px 22px 12px', borderBottom: '1px solid #2e333c', flex: '0 0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Matchup player={p1} />
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
-          <Matchup player={p2} />
+      {/* B10: compact header — leader+base inline per player, username
+          inline, share collapsed into a top-right popover. Drops the
+          old subline (username + action count) to reclaim vertical
+          space — usernames now sit inline with the cards. */}
+      <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+          <MatchupRow player={p1} />
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto' }}>VS</span>
+          <MatchupRow player={p2} />
         </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: '#a0a8b8', lineHeight: 1.4 }}>
-          {p1?.username || 'anon'} vs {p2?.username || 'anon'}
-          {' · '}
-          {replay.actionCount} actions
-        </div>
+        <Popover
+          align="right"
+          label="Share replay"
+          trigger={(open, toggle) => (
+            <IconBtn onClick={toggle} title="Share" active={open}>
+              <ShareIcon />
+            </IconBtn>
+          )}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 220 }}>
+            <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Share</div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <FooterBtn onClick={copyLink}>
+                {copied ? 'Copied!' : 'Copy link'}
+              </FooterBtn>
+              {isOwner && (
+                <VisibilityPill
+                  visibility={visibility}
+                  busy={visBusy}
+                  onClick={toggleVisibility}
+                />
+              )}
+            </div>
+            {isOwner && (
+              <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
+                {visibility === 'public'
+                  ? 'Listed publicly on /replays.'
+                  : 'Anyone with the link can view.'}
+              </div>
+            )}
+          </div>
+        </Popover>
       </header>
 
-      <section style={{ padding: '12px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Share</div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <FooterBtn onClick={copyLink}>
-            {copied ? 'Copied!' : 'Copy link'}
-          </FooterBtn>
-          {isOwner && (
-            <VisibilityPill
-              visibility={visibility}
-              busy={visBusy}
-              onClick={toggleVisibility}
-            />
-          )}
-        </div>
-        {isOwner && (
-          <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-            {visibility === 'public'
-              ? 'Listed publicly on /replays.'
-              : 'Anyone with the link can view.'}
-          </div>
-        )}
-      </section>
-
-      <section style={{ padding: '12px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Navigation</div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      {/* B10: nav row tightens — arrows flank an inline frame counter,
+          arrow-key hint becomes tooltips on the arrows. Step-mode toggle
+          hides behind a gear popover next to the counter. */}
+      <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <FooterBtn onClick={() => onStep(-1)} title="Previous frame (←)">←</FooterBtn>
-          <FooterBtn onClick={() => onStep(1)} title="Next frame (→)">→</FooterBtn>
-          <span style={{ fontSize: 12, color: '#d6d6d6', fontWeight: 600, marginLeft: 6 }}>
+          <span style={{ fontSize: 12, color: '#d6d6d6', fontWeight: 600, padding: '0 8px', flex: 1, textAlign: 'center' }}>
             {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
           </span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step by</div>
-          <ModeSegmented mode={mode} setMode={setMode} />
-          <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-            Hold ⇧ + ← → to step by {mode === 'action' ? 'Frame' : 'Action'}
-          </div>
+          <FooterBtn onClick={() => onStep(1)} title="Next frame (→)">→</FooterBtn>
+          <Popover
+            align="right"
+            label="Step settings"
+            trigger={(open, toggle) => (
+              <IconBtn onClick={toggle} title="Step settings" active={open}>
+                <GearIcon />
+              </IconBtn>
+            )}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 180 }}>
+              <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step by</div>
+              <ModeSegmented
+                mode={mode}
+                setMode={setMode}
+                title={`Hold ⇧ + ← → to step by ${mode === 'action' ? 'Frame' : 'Action'}`}
+              />
+              <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
+                Hold ⇧ + ← → to step by {mode === 'action' ? 'Frame' : 'Action'}
+              </div>
+            </div>
+          </Popover>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <FooterBtn onClick={() => jumpToAdjacent(-1)} variant="ghost">‹ Prev tag</FooterBtn>
           <FooterBtn onClick={() => jumpToAdjacent(1)} variant="ghost">Next tag ›</FooterBtn>
-        </div>
-        <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-          Or use arrow keys to step.
         </div>
       </section>
 
@@ -530,12 +552,37 @@ function renderMessage(msg: any, playerColor: Map<string, string>): React.ReactN
   });
 }
 
-function Matchup({ player }: { player: any }) {
+// B10: compact single-row variant — leader and base side-by-side at a
+// smaller thumb size, plus the username inline. Replaces the old two-row
+// stacked Matchup which dominated the sidebar header.
+function MatchupRow({ player }: { player: any }) {
   if (!player) return <div style={{ flex: 1, minWidth: 0 }} />;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0, alignItems: 'center' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        flex: 1,
+        minWidth: 0,
+      }}
+      title={`${player.leader?.name || '?'} / ${player.base?.name || '?'} — ${player.username || 'anon'}`}
+    >
       <CardImg src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
       <CardImg src={cardImageUrl(player.base, false)} alt={player.base?.name} />
+      <span
+        style={{
+          fontSize: 11,
+          color: '#a0a8b8',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+          flex: 1,
+        }}
+      >
+        {player.username || 'anon'}
+      </span>
     </div>
   );
 }
@@ -543,8 +590,8 @@ function Matchup({ player }: { player: any }) {
 function CardImg({ src, alt }: { src: string | null; alt?: string }) {
   if (!src) {
     return (
-      <div style={{ width: 90, height: 64, borderRadius: 4, background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c7588', fontSize: 10, textAlign: 'center', padding: 4, boxSizing: 'border-box' }}>
-        {alt || '—'}
+      <div style={{ width: 32, height: 32, borderRadius: 3, background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c7588', fontSize: 8, textAlign: 'center', padding: 2, boxSizing: 'border-box', flex: '0 0 auto' }}>
+        {(alt || '—').slice(0, 4)}
       </div>
     );
   }
@@ -553,12 +600,70 @@ function CardImg({ src, alt }: { src: string | null; alt?: string }) {
       src={src}
       alt={alt || ''}
       loading="lazy"
-      style={{ width: 90, height: 64, objectFit: 'contain', borderRadius: 4, background: '#0a0c10' }}
+      style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 3, background: '#0a0c10', flex: '0 0 auto' }}
     />
   );
 }
 
-function ModeSegmented({ mode, setMode }: { mode: StepMode; setMode: (m: StepMode) => void }) {
+function IconBtn({
+  onClick,
+  title,
+  active,
+  children,
+}: {
+  onClick: () => void;
+  title?: string;
+  active?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 26,
+        height: 26,
+        padding: 0,
+        background: active ? 'rgba(74, 124, 255, 0.18)' : 'transparent',
+        border: `1px solid ${active ? '#4a7cff' : '#3a3e46'}`,
+        borderRadius: 4,
+        color: active ? '#5da9ff' : '#a0a8b8',
+        cursor: 'pointer',
+        flex: '0 0 auto',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+function ModeSegmented({ mode, setMode, title }: { mode: StepMode; setMode: (m: StepMode) => void; title?: string }) {
   const seg: React.CSSProperties = {
     background: 'transparent',
     color: '#a0a8b8',
@@ -570,7 +675,7 @@ function ModeSegmented({ mode, setMode }: { mode: StepMode; setMode: (m: StepMod
   };
   const sel: React.CSSProperties = { background: '#4a7cff', color: 'white' };
   return (
-    <div style={{ display: 'inline-flex', alignSelf: 'flex-start', border: '1px solid #4a4e56', borderRadius: 4, overflow: 'hidden', height: 22 }}>
+    <div title={title} style={{ display: 'inline-flex', alignSelf: 'flex-start', border: '1px solid #4a4e56', borderRadius: 4, overflow: 'hidden', height: 22 }}>
       <button type="button" style={{ ...seg, ...(mode === 'action' ? sel : {}) }} onClick={() => setMode('action')}>Action</button>
       <button type="button" style={{ ...seg, ...(mode === 'frame' ? sel : {}) }} onClick={() => setMode('frame')}>Frame</button>
     </div>
