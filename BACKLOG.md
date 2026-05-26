@@ -13,44 +13,7 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B17] Extension: strip the sidebar down to recording-only
-
-- **Why:** The karabuddy webapp now handles replay browsing, playback, tag display, sharing, account, and settings. The extension's sidebar still has full idle/playback sections for all of that — duplicate surface that's drifted out of date. The extension's true job going forward is narrow: record matches in the background, and offer a focused mid-game tagging UI when the user opens the sidebar during a game.
-- **Acceptance:**
-  - **Sidebar idle state** (no game running): replace the current Replays / Saved replays / Solo testing / Account sections with a tiny landing: KARA/buddy header, one-line "Recording is automatic during karabast matches" hint, and **two link buttons** — `Open my replays →` (→ `<karabuddyEndpoint>/replays?tab=mine` via `chrome.tabs.create`) and `Link this extension →` (→ `<karabuddyEndpoint>/claim?token=<installToken>`, same flow as B16's openKarabuddyClaim). That's it for idle.
-  - **Sidebar playback state**: remove entirely. The extension no longer drives playback — karabuddy.com is the viewer. The `extReplay` URL-flag flow in `04-playback.js` + the fake socket.io transport can stay (they're still used when karabuddy bounces a replay into karabast.net for the in-place player), but the sidebar's playback chrome (frame stepper, prev/next tag, tag list, log) all goes.
-  - **Sidebar recording state**: this is the new primary panel. Big visible REC indicator + event count (already exists). Underneath: a prominent `+ Tag this moment` button that opens an inline comment textarea + Save / Cancel. Below: the recent tags list (same data, smaller). Optionally an "Open this replay on karabuddy →" link once we've uploaded mid-game (extension already auto-uploads on finalize; until then the link is hidden).
-  - **Sidebar solo state**: leave alone for now. Solo is still extension-only and is its own task to move to karabuddy later. Just don't break it.
-  - **Files to delete or trim heavily:** `extension/replays.html`, `extension/replays.css`, `extension/replays.js` — all chrome-extension://-hosted UI replaced by karabuddy. Anywhere in `extension/background.js` that opens `chrome.runtime.getURL('replays.html')` (e.g. `openReplaysPage`) needs to redirect to `<karabuddyEndpoint>/replays?tab=mine` instead.
-  - **Footer** of the sidebar: the contextual exit button stays.
-- **Refs:** `extension/replays/05-footer.js` is where most of the sidebar lives. `extension/background.js` has the `openReplaysPage` handler. `extension/manifest.json`'s `web_accessible_resources` (if it lists replays.html) needs cleanup. Keep the karabuddy upload + extension-token claim flows (B6/B9/B16 era) intact.
-
-### [B18] Extension: toast notifications popping from the launcher
-
-- **Why:** When events happen in the background (replay saved, tag added, upload succeeded, upload failed) the user has no feedback unless they open the sidebar. A small toast that pops out of the launcher button — even when the sidebar is closed — turns the launcher into a passive status surface.
-- **Acceptance:**
-  - New `extension/replays/07-toast.js` module (or similar) loaded by the manifest's MAIN-world content_scripts list. Exposes `NS.toast.show(text, opts?)` and is called from the recorder/playback/footer wherever a status change happens.
-  - Visual: a small pill (~200–260px wide) that emerges from the right edge of the launcher button (extends rightward, vertically centered against the launcher) with a colored leading dot (success green, info blue, error red). The launcher stays in place; the pill animates in with a brief slide+fade (~150ms), holds for ~3000ms (configurable per-call), then fades out.
-  - When multiple toasts fire in close succession, they stack vertically (new on top, older pushed down) or queue (whichever is cleaner to implement — your call).
-  - Triggers wired into existing code paths:
-    - Recording started (first gamestate received) → `Recording…` (info)
-    - Tag added (recording OR playback state) → `Tag saved` (success)
-    - Upload to karabuddy succeeded → `Replay uploaded` (success) with the URL as a hover tooltip
-    - Upload to karabuddy failed → `Upload failed` (error)
-    - Replay finalized + saved to IDB → `Replay saved` (success)
-  - Toasts respect the launcher's current position (it's draggable per B16) — the pill anchors to the launcher's current bounding rect, not a fixed corner.
-  - When the sidebar is OPEN, suppress toasts (the sidebar already shows the live state). Or place toasts near the sidebar's edge — pick whichever feels right; "suppress when sidebar open" is simpler.
-- **Refs:** Launcher lives in `extension/replays/05-footer.js`'s `buildLauncher()`. The recorder fires `B().uploadReplay(...)` on finalize in `extension/replays/03-recorder.js` — the success/failure branches are the ideal triggers for the upload toasts. Tag-add lives in `R().addTag()` and `P().addTag()`. Style the pill to match the launcher's gradient + brand-blue border palette.
-
-### [B19] Extension: replace the action popup with a karabuddy redirect
-
-- **Why:** The toolbar action popup currently surfaces deck-setup / solo-launch UI. With everything moving to karabuddy and solo staying as its own future task, the popup's content is duplicate or stale. Simplify it to a launcher into karabuddy.
-- **Acceptance:**
-  - `extension/popup.html` rewritten to a small (300×180-ish) panel with the KARA/buddy logo and three big buttons: `My replays` → `<karabuddyEndpoint>/replays?tab=mine`, `Browse public` → `<karabuddyEndpoint>/replays?tab=public`, `Solo testing` → opens the existing solo-config screen (`options.html`). Each opens in a new tab via `chrome.tabs.create`.
-  - `extension/popup.js`: drop the deck-library + config code; replace with three small click handlers + the existing `getKarabuddyEndpoint` call.
-  - `extension/popup.css`: simplified to match the new minimal layout. Reuse the popup's existing dark/Barlow aesthetic.
-  - `extension/options.html` (the deck library / solo setup): leave intact. Solo testing still needs it.
-- **Refs:** `extension/popup.html`, `extension/popup.js`, `extension/popup.css`. `extension/background.js` has `getKarabuddyEndpoint`.
+_empty_
 
 ## Continuation prompt
 
@@ -61,6 +24,18 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B17] Extension: strip the sidebar down to recording-only
+_completed: 2026-05-26 by autonomous-loop_
+Idle state collapses to KARA/buddy + auto-recording hint + two link buttons (`Open my replays →` to `<endpoint>/replays?tab=mine`, `Link this extension →` to `<endpoint>/claim?token=...`). Recording state becomes the primary panel: REC indicator + event count, stretched `+ Tag this moment` button, tags list, hidden `Open this replay on karabuddy →` link that waits on a future `R().getCurrentKarabuddyUrl()` getter. Playback sidebar surface (frame stepper, prev/next tag, log, tag callout) deleted — karabuddy.com is the viewer now; `extReplay` flow + fake socket.io transport in `04-playback.js` retained for the in-place player bounce. Solo state untouched. Deleted `extension/replays.html|css|js`; `openReplaysPage` in `background.js` redirects to `<endpoint>/replays?tab=mine` (reuses existing matching tab when found).
+
+### [B18] Extension: toast notifications popping from the launcher
+_completed: 2026-05-26 by autonomous-loop_
+New `extension/replays/07-toast.js` MAIN-world module registered in `manifest.json` before `06-bootstrap.js`; exposes `NS.toast.show(text, opts?)`. Pill anchors live to the draggable launcher's bounding rect, stacks newest-on-top with column-reverse, slide+fade ~150ms in/out around a 3000ms hold, suppressed when the sidebar is open. Triggers wired: `Recording…` on first gamestate, `Tag saved` on `R().addTag()` and `P().addTag()`, `Replay saved` on non-manual IDB save, `Replay uploaded` (with URL tooltip) / `Upload failed` around the upload promise in `03-recorder.js`.
+
+### [B19] Extension: replace the action popup with a karabuddy redirect
+_completed: 2026-05-26 by autonomous-loop_
+`popup.html` rewritten to a ~300px panel with KARA/buddy mark + three buttons (`My replays`, `Browse public`, `Solo testing`). `popup.js` dropped the deck-library/config code in favor of three `chrome.tabs.create` handlers — replay buttons resolve `<karabuddyEndpoint>/replays?tab=mine|public` via a new `getKarabuddyEndpoint` message handler added to `background.js`; Solo testing still opens `options.html`. `popup.css` slimmed to the new dark/Barlow layout; `options.html` left intact for solo.
 
 ### [B16] Make the extension launcher button click+draggable
 _completed: 2026-05-26 by autonomous-loop_
