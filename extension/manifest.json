@@ -4,7 +4,6 @@
     "version": "0.3.0",
     "version_name": "0.3.0 (store-ready)",
     "description": "Companion for karabast.net: record matches, replay them with tags, and run solo (one-window) test sessions for Star Wars Unlimited.",
-    "_iconsNote": "Top-level icons declares 128 only — Chrome's extensions page card picks the largest available size. With 48 in this map, Chrome was serving the 48 (then upscaling on retina), which looked fuzzy. The toolbar action below still declares 16/48/128 because the toolbar slot is genuinely tiny and benefits from a native 16.",
     "icons": {
         "128": "icons/128.png"
     },
