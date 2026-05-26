@@ -428,10 +428,14 @@ const idbEnforceCap = async () => {
 };
 
 const openReplaysPage = async () => {
-    const url = chrome.runtime.getURL('replays.html');
-    const existing = await chrome.tabs.query({ url });
+    // Replay browsing lives on karabuddy.com now (B17). Open the user's
+    // own-replays tab; the page itself decides what "mine" means (via the
+    // signed-in account or the linked installToken).
+    const endpoint = await getKarabuddyEndpoint();
+    const url = `${endpoint}/replays?tab=mine`;
+    const existing = await chrome.tabs.query({ url: `${endpoint}/replays*` });
     if (existing.length > 0) {
-        await chrome.tabs.update(existing[0].id, { active: true });
+        await chrome.tabs.update(existing[0].id, { active: true, url });
         await chrome.windows.update(existing[0].windowId, { focused: true });
         return;
     }
