@@ -13,40 +13,25 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B15] Extension publication prep + install instructions on the homepage
-
-- **Why:** The chrome extension is mature enough to share more broadly, but there's no obvious install path for new users and no submission-ready packaging. Need both the extension polished for the Chrome Web Store submission flow AND a clear "Install" walkthrough surfaced on karabuddy's homepage.
-- **Acceptance:**
-  - **Extension prep:**
-    - `extension/manifest.json` cleaned up for submission: descriptive `name` and `description`, sensible `version` (start at 0.3.0 to mark "ready-for-store"), bumped `version_name` if used.
-    - Add icon assets if missing (`icons/16.png`, `48.png`, `128.png` referenced from `manifest.json` → `action.default_icon` and top-level `icons`). If existing assets are missing, generate placeholders from the KARA/buddy logo or leave a TODO note specifying the exact files to produce.
-    - Add `extension/README.md` with: what the extension does, current features (replay record/play/tag, solo testing, sidebar overlay on karabast.net), build/load instructions (load-unpacked vs zip), known limitations.
-    - Add a `scripts/package-extension.sh` (or npm script) that zips `extension/` into a release-ready bundle — strip dev-only files, ensure manifest.json is at zip root.
-  - **Install instructions on the site:**
-    - New `/install` route (or section on the homepage) with a step-by-step walkthrough for Chrome (the only supported browser at launch). Cover: download the zip, unzip, `chrome://extensions`, enable Developer Mode, Load unpacked, point at the unzipped folder. Once we have a Chrome Web Store listing, swap the steps for "Install from the Store" with the marketplace link.
-    - Header tile or footer link on the homepage pointing at `/install`.
-    - Mention Firefox / Edge as "coming later" with a brief note that we'd port the MV3 manifest with minor tweaks. Don't write install steps for them yet.
-  - **Punt explicitly if blocked:**
-    - Chrome Web Store submission itself (requires the user's $5 developer account + screenshots + privacy policy text) — out of scope. The task here is "submission-ready", not "submitted".
-- **Refs:** Extension lives at `~/code/karabuddy/extension/` (post-B9). Homepage: `app/(app)/page.tsx`. Existing `Tile` component is a good pattern for the homepage "Install" entry point.
-
-### [B14] Move tag controls down beside the tag display area
-
-- **Why:** Current sidebar order is matchup → navigation → tag controls (+ Tag this frame / prev tag / next tag) → game log → tag display. Tag controls being between navigation and game log makes them feel disconnected from the tag list they actually act on. Should sit immediately adjacent to the tag display so the affordance reads naturally.
-- **Acceptance:** Sidebar order top-to-bottom: matchup → navigation → game log → tag controls (the row B12 built: + Tag this frame, ‹ Prev tag, Next tag › ) → tag display (THIS FRAME callout + All tags list). The inline-comment form that opens when "+ Tag this frame" is clicked still appears directly under the button. No behavior change — purely a section-reorder.
-- **Refs:** `app/(app)/r/[slug]/TagSidebar.tsx`. The tag controls + form live in the section currently rendered before FrameLog; FrameLog + tag display are in the section after. Reorder the JSX so the tag-controls section + the form render between FrameLog and the tag display sections.
-
-### [B13] Wire `[` / `]` keyboard shortcuts for prev/next tag in the viewer
-
-- **Why:** Viewer tooltips reference `[` / `]` keyboard shortcuts for tag navigation, but the `ReplayViewer.tsx` keydown handler doesn't actually wire them — only ArrowLeft/Right/Home/End are handled. Surfaced as a B12 punt.
-- **Acceptance:** Pressing `[` jumps to the prev tag (same target as the Prev tag button); `]` jumps to next. No-ops when no tag exists in that direction. Ignored when a TEXTAREA / INPUT is focused, matching the existing arrow-key handler's guard.
-- **Refs:** `app/(app)/r/[slug]/ReplayViewer.tsx` keydown handler. The `jumpToAdjacent(dir)` helper currently lives inside `TagSidebar.tsx` — pull it up into `ReplayViewer.tsx` (or pass a callback prop) so the keydown handler can call it without DOM querying.
+_empty_
 
 ## In Progress
 
 _empty_
 
 ## Done
+
+### [B15] Extension publication prep + install instructions on the homepage
+_completed: 2026-05-26 by autonomous-loop_
+Extension: bumped to 0.3.0 with richer description + 16/48/128 icons (programmatically generated placeholders — `extension/icons/{16,48,128}.png`), `extension/README.md` covering features + load-unpacked + packaging, `scripts/package-extension.sh` (zips to `dist/karabuddy-extension-<version>.zip` with manifest at zip root) wired as `npm run package:extension`, `dist/` in .gitignore. Site: new `/install` route with 7-step Chrome walkthrough + Firefox/Edge "coming later" note; homepage "Chrome extension" tile repurposed to point at `/install`. **User TODOs:** replace placeholder icons with polished artwork; publish a GitHub release with the zip so the /install step-1 link works; Chrome Web Store submission itself (dev account + screenshots + privacy policy) intentionally punted.
+
+### [B14] Move tag controls down beside the tag display area
+_completed: 2026-05-26 by autonomous-loop_
+JSX shuffle in TagSidebar.tsx — new section order: matchup → navigation → FrameLog → tag controls + form → tag display. Inline-comment form still appears under "+ Tag this frame" when opened. No behavior change.
+
+### [B13] Wire `[` / `]` keyboard shortcuts for prev/next tag
+_completed: 2026-05-26 by autonomous-loop_
+Lifted `jumpToAdjacent(dir)` out of TagSidebar.tsx → into ReplayViewer.tsx (approach A). Wired `[` / `]` into the keydown handler with the same TEXTAREA/INPUT focus guard the arrow keys use. TagSidebar's prev/next buttons now call the handler via a new `onJumpToAdjacentTag` prop.
 
 ### [B12] Sidebar polish: tag nav near tags, usernames under thumbs, drag-to-resize width
 _completed: 2026-05-26 by autonomous-loop_
