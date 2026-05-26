@@ -1,0 +1,49 @@
+{
+    "manifest_version": 3,
+    "name": "KaraBuddy",
+    "version": "0.2.0",
+    "description": "Solo deck testing + match recording and replay playback for karabast.net.",
+    "permissions": ["storage", "tabs", "declarativeNetRequest"],
+    "host_permissions": ["https://karabast.net/*", "https://api.karabast.net/*"],
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "KaraBuddy"
+    },
+    "options_page": "options.html",
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": ["https://karabast.net/*"],
+            "js": [
+                "solo-main.js",
+                "replays/01-namespace.js",
+                "replays/02-decoder.js",
+                "replays/03-recorder.js",
+                "replays/04-playback.js",
+                "replays/05-footer.js",
+                "replays/06-bootstrap.js"
+            ],
+            "run_at": "document_start",
+            "all_frames": false,
+            "world": "MAIN"
+        },
+        {
+            "matches": ["https://karabast.net/*"],
+            "js": ["content.js"],
+            "run_at": "document_start",
+            "all_frames": false
+        }
+    ],
+    "commands": {
+        "swap-focus": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+S",
+                "mac": "Command+Shift+S"
+            },
+            "description": "Swap focus to the other Karabast window"
+        }
+    }
+}

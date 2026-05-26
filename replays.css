@@ -1,0 +1,192 @@
+:root {
+    color-scheme: dark;
+}
+
+body {
+    margin: 0;
+    padding: 32px;
+    background: #11141a;
+    color: #e6e6e6;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+
+/* The HTML5 hidden attribute is supposed to set display:none, but a more
+   specific selector like .grid { display: grid } overrides it because both
+   have equal specificity and the class rule comes later in source order.
+   Force the hide explicitly so deleting the last replay actually empties
+   the grid without a full page refresh. */
+[hidden] { display: none !important; }
+
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #2e333c;
+    flex-wrap: wrap;
+}
+
+header h1 {
+    font-size: 20px;
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.header-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    justify-content: flex-end;
+}
+
+.count {
+    font-size: 13px;
+    color: #a0a8b8;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+}
+
+#filter {
+    background: #1a1d23;
+    border: 1px solid #2e333c;
+    border-radius: 6px;
+    color: #e6e6e6;
+    font: inherit;
+    padding: 8px 12px;
+    width: 320px;
+    max-width: 100%;
+    outline: none;
+}
+
+#filter:focus {
+    border-color: #4a7cff;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
+}
+
+.card {
+    background: #1a1d23;
+    border: 1px solid #2e333c;
+    border-radius: 8px;
+    padding: 14px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 120ms ease, transform 120ms ease;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+}
+
+.card:hover {
+    border-color: #4a7cff;
+    transform: translateY(-1px);
+}
+
+.matchup {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+}
+
+.side {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+
+.side img {
+    width: 58px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #0a0c10;
+    flex-shrink: 0;
+}
+
+.versus {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #6c7588;
+    flex-shrink: 0;
+}
+
+.matchup-text {
+    font-size: 13px;
+    color: #d6d6d6;
+    line-height: 1.35;
+}
+
+.meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #6c7588;
+}
+
+.meta-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.meta-btn {
+    background: transparent;
+    border: 0;
+    color: #6c7588;
+    font: inherit;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.meta-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #e6e6e6;
+}
+
+.meta-btn.delete:hover {
+    background: rgba(255, 107, 107, 0.1);
+    color: #ff6b6b;
+}
+
+.empty {
+    color: #6c7588;
+    font-style: italic;
+    padding: 32px 0;
+    text-align: center;
+}
+
+.home-link {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    background: rgba(17, 20, 26, 0.92);
+    color: #a0a8b8;
+    border: 1px solid #2e333c;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+}
+
+.home-link:hover {
+    color: #e6e6e6;
+    border-color: #4a4e56;
+}

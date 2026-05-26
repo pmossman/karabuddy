@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>KaraBuddy — Replays</title>
+        <link rel="stylesheet" href="replays.css" />
+    </head>
+    <body>
+        <header>
+            <h1>KaraBuddy — Replays</h1>
+            <div class="header-meta">
+                <span id="count" class="count">0 replays</span>
+                <input id="filter" type="search" placeholder="Filter by name, leader, base, or date…" />
+            </div>
+        </header>
+
+        <main>
+            <div id="grid" class="grid" hidden></div>
+            <div id="empty" class="empty" hidden>
+                No saved replays yet. Finished games on karabast.net are saved here automatically.
+            </div>
+            <div id="empty-filter" class="empty" hidden>
+                No replays match the filter.
+            </div>
+            <div id="loading" class="empty">Loading…</div>
+        </main>
+
+        <button id="home-link" class="home-link" type="button" title="Go to karabast.net">
+            ← Karabast home
+        </button>
+
+        <script src="replays.js"></script>
+    </body>
+</html>
