@@ -13,6 +13,7 @@ import { TagSidebar } from './TagSidebar';
 interface ReplayRow {
   slug: string;
   gameId: string;
+  userId: string | null;
   ownerToken: string;
   players: any;
   durationMs: number;
