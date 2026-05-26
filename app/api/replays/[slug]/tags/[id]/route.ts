@@ -1,19 +1,44 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { tags } from '@/lib/schema';
+import { replays, tags } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { auth } from '@/auth';
 
-// Tag is editable/deletable by either:
-//   - the signed-in user whose userId matches the tag's userId
-//   - the holder of the original install token (anonymous-author case)
-async function canMutate(row: { userId: string | null; authorToken: string }, req: Request): Promise<boolean> {
+// Edit (PATCH): tag author only — signed-in user matches tag.userId, OR
+// the X-Install-Token header matches tag.authorToken. Replay owners
+// deliberately cannot edit other people's tags (don't put words in mouths).
+async function canEdit(row: { userId: string | null; authorToken: string }, req: Request): Promise<boolean> {
   const session = await auth();
   const sessionUserId: string | null = (session?.user as any)?.id || null;
   if (sessionUserId && row.userId === sessionUserId) return true;
   const headerToken = req.headers.get('x-install-token');
   if (headerToken && row.authorToken === headerToken) return true;
+  return false;
+}
+
+// Delete (DELETE): tag author OR replay owner. Replay owner = session user
+// matches replays.userId for the slug, OR X-Install-Token matches
+// replays.ownerToken. Lets replay owners clean up spam comments on their
+// own replays.
+async function canDelete(
+  row: { userId: string | null; authorToken: string },
+  slug: string,
+  req: Request,
+): Promise<boolean> {
+  if (await canEdit(row, req)) return true;
+  const db = getDb();
+  const [replay] = await db
+    .select({ userId: replays.userId, ownerToken: replays.ownerToken })
+    .from(replays)
+    .where(eq(replays.slug, slug))
+    .limit(1);
+  if (!replay) return false;
+  const session = await auth();
+  const sessionUserId: string | null = (session?.user as any)?.id || null;
+  if (sessionUserId && replay.userId === sessionUserId) return true;
+  const headerToken = req.headers.get('x-install-token');
+  if (headerToken && replay.ownerToken === headerToken) return true;
   return false;
 }
 
@@ -41,7 +66,7 @@ export async function PATCH(
       .where(and(eq(tags.id, id), eq(tags.replaySlug, slug)))
       .limit(1);
     if (!row) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404, headers });
-    if (!(await canMutate(row, req))) {
+    if (!(await canEdit(row, req))) {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });
     }
     await db.update(tags).set({ comment }).where(eq(tags.id, id));
@@ -66,7 +91,7 @@ export async function DELETE(
       .where(and(eq(tags.id, id), eq(tags.replaySlug, slug)))
       .limit(1);
     if (!row) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404, headers });
-    if (!(await canMutate(row, req))) {
+    if (!(await canDelete(row, slug, req))) {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });
     }
     await db.delete(tags).where(eq(tags.id, id));

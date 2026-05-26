@@ -11,6 +11,8 @@ interface ReplayRow {
   players: any;
   durationMs: number;
   actionCount: number;
+  // Ownership + share fields. userId/ownerToken drive both B6 (share /
+  // visibility toggle) and B7 (replay-owner can delete other people's tags).
   userId: string | null;
   ownerToken: string;
   visibility: string;
@@ -20,6 +22,7 @@ interface TagRow {
   id: string;
   replaySlug: string;
   frameIndex: number;
+  userId?: string | null;
   authorToken: string;
   authorName: string;
   comment: string;
@@ -56,6 +59,7 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
   const [visibility, setVisibility] = useState(replay.visibility);
   const [copied, setCopied] = useState(false);
   const [visBusy, setVisBusy] = useState(false);
+  const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
 
   useEffect(() => {
     setInstallToken(getOrCreateInstallToken());
@@ -65,7 +69,7 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
   // Owner = session user owns the replay OR this browser's installToken
   // matches the upload's ownerToken. Mirrors the server's canMutate check
   // in app/api/replays/[slug]/route.ts (purely UI gating; API enforces).
-  const sessionUserId = (session?.user as { id?: string } | undefined)?.id;
+  // Drives both B6 (share / visibility) and B7 (replay-owner tag delete).
   const isOwner =
     (!!sessionUserId && sessionUserId === replay.userId) ||
     (!!installToken && installToken === replay.ownerToken);
@@ -338,6 +342,10 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
         {tags.length === 0 ? (
           <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No tags yet. Click &quot;+ Tag this frame&quot; to add one.</div>
         ) : (
+          // B3 + B7: filter out current-frame tags (already shown in the
+          // callout above), then render the rest with B7's per-tag canEdit
+          // / canDelete computation so replay owners can delete others'
+          // comments but only authors can edit text.
           (() => {
             const otherTags = tags.filter((t) => t.frameIndex !== currentIndex);
             if (otherTags.length === 0) {
@@ -348,7 +356,11 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[...otherTags].sort((a, b) => a.frameIndex - b.frameIndex).map((t) => {
-                  const isOwn = t.authorToken === installToken;
+                  const isAuthor =
+                    (!!installToken && t.authorToken === installToken) ||
+                    (!!sessionUserId && t.userId === sessionUserId);
+                  const canEdit = isAuthor;
+                  const canDelete = isAuthor || isOwner;
                   const c = tagColor(t.authorName, playerUsernames);
                   return (
                     <TagRowView
@@ -356,7 +368,8 @@ export function TagSidebar({ replay, frames, currentIndex, onStep, onJump, tags,
                       tag={t}
                       color={c}
                       isCurrent={false}
-                      isOwn={isOwn}
+                      canEdit={canEdit}
+                      canDelete={canDelete}
                       onJumpTo={() => onJump(t.frameIndex)}
                       onDelete={() => deleteTag(t.id)}
                       onUpdate={(comment) => updateComment(t.id, comment)}
@@ -464,7 +477,8 @@ function TagRowView({
   tag,
   color,
   isCurrent,
-  isOwn,
+  canEdit,
+  canDelete,
   onJumpTo,
   onDelete,
   onUpdate,
@@ -472,7 +486,11 @@ function TagRowView({
   tag: TagRow;
   color: string;
   isCurrent: boolean;
-  isOwn: boolean;
+  // B7: split tag-author affordance into edit vs delete. Replay owners
+  // get delete on other people's tags but never edit (don't put words in
+  // their mouth).
+  canEdit: boolean;
+  canDelete: boolean;
   onJumpTo: () => void;
   onDelete: () => void;
   onUpdate: (comment: string) => void;
@@ -536,19 +554,19 @@ function TagRowView({
           />
         ) : (
           <div
-            style={{ fontSize: 12, color: tag.comment ? '#d6d6d6' : '#6c7588', lineHeight: 1.35, wordWrap: 'break-word', whiteSpace: 'pre-wrap', cursor: isOwn ? 'text' : 'pointer' }}
+            style={{ fontSize: 12, color: tag.comment ? '#d6d6d6' : '#6c7588', lineHeight: 1.35, wordWrap: 'break-word', whiteSpace: 'pre-wrap', cursor: canEdit ? 'text' : 'pointer' }}
             onClick={(e) => {
-              if (isOwn) {
+              if (canEdit) {
                 e.stopPropagation();
                 setEditing(true);
               }
             }}
           >
-            {tag.comment || (isOwn ? '(click to add comment)' : '(no comment)')}
+            {tag.comment || (canEdit ? '(click to add comment)' : '(no comment)')}
           </div>
         )}
       </div>
-      {isOwn && !editing && (
+      {canDelete && !editing && (
         <button
           type="button"
           onClick={(e) => {
