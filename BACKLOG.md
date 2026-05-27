@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B35] Extension: switch to karabuddy.app for prod
+_completed: 2026-05-26_
+`background.js` `KARABUDDY_DEFAULT` flipped from `http://localhost:3000` to `https://karabuddy.app` so fresh installs point at production by default. `manifest.json` host_permissions + `karabuddy-bridge.js` `content_scripts.matches` swapped `karabuddy.com` → `karabuddy.app`; `*.vercel.app/*` preview hosts and `http://localhost:3000/*` dev host retained for preview-deploy claim flows + local development. Local dev override: `chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })`.
+
 ### [B34] Webapp polish: flush-left header logo + TagSidebar tag-controls reflow
 _completed: 2026-05-26_
 **Header** (`app/_components/Header.tsx`): dropped the `maxWidth: 1100` + `margin: '0 auto'` wrapper. On wide viewports the KARA/buddy logo was centered ~450px in from the actual viewport left; now it sits flush-left against the 28px page-edge padding. Nav stays right via `justify-content: space-between`. **TagSidebar** (`app/(app)/r/[slug]/TagSidebar.tsx`): `+ Tag this frame` button is now its own full-width row (new `fullWidth` prop on `FooterBtn`) at the top of the tag controls section — primary CTA above the tag list. Prev/Next tag nav split out of that row entirely; new section below the tag display area with the two buttons spread space-between (only rendered when `tags.length > 0`). Cleaner "review → skim → jump" flow than the prior "all tag actions clustered above the list."
