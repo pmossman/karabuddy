@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B28] Fix: restore the WebSocket interceptor lost in B20
+_completed: 2026-05-26_
+Regression fix. Pre-B20 the `window.WebSocket` Proxy that called `R().attachInterceptor(ws)` for every karabast.net socket lived inside `04-playback.js` (bundled with the FakeWebSocket setup for in-place playback). B20 deleted that file to cut in-place playback and the Proxy went with it — recorder's interceptor entry point disappeared and karabast WebSockets stopped being captured. The recorder's exported `attachInterceptor` had zero callers since B20; nobody noticed until a real match was attempted. Reinstalled the Proxy at module-load time in `03-recorder.js` itself, just before the `NS.Recorder = {...}` export, so the recorder now owns its own WebSocket lifecycle (cleaner than the old cross-file split). Lazy `NS.Recorder?.attachInterceptor?.(ws)` lookup is safe because karabast's page bundle constructs its socket well after document_start (all content scripts finish loading first).
+
 ### [B27] Extension: shrink the collapsed floating launcher
 _completed: 2026-05-26_
 The pre-shrink launcher (42px tall, 12/10px stacked KARA/buddy) was taking too much real estate on karabast.net. Reduced: `LAUNCHER_MIN_HEIGHT` 42→28; header padding 10→7px; KARA 12→10px; buddy 10→8px (margin-left 6→4px); REC dot 8→6px (gap 6→4px, padding-left 6→5px); REC count 11→9px; × close 22→18px / 18→15px font. Same proportions, ~33% less footprint. Expanded panel body content (300px wide, link buttons, tag form, recent tags) kept at original sizes — those are readable-by-design.

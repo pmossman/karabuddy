@@ -440,6 +440,27 @@
         };
     };
 
+    // Install the WebSocket Proxy at module-load time so we catch karabast's
+    // socket the moment the page code constructs it. (Karabast's bundle runs
+    // AFTER document_start, by which point all content scripts have loaded.)
+    // Pre-B20 this lived in 04-playback.js's FakeWebSocket setup; when that
+    // file was deleted the recorder lost its only entry point. Restored here
+    // so the recorder owns its own WebSocket lifecycle, simpler + correct.
+    const OrigWebSocket = window.WebSocket;
+    window.WebSocket = new Proxy(OrigWebSocket, {
+        construct(target, args) {
+            const ws = Reflect.construct(target, args);
+            const url = args[0];
+            if (typeof url === 'string' && /karabast\.net/.test(url)) {
+                // Lazy lookup — NS.Recorder is the exports object at the
+                // bottom of this IIFE; safe by the time karabast's bundle
+                // constructs its socket.
+                NS.Recorder?.attachInterceptor?.(ws);
+            }
+            return ws;
+        }
+    });
+
     NS.Recorder = {
         attachInterceptor,
         download,
