@@ -20,6 +20,13 @@
     let prevNormalizedGamestate = null;
     let lastFullGamestate = null;    // most recent full snapshot, for author sniffing
     let currentGameId = null;
+    // Periodic snapshot uploads (B26): every 5 min during an active match the
+    // recorder pushes the current payload to karabuddy.app. Server overwrites
+    // the existing slug for this gameId. Mitigates tab-close / lobby-disconnect
+    // / browser-crash data loss — without this, a replay only persists to
+    // karabuddy.app at clean game-end.
+    const PERIODIC_UPLOAD_INTERVAL_MS = 5 * 60 * 1000;
+    let periodicUploadTimer = null;
     // After a successful auto-finalize, karabast often sends a couple more
     // gamestate events (cleanup, lobby return). They look like game-end and
     // would re-trigger scheduleAutoDownload on the SAME gameId, finalizing
@@ -42,6 +49,7 @@
         prevNormalizedGamestate = null;
         lastFullGamestate = null;
         autoDownloadScheduled = false;
+        stopPeriodicUploads();
         // Note: currentKarabuddyUrl intentionally NOT cleared here — keeps
         // the "Open on karabuddy" link visible after a match finalizes
         // until the next gamestate of a new match starts (which clears it).
@@ -99,6 +107,9 @@
         gamestateCount = Number.isFinite(data.gamestateCount) ? data.gamestateCount : recording.filter((e) => e.event === 'gamestate').length;
         currentGameId = data.gameId;
         NS.dlog(`[karabuddy] resumed recording — ${recording.length} events, ${tags.length} tags for game ${incomingGameId}`);
+        // Restored mid-game → resume periodic snapshots so the resumed-from
+        // recording is still pushed to karabuddy.app on the regular cadence.
+        startPeriodicUploads();
         return true;
     };
 
@@ -146,6 +157,7 @@
                 // the recorder is live even with the launcher collapsed.
                 currentKarabuddyUrl = null;
                 T()?.show?.('Recording…', { kind: 'info' });
+                startPeriodicUploads();
             } else {
                 const patch = d.makePatch(prevNormalizedGamestate, norm);
                 if (Object.keys(patch).length === 0) return;
@@ -193,6 +205,61 @@
         return { actionCount, distinctActivePlayers: activePlayers.size };
     };
 
+    // Build the upload payload for the current recording state. Same shape
+    // for finalize and periodic snapshots; the `reason` field distinguishes.
+    const buildPayloadText = (reason, durationMs, actionCount) => {
+        const d = D();
+        return JSON.stringify({
+            version: 2,
+            url: location.href,
+            startedAt: new Date(recordingStart).toISOString(),
+            durationMs,
+            reason,
+            actionCount,
+            gamestateFormat: {
+                note: 'gamestate events carry either {full: state} (initial/full snapshot) or {patch: {path: value, ...}} (overwrite leaf at slash-delimited path). Apply in order to reconstruct each frame.',
+                strippedTopLevel: [...d.TOP_NOISE],
+                strippedPerPlayer: [...d.PLAYER_NOISE]
+            },
+            events: recording,
+            tags: tags.slice()
+        });
+    };
+
+    // Periodic mid-match upload (B26). Fires every PERIODIC_UPLOAD_INTERVAL_MS
+    // while a recording is active and has crossed the "worth keeping" threshold.
+    // Silent: no toasts (don't interrupt play), no IDB save (only finalize
+    // persists locally). Server overwrites the existing replay slug for this
+    // gameId; the server's stale-snapshot guard rejects out-of-order writes
+    // so a slow periodic that lands after finalize can't roll back state.
+    const snapshotUpload = () => {
+        if (gamestateCount === 0) return;
+        const { actionCount, distinctActivePlayers } = analyzeRecording();
+        if (distinctActivePlayers < 2) return;
+        const durationMs = Date.now() - recordingStart;
+        const payloadText = buildPayloadText('periodic', durationMs, actionCount);
+        B().uploadReplay(payloadText).then((result) => {
+            if (!result || !result.slug) return;
+            if (result.staleSnapshot) return;
+            // Cache the URL so the floating panel's "Open on karabuddy →"
+            // link surfaces during the match, not just after game-end.
+            currentKarabuddyUrl = result.url;
+            F()?.refreshOverlay?.();
+        });
+    };
+
+    const startPeriodicUploads = () => {
+        if (periodicUploadTimer) return;
+        periodicUploadTimer = setInterval(snapshotUpload, PERIODIC_UPLOAD_INTERVAL_MS);
+    };
+
+    function stopPeriodicUploads() {
+        if (periodicUploadTimer) {
+            clearInterval(periodicUploadTimer);
+            periodicUploadTimer = null;
+        }
+    }
+
     // ----- download(): persist current recording. -----
     // reason === 'manual': save to IDB AND trigger a file download for sharing.
     // reason === 'auto' / 'game-changed': save to IDB only — no surprise file.
@@ -204,6 +271,11 @@
         const durationMs = Date.now() - recordingStart;
         const { actionCount, distinctActivePlayers } = analyzeRecording();
         const isManual = reason === 'manual';
+
+        // Finalize-time uploads stop the periodic cadence; further snapshots
+        // would race with the finalize write (the server's stale-snapshot
+        // guard rejects them, but stopping the timer avoids the wasted call).
+        stopPeriodicUploads();
 
         // Skip non-games unless the user explicitly asked. Manual still saves
         // so the user can pull a snapshot mid-game even if only one player
@@ -218,22 +290,7 @@
             return;
         }
 
-        const payload = {
-            version: 2,
-            url: location.href,
-            startedAt: new Date(recordingStart).toISOString(),
-            durationMs,
-            reason,
-            actionCount,
-            gamestateFormat: {
-                note: 'gamestate events carry either {full: state} (initial/full snapshot) or {patch: {path: value, ...}} (overwrite leaf at slash-delimited path). Apply in order to reconstruct each frame.',
-                strippedTopLevel: [...d.TOP_NOISE],
-                strippedPerPlayer: [...d.PLAYER_NOISE]
-            },
-            events: recording,
-            tags: tags.slice()
-        };
-        const payloadText = JSON.stringify(payload);
+        const payloadText = buildPayloadText(reason, durationMs, actionCount);
         const filename = d.buildReplayFilename(Date.now(), meta);
 
         // Manual download → trigger a file save so the user can grab the file.

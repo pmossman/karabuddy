@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { generateSlug, generateTagId } from '@/lib/slug';
@@ -60,16 +60,88 @@ export async function POST(req: Request) {
       : [];
 
     const db = getDb();
-
-    // Dedupe by gameId — if this match was already uploaded, return the
-    // existing slug instead of creating a duplicate.
-    const existing = await db.select().from(replays).where(eq(replays.gameId, gameId)).limit(1);
-    if (existing.length > 0) {
-      return NextResponse.json({ ok: true, slug: existing[0].slug, url: `/r/${existing[0].slug}`, deduped: true }, { headers });
-    }
-
     const recordedUsername = players.find((p: any) => p?.username)?.username || null;
     const userId = await resolveUserId({ installToken, recordedUsername });
+
+    // Upsert by gameId. The recorder fires periodic snapshots during an
+    // active match (B26) plus the final on game-end; each one overwrites the
+    // existing blob + metadata + upserts payload-carried tags. Same slug
+    // throughout the match so the in-game "Open on karabuddy →" link is
+    // stable and karabuddy-side tag edits aren't blown away.
+    const existing = await db.select().from(replays).where(eq(replays.gameId, gameId)).limit(1);
+    if (existing.length > 0) {
+      const replay = existing[0];
+
+      // Different owner uploading the same gameId = both players in the match
+      // have the extension. Preserve the original recording's ownership and
+      // return its slug (today's behavior; a (gameId, ownerToken) unique
+      // constraint to give each player their own row is its own task).
+      const sameOwner = replay.ownerToken === installToken;
+      const sameUser = replay.userId && userId && replay.userId === userId;
+      if (!sameOwner && !sameUser) {
+        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true }, { headers });
+      }
+
+      // Stale-snapshot guard: a finalize-upload can race with an in-flight
+      // periodic snapshot. The recording array grows monotonically within a
+      // single match, so a payload carrying fewer actions than the latest
+      // saved state is by definition older. Reject so finalize wins.
+      const incomingActionCount = parsed.actionCount || 0;
+      if (incomingActionCount < replay.actionCount) {
+        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, staleSnapshot: true }, { headers });
+      }
+
+      // Overwrite the existing blob in place. `addRandomSuffix: false` pins
+      // the path; in @vercel/blob 0.27.x this silently overwrites an existing
+      // blob at the same path (no explicit allowOverwrite flag needed at this
+      // version).
+      await put(`replays/${replay.slug}.json`, payloadText, {
+        access: 'public',
+        contentType: 'application/json',
+        addRandomSuffix: false,
+      });
+
+      // Refresh metadata; bump userId if the install has since claimed an
+      // account (resolveUserId can promote null → real userId).
+      await db.update(replays)
+        .set({
+          userId: userId || replay.userId,
+          players,
+          durationMs: parsed.durationMs || 0,
+          actionCount: parsed.actionCount || 0,
+          payloadSizeBytes: payloadText.length,
+        })
+        .where(eq(replays.slug, replay.slug));
+
+      // Upsert payload-carried tags. New tag ids are inserted; existing ids
+      // get their mutable fields refreshed from the extension's local copy
+      // (so extension-side edits during a match propagate). Tags added on
+      // karabuddy.app aren't in the payload and stay untouched.
+      const payloadTagsExisting = Array.isArray(parsed.tags) ? parsed.tags : [];
+      const validTags = payloadTagsExisting
+        .filter((t: any) => Number.isFinite(t?.frameIndex))
+        .map((t: any) => ({
+          id: t.id || generateTagId(),
+          replaySlug: replay.slug,
+          frameIndex: Math.max(0, Math.floor(t.frameIndex)),
+          userId,
+          authorToken: installToken,
+          authorName: String(t.author || 'anon'),
+          comment: String(t.comment || ''),
+        }));
+      if (validTags.length > 0) {
+        await db.insert(tags).values(validTags).onConflictDoUpdate({
+          target: tags.id,
+          set: {
+            comment: sql`excluded.comment`,
+            authorName: sql`excluded.author_name`,
+            frameIndex: sql`excluded.frame_index`,
+          },
+        });
+      }
+
+      return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, snapshot: true }, { headers });
+    }
 
     // New row → write payload to Blob, then insert metadata.
     const slug = generateSlug();
