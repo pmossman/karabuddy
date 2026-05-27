@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B37] TagRowView: explicit ✎ Edit button instead of click-to-edit
+_completed: 2026-05-26_
+Tag comments became a textarea only after clicking on the comment text itself, which overloaded click semantics (the row's outer click jumps to that frame, the inner click switched modes). Replaced with an explicit pencil-icon edit button next to the existing ✕ delete button in the right column of the row. Comment text is now a plain readonly div with `(no comment)` italic placeholder when empty (was `(click to add comment)` — that affordance is gone). Both buttons get hover-tints (edit → blue, delete → red) matching their action. Cmd/Ctrl+Enter to save, Esc to cancel, blur-saves still work in the edit textarea.
+
 ### [B36] Fix: edit/delete affordances on the "This frame" tag callout
 _completed: 2026-05-26_
 B7 wired tag-author edit + tag-author-or-replay-owner delete server-side and added the per-tag `canEdit` / `canDelete` computation in `TagSidebar`, but only on the "All tags" list. The prominent "This frame" callout at the top of the tag display area used a separate inline read-only renderer with no edit/delete buttons — so when sitting on a tag's frame (the natural place to act on it) you couldn't do anything to it. Swapped the inline renderer for the existing `TagRowView` with the same isAuthor / isOwner derivation as the other list, `isCurrent={true}` for the highlighted blue-tinted styling. Edit + delete now work from either list, consistent with the server's existing auth.

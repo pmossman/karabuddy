@@ -974,30 +974,46 @@ function TagRowView({
           />
         ) : (
           <div
-            style={{ fontSize: 12, color: tag.comment ? '#d6d6d6' : '#6c7588', lineHeight: 1.35, wordWrap: 'break-word', whiteSpace: 'pre-wrap', cursor: canEdit ? 'text' : 'pointer' }}
-            onClick={(e) => {
-              if (canEdit) {
-                e.stopPropagation();
-                setEditing(true);
-              }
-            }}
+            style={{ fontSize: 12, color: tag.comment ? '#d6d6d6' : '#6c7588', lineHeight: 1.35, wordWrap: 'break-word', whiteSpace: 'pre-wrap', fontStyle: tag.comment ? 'normal' : 'italic' }}
           >
-            {tag.comment || (canEdit ? '(click to add comment)' : '(no comment)')}
+            {tag.comment || '(no comment)'}
           </div>
         )}
       </div>
-      {canDelete && !editing && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          title="Delete this tag"
-          style={{ background: 'transparent', border: 0, color: '#6c7588', cursor: 'pointer', padding: '0 4px', fontSize: 13, lineHeight: 1 }}
-        >
-          ✕
-        </button>
+      {(canEdit || canDelete) && !editing && (
+        <div style={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDraft(tag.comment);
+                setEditing(true);
+              }}
+              title="Edit this tag"
+              style={{ background: 'transparent', border: 0, color: '#6c7588', cursor: 'pointer', padding: '0 4px', fontSize: 13, lineHeight: 1 }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#d6e7ff'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#6c7588'; }}
+            >
+              ✎
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              title="Delete this tag"
+              style={{ background: 'transparent', border: 0, color: '#6c7588', cursor: 'pointer', padding: '0 4px', fontSize: 13, lineHeight: 1 }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#ff7a7a'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#6c7588'; }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
