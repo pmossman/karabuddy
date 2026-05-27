@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>KaraBuddy promo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  /* Same vw-driven layout as source.html — render at any size by sizing
+     the viewport. Aspect ratio assumed roughly 11:7 (440x280 = Chrome
+     Web Store "small promo tile"). Larger sizes (920x680, 1400x560)
+     also work, though the marquee 1400x560 is wider and may want less
+     vertical padding. */
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(135deg, #1a1d23 0%, #243044 55%, #1f2740 100%);
+    color: #e6e6e6;
+    font-family: 'Barlow', -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow: hidden;
+    position: relative;
+  }
+  /* Star Wars-ish space backdrop accents — abstract enough not to step
+     on any FFG/Lucasfilm marks. */
+  body::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(2px 2px at 12% 18%, rgba(255,255,255,0.55), transparent 50%),
+      radial-gradient(1.5px 1.5px at 28% 72%, rgba(255,255,255,0.4), transparent 50%),
+      radial-gradient(2.5px 2.5px at 55% 42%, rgba(255,255,255,0.6), transparent 50%),
+      radial-gradient(1.5px 1.5px at 78% 22%, rgba(255,255,255,0.45), transparent 50%),
+      radial-gradient(2px 2px at 88% 78%, rgba(255,255,255,0.5), transparent 50%),
+      radial-gradient(1.5px 1.5px at 18% 55%, rgba(255,255,255,0.35), transparent 50%),
+      radial-gradient(2px 2px at 68% 88%, rgba(255,255,255,0.4), transparent 50%);
+    pointer-events: none;
+  }
+  body::after {
+    content: '';
+    position: absolute;
+    top: -10vh;
+    right: -10vw;
+    width: 70vw;
+    height: 70vh;
+    background: radial-gradient(circle at 50% 50%, rgba(74, 124, 255, 0.18), transparent 60%);
+    pointer-events: none;
+  }
+  .row {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 6vw;
+    gap: 5vw;
+    z-index: 1;
+  }
+  .logo {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 0.95;
+  }
+  .kara {
+    font-weight: 400;
+    font-size: 22vh;
+    color: #ffffff;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+  .buddy {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 19vh;
+    color: #5a8cff;
+    letter-spacing: -0.01em;
+    margin-left: 4vh;
+    margin-top: -0.5vh;
+  }
+  .tag {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.8vh;
+  }
+  .tagline {
+    font-weight: 600;
+    font-size: 7.5vh;
+    line-height: 1.15;
+    color: #ffffff;
+  }
+  .sub {
+    font-weight: 400;
+    font-size: 4.6vh;
+    color: #a0c4ff;
+    line-height: 1.3;
+  }
+  .url {
+    font-weight: 600;
+    font-size: 3.8vh;
+    color: #5a8cff;
+    letter-spacing: 0.02em;
+    margin-top: 0.5vh;
+  }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="logo">
+      <span class="kara">KARA</span>
+      <span class="buddy">buddy</span>
+    </div>
+    <div class="tag">
+      <div class="tagline">Capture &amp; tag your karabast.net matches</div>
+      <div class="sub">Records every game. Drop notes mid-match. Review on the web.</div>
+      <div class="url">karabuddy.app</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -131,7 +131,7 @@ export default function PrivacyPage() {
         <h2 style={h2}>Contact</h2>
         <p style={p}>
           Privacy questions, deletion requests, or anything else:{' '}
-          <a href="mailto:parkermos@gmail.com" style={linkStyle}>parkermos@gmail.com</a>.
+          <a href="mailto:swutrade@gmail.com" style={linkStyle}>swutrade@gmail.com</a>.
         </p>
       </section>
 
