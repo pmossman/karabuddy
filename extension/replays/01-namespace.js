@@ -86,9 +86,6 @@
         // detects the install token via karabuddy-bridge.js's postMessage
         // protocol, so the extension doesn't need its own claim entry point.
         openReplays: (tab = 'mine') =>
-            companionRequest({ type: 'openReplaysPage', tab }),
-        // Open the extension's solo-practice options page (deck library +
-        // session config + start/stop). Solo is still extension-only.
-        openSoloOptions: () => companionRequest({ type: 'openOptions' })
+            companionRequest({ type: 'openReplaysPage', tab })
     };
 })();

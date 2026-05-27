@@ -406,10 +406,6 @@
             B().openReplays('mine').catch(() => {});
             collapse();
         }));
-        linksWrap.appendChild(makeLinkButton('Solo practice →', 'secondary', () => {
-            B().openSoloOptions().catch(() => {});
-            collapse();
-        }));
         els.push(linksWrap);
 
         return els;

@@ -3,14 +3,13 @@
     "name": "KaraBuddy",
     "version": "0.3.0",
     "version_name": "0.3.0 (store-ready)",
-    "description": "Companion for karabast.net: record matches, replay them with tags, and run solo (one-window) test sessions for Star Wars Unlimited.",
+    "description": "Records your karabast.net matches automatically and lets you tag key moments. Watch replays on karabuddy.app.",
     "icons": {
         "128": "icons/128.png"
     },
-    "permissions": ["storage", "tabs", "declarativeNetRequest"],
+    "permissions": ["storage", "tabs"],
     "host_permissions": [
         "https://karabast.net/*",
-        "https://api.karabast.net/*",
         "https://karabuddy.com/*",
         "https://*.karabuddy.com/*",
         "https://*.vercel.app/*",
@@ -24,7 +23,6 @@
             "128": "icons/128.png"
         }
     },
-    "options_page": "options.html",
     "background": {
         "service_worker": "background.js",
         "type": "module"
@@ -33,7 +31,6 @@
         {
             "matches": ["https://karabast.net/*"],
             "js": [
-                "solo-main.js",
                 "replays/01-namespace.js",
                 "replays/02-decoder.js",
                 "replays/03-recorder.js",
@@ -62,14 +59,5 @@
             "run_at": "document_idle",
             "all_frames": false
         }
-    ],
-    "commands": {
-        "swap-focus": {
-            "suggested_key": {
-                "default": "Ctrl+Shift+S",
-                "mac": "Command+Shift+S"
-            },
-            "description": "Swap focus to the other Karabast window"
-        }
-    }
+    ]
 }

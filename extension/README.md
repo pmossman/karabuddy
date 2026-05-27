@@ -1,16 +1,15 @@
 # KaraBuddy — Chrome extension
 
-Companion extension for [karabast.net](https://karabast.net), the unofficial Star Wars Unlimited web client. Adds replay capture, replay playback, mid-game tagging, and a solo-testing mode for one-window deck testing.
+Companion extension for [karabast.net](https://karabast.net), the unofficial Star Wars Unlimited web client. Captures every match you play and lets you tag key moments inline; review and share replays on [karabuddy.app](https://karabuddy.app).
 
-This is the in-tree copy that ships with [karabuddy.com](https://karabuddy.com). It is a fan project with no affiliation with Fantasy Flight Games, Asmodee, or Lucasfilm.
+This is the in-tree copy that ships with [karabuddy.app](https://karabuddy.app). It is a fan project with no affiliation with Fantasy Flight Games, Asmodee, or Lucasfilm.
 
 ## What it does
 
-- **Replay record** — captures every game you play on karabast.net automatically and uploads the payload to karabuddy.com for sharing and review.
-- **Replay playback** — adds a footer button on karabast.net that lets you scrub through any uploaded replay frame-by-frame inside the live game UI.
-- **Tagging** — drop labeled bookmarks on specific frames mid-game (or post-game in the viewer) so you can jump back to key moments.
-- **Solo testing** — runs both seats of a karabast match in one browser window, with a Cmd/Ctrl+Shift+S hotkey to swap focus. Great for piloting goldfish lines without queuing.
-- **Sidebar overlay** — small in-page UI on karabast.net for record/playback controls; doesn't touch the game DOM.
+- **Background recording** — captures every game you play on karabast.net automatically and uploads the payload to karabuddy.app on game-end.
+- **Floating launcher** — small draggable button on karabast.net. Expands in place into a tag panel during a match (REC indicator, `+ Tag this moment` with inline comment, recent tags list, link to open the uploaded replay on karabuddy.app). Doubles as a launcher into karabuddy.app when no match is active.
+- **Status toasts** — pill notifications pop out of the launcher for background events: recording started, tag saved, replay uploaded, upload failed.
+- **Toolbar icon** — single click opens your replays on karabuddy.app.
 
 ## Install (load unpacked, for now)
 
@@ -22,7 +21,7 @@ Until the Chrome Web Store listing is live, install manually:
 4. Click **Load unpacked** and select the `extension/` directory.
 5. Pin the extension to your toolbar for quick access.
 
-The site walkthrough at <https://karabuddy.com/install> mirrors these steps.
+The site walkthrough at <https://karabuddy.app/install> mirrors these steps.
 
 ## Packaging a release zip
 
@@ -39,7 +38,7 @@ This runs `scripts/package-extension.sh`, which produces `dist/karabuddy-extensi
 - **Chrome only.** The MV3 manifest targets Chromium browsers (Chrome, Brave, Edge in Chromium mode). Firefox and Edge support are planned but require minor manifest tweaks (`browser_specific_settings`, background page vs service worker, etc.).
 - **Karabast-specific.** Hooks into karabast.net's WebSocket frames; will break if karabast significantly reshapes its protocol. We track upstream and patch as needed.
 - **Fan project.** No affiliation with FFG/Asmodee/Lucasfilm. Star Wars: Unlimited and all associated marks belong to their owners.
-- **Replay payloads upload to karabuddy.com by default.** Toggle visibility in the popup if you want them private to your install.
+- **Replay payloads upload to karabuddy.app by default.** Override the endpoint via `chrome.storage.local.karabuddyEndpoint` if you're self-hosting.
 
 ## Repo layout
 
