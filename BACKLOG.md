@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B34] Webapp polish: flush-left header logo + TagSidebar tag-controls reflow
+_completed: 2026-05-26_
+**Header** (`app/_components/Header.tsx`): dropped the `maxWidth: 1100` + `margin: '0 auto'` wrapper. On wide viewports the KARA/buddy logo was centered ~450px in from the actual viewport left; now it sits flush-left against the 28px page-edge padding. Nav stays right via `justify-content: space-between`. **TagSidebar** (`app/(app)/r/[slug]/TagSidebar.tsx`): `+ Tag this frame` button is now its own full-width row (new `fullWidth` prop on `FooterBtn`) at the top of the tag controls section — primary CTA above the tag list. Prev/Next tag nav split out of that row entirely; new section below the tag display area with the two buttons spread space-between (only rendered when `tags.length > 0`). Cleaner "review → skim → jump" flow than the prior "all tag actions clustered above the list."
+
 ### [B33] Recorder POV detection — use karabast's server-side hand masking
 _completed: 2026-05-26_
 B32 detected the local player by reading `localStorage.anonymousUserId`, which only works for anonymous karabast users. Replaced with a content-based detector that works for any karabast auth mechanism: karabast already server-side-masks each client's view — the local player's hand contains cards with full `.id` / `.setId` data, the opponent's hand contains stubs without that data (this is the asymmetry `stripHiddenHandCards` in `lib/replayDecoder.ts:31` was built to handle). `detectLocalPlayerId` now scans `players[*].cardPiles.hand` for the unique player whose hand has cards with visible data — that's the recorder's POV. Falls back to `Object.keys()[0]` only if zero players have visible cards (hands empty in very early game) or both do (spectator-style state). Detection runs on every gamestate until it locks in, so an empty-hand first frame doesn't permanently fail. Uses what karabast already sends; no internal-storage probing, no future-fragility against karabast auth changes.

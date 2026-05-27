@@ -22,8 +22,6 @@ export async function Header() {
     >
       <div
         style={{
-          maxWidth: 1100,
-          margin: '0 auto',
           padding: '12px 28px',
           display: 'flex',
           alignItems: 'center',

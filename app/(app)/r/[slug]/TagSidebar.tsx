@@ -382,19 +382,15 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       />
 
       <section style={{ padding: '14px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {/* B12: tag-nav buttons share this row with "+ Tag this frame" —
-            keeps all tag actions clustered above the All Tags list. The
-            [ / ] keyboard shortcuts (wired separately in ReplayViewer) still
-            invoke jumpToAdjacent. */}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <FooterBtn variant="outline" onClick={() => setFormOpen((v) => !v)}>
-            + Tag this frame
-          </FooterBtn>
-          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-            <FooterBtn onClick={() => onJumpToAdjacentTag(-1)} variant="ghost" title="Previous tag ([)">‹ Prev tag</FooterBtn>
-            <FooterBtn onClick={() => onJumpToAdjacentTag(1)} variant="ghost" title="Next tag (])">Next tag ›</FooterBtn>
-          </div>
-        </div>
+        {/* B34: "+ Tag this frame" gets its own line (full-width button) so
+            it's the primary action above the tag list. Prev/Next tag nav
+            moved out of here, into its own section below the tag display
+            area (the natural place to skim "what's next?" after reviewing
+            the current frame's tags). [ / ] shortcuts in ReplayViewer
+            still invoke onJumpToAdjacentTag. */}
+        <FooterBtn variant="outline" onClick={() => setFormOpen((v) => !v)} fullWidth>
+          + Tag this frame
+        </FooterBtn>
         {formOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: 'rgba(74, 124, 255, 0.08)', border: '1px solid rgba(74, 124, 255, 0.3)', borderRadius: 6 }}>
             <div style={{ fontSize: 11, color: '#a0a8b8', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -497,6 +493,16 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           })()
         )}
       </section>
+
+      {/* B34: prev/next tag nav lives below the tag display, not above —
+          natural "after you've read the current frame's tags, jump to the
+          next one" flow. Hidden when there are no tags to jump to. */}
+      {tags.length > 0 && (
+        <section style={{ padding: '10px 22px', borderTop: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6, justifyContent: 'space-between' }}>
+          <FooterBtn onClick={() => onJumpToAdjacentTag(-1)} variant="ghost" title="Previous tag ([)">‹ Prev tag</FooterBtn>
+          <FooterBtn onClick={() => onJumpToAdjacentTag(1)} variant="ghost" title="Next tag (])">Next tag ›</FooterBtn>
+        </section>
+      )}
 
       {/* B12: drag handle pinned to the sidebar's right edge. Sits above the
           right border with a transparent default; the inner pill brightens on
@@ -838,12 +844,14 @@ function FooterBtn({
   onClick,
   variant = 'primary',
   alignSelf = false,
+  fullWidth = false,
   title,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   variant?: 'primary' | 'ghost' | 'outline';
   alignSelf?: boolean;
+  fullWidth?: boolean;
   title?: string;
 }) {
   const base: React.CSSProperties = {
@@ -869,6 +877,7 @@ function FooterBtn({
     base.color = 'white';
   }
   if (alignSelf) base.alignSelf = 'flex-start';
+  if (fullWidth) { base.width = '100%'; base.padding = '8px 10px'; }
   return (
     <button type="button" style={base} onClick={onClick} title={title}>
       {children}
