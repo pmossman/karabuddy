@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B23] Extension: drop the karabast-side "Link this extension" button + dead claim code
+_completed: 2026-05-26_
+The idle floating-panel's `Link this extension →` button was redundant with karabuddy.app/claim's `AutoDetectExtension`, which already pulls the install token via `karabuddy-bridge.js`'s postMessage protocol. Removed the button from `05-footer.js`'s `buildIdleBody`. With no remaining callers, also deleted the dead claim plumbing: `openKarabuddyClaim()` function in `background.js`, the `openKarabuddyClaim` message handler, and the `openKarabuddyClaim` method on `NS.bridge` in `01-namespace.js`. `getKarabuddyInstallToken` stays — still used by the upload flow to attribute uploads.
+
 ### [B22] Extension: launcher grows in place + remains draggable while expanded
 _completed: 2026-05-26_
 Replaces B20's separate-panel design with a single grow-in-place element. The launcher is now one `<div>` with two children: a header (KARA/buddy + optional REC indicator + × close) and a body (idle or recording content). Collapsed = header only at auto-width; expanded = same header + body underneath at 300px wide. The whole element is one DOM node, so drag still works while expanded — the header acts as the drag handle in both states (4px click→drag threshold preserved). Edge-detection on expand shifts the launcher's top-left to fit the viewport (not restored on collapse — user accepts the shift, and can drag from there). Outside-mousedown still collapses. Interactive children in the body (link buttons, tag form, save/cancel, × close, anchor link, textarea) stop mousedown propagation so they don't accidentally start a launcher drag. Toast anchoring (B18) still works because the root element ID and identity are preserved; toasts now anchor to the expanded rect's right edge when the launcher is expanded. Reduced from 776 → 736 lines via dedupe (single drag/click handler set on the header; idle/recording body builders return element arrays instead of full panel shells).

@@ -81,11 +81,10 @@
                     console.warn('[karabuddy] upload bridge failed:', err);
                     return null;
                 }),
-        // Open karabuddy's claim page in a new tab with this install's token.
-        // User signs in (or already is), confirms the link, and going forward
-        // their uploads from this extension auto-attribute to their account.
-        openKarabuddyClaim: () => companionRequest({ type: 'openKarabuddyClaim' }),
         // Open karabuddy's replays browser. `tab` is 'mine' or 'public'.
+        // Claim flow lives entirely on karabuddy.app: the /claim page auto-
+        // detects the install token via karabuddy-bridge.js's postMessage
+        // protocol, so the extension doesn't need its own claim entry point.
         openReplays: (tab = 'mine') =>
             companionRequest({ type: 'openReplaysPage', tab })
     };

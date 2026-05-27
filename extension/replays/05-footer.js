@@ -410,10 +410,6 @@
             B().openReplays('public').catch(() => {});
             collapse();
         }));
-        linksWrap.appendChild(makeLinkButton('Link this extension →', 'secondary', () => {
-            B().openKarabuddyClaim().catch(() => {});
-            collapse();
-        }));
         els.push(linksWrap);
 
         return els;

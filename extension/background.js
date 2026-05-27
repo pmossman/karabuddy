@@ -66,14 +66,6 @@ const getKarabuddyInstallToken = async () => {
     }
 };
 
-const openKarabuddyClaim = async () => {
-    const endpoint = await getKarabuddyEndpoint();
-    const installToken = await getKarabuddyInstallToken();
-    const url = `${endpoint}/claim?token=${encodeURIComponent(installToken)}`;
-    await chrome.tabs.create({ url });
-    return { url };
-};
-
 const uploadReplayToKarabuddy = async (payloadText) => {
     const endpoint = await getKarabuddyEndpoint();
     const installToken = await getKarabuddyInstallToken();
@@ -488,9 +480,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'saveMatch') {
                 await saveMatch(msg.match);
                 sendResponse({ ok: true });
-            } else if (msg.type === 'openKarabuddyClaim') {
-                const result = await openKarabuddyClaim();
-                sendResponse({ ok: true, data: result });
             } else if (msg.type === 'uploadReplay') {
                 // Best-effort push to karabuddy.com. Doesn't block local saves;
                 // failure just means the replay stays local-only and the user
