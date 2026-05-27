@@ -17,8 +17,17 @@
         const data = e.data;
         if (!data || data.type !== 'karabuddy:requestInstallToken') return;
         try {
-            const stored = await chrome.storage.local.get('karabuddyInstallToken');
-            const token = stored.karabuddyInstallToken || null;
+            let { karabuddyInstallToken: token } = await chrome.storage.local.get('karabuddyInstallToken');
+            // Mint lazily: a fresh install on a new device has no token until
+            // the first replay upload. Without this, asking the bridge before
+            // recording any matches returns null and karabuddy.app's
+            // AutoDetectExtension shows "couldn't detect" even though the
+            // extension is fine. Generating here means the token always
+            // exists from the moment any consumer asks for it.
+            if (!token) {
+                token = 'kbx_' + crypto.randomUUID();
+                await chrome.storage.local.set({ karabuddyInstallToken: token });
+            }
             window.postMessage({
                 type: 'karabuddy:installTokenResponse',
                 requestId: data.requestId,
