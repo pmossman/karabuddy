@@ -13,7 +13,29 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-_empty_
+### [B42] Capture deck snapshot + bo3 metadata in replay payload
+
+- **Why:** karabast deck links are mutable — the same deck URL can return different cards a week later if the user edited their saved deck. Replays without a snapshot of the actual cards played become harder to review over time. Plus knowing "this was game 2 of a bo3" is meaningful context that's currently lost.
+- **Acceptance:**
+  - Recorder captures the local player's full starting deck (the 50-card list visible to the recorder's POV) at the first gamestate of each match. Embedded in the upload payload as a top-level `decks` field.
+  - Opponent's deck captured to whatever degree karabast exposes — at minimum leader + base; ideally a list of cards observed in play as the match progresses (built up by watching gamestate diffs). Clearly marked as `{ partial: true }` or similar so the viewer can render "X cards observed" instead of pretending it's a complete list.
+  - Sideboard captured if karabast's frames include it. Between bo3 games we can diff game N's starting deck vs game N+1's starting deck to derive sideboard swaps even without explicit sideboard data.
+  - Match metadata: `gamesToWinMode` ('bestOfOne' | 'bestOfThree'), `currentGame` (1/2/3), plus winners for previous games of the same bo3 series if available.
+  - Viewer shows a "Decks" section in the replay sidebar with the local player's full deck + the opponent's partial list. Card thumbnails with set/number badges; click → card detail.
+  - Historical replays uploaded before this lands gracefully no-op (decoder reads missing `decks` field as null; viewer hides the section).
+- **Refs:** `extension/replays/03-recorder.js` (capture in first-gamestate branch alongside POV detection). `extension/replays/02-decoder.js` (helpers to extract zone cards). `app/api/replays/route.ts` POST (accept the new field). `lib/replayDecoder.ts` (plumb through meta). `app/(app)/r/[slug]/TagSidebar.tsx` or a new component (render). May need a new `replay_decks` table OR just embed in the existing blob — TBD by size.
+- **What we already know from `~/code/karabast-dev/forceteki-client/`:**
+  - `gameState.players[id].cardPiles` has keys: `hand`, `discard`, `resources`, `groundArena`, `spaceArena`, `capturedZone`, plus (implied) `deck`. The full starting 50 cards = sum of every pile at game start. Local player's piles contain full card data; opponent's hidden zones contain stubs (the asymmetry B33 already keys on).
+  - **Sideboard is NOT in `gameState.cardPiles`** during a match. It only lives in the lobby state (`connectedUser?.deck?.sideboard`, per `_components/Lobby/Deck/Deck.tsx`). The recorder would need to scrape it from karabast's lobby WebSocket frames BEFORE the match starts — feasible since we already intercept all frames, but requires recording lobby-state in addition to gameState.
+  - **Bo3 sideboarding logic exists** (`Deck.tsx` has "Game 1 of Bo3 — sideboarding disabled" branching), so bo3 game-number is in lobby state somewhere.
+  - **Deck link IS in karabast lobby state.** Resolvable via karabast's own `/api/swudbdeck?deckLink=<url>` endpoint (used by `fetchDeckData.ts`). Supported sources: swustats.net + swudb.com. If we capture the link from lobby frames we can resolve the FULL deck (main + sideboard) from karabast's API at upload time — cleanest "single source" path, since karabast itself is the resolver.
+- **Remaining open questions (need live-match console inspection):**
+  - Exact shape of lobby-state WebSocket frames — what event name, what payload structure carries `deckLink`, `gamesToWinMode`, `currentGame`?
+  - Does opponent's `cardPiles.deck` come through as an array of stubs (so we know how many cards remain) or as an opaque count?
+  - When does the gameState's first FULL snapshot include all pre-mulligan cards vs the post-mulligan starting hand?
+- **Fallback path if karabast's gamestate isn't enough:** karabast lobbies carry a `deckLink` URL (e.g. SWUDB, SWUStats). The recorder could capture the link from the lobby state or from outbound WebSocket frames at match start, then optionally fetch the canonical card list from that URL's host. karabast-internal data is preferred — single source, no third-party dependency, and avoids "what if the deck-host site changes the link payload later" (same staleness risk as the original problem). Treat URL-fetch as belt-and-suspenders only.
+
+## Continuation prompt
 
 ## Continuation prompt
 
