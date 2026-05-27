@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B29] Extension: pagehide upload safety net (close-tab data-loss fix)
+_completed: 2026-05-26_
+Closes the close-tab gap B26 explicitly punted on. Without this, closing the karabast.net tab within the first 5 min of a match (before the periodic snapshot timer fires) loses the replay entirely from karabuddy.app's perspective — the JS context dies before any upload can complete. Added a `pagehide` listener in `03-recorder.js` that, when fired with `gamestateCount > 0` AND `distinctActivePlayers >= 2`, builds the current payload with `reason: 'pagehide'` and fires `B().uploadReplay(payloadText)` fire-and-forget. The bridge → service-worker → fetch path is the trick: MV3 service workers outlive the originating tab by ~30s, plenty of time for the POST to complete, and the service worker's fetch from the extension origin doesn't need a CORS preflight. Sidesteps `navigator.sendBeacon`'s cross-origin-JSON-preflight issue and `fetch keepalive`'s 64KB payload cap entirely. The response event has nowhere to land (page is gone) but we don't care — the server-side upsert handles it.
+
 ### [B28] Fix: restore the WebSocket interceptor lost in B20
 _completed: 2026-05-26_
 Regression fix. Pre-B20 the `window.WebSocket` Proxy that called `R().attachInterceptor(ws)` for every karabast.net socket lived inside `04-playback.js` (bundled with the FakeWebSocket setup for in-place playback). B20 deleted that file to cut in-place playback and the Proxy went with it — recorder's interceptor entry point disappeared and karabast WebSockets stopped being captured. The recorder's exported `attachInterceptor` had zero callers since B20; nobody noticed until a real match was attempted. Reinstalled the Proxy at module-load time in `03-recorder.js` itself, just before the `NS.Recorder = {...}` export, so the recorder now owns its own WebSocket lifecycle (cleaner than the old cross-file split). Lazy `NS.Recorder?.attachInterceptor?.(ws)` lookup is safe because karabast's page bundle constructs its socket well after document_start (all content scripts finish loading first).

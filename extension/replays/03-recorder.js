@@ -461,6 +461,24 @@
         }
     });
 
+    // Best-effort upload on tab close / navigation away (B29). Covers the
+    // window between periodic snapshots — without this, closing the tab
+    // within the first 5 min of a match loses the replay entirely from
+    // karabuddy.app's perspective. Routes through the existing bridge →
+    // service-worker → fetch path: the SW outlives the tab by ~30s in MV3,
+    // long enough to complete the POST. Avoids navigator.sendBeacon's
+    // cross-origin-JSON-preflight issue and fetch keepalive's 64KB cap.
+    window.addEventListener('pagehide', () => {
+        if (gamestateCount === 0) return;
+        const { actionCount, distinctActivePlayers } = analyzeRecording();
+        if (distinctActivePlayers < 2) return;
+        const durationMs = Date.now() - recordingStart;
+        const payloadText = buildPayloadText('pagehide', durationMs, actionCount);
+        // Fire-and-forget — by the time the SW responds the page is gone
+        // and the karabast-companion-result event has nowhere to land.
+        B().uploadReplay(payloadText);
+    });
+
     NS.Recorder = {
         attachInterceptor,
         download,
