@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B36] Fix: edit/delete affordances on the "This frame" tag callout
+_completed: 2026-05-26_
+B7 wired tag-author edit + tag-author-or-replay-owner delete server-side and added the per-tag `canEdit` / `canDelete` computation in `TagSidebar`, but only on the "All tags" list. The prominent "This frame" callout at the top of the tag display area used a separate inline read-only renderer with no edit/delete buttons — so when sitting on a tag's frame (the natural place to act on it) you couldn't do anything to it. Swapped the inline renderer for the existing `TagRowView` with the same isAuthor / isOwner derivation as the other list, `isCurrent={true}` for the highlighted blue-tinted styling. Edit + delete now work from either list, consistent with the server's existing auth.
+
 ### [B35] Extension: switch to karabuddy.app for prod
 _completed: 2026-05-26_
 `background.js` `KARABUDDY_DEFAULT` flipped from `http://localhost:3000` to `https://karabuddy.app` so fresh installs point at production by default. `manifest.json` host_permissions + `karabuddy-bridge.js` `content_scripts.matches` swapped `karabuddy.com` → `karabuddy.app`; `*.vercel.app/*` preview hosts and `http://localhost:3000/*` dev host retained for preview-deploy claim flows + local development. Local dev override: `chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })`.

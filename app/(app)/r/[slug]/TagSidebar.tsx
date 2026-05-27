@@ -435,16 +435,24 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This frame</div>
             {tagsAtCurrent.map((t) => {
+              const isAuthor =
+                (!!installToken && t.authorToken === installToken) ||
+                (!!sessionUserId && t.userId === sessionUserId);
+              const canEdit = isAuthor;
+              const canDelete = isAuthor || isOwner;
               const c = tagColor(t.authorName, playerUsernames);
               return (
-                <div key={t.id} style={{ padding: '8px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.04)', borderLeft: `4px solid ${c}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: c, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {t.authorName}&apos;s note
-                  </div>
-                  <div style={{ fontSize: 13, color: '#e6e6e6', lineHeight: 1.4, whiteSpace: 'pre-wrap', marginTop: 4 }}>
-                    {t.comment || '(no comment)'}
-                  </div>
-                </div>
+                <TagRowView
+                  key={t.id}
+                  tag={t}
+                  color={c}
+                  isCurrent={true}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  onJumpTo={() => {}}
+                  onDelete={() => deleteTag(t.id)}
+                  onUpdate={(comment) => updateComment(t.id, comment)}
+                />
               );
             })}
           </div>
