@@ -30,7 +30,7 @@
     const LAUNCHER_ID = 'karabast-replays-launcher';
     const LAUNCHER_POS_STORAGE_KEY = 'karabuddyLauncherPos';
     const LAUNCHER_DRAG_THRESHOLD = 4; // pixels of total movement before click → drag
-    const LAUNCHER_MIN_HEIGHT = 42;
+    const LAUNCHER_MIN_HEIGHT = 28;
 
     const EXPANDED_WIDTH = 300;
     const RECENT_TAGS_MAX = 5;
@@ -132,8 +132,8 @@
         header.setAttribute('style', [
             'display: flex',
             'align-items: center',
-            'gap: 8px',
-            'padding: 0 10px',
+            'gap: 6px',
+            'padding: 0 7px',
             'height: ' + LAUNCHER_MIN_HEIGHT + 'px',
             'flex: 0 0 auto',
             'cursor: grab'
@@ -153,15 +153,15 @@
             'flex-direction: column',
             'align-items: flex-start',
             'line-height: 0.95',
-            'padding: 0 2px',
+            'padding: 0 1px',
             'flex: 0 0 auto',
             'pointer-events: none'
         ].join(';'));
         const monoMain = document.createElement('span');
-        monoMain.setAttribute('style', 'font: 400 12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; letter-spacing: 0; text-transform: uppercase;');
+        monoMain.setAttribute('style', 'font: 400 10px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; letter-spacing: 0; text-transform: uppercase;');
         monoMain.textContent = 'KARA';
         const monoSub = document.createElement('span');
-        monoSub.setAttribute('style', 'font: italic 700 10px Georgia, "Times New Roman", serif; color: #5a8cff; letter-spacing: -0.01em; margin-left: 6px; margin-top: -1px;');
+        monoSub.setAttribute('style', 'font: italic 700 8px Georgia, "Times New Roman", serif; color: #5a8cff; letter-spacing: -0.01em; margin-left: 4px; margin-top: -1px;');
         monoSub.textContent = 'buddy';
         mono.appendChild(monoMain);
         mono.appendChild(monoSub);
@@ -172,17 +172,17 @@
         recWrap.setAttribute('style', [
             'display: none',
             'align-items: center',
-            'gap: 6px',
-            'padding-left: 6px',
+            'gap: 4px',
+            'padding-left: 5px',
             'border-left: 1px solid rgba(255,255,255,0.12)',
             'flex: 0 0 auto',
             'pointer-events: none'
         ].join(';'));
         const recDot = document.createElement('span');
-        recDot.setAttribute('style', 'display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4040; box-shadow: 0 0 6px #ff4040; animation: karabast-rec-pulse 1.4s ease-in-out infinite;');
+        recDot.setAttribute('style', 'display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ff4040; box-shadow: 0 0 5px #ff4040; animation: karabast-rec-pulse 1.4s ease-in-out infinite;');
         const recCount = document.createElement('span');
         recCount.id = 'karabast-replays-launcher-rec-count';
-        recCount.setAttribute('style', 'font: 600 11px -apple-system, BlinkMacSystemFont, sans-serif; color: #d6e7ff; letter-spacing: 0.04em;');
+        recCount.setAttribute('style', 'font: 600 9px -apple-system, BlinkMacSystemFont, sans-serif; color: #d6e7ff; letter-spacing: 0.04em;');
         recCount.textContent = 'REC';
         recWrap.appendChild(recDot);
         recWrap.appendChild(recCount);
@@ -203,9 +203,9 @@
             'color: #a0a8b8',
             'border: 0',
             'padding: 0',
-            'width: 22px',
-            'height: 22px',
-            'font: 18px -apple-system, BlinkMacSystemFont, sans-serif',
+            'width: 18px',
+            'height: 18px',
+            'font: 15px -apple-system, BlinkMacSystemFont, sans-serif',
             'line-height: 1',
             'cursor: pointer',
             'border-radius: 4px',
