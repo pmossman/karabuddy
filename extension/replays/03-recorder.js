@@ -162,7 +162,6 @@
                 // karabuddy URL (if any) and surface a toast so the user knows
                 // the recorder is live even with the launcher collapsed.
                 currentKarabuddyUrl = null;
-                localPlayerId = detectLocalPlayerId(norm.players);
                 T()?.show?.('Recording…', { kind: 'info' });
                 startPeriodicUploads();
             } else {
@@ -172,6 +171,11 @@
                 prevNormalizedGamestate = norm;
                 gamestateCount++;
             }
+            // Retry POV detection on every gamestate until we lock it in.
+            // The first gamestate of a match may arrive before mulligan is
+            // resolved (hands empty for both players), in which case
+            // detectLocalPlayerId returns null and we try again next tick.
+            if (localPlayerId === null) localPlayerId = detectLocalPlayerId(norm.players);
             // Keep a live full snapshot for author sniffing when a tag is added.
             lastFullGamestate = norm;
             if (d.looksLikeGameEnd(original)) scheduleAutoDownload();
@@ -214,20 +218,27 @@
 
     // Detect which player ID in the gamestate corresponds to the local
     // karabast user (the one whose perspective this match was played from).
-    // Karabast keys its gameState.players map by user ID; the local user's
-    // ID is stored as `anonymousUserId` in karabast's localStorage for
-    // anonymous play. Logged-in karabast users would use a different key,
-    // not handled today — viewer falls back to first-player if we return
-    // null. (Most karabuddy users play anonymously on karabast.net.)
+    // Karabast server-side-masks each client's view: the LOCAL player's
+    // hand contains cards with full data (`.id` / `.setId`); the opponent's
+    // hand contains stubs without that data (this is exactly the asymmetry
+    // `lib/replayDecoder.ts:stripHiddenHandCards` was built to handle).
+    // Whichever player has visible cards in hand is the recorder's POV —
+    // works for anonymous and logged-in karabast users alike, and doesn't
+    // depend on any karabast internal storage layout.
     const detectLocalPlayerId = (players) => {
         if (!players || typeof players !== 'object') return null;
-        try {
-            const anonId = localStorage.getItem('anonymousUserId');
-            if (anonId && Object.prototype.hasOwnProperty.call(players, anonId)) {
-                return anonId;
-            }
-        } catch {}
-        return null;
+        const withVisibleHand = [];
+        for (const [pid, p] of Object.entries(players)) {
+            const hand = p?.cardPiles?.hand;
+            if (!Array.isArray(hand)) continue;
+            if (hand.some((c) => c && (c.id || c.setId))) withVisibleHand.push(pid);
+        }
+        // Exactly one visible hand = unambiguous local POV. Zero or two
+        // means hands were empty (very early game / between turns) or
+        // we're in a spectator-style state where karabast sent full data
+        // for both — in either case return null and try again on the next
+        // gamestate.
+        return withVisibleHand.length === 1 ? withVisibleHand[0] : null;
     };
 
     // Build the upload payload for the current recording state. Same shape
