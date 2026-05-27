@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B24] Extension: swap "Browse public" for "Solo practice" in idle panel
+_completed: 2026-05-26_
+Replaced the `Browse public replays →` link in the idle floating panel with `Solo practice →` — opens the extension's options page (deck library + Side A/B config + start session) via a new `B().openSoloOptions()` bridge method that sends the existing `openOptions` message. Idle panel buttons now: `My replays →` / `Solo practice →`. Public-browse is still reachable via karabuddy.app directly.
+
 ### [B23] Extension: drop the karabast-side "Link this extension" button + dead claim code
 _completed: 2026-05-26_
 The idle floating-panel's `Link this extension →` button was redundant with karabuddy.app/claim's `AutoDetectExtension`, which already pulls the install token via `karabuddy-bridge.js`'s postMessage protocol. Removed the button from `05-footer.js`'s `buildIdleBody`. With no remaining callers, also deleted the dead claim plumbing: `openKarabuddyClaim()` function in `background.js`, the `openKarabuddyClaim` message handler, and the `openKarabuddyClaim` method on `NS.bridge` in `01-namespace.js`. `getKarabuddyInstallToken` stays — still used by the upload flow to attribute uploads.

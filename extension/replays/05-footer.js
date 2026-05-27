@@ -406,8 +406,8 @@
             B().openReplays('mine').catch(() => {});
             collapse();
         }));
-        linksWrap.appendChild(makeLinkButton('Browse public replays →', 'secondary', () => {
-            B().openReplays('public').catch(() => {});
+        linksWrap.appendChild(makeLinkButton('Solo practice →', 'secondary', () => {
+            B().openSoloOptions().catch(() => {});
             collapse();
         }));
         els.push(linksWrap);
