@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B31] Fix: toast positions BEFORE launcher REC indicator reveals (race)
+_completed: 2026-05-26_
+B30 bumped the toast's anchor offset but the real bug was a sync race. The recorder fires `T().show('Recording…')` BEFORE `F().refreshOverlay()` in the same first-gamestate branch. At the moment `show()` measures the launcher's `getBoundingClientRect()`, the REC sub-indicator is still `display: none` — so the launcher's right edge is narrower than it'll be 1 microtask later when refreshOverlay reveals REC and the launcher grows to fit. Result: the toast positions at the narrow-launcher's right edge + 18px, then the launcher grows past that point and overlaps. Fix in `07-toast.js`: call `positionContainer(container)` a second time inside the entry-animation rAF callback, after all sync DOM updates from the same event loop have settled. Initial sync positionContainer call kept for the case where no sibling layout change is pending.
+
 ### [B30] Extension: fix toast pill overlapping the launcher
 _completed: 2026-05-26_
 B18 toasts emerged too close to the launcher's right edge — visible in the wild as the `Recording…` pill abutting/overlapping the launcher border. Two small bumps in `07-toast.js`: `ANCHOR_OFFSET` 10→18 (visible breathing room between launcher and pill), and the stale `LAUNCHER_SIZE = 42` fallback constant updated to `LAUNCHER_FALLBACK_SIZE = 28` to match B27's shrunk launcher (only matters for the launcher-not-yet-in-DOM fallback path, but worth correcting for hygiene).

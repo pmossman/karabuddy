@@ -124,11 +124,17 @@
             const duration = Number.isFinite(opts.durationMs) ? opts.durationMs : DEFAULT_DURATION_MS;
             const tooltip = opts.tooltip || null;
             const container = ensureContainer();
-            positionContainer(container);
+            positionContainer(container); // initial best-effort position
             const pill = makePill(text, kind, tooltip);
             container.appendChild(pill);
-            // Animate in next frame so the transition picks up the change.
+            // Reposition in next frame: the caller (recorder) typically fires
+            // T().show() BEFORE Footer.refreshOverlay(), so the launcher's
+            // bounding rect at sync-call time doesn't yet include any width
+            // changes from the same event (e.g. the REC indicator appearing
+            // on first gamestate widens the launcher). By next rAF, all sync
+            // refresh work has completed and the rect is settled.
             requestAnimationFrame(() => {
+                positionContainer(container);
                 pill.style.opacity = '1';
                 pill.style.transform = 'translateX(0)';
             });
