@@ -10,8 +10,8 @@
     "permissions": ["storage", "tabs"],
     "host_permissions": [
         "https://karabast.net/*",
-        "https://karabuddy.com/*",
-        "https://*.karabuddy.com/*",
+        "https://karabuddy.app/*",
+        "https://*.karabuddy.app/*",
         "https://*.vercel.app/*",
         "http://localhost:3000/*"
     ],
@@ -50,8 +50,8 @@
         },
         {
             "matches": [
-                "https://karabuddy.com/*",
-                "https://*.karabuddy.com/*",
+                "https://karabuddy.app/*",
+                "https://*.karabuddy.app/*",
                 "https://*.vercel.app/*",
                 "http://localhost:3000/*"
             ],

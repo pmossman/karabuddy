@@ -6,7 +6,9 @@
 // user clicks the toolbar icon or the in-page floating-launcher links.
 
 // ----- karabuddy.app endpoint resolution -----
-const KARABUDDY_DEFAULT = 'http://localhost:3000';
+// Defaults to prod. Override locally via:
+//   chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })
+const KARABUDDY_DEFAULT = 'https://karabuddy.app';
 
 const getKarabuddyEndpoint = async () => {
     try {
