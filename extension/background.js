@@ -427,12 +427,13 @@ const idbEnforceCap = async () => {
     });
 };
 
-const openReplaysPage = async () => {
-    // Replay browsing lives on karabuddy.com now (B17). Open the user's
-    // own-replays tab; the page itself decides what "mine" means (via the
-    // signed-in account or the linked installToken).
+const openReplaysPage = async ({ tab = 'mine' } = {}) => {
+    // Replay browsing lives on karabuddy.com now (B17). Open the requested
+    // tab; the page itself decides what "mine" means (via the signed-in
+    // account or the linked installToken).
     const endpoint = await getKarabuddyEndpoint();
-    const url = `${endpoint}/replays?tab=mine`;
+    const safeTab = tab === 'public' ? 'public' : 'mine';
+    const url = `${endpoint}/replays?tab=${safeTab}`;
     const existing = await chrome.tabs.query({ url: `${endpoint}/replays*` });
     if (existing.length > 0) {
         await chrome.tabs.update(existing[0].id, { active: true, url });
@@ -514,7 +515,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 await idbDeleteReplay(msg.gameId);
                 sendResponse({ ok: true });
             } else if (msg.type === 'openReplaysPage') {
-                await openReplaysPage();
+                await openReplaysPage({ tab: msg.tab });
                 sendResponse({ ok: true });
             } else {
                 sendResponse({ ok: false, error: `Unknown message type: ${msg.type}` });

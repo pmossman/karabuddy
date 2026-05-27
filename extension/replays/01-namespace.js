@@ -84,6 +84,9 @@
         // Open karabuddy's claim page in a new tab with this install's token.
         // User signs in (or already is), confirms the link, and going forward
         // their uploads from this extension auto-attribute to their account.
-        openKarabuddyClaim: () => companionRequest({ type: 'openKarabuddyClaim' })
+        openKarabuddyClaim: () => companionRequest({ type: 'openKarabuddyClaim' }),
+        // Open karabuddy's replays browser. `tab` is 'mine' or 'public'.
+        openReplays: (tab = 'mine') =>
+            companionRequest({ type: 'openReplaysPage', tab })
     };
 })();

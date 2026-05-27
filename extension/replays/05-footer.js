@@ -84,10 +84,11 @@
             'border: 1px solid rgba(74, 124, 255, 0.5)',
             'cursor: grab',
             'box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0,0,0,0.3)',
-            // Default hidden — refreshFooter() flips to flex when recording
-            // is active. The launcher has zero karabast.net footprint until
-            // capture begins.
-            'display: none',
+            // Always visible — the launcher is the user's "extension is active"
+            // signal on karabast.net. The REC indicator inside (`recWrap`) is
+            // hidden until capture begins; the panel content branches on
+            // recording state at open time.
+            'display: inline-flex',
             'align-items: center',
             'gap: 8px',
             'transition: transform 120ms ease, border-color 120ms ease, opacity 200ms ease',
@@ -206,13 +207,14 @@
         mono.appendChild(monoMain);
         mono.appendChild(monoSub);
 
-        // Inline REC indicator: pulsing dot + event count. The launcher is
-        // only visible while recording, so this is always meaningful when
-        // shown. Count updates via refreshFooter() on every recorder event.
+        // Inline REC indicator: pulsing dot + event count. Hidden while idle
+        // (KARA/buddy mark alone signals "extension active"); revealed by
+        // refreshFooter() when the recorder has captured at least one
+        // gamestate. Count updates on every recorder event.
         const recWrap = document.createElement('span');
         recWrap.id = 'karabast-replays-launcher-rec';
         recWrap.setAttribute('style', [
-            'display: flex',
+            'display: none',
             'align-items: center',
             'gap: 6px',
             'padding-left: 6px',
@@ -253,7 +255,12 @@
     };
 
     // ----- Expanding panel (anchored to launcher; built fresh on each open) -----
+    // Two modes: 'idle' (karabuddy.app links) when no recording active,
+    // 'recording' (REC + tag controls) once capture begins. Chosen at open
+    // time; refreshFooter() closes the panel if the recorder state flips
+    // mid-open so the next reopen rebuilds in the correct mode.
     let panelOpen = false;
+    let panelMode = null;
     let outsideMousedownHandler = null;
 
     // Position the panel relative to the launcher's bounding rect. Opens
@@ -284,7 +291,9 @@
         panel.style.top = top + 'px';
     };
 
-    const buildPanel = () => {
+    // Shared panel shell — both modes share container styling, header dismiss
+    // button, etc. Mode-specific body content is appended by the caller.
+    const buildPanelShell = (titleText) => {
         const panel = document.createElement('div');
         panel.id = PANEL_ID;
         panel.setAttribute('style', [
@@ -305,6 +314,104 @@
             'gap: 12px',
             'user-select: none'
         ].join(';'));
+        return panel;
+    };
+
+    // Idle panel: shown when no match is being recorded. Acts as a tiny
+    // launcher into karabuddy.app — replaces what the deleted toolbar popup
+    // used to do, so the user has a karabast.net-side entry point that
+    // doesn't require opening another tab manually.
+    const buildIdlePanel = () => {
+        const panel = buildPanelShell('Ready');
+
+        // Header row: KARA/buddy lockup + × dismiss.
+        const headerRow = document.createElement('div');
+        headerRow.setAttribute('style', 'display: flex; align-items: center; gap: 10px;');
+        const headerLabel = document.createElement('span');
+        headerLabel.setAttribute('style', 'font: 700 13px -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; flex: 1 1 auto;');
+        headerLabel.textContent = 'KaraBuddy';
+        const closeBtn = makePanelCloseButton();
+        headerRow.appendChild(headerLabel);
+        headerRow.appendChild(closeBtn);
+
+        const hint = document.createElement('div');
+        hint.setAttribute('style', 'font-size: 11px; color: #6c7588; line-height: 1.4;');
+        hint.textContent = 'Recording is automatic — start a match on karabast.net and the launcher will light up.';
+
+        // Link buttons. Each opens a karabuddy.app route in a new tab via
+        // the background's openReplaysPage / openKarabuddyClaim handlers.
+        const linksWrap = document.createElement('div');
+        linksWrap.setAttribute('style', 'display: flex; flex-direction: column; gap: 6px;');
+        linksWrap.appendChild(makeLinkButton('My replays →', 'primary', () => {
+            B().openReplays('mine').catch(() => {});
+            closePanel();
+        }));
+        linksWrap.appendChild(makeLinkButton('Browse public replays →', 'secondary', () => {
+            B().openReplays('public').catch(() => {});
+            closePanel();
+        }));
+        linksWrap.appendChild(makeLinkButton('Link this extension →', 'secondary', () => {
+            B().openKarabuddyClaim().catch(() => {});
+            closePanel();
+        }));
+
+        panel.appendChild(headerRow);
+        panel.appendChild(hint);
+        panel.appendChild(linksWrap);
+        return panel;
+    };
+
+    // Shared × close button used by both panel modes.
+    const makePanelCloseButton = () => {
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.title = 'Close panel';
+        closeBtn.textContent = '×';
+        closeBtn.setAttribute('style', [
+            'background: transparent',
+            'color: #a0a8b8',
+            'border: 0',
+            'padding: 0',
+            'width: 22px',
+            'height: 22px',
+            'font: 18px -apple-system, BlinkMacSystemFont, sans-serif',
+            'line-height: 1',
+            'cursor: pointer',
+            'border-radius: 4px',
+            'flex: 0 0 auto'
+        ].join(';'));
+        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = '#e6e6e6'; });
+        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = '#a0a8b8'; });
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePanel();
+        });
+        return closeBtn;
+    };
+
+    const makeLinkButton = (text, variant, onClick) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = text;
+        const base = variant === 'primary'
+            ? ['background: rgba(74, 124, 255, 0.18)', 'color: #d6e7ff', 'border: 1px solid #4a7cff']
+            : ['background: transparent', 'color: #d6e7ff', 'border: 1px solid #2e333c'];
+        btn.setAttribute('style', base.concat([
+            'border-radius: 6px',
+            'padding: 9px 12px',
+            'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif',
+            'cursor: pointer',
+            'text-align: left'
+        ]).join(';'));
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onClick();
+        });
+        return btn;
+    };
+
+    const buildRecordingPanel = () => {
+        const panel = buildPanelShell('Recording');
 
         // Header row: REC dot + count, × dismiss.
         const headerRow = document.createElement('div');
@@ -330,32 +437,8 @@
         headerStatus.appendChild(headerDot);
         headerStatus.appendChild(headerLabel);
 
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.title = 'Close panel';
-        closeBtn.textContent = '×';
-        closeBtn.setAttribute('style', [
-            'background: transparent',
-            'color: #a0a8b8',
-            'border: 0',
-            'padding: 0',
-            'width: 22px',
-            'height: 22px',
-            'font: 18px -apple-system, BlinkMacSystemFont, sans-serif',
-            'line-height: 1',
-            'cursor: pointer',
-            'border-radius: 4px',
-            'flex: 0 0 auto'
-        ].join(';'));
-        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = '#e6e6e6'; });
-        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = '#a0a8b8'; });
-        closeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            closePanel();
-        });
-
         headerRow.appendChild(headerStatus);
-        headerRow.appendChild(closeBtn);
+        headerRow.appendChild(makePanelCloseButton());
 
         // Auto-upload hint (replaces the old sidebar's recHint).
         const recHint = document.createElement('div');
@@ -574,10 +657,12 @@
         if (panelOpen) return;
         const launcher = document.getElementById('karabast-replays-launcher');
         if (!launcher) return;
-        const panel = buildPanel();
+        const active = isRecordingActive();
+        const panel = active ? buildRecordingPanel() : buildIdlePanel();
         document.body.appendChild(panel);
         positionPanel(panel, launcher);
         panelOpen = true;
+        panelMode = active ? 'recording' : 'idle';
         refreshFooter();
 
         // Outside-mousedown closes (use mousedown so the form's textarea
@@ -602,6 +687,7 @@
         const panel = document.getElementById(PANEL_ID);
         if (panel) panel.remove();
         panelOpen = false;
+        panelMode = null;
         if (outsideMousedownHandler) {
             window.removeEventListener('mousedown', outsideMousedownHandler, true);
             outsideMousedownHandler = null;
@@ -634,21 +720,26 @@
         if (!launcher) return;
         const active = isRecordingActive();
 
-        // Launcher visibility: hidden until the recorder has captured at
-        // least one gamestate for this session, then revealed (the toast at
-        // the same moment tells the user what just happened).
-        launcher.style.display = active ? 'inline-flex' : 'none';
+        // Launcher itself is always visible (extension-active indicator). The
+        // REC sub-block reveals only while capturing.
+        const recBlock = document.getElementById('karabast-replays-launcher-rec');
+        if (recBlock) recBlock.style.display = active ? 'flex' : 'none';
 
-        // If recording stopped while the panel was open (e.g. a match ended),
-        // collapse the panel — there's no anchor anymore.
-        if (!active && panelOpen) closePanel();
+        // If the recording state flipped while the panel was open, the
+        // open panel's content (idle links vs recording controls) is now
+        // stale. Close so the next user open rebuilds in the correct mode.
+        // The toast that fired around the same transition tells them what
+        // happened.
+        if (panelOpen && panelMode !== (active ? 'recording' : 'idle')) {
+            closePanel();
+        }
 
         // Live REC count in the launcher.
         const countEl = document.getElementById('karabast-replays-launcher-rec-count');
         if (countEl) countEl.textContent = `REC · ${R().getRecordingLength()}`;
 
-        // Panel content (only if open).
-        if (panelOpen) {
+        // Panel content (only if open, only for the recording-mode panel).
+        if (panelOpen && panelMode === 'recording') {
             const recLabel = document.getElementById('karabast-replays-panel-rec-label');
             if (recLabel) recLabel.textContent = `REC · ${R().getRecordingLength()} events`;
 
