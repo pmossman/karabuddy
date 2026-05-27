@@ -132,12 +132,17 @@ function ViewerShell({ replay, initialTags }: Props) {
         const result = decodeReplay(parsed);
         if (cancelled) return;
         setDecoded(result);
-        // Pick the first player as the "viewer perspective" (matches what
-        // karabast does in spectator mode).
-        const firstPlayerId = result.frames[0]?.state?.players
-          ? Object.keys(result.frames[0].state.players)[0]
-          : null;
-        if (firstPlayerId) setConnectedPlayer(firstPlayerId);
+        // Prefer the player ID captured by the recorder (the local karabast
+        // user whose perspective this match was played from). Fall back to
+        // the first player key for older replays that predate the recorder
+        // embedding it.
+        const players = result.frames[0]?.state?.players;
+        const localId = result.meta.localPlayerId;
+        const connected =
+          (localId && players && Object.prototype.hasOwnProperty.call(players, localId))
+            ? localId
+            : players ? Object.keys(players)[0] : null;
+        if (connected) setConnectedPlayer(connected);
       } catch (err: any) {
         if (cancelled) return;
         setLoadError(err?.message || 'failed to load replay');

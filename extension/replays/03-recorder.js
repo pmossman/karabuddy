@@ -40,6 +40,11 @@
     // new recording (first gamestate after a previous finalize / reset); set
     // inside the uploadReplay success branch below.
     let currentKarabuddyUrl = null;
+    // ID of the player whose perspective this recording was captured from
+    // (i.e. the local karabast user). Embedded in the upload payload so the
+    // karabuddy.app viewer renders the right side at the bottom instead of
+    // guessing via Object.keys(players)[0]. Captured on first gamestate.
+    let localPlayerId = null;
 
     const resetRecording = () => {
         recording.length = 0;
@@ -49,6 +54,7 @@
         prevNormalizedGamestate = null;
         lastFullGamestate = null;
         autoDownloadScheduled = false;
+        localPlayerId = null;
         stopPeriodicUploads();
         // Note: currentKarabuddyUrl intentionally NOT cleared here — keeps
         // the "Open on karabuddy" link visible after a match finalizes
@@ -156,6 +162,7 @@
                 // karabuddy URL (if any) and surface a toast so the user knows
                 // the recorder is live even with the launcher collapsed.
                 currentKarabuddyUrl = null;
+                localPlayerId = detectLocalPlayerId(norm.players);
                 T()?.show?.('Recording…', { kind: 'info' });
                 startPeriodicUploads();
             } else {
@@ -205,6 +212,24 @@
         return { actionCount, distinctActivePlayers: activePlayers.size };
     };
 
+    // Detect which player ID in the gamestate corresponds to the local
+    // karabast user (the one whose perspective this match was played from).
+    // Karabast keys its gameState.players map by user ID; the local user's
+    // ID is stored as `anonymousUserId` in karabast's localStorage for
+    // anonymous play. Logged-in karabast users would use a different key,
+    // not handled today — viewer falls back to first-player if we return
+    // null. (Most karabuddy users play anonymously on karabast.net.)
+    const detectLocalPlayerId = (players) => {
+        if (!players || typeof players !== 'object') return null;
+        try {
+            const anonId = localStorage.getItem('anonymousUserId');
+            if (anonId && Object.prototype.hasOwnProperty.call(players, anonId)) {
+                return anonId;
+            }
+        } catch {}
+        return null;
+    };
+
     // Build the upload payload for the current recording state. Same shape
     // for finalize and periodic snapshots; the `reason` field distinguishes.
     const buildPayloadText = (reason, durationMs, actionCount) => {
@@ -216,6 +241,7 @@
             durationMs,
             reason,
             actionCount,
+            localPlayerId,
             gamestateFormat: {
                 note: 'gamestate events carry either {full: state} (initial/full snapshot) or {patch: {path: value, ...}} (overwrite leaf at slash-delimited path). Apply in order to reconstruct each frame.',
                 strippedTopLevel: [...d.TOP_NOISE],

@@ -108,6 +108,12 @@ export interface DecodedReplay {
     durationMs?: number;
     reason?: string;
     version: number;
+    // Player ID in gameState.players whose perspective this recording was
+    // captured from. Set by the extension recorder; viewer renders this
+    // player at the bottom of the board. Undefined on older replays
+    // uploaded before the recorder started embedding it — viewer falls
+    // back to first-player.
+    localPlayerId?: string | null;
   };
   tags: Tag[];
 }
@@ -179,6 +185,7 @@ export function decodeReplay(file: any): DecodedReplay {
       durationMs: file.durationMs,
       reason: file.reason,
       version: file.version,
+      localPlayerId: typeof file.localPlayerId === 'string' ? file.localPlayerId : null,
     },
     tags: Array.isArray(file.tags) ? file.tags : [],
   };
