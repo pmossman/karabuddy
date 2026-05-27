@@ -30,8 +30,14 @@
     const COLORS = {
         info:    { dot: '#5da9ff', border: 'rgba(74, 124, 255, 0.55)' },
         success: { dot: '#4ade80', border: 'rgba(74, 222, 128, 0.55)' },
-        error:   { dot: '#ff6b6b', border: 'rgba(255, 107, 107, 0.55)' }
+        error:   { dot: '#ff6b6b', border: 'rgba(255, 107, 107, 0.55)' },
+        warning: { dot: '#ffb454', border: 'rgba(255, 180, 84, 0.55)' }
     };
+
+    // Persistent-toast registry — keyed by an opts.key string so callers can
+    // ensure the same warning doesn't stack on every retry. show() with a
+    // duplicate key collapses to a no-op while the existing toast is alive.
+    const activePersistent = new Map();
 
     const ensureContainer = () => {
         let c = document.getElementById(CONTAINER_ID);
@@ -71,29 +77,31 @@
         c.style.transform = 'translateY(-50%)';
     };
 
-    const makePill = (text, kind, tooltip) => {
+    const makePill = (text, kind, tooltip, persistent) => {
         const colors = COLORS[kind] || COLORS.info;
+        const interactive = persistent || tooltip;
         const pill = document.createElement('div');
         pill.setAttribute('style', [
             'min-width: 200px',
-            'max-width: 260px',
-            'padding: 8px 12px',
-            'border-radius: 999px',
+            'max-width: 320px',
+            'padding: 8px ' + (persistent ? '6px' : '12px') + ' 8px 12px',
+            'border-radius: ' + (persistent ? '12px' : '999px'),
             'background: linear-gradient(140deg, #243044 0%, #1a1d23 100%)',
             'border: 1px solid ' + colors.border,
             'box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0,0,0,0.3)',
             'color: #e6e6e6',
             'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif',
             'display: flex',
-            'align-items: center',
+            'align-items: ' + (persistent ? 'flex-start' : 'center'),
             'gap: 8px',
-            'white-space: nowrap',
+            'white-space: ' + (persistent ? 'normal' : 'nowrap'),
+            'line-height: ' + (persistent ? '1.4' : '1.2'),
             'overflow: hidden',
             'text-overflow: ellipsis',
             'opacity: 0',
             'transform: translateX(-8px)',
             'transition: opacity ' + ANIM_MS + 'ms ease, transform ' + ANIM_MS + 'ms ease',
-            'pointer-events: ' + (tooltip ? 'auto' : 'none')
+            'pointer-events: ' + (interactive ? 'auto' : 'none')
         ].join(';'));
         if (tooltip) pill.title = tooltip;
 
@@ -103,13 +111,14 @@
             'flex: 0 0 auto',
             'width: 8px',
             'height: 8px',
+            'margin-top: ' + (persistent ? '4px' : '0'),
             'border-radius: 50%',
             'background: ' + colors.dot,
             'box-shadow: 0 0 6px ' + colors.dot
         ].join(';'));
 
         const label = document.createElement('span');
-        label.setAttribute('style', 'overflow: hidden; text-overflow: ellipsis;');
+        label.setAttribute('style', 'flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis;');
         label.textContent = text;
 
         pill.appendChild(dot);
@@ -117,40 +126,83 @@
         return pill;
     };
 
-    // show(text, opts?) — opts: { kind: 'info'|'success'|'error', durationMs, tooltip }
+    // show(text, opts?) — opts:
+    //   kind:       'info' | 'success' | 'error' | 'warning'
+    //   durationMs: number — auto-hide after N ms (ignored if persistent)
+    //   tooltip:    string — title attribute on the pill
+    //   persistent: boolean — no auto-hide; renders an × close button
+    //   key:        string — dedup key for persistent toasts; show() with the
+    //               same key while one is alive is a no-op (prevents stacking
+    //               duplicate context-invalidated warnings on every retry)
     const show = (text, opts = {}) => {
         try {
             const kind = opts.kind || 'info';
+            const persistent = !!opts.persistent;
+            const key = opts.key || null;
+            // Dedup persistent toasts by key.
+            if (persistent && key && activePersistent.has(key)) return;
             const duration = Number.isFinite(opts.durationMs) ? opts.durationMs : DEFAULT_DURATION_MS;
             const tooltip = opts.tooltip || null;
             const container = ensureContainer();
-            positionContainer(container); // initial best-effort position
-            const pill = makePill(text, kind, tooltip);
+            positionContainer(container);
+            const pill = makePill(text, kind, tooltip, persistent);
             container.appendChild(pill);
-            // Reposition in next frame: the caller (recorder) typically fires
-            // T().show() BEFORE Footer.refreshOverlay(), so the launcher's
-            // bounding rect at sync-call time doesn't yet include any width
-            // changes from the same event (e.g. the REC indicator appearing
-            // on first gamestate widens the launcher). By next rAF, all sync
-            // refresh work has completed and the rect is settled.
+
+            const dismiss = () => {
+                pill.style.opacity = '0';
+                pill.style.transform = 'translateX(-8px)';
+                setTimeout(() => {
+                    pill.remove();
+                    if (container.childElementCount === 0) container.remove();
+                    if (persistent && key) activePersistent.delete(key);
+                }, ANIM_MS + 20);
+            };
+
+            if (persistent) {
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.textContent = '×';
+                closeBtn.title = 'Dismiss';
+                closeBtn.setAttribute('style', [
+                    'background: transparent',
+                    'color: #a0a8b8',
+                    'border: 0',
+                    'padding: 0',
+                    'width: 20px',
+                    'height: 20px',
+                    'font: 16px -apple-system, BlinkMacSystemFont, sans-serif',
+                    'line-height: 1',
+                    'cursor: pointer',
+                    'border-radius: 4px',
+                    'flex: 0 0 auto',
+                    'margin-top: -1px'
+                ].join(';'));
+                closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = '#e6e6e6'; });
+                closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = '#a0a8b8'; });
+                closeBtn.addEventListener('click', dismiss);
+                pill.appendChild(closeBtn);
+                if (key) activePersistent.set(key, dismiss);
+            }
+
+            // Reposition + fade in next frame so launcher rect changes from
+            // the same event loop have settled before we measure.
             requestAnimationFrame(() => {
                 positionContainer(container);
                 pill.style.opacity = '1';
                 pill.style.transform = 'translateX(0)';
             });
-            setTimeout(() => {
-                pill.style.opacity = '0';
-                pill.style.transform = 'translateX(-8px)';
-                setTimeout(() => {
-                    pill.remove();
-                    // If the stack is empty after removal, clean up the
-                    // container so it doesn't sit around with stale geometry.
-                    if (container.childElementCount === 0) container.remove();
-                }, ANIM_MS + 20);
-            }, duration);
+
+            if (!persistent) setTimeout(dismiss, duration);
         } catch (err) {
             console.error('[karabuddy] toast failed:', err);
         }
+    };
+
+    // Programmatically dismiss a persistent toast by key. Used when the
+    // condition that triggered it gets resolved (e.g. on next bridge success).
+    const dismiss = (key) => {
+        const fn = activePersistent.get(key);
+        if (fn) fn();
     };
 
     // Reposition the stack when the window resizes (launcher anchor moves).
@@ -159,5 +211,5 @@
         if (c) positionContainer(c);
     });
 
-    NS.toast = { show };
+    NS.toast = { show, dismiss };
 })();

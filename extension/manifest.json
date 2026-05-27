@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "KaraBuddy",
-    "version": "0.4.2",
-    "version_name": "0.4.2",
+    "version": "0.4.3",
+    "version_name": "0.4.3",
     "description": "Records your karabast.net matches automatically and lets you tag key moments. Watch replays on karabuddy.app.",
     "icons": {
         "128": "icons/128.png"

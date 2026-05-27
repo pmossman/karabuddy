@@ -374,7 +374,13 @@
             // browser can surface a "View on karabuddy" link.
             B().uploadReplay(payloadText).then((result) => {
                 if (!result || !result.slug) {
-                    T()?.show?.('Upload failed', { kind: 'error' });
+                    // Suppress the generic toast when the bridge is dead
+                    // because the extension was reloaded — 06-bootstrap
+                    // already showed a persistent "refresh this tab"
+                    // toast that explains the root cause.
+                    if (!NS.contextInvalidated) {
+                        T()?.show?.('Upload failed', { kind: 'error' });
+                    }
                     return;
                 }
                 NS.dlog(`[karabuddy] uploaded to ${result.url}${result.deduped ? ' (already existed)' : ''}`);

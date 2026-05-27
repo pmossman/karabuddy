@@ -42,8 +42,26 @@
         );
     };
 
+    // When the extension is reloaded or auto-updated, content.js can no
+    // longer talk to the service worker — uploads, IDB saves, and the
+    // bridge all silently fail until the user refreshes the tab. content.js
+    // detects this and fires a sentinel CustomEvent; surface a persistent
+    // dismissible toast so the user knows what to do. Also flip a flag
+    // the recorder reads to suppress its noisy generic "Upload failed"
+    // toast (the persistent one already explains why).
+    const installContextInvalidatedHandler = () => {
+        window.addEventListener('karabast-companion-context-invalidated', () => {
+            NS.contextInvalidated = true;
+            NS.toast?.show?.(
+                'KaraBuddy was updated. Refresh this karabast.net tab to keep recording your matches.',
+                { kind: 'warning', persistent: true, key: 'context-invalidated' }
+            );
+        });
+    };
+
     const mountAndWatch = () => {
         installKeyHandlers();
+        installContextInvalidatedHandler();
         Decoder.installHiddenCardStyles();
         Footer.installFooterStyles();
         Footer.installFooter();
