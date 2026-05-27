@@ -318,7 +318,7 @@
         // so the user can pull a snapshot mid-game even if only one player
         // has acted so far.
         if (!isManual && distinctActivePlayers < 2) {
-            console.log(`[karabuddy] skipped save (${reason}) — only ${distinctActivePlayers} distinct active player(s)`);
+            NS.dlog(`[karabuddy] skipped save (${reason}) — only ${distinctActivePlayers} distinct active player(s)`);
             clearPersistedRecording();
             if (currentGameId) finalizedGameId = currentGameId;
             resetRecording();
@@ -341,7 +341,7 @@
             a.remove();
             setTimeout(() => URL.revokeObjectURL(a.href), 1000);
         }
-        console.log(`[karabuddy] finalized (${reason}) — ${recording.length} events, ${actionCount} actions, ${durationMs}ms`);
+        NS.dlog(`[karabuddy] finalized (${reason}) — ${recording.length} events, ${actionCount} actions, ${durationMs}ms`);
 
         // Capture everything the async upload .then() needs into locals.
         // The module-scope `currentGameId` / `recordingStart` get reset by
@@ -377,7 +377,7 @@
                     T()?.show?.('Upload failed', { kind: 'error' });
                     return;
                 }
-                console.log(`[karabuddy] uploaded to ${result.url}${result.deduped ? ' (already existed)' : ''}`);
+                NS.dlog(`[karabuddy] uploaded to ${result.url}${result.deduped ? ' (already existed)' : ''}`);
                 // Cache so the launcher's expanded panel can surface a
                 // "Open this replay on karabuddy →" link until the next
                 // recording starts.

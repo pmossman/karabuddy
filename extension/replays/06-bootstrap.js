@@ -59,5 +59,5 @@
         mountAndWatch();
     }
 
-    console.log('[karabuddy] loaded');
+    NS.dlog('[karabuddy] loaded');
 })();

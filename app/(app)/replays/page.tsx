@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays } from '@/lib/schema';
 import { ReplayCard } from './ReplayCard';
+import { MineEmpty } from './MineEmpty';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ export default async function ReplaysIndex({ searchParams }: PageProps) {
       {tab === 'mine' && !userId ? (
         <SignInPrompt />
       ) : rows.length === 0 ? (
-        <Empty tab={tab} />
+        tab === 'mine' ? <MineEmpty /> : <Empty tab={tab} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 24 }}>
           {rows.map((r) => (
