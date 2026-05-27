@@ -21,9 +21,9 @@
 
     const CONTAINER_ID = 'karabast-replays-toast-stack';
     const LAUNCHER_ID = 'karabast-replays-launcher';
-    const LAUNCHER_SIZE = 42; // mirrors 05-footer.js LAUNCHER_SIZE
+    const LAUNCHER_FALLBACK_SIZE = 28; // mirrors 05-footer.js LAUNCHER_MIN_HEIGHT
     const GAP = 6;             // vertical space between stacked toasts
-    const ANCHOR_OFFSET = 10;  // horizontal gap between launcher edge and pill
+    const ANCHOR_OFFSET = 18;  // horizontal gap between launcher edge and pill
     const DEFAULT_DURATION_MS = 3000;
     const ANIM_MS = 150;
 
@@ -56,7 +56,7 @@
     // default if the launcher isn't in the DOM yet.
     const positionContainer = (c) => {
         const launcher = document.getElementById(LAUNCHER_ID);
-        const size = LAUNCHER_SIZE;
+        const size = LAUNCHER_FALLBACK_SIZE;
         let rect;
         if (launcher) {
             rect = launcher.getBoundingClientRect();

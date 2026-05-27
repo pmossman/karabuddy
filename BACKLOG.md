@@ -27,6 +27,10 @@ _empty_
 
 ## Done
 
+### [B30] Extension: fix toast pill overlapping the launcher
+_completed: 2026-05-26_
+B18 toasts emerged too close to the launcher's right edge — visible in the wild as the `Recording…` pill abutting/overlapping the launcher border. Two small bumps in `07-toast.js`: `ANCHOR_OFFSET` 10→18 (visible breathing room between launcher and pill), and the stale `LAUNCHER_SIZE = 42` fallback constant updated to `LAUNCHER_FALLBACK_SIZE = 28` to match B27's shrunk launcher (only matters for the launcher-not-yet-in-DOM fallback path, but worth correcting for hygiene).
+
 ### [B29] Extension: pagehide upload safety net (close-tab data-loss fix)
 _completed: 2026-05-26_
 Closes the close-tab gap B26 explicitly punted on. Without this, closing the karabast.net tab within the first 5 min of a match (before the periodic snapshot timer fires) loses the replay entirely from karabuddy.app's perspective — the JS context dies before any upload can complete. Added a `pagehide` listener in `03-recorder.js` that, when fired with `gamestateCount > 0` AND `distinctActivePlayers >= 2`, builds the current payload with `reason: 'pagehide'` and fires `B().uploadReplay(payloadText)` fire-and-forget. The bridge → service-worker → fetch path is the trick: MV3 service workers outlive the originating tab by ~30s, plenty of time for the POST to complete, and the service worker's fetch from the extension origin doesn't need a CORS preflight. Sidesteps `navigator.sendBeacon`'s cross-origin-JSON-preflight issue and `fetch keepalive`'s 64KB payload cap entirely. The response event has nowhere to land (page is gone) but we don't care — the server-side upsert handles it.
