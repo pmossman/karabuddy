@@ -6,7 +6,6 @@ import type { Frame } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
 import { Popover } from '@/app/_components/Popover';
-import { useMediaQuery } from '@/lib/useMediaQuery';
 
 interface ReplayRow {
   slug: string;
@@ -53,6 +52,13 @@ interface Props {
   mode: StepMode;
   setMode: (m: StepMode) => void;
   messagesByFrame: any[][] | null;
+  // B44/B46: mobile drawer state is owned by ReplayViewer so the gameboard
+  // overlay (frame-nav chevrons) can shift in response. TagSidebar reads to
+  // render its mobile chrome (open/closed transforms, floating opener pill,
+  // backdrop), writes via setDrawerOpen on dismiss/open.
+  drawerOpen: boolean;
+  setDrawerOpen: (open: boolean) => void;
+  isMobile: boolean;
 }
 
 const TAG_PLAYER = '#6bd968';
@@ -83,7 +89,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -100,19 +106,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const dragStateRef = useRef<{ startX: number; startW: number } | null>(null);
   const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
 
-  // B44: narrow viewports treat the sidebar as a slide-out drawer instead of
-  // a flex child. The 768px break matches Tailwind's `md:` default and lines
-  // up with the gameboard renderer's "needs ~700px to lay out cards" lower
-  // bound. On mobile, drawer starts closed so the gameboard gets the full
-  // viewport on first paint; users tap a floating Tags pill to open it.
-  const isMobile = useMediaQuery('(max-width: 767px)');
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  // If the user resizes desktop → mobile while the drawer is open, leave it
-  // open (gives them control); the inverse case (mobile → desktop) snaps the
-  // drawer state off so the docked sidebar takes over cleanly.
-  useEffect(() => {
-    if (!isMobile && drawerOpen) setDrawerOpen(false);
-  }, [isMobile, drawerOpen]);
+  // B44/B46: isMobile + drawerOpen are now controlled by ReplayViewer so
+  // sibling components (e.g. the gameboard frame-nav overlay) can react to
+  // the same state. See ReplayViewer for the parent useMediaQuery hook.
 
   useEffect(() => {
     setInstallToken(getOrCreateInstallToken());
@@ -468,37 +464,41 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           arrow-key hint becomes tooltips on the arrows. Step-mode toggle
           hides behind a gear popover next to the counter. B12: prev/next-tag
           buttons moved out of here and down next to "+ Tag this frame" so all
-          tag-related actions cluster together. */}
-      <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <FooterBtn onClick={() => onStep(-1)} title="Previous frame (←)">←</FooterBtn>
-          <span style={{ fontSize: 12, color: '#d6d6d6', fontWeight: 600, padding: '0 8px', flex: 1, textAlign: 'center' }}>
-            {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
-          </span>
-          <FooterBtn onClick={() => onStep(1)} title="Next frame (→)">→</FooterBtn>
-          <Popover
-            align="right"
-            label="Step settings"
-            trigger={(open, toggle) => (
-              <IconBtn onClick={toggle} title="Step settings" active={open}>
-                <GearIcon />
-              </IconBtn>
-            )}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 180 }}>
-              <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step by</div>
-              <ModeSegmented
-                mode={mode}
-                setMode={setMode}
-                title={`Hold ⇧ + ← → to step by ${mode === 'action' ? 'Frame' : 'Action'}`}
-              />
-              <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-                Hold ⇧ + ← → to step by {mode === 'action' ? 'Frame' : 'Action'}
+          tag-related actions cluster together. B46: hidden on mobile — the
+          gameboard-overlay chevrons take over the prev/next role and the
+          freed vertical space goes to the FrameLog. */}
+      {!isMobile && (
+        <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <FooterBtn onClick={() => onStep(-1)} title="Previous frame (←)">←</FooterBtn>
+            <span style={{ fontSize: 12, color: '#d6d6d6', fontWeight: 600, padding: '0 8px', flex: 1, textAlign: 'center' }}>
+              {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
+            </span>
+            <FooterBtn onClick={() => onStep(1)} title="Next frame (→)">→</FooterBtn>
+            <Popover
+              align="right"
+              label="Step settings"
+              trigger={(open, toggle) => (
+                <IconBtn onClick={toggle} title="Step settings" active={open}>
+                  <GearIcon />
+                </IconBtn>
+              )}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 180 }}>
+                <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step by</div>
+                <ModeSegmented
+                  mode={mode}
+                  setMode={setMode}
+                  title={`Hold ⇧ + ← → to step by ${mode === 'action' ? 'Frame' : 'Action'}`}
+                />
+                <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
+                  Hold ⇧ + ← → to step by {mode === 'action' ? 'Frame' : 'Action'}
+                </div>
               </div>
-            </div>
-          </Popover>
-        </div>
-      </section>
+            </Popover>
+          </div>
+        </section>
+      )}
 
       <FrameLog
         messagesByFrame={messagesByFrame}

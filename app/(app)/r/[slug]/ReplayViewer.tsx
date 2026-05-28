@@ -9,6 +9,10 @@ import { GameProvider, useGame } from '@/app/_contexts/Game.context';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { decodeReplay, type Frame, type DecodedReplay } from '@/lib/replayDecoder';
 import { TagSidebar } from './TagSidebar';
+import { FrameNavOverlay } from './FrameNavOverlay';
+import { useMediaQuery } from '@/lib/useMediaQuery';
+
+const MOBILE_DRAWER_WIDTH = 'min(380px, 100vw)';
 
 interface ReplayRow {
   slug: string;
@@ -76,6 +80,14 @@ function ViewerShell({ replay, initialTags }: Props) {
   }, []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tagState, setTagState] = useState<TagRow[]>(initialTags);
+  // B44/B46: drawer state owned here so the gameboard overlay (FrameNavOverlay)
+  // can shift in response. Starts closed on mobile so the first paint gives
+  // the gameboard the full viewport.
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (!isMobile && drawerOpen) setDrawerOpen(false);
+  }, [isMobile, drawerOpen]);
   const [mode, setMode] = useState<StepMode>(() => {
     if (typeof window === 'undefined') return 'action';
     try {
@@ -235,6 +247,9 @@ function ViewerShell({ replay, initialTags }: Props) {
         mode={mode}
         setMode={setMode}
         messagesByFrame={decoded?.messagesByFrame || null}
+        drawerOpen={drawerOpen}
+        setDrawerOpen={setDrawerOpen}
+        isMobile={isMobile}
       />
       <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
         {frames ? (
@@ -245,6 +260,14 @@ function ViewerShell({ replay, initialTags }: Props) {
           </div>
         )}
       </div>
+      <FrameNavOverlay
+        isMobile={isMobile}
+        drawerOpen={drawerOpen}
+        onStep={step}
+        canPrev={currentIndex > 0}
+        canNext={!!frames && currentIndex < frames.length - 1}
+        drawerWidth={MOBILE_DRAWER_WIDTH}
+      />
     </div>
   );
 }

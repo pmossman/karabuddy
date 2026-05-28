@@ -49,6 +49,10 @@ _empty_
 
 ## Done
 
+### [B46] Mobile: gameboard-overlay frame nav chevrons + drop in-sidebar nav row
+_completed: 2026-05-28_
+Two-part mobile polish. **New `FrameNavOverlay`**: slim 36×84 chevron buttons pinned to the left + right edges of the viewport (mobile only — desktop keeps the existing in-sidebar arrows + keyboard nav). Translucent dark background with backdrop blur so it sits over the gameboard without dominating. The right chevron shifts left to `calc(drawerWidth + 8px)` when the drawer is open so it stays reachable; the slide animation matches the drawer's 220ms transition. Disabled state at frame boundaries fades to 40% opacity. **In-sidebar frame-nav section hidden on mobile**: that ~50px row (← Frame N/M → gear) is redundant once the overlay chevrons exist; freeing it gives the FrameLog more vertical room on the cramped mobile-landscape canvas. Drawer state lifted from `TagSidebar` to `ReplayViewer` (alongside `isMobile`) so the overlay can react — `TagSidebar` now receives `drawerOpen` / `setDrawerOpen` / `isMobile` as props.
+
 ### [B45] Fix: gameboard reserved ~20% right-padding for a chat sidebar we deleted
 _completed: 2026-05-28_
 Sharp-eyed visual catch from Parker — the gameboard always rendered with a noticeable right-side gap. Root cause: the upstream forceteki Gameboard reserves `pr: min(20%, 280px)` on its main box for the in-board ChatDrawer karabast.net uses. B4 deleted the ChatDrawer (the karabuddy viewer never has chat), and B5 hardcoded `sidebarOpen = true` because the comment-author thought the right-padding was reserving space for our TagSidebar. But the TagSidebar lives in a separate flex column OUTSIDE this gameboard, so the padding was always orphaned — just visible asymmetry. Flipped to `sidebarOpen = false`. Gameboard now renders edge-to-edge. Especially visible mobile-landscape, where the dead 20% chewed up the most precious horizontal real estate.
