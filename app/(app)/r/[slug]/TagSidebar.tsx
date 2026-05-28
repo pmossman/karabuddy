@@ -330,36 +330,40 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   return (
     <>
-      {/* B44 mobile: floating "Tags" pill — only renders when the drawer is
-          closed. Bottom-right placement so it doesn't fight thumbs at the
-          edges (which we'll wire to prev/next frame nav in B46). */}
+      {/* B44 mobile: small circular drawer-open button. Title attribute
+          still surfaces "Open tags" on long-press for accessibility, but
+          the visual is intentionally minimal so it doesn't compete with
+          the gameboard for attention. */}
       {isMobile && !drawerOpen && (
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
           aria-label="Open tags panel"
+          title="Open tags"
           style={{
             position: 'fixed',
-            bottom: 16,
-            right: 16,
+            bottom: 12,
+            right: 12,
             zIndex: 70,
-            background: 'rgba(74, 124, 255, 0.92)',
-            color: 'white',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            borderRadius: 999,
-            padding: '12px 18px',
-            fontSize: 13,
-            fontWeight: 700,
+            width: 38,
+            height: 38,
+            background: 'rgba(36, 48, 68, 0.85)',
+            color: '#d6e7ff',
+            border: '1px solid rgba(74, 124, 255, 0.4)',
+            borderRadius: '50%',
+            padding: 0,
+            fontSize: 16,
+            lineHeight: 1,
             cursor: 'pointer',
             fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            justifyContent: 'center',
+            backdropFilter: 'blur(6px)',
           }}
         >
-          <span style={{ fontSize: 16, lineHeight: 1 }}>☰</span>
-          Tags · Frame {frames ? currentIndex + 1 : '–'}/{frames?.length ?? '–'}
+          ☰
         </button>
       )}
 
