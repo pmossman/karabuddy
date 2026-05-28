@@ -203,27 +203,32 @@ const GameCard: React.FC<IGameCardProps> = ({
     }
 
     // helper function to get the correct aspects for the upgrade cards
+    // karabuddy: paths are absolute (leading `/`) so they resolve against the
+    // app root from any route depth. Upstream's gameboard lives at `/GameBoard`
+    // (single segment) so relative `upgrade-*.png` worked there; our viewer
+    // is at `/r/[slug]/` and a relative URL would resolve to `/r/<slug>/upgrade-*.png`
+    // and 404, leaving the upgrade strip as a black-box CSS background fallback.
     const cardUpgradebackground = (card: ICardData) => {
         if (!card.aspects){
             return null
         }
         if (card.aspects.includes('villainy') && card.aspects.length === 1) {
-            return 'upgrade-black.png';
+            return '/upgrade-black.png';
         }
         if (card.aspects.includes('heroism') && card.aspects.length === 1) {
-            return 'upgrade-white.png';
+            return '/upgrade-white.png';
         }
         switch (true) {
             case card.aspects.includes('aggression'):
-                return 'upgrade-red.png';
+                return '/upgrade-red.png';
             case card.aspects.includes('command'):
-                return 'upgrade-green.png';
+                return '/upgrade-green.png';
             case card.aspects.includes('cunning'):
-                return 'upgrade-yellow.png';
+                return '/upgrade-yellow.png';
             case card.aspects.includes('vigilance'):
-                return 'upgrade-blue.png';
+                return '/upgrade-blue.png';
             default:
-                return 'upgrade-grey.png';
+                return '/upgrade-grey.png';
         }
     };
     // Filter subcards into Shields and other upgrades

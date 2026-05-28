@@ -194,27 +194,29 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
         };
     }
 
+    // karabuddy: paths are absolute (leading `/`) so they resolve against the
+    // app root from any route depth — see the matching note in GameCard.tsx.
     const capturedCardBackground = (card: ICardData) => {
         if (!card.aspects){
             return null
         }
         if (card.aspects.includes('villainy') && card.aspects.length === 1) {
-            return 'upgrade-black.png';
+            return '/upgrade-black.png';
         }
         if (card.aspects.includes('heroism') && card.aspects.length === 1) {
-            return 'upgrade-white.png';
+            return '/upgrade-white.png';
         }
         switch (true) {
             case card.aspects.includes('aggression'):
-                return 'upgrade-red.png';
+                return '/upgrade-red.png';
             case card.aspects.includes('command'):
-                return 'upgrade-green.png';
+                return '/upgrade-green.png';
             case card.aspects.includes('cunning'):
-                return 'upgrade-yellow.png';
+                return '/upgrade-yellow.png';
             case card.aspects.includes('vigilance'):
-                return 'upgrade-blue.png';
+                return '/upgrade-blue.png';
             default:
-                return 'upgrade-grey.png';
+                return '/upgrade-grey.png';
         }
     };
 

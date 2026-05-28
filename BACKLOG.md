@@ -63,6 +63,10 @@ _empty_
 
 ## Done
 
+### [B51] Fix: upgrade subcard strip rendering as a solid black box
+_completed: 2026-05-28_
+Cards attached as upgrades render a thin colored bar at the bottom of the host card with the upgrade's name in black text on a colored aspect background (`upgrade-{aspect}.png` in `public/`). The bar was rendering as a solid black box with no name visible. Root cause: `cardUpgradebackground()` in `GameCard.tsx` (and the parallel `capturedCardBackground()` in `LeaderBaseCard.tsx`) returned relative URLs like `'upgrade-white.png'`. Upstream forceteki renders its gameboard at `/GameBoard` (one path segment), so a relative `url(upgrade-white.png)` in a CSS background-image resolves to `/upgrade-white.png` and hits the public asset. Our viewer is at `/r/[slug]/` (two segments), where the same relative URL resolves to `/r/<slug>/upgrade-white.png`, 404s, and falls back to the `Box`'s default-transparent background sitting on top of the card container's `backgroundColor: 'black'` — hence the black box. The Typography name was also invisible because it's `color: black` over that now-black background (would have been black-on-color if the PNG had loaded). Prefixed every `upgrade-*.png` return in both helpers with `/` so they resolve from the app root regardless of route depth. Identical to upstream files except for that single character per branch — same family of fix as B43/B50 but a URL-resolution issue rather than the S3 locale-segment patch.
+
 ### [B50] Fix: token art for newer named tokens (mandalorian-id) was 404ing
 _completed: 2026-05-28_
 Same root cause as B43, this time for tokens. `cards/_tokens/<format>/<id>.webp` worked for the old numeric-id tokens that karabast mirrors at the no-locale path, but newer named tokens like `mandalorian-id` are only served under the locale segment. Updated `s3Utils.ts` to build `cards/_tokens/en/<format>/<id>.webp` for all tokens — older numeric-id tokens are likely also mirrored at the en/ path (same as B43's pattern with cards) so the locale-prefixed form is safe across the board.
