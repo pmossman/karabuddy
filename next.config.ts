@@ -4,11 +4,18 @@ const config: NextConfig = {
   // Card art proxy → karabast-data S3. We don't want production users
   // hotlinking karabast's bucket directly; route through our own origin
   // so we control caching and can swap the source later.
+  //
+  // Path shape on karabast's S3 is `cards/<SET>/<LANG>/standard/large/<N>.webp`.
+  // Older sets (e.g. SEC) are ALSO mirrored at `cards/<SET>/standard/...`
+  // without the locale segment — that's why our pre-locale builder worked
+  // for old cards. Newer sets (ASH onward) are locale-only, so we need to
+  // route through `en/` to find them. Inject the `en` segment ourselves
+  // and keep the API surface (`/card-art/<SET>/standard/...`) unchanged.
   async rewrites() {
     return [
       {
-        source: '/card-art/:path*',
-        destination: 'https://karabast-data.s3.amazonaws.com/cards/:path*',
+        source: '/card-art/:set/:rest*',
+        destination: 'https://karabast-data.s3.amazonaws.com/cards/:set/en/:rest*',
       },
     ];
   },
