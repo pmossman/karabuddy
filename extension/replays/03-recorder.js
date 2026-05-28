@@ -119,10 +119,36 @@
         return true;
     };
 
+    // B42 investigation debug capture (temporary — remove in v0.4.6).
+    // Stashes the first few of each non-gamestate event to window.__kbDebug
+    // so we can inspect karabast's lobby state, find where deck + match
+    // metadata lives, and design the deck-snapshot implementation.
+    const KB_DEBUG_LIMITS = { lobbystate: 3, lobby: 2, connectedUser: 2, message: 2 };
+    if (typeof window !== 'undefined' && !window.__kbDebug) {
+        window.__kbDebug = { samples: {}, outbound: [], wsCount: 0, startedAt: new Date().toISOString() };
+    }
+    const debugCapture = (dir, frame) => {
+        try {
+            const dbg = window.__kbDebug;
+            if (!dbg) return;
+            if (dir === 'out') {
+                if (dbg.outbound.length < 10) dbg.outbound.push({ event: frame.event, args: frame.args, t: Date.now() });
+                return;
+            }
+            const cap = KB_DEBUG_LIMITS[frame.event];
+            if (!cap) return;
+            (dbg.samples[frame.event] ||= []);
+            if (dbg.samples[frame.event].length < cap) {
+                dbg.samples[frame.event].push({ at: new Date().toISOString(), args: structuredClone(frame.args) });
+            }
+        } catch {}
+    };
+
     // ----- record(dir, frame): the WebSocket interceptor feeds us packets. -----
     const record = (dir, frame) => {
         const d = D();
         if (frame.kind !== 'event') return;
+        debugCapture(dir, frame);
         if (!d.RECORDED_EVENTS.has(frame.event)) return;
 
         if (frame.event === 'gamestate') {
@@ -497,7 +523,18 @@
         construct(target, args) {
             const ws = Reflect.construct(target, args);
             const url = args[0];
-            if (typeof url === 'string' && /karabast\.net/.test(url)) {
+            // B42 debug: log + count every WS construction regardless of
+            // URL so we can confirm karabast's socket is being intercepted
+            // and find its actual hostname.
+            try {
+                if (window.__kbDebug) {
+                    window.__kbDebug.wsCount = (window.__kbDebug.wsCount || 0) + 1;
+                    (window.__kbDebug.wsUrls ||= []).push(String(url));
+                }
+            } catch {}
+            if (typeof url === 'string' && /karabast/.test(url)) {
+                // Relaxed from /karabast\.net/ to /karabast/ for debug —
+                // matches api.karabast.net, ws.karabast.net, any subdomain.
                 // Lazy lookup — NS.Recorder is the exports object at the
                 // bottom of this IIFE; safe by the time karabast's bundle
                 // constructs its socket.
