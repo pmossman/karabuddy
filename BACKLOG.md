@@ -49,6 +49,10 @@ _empty_
 
 ## Done
 
+### [B47] Mobile detection: catch phone landscape (was getting desktop chrome)
+_completed: 2026-05-28_
+The `useMediaQuery('(max-width: 767px)')` threshold caught phone portrait (390px) but missed phone landscape — iPhone 14 is 844px wide in landscape, iPhone 14 Pro Max is 932px. Those landed in desktop chrome with a full 360px sidebar eating ~40% of the viewport. Bumped to `(max-width: 900px), (pointer: coarse)` which evaluates as OR — any narrow viewport stays mobile, plus any touch device of any width also routes to mobile (catches tablets too). Desktop with a mouse stays desktop unless the window shrinks past 900px. CSS media-query syntax already treats comma as OR so no `useMediaQuery` changes needed.
+
 ### [B46] Mobile: gameboard-overlay frame nav chevrons + drop in-sidebar nav row
 _completed: 2026-05-28_
 Two-part mobile polish. **New `FrameNavOverlay`**: slim 36×84 chevron buttons pinned to the left + right edges of the viewport (mobile only — desktop keeps the existing in-sidebar arrows + keyboard nav). Translucent dark background with backdrop blur so it sits over the gameboard without dominating. The right chevron shifts left to `calc(drawerWidth + 8px)` when the drawer is open so it stays reachable; the slide animation matches the drawer's 220ms transition. Disabled state at frame boundaries fades to 40% opacity. **In-sidebar frame-nav section hidden on mobile**: that ~50px row (← Frame N/M → gear) is redundant once the overlay chevrons exist; freeing it gives the FrameLog more vertical room on the cramped mobile-landscape canvas. Drawer state lifted from `TagSidebar` to `ReplayViewer` (alongside `isMobile`) so the overlay can react — `TagSidebar` now receives `drawerOpen` / `setDrawerOpen` / `isMobile` as props.
