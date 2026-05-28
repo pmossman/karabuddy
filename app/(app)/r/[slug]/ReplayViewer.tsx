@@ -83,7 +83,15 @@ function ViewerShell({ replay, initialTags }: Props) {
   // B44/B46: drawer state owned here so the gameboard overlay (FrameNavOverlay)
   // can shift in response. Starts closed on mobile so the first paint gives
   // the gameboard the full viewport.
-  const isMobile = useMediaQuery('(max-width: 767px)');
+  //
+  // Mobile detection (B47): viewport width OR coarse pointer. The width-only
+  // 767px breakpoint missed phone landscape (iPhone 14 = 844px, iPhone 14 Pro
+  // Max = 932px) — those got desktop chrome and a tiny sidebar. Bumping width
+  // to 900px catches all current phones in landscape; adding `pointer: coarse`
+  // as an OR catches tablets too. Desktop users with mouse pointer get the
+  // desktop chrome regardless of window width (until they shrink past 900px,
+  // at which point mobile mode is the more usable layout anyway).
+  const isMobile = useMediaQuery('(max-width: 900px), (pointer: coarse)');
   const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => {
     if (!isMobile && drawerOpen) setDrawerOpen(false);
