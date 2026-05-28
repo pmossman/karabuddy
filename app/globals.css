@@ -14,4 +14,20 @@ body {
        theme (url(/default-background.webp)). Keep a dark fallback for slow
        loads but don't override the theme's image. */
     background-color: #11141a;
+    /* Prevent horizontal scroll bleed from the lifted forceteki gameboard
+       which occasionally renders absolute-positioned elements that escape
+       the viewport on narrow widths (esp iPhone Pro Max landscape ~932px). */
+    overflow-x: hidden;
+}
+
+/* B48: mobile viewer hides the persistent header so the gameboard claims
+   the full viewport. ReplayViewer adds `.kb-viewer-mobile` to <html> while
+   mounted on mobile; removes on unmount. --kb-header-h flips to 0 so the
+   viewer's calc(100vh - var(--kb-header-h)) gives it the whole screen.
+   Navigation back to / lives inside the tags drawer instead. */
+html.kb-viewer-mobile {
+    --kb-header-h: 0px;
+}
+html.kb-viewer-mobile header[data-kb-header] {
+    display: none !important;
 }

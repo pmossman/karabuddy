@@ -329,7 +329,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {/* B44 mobile: small circular drawer-open button. Title attribute
           still surfaces "Open tags" on long-press for accessibility, but
           the visual is intentionally minimal so it doesn't compete with
-          the gameboard for attention. */}
+          the gameboard for attention. Bottom offset uses env(safe-area-
+          inset-bottom) so iOS home-indicator devices don't clip it. */}
       {isMobile && !drawerOpen && (
         <button
           type="button"
@@ -338,8 +339,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           title="Open tags"
           style={{
             position: 'fixed',
-            bottom: 12,
-            right: 12,
+            bottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+            right: 'max(12px, env(safe-area-inset-right, 12px))',
             zIndex: 70,
             width: 38,
             height: 38,
@@ -459,6 +460,32 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           </div>
         </Popover>
       </header>
+
+      {/* B48 mobile: drawer-only chrome — gives mobile users somewhere to
+          configure the chevron-overlay step mode AND a way back to home
+          since the persistent header is hidden on mobile viewer pages.
+          A compact row to keep vertical density tight. */}
+      {isMobile && (
+        <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <a
+            href="/"
+            style={{ color: '#a0a8b8', fontSize: 12, fontWeight: 600, textDecoration: 'none', flex: '0 0 auto' }}
+          >
+            ← karabuddy
+          </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
+            <span style={{ fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step by</span>
+            <ModeSegmented
+              mode={mode}
+              setMode={setMode}
+              title="Affects the ← / → chevrons"
+            />
+          </div>
+          <span style={{ fontSize: 11, color: '#d6d6d6', fontWeight: 600, flex: '0 0 auto', width: '100%', textAlign: 'center', paddingTop: 4 }}>
+            {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
+          </span>
+        </section>
+      )}
 
       {/* B10: nav row tightens — arrows flank an inline frame counter,
           arrow-key hint becomes tooltips on the arrows. Step-mode toggle

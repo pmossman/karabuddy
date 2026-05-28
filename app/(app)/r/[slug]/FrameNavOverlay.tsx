@@ -24,13 +24,19 @@ export function FrameNavOverlay({
 }) {
   if (!isMobile) return null;
 
-  const rightOffset = drawerOpen ? `calc(${drawerWidth} + 8px)` : '8px';
+  // Respect iOS safe-area insets so the chevrons don't sit underneath the
+  // home indicator or notch in landscape. env() falls back to the literal
+  // 8px on browsers without safe-area support.
+  const leftOffset = 'max(8px, env(safe-area-inset-left, 8px))';
+  const rightOffset = drawerOpen
+    ? `calc(${drawerWidth} + 8px)`
+    : 'max(8px, env(safe-area-inset-right, 8px))';
 
   return (
     <>
       <ChevronButton
         side="left"
-        offset="8px"
+        offset={leftOffset}
         ariaLabel="Previous frame"
         disabled={!canPrev}
         onClick={() => onStep(-1)}

@@ -11,6 +11,7 @@ export async function Header() {
   const signedIn = !!session?.user;
   return (
     <header
+      data-kb-header=""
       style={{
         position: 'sticky',
         top: 0,

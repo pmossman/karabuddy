@@ -197,7 +197,8 @@ const OpponentCardTray: React.FC<IOpponentCardTrayProps> = ({ trayPlayer }) => {
                     ...styles.rightColumn,
                 }}
             >
-                {!gameIsEnded() && !lobbyState?.isPrivate && <GameTimer />}
+                {/* karabuddy: replays are static — no live timer ever matters,
+                    and the placeholder 0:00 / 0:00 was just visual clutter. */}
                 <Box
                     onMouseEnter={handlePreviewOpen}
                     onMouseLeave={handlePreviewClose}

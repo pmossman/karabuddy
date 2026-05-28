@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ThemeContextProvider } from '@/app/_contexts/Theme.context';
 import { CosmeticsProvider } from '@/app/_contexts/CosmeticsContext';
 import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, type Frame, type DecodedReplay } from '@/lib/replayDecoder';
 import { TagSidebar } from './TagSidebar';
 import { FrameNavOverlay } from './FrameNavOverlay';
@@ -96,6 +97,53 @@ function ViewerShell({ replay, initialTags }: Props) {
   useEffect(() => {
     if (!isMobile && drawerOpen) setDrawerOpen(false);
   }, [isMobile, drawerOpen]);
+
+  // B48: on mobile the persistent (app)-layout header eats too much
+  // vertical real estate from the gameboard. Toggle a body-level class
+  // while the mobile viewer is mounted so globals.css can hide the header
+  // and zero out --kb-header-h.
+  useEffect(() => {
+    if (!isMobile) return;
+    document.documentElement.classList.add('kb-viewer-mobile');
+    return () => document.documentElement.classList.remove('kb-viewer-mobile');
+  }, [isMobile]);
+
+  // B48: persist + restore current frame via URL search param `?f=N` so
+  // refreshes keep your place AND links to a specific frame share cleanly.
+  // Uses router.replace with scroll:false to avoid touching scroll position
+  // on every step. Reads the initial value once on mount; subsequent URL
+  // changes (e.g. browser back) don't re-sync state to avoid a write-loop
+  // with the writer effect below.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialFrameRef = useRef<number | null>(null);
+  if (initialFrameRef.current === null) {
+    const raw = searchParams?.get('f');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    initialFrameRef.current = Number.isFinite(n) && n > 0 ? n - 1 : 0;
+  }
+  // Apply the initial frame once frames have loaded (the index is 0-based
+  // internally; the URL is 1-based for human-friendly sharing).
+  const appliedInitialRef = useRef(false);
+  // After every currentIndex change, mirror to the URL. Skip the first
+  // render — searchParams is the source of truth on initial mount.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    const params = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
+    const human = currentIndex + 1;
+    if (currentIndex === 0) params.delete('f');
+    else params.set('f', String(human));
+    const qs = params.toString();
+    const url = qs ? `?${qs}` : window.location.pathname;
+    router.replace(url, { scroll: false });
+    // Intentionally exclude searchParams + router from deps — replace runs
+    // on every meaningful frame change, not on its own URL writes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex]);
   const [mode, setMode] = useState<StepMode>(() => {
     if (typeof window === 'undefined') return 'action';
     try {
@@ -110,6 +158,17 @@ function ViewerShell({ replay, initialTags }: Props) {
 
   const frames = decoded?.frames || null;
   const activeByFrame = decoded?.activeByFrame || null;
+
+  // B48: apply the URL-derived initial frame once frames are decoded.
+  // Clamps to [0, total-1] in case the link points at a frame that no
+  // longer exists (replay re-uploaded shorter, etc).
+  useEffect(() => {
+    if (appliedInitialRef.current) return;
+    if (!frames || frames.length === 0) return;
+    const target = Math.max(0, Math.min(frames.length - 1, initialFrameRef.current ?? 0));
+    appliedInitialRef.current = true;
+    if (target !== 0) setCurrentIndex(target);
+  }, [frames, setCurrentIndex]);
 
   // Step delta — `dir` is +/-1. Action mode walks through frames until the
   // active player changes (matches the extension's advanceByAction).
