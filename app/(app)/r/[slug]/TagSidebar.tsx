@@ -6,6 +6,7 @@ import type { Frame } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
 import { Popover } from '@/app/_components/Popover';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
 interface ReplayRow {
   slug: string;
@@ -98,6 +99,20 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [resizeHandleActive, setResizeHandleActive] = useState(false);
   const dragStateRef = useRef<{ startX: number; startW: number } | null>(null);
   const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
+
+  // B44: narrow viewports treat the sidebar as a slide-out drawer instead of
+  // a flex child. The 768px break matches Tailwind's `md:` default and lines
+  // up with the gameboard renderer's "needs ~700px to lay out cards" lower
+  // bound. On mobile, drawer starts closed so the gameboard gets the full
+  // viewport on first paint; users tap a floating Tags pill to open it.
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // If the user resizes desktop → mobile while the drawer is open, leave it
+  // open (gives them control); the inverse case (mobile → desktop) snaps the
+  // drawer state off so the docked sidebar takes over cleanly.
+  useEffect(() => {
+    if (!isMobile && drawerOpen) setDrawerOpen(false);
+  }, [isMobile, drawerOpen]);
 
   useEffect(() => {
     setInstallToken(getOrCreateInstallToken());
@@ -276,9 +291,31 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   const tagsAtCurrent = tagsByFrame.get(currentIndex) || [];
 
-  return (
-    <aside
-      style={{
+  // B44: mobile drawer styling overrides desktop's flex-child positioning.
+  // The aside takes itself out of normal flow with position:fixed so the
+  // gameboard's flex container reclaims the width; the drawer slides in/out
+  // via transform, which animates cheaper than width.
+  const mobileWidth = 'min(380px, 100vw)';
+  const asideStyle: React.CSSProperties = isMobile
+    ? {
+        position: 'fixed',
+        top: 'var(--kb-header-h, 0px)',
+        right: 0,
+        bottom: 0,
+        width: mobileWidth,
+        zIndex: 80,
+        transform: drawerOpen ? 'translateX(0)' : 'translateX(100%)',
+        transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        boxShadow: drawerOpen ? '-8px 0 24px rgba(0,0,0,0.45)' : 'none',
+        background: 'rgba(17, 20, 26, 0.97)',
+        borderLeft: '1px solid #2e333c',
+        color: '#e6e6e6',
+        font: '12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }
+    : {
         width: sidebarWidth,
         flex: `0 0 ${sidebarWidth}px`,
         background: 'rgba(17, 20, 26, 0.95)',
@@ -289,14 +326,99 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         flexDirection: 'column',
         overflow: 'hidden',
         position: 'relative',
-      }}
-    >
+      };
+
+  return (
+    <>
+      {/* B44 mobile: floating "Tags" pill — only renders when the drawer is
+          closed. Bottom-right placement so it doesn't fight thumbs at the
+          edges (which we'll wire to prev/next frame nav in B46). */}
+      {isMobile && !drawerOpen && (
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open tags panel"
+          style={{
+            position: 'fixed',
+            bottom: 16,
+            right: 16,
+            zIndex: 70,
+            background: 'rgba(74, 124, 255, 0.92)',
+            color: 'white',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            borderRadius: 999,
+            padding: '12px 18px',
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 16, lineHeight: 1 }}>☰</span>
+          Tags · Frame {frames ? currentIndex + 1 : '–'}/{frames?.length ?? '–'}
+        </button>
+      )}
+
+      {/* B44 mobile: dimmed backdrop — fades in with the drawer, dismisses
+          on tap. Only rendered while the drawer is open AND we're on mobile;
+          desktop never gets a backdrop because the sidebar is docked, not
+          floating. */}
+      {isMobile && drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            top: 'var(--kb-header-h, 0px)',
+            right: 0,
+            bottom: 0,
+            left: 0,
+            zIndex: 75,
+            background: 'rgba(0, 0, 0, 0.45)',
+            animation: 'kb-fade-in 220ms ease',
+          }}
+        />
+      )}
+
+      {/* Keyframes scoped inline so this file remains self-contained — only
+          referenced by the backdrop above. */}
+      <style>{`@keyframes kb-fade-in { from { opacity: 0; } to { opacity: 1; } }`}</style>
+
+      <aside style={asideStyle}>
       {/* B10: compact header — leader+base per player, share collapsed
           into a top-right popover. B12: usernames now wrap to their own
           line beneath the thumbs, so the row aligns to the top of the
           thumbs to keep VS visually centered against the cards (not the
           taller two-line player column). */}
       <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        {/* B44 mobile: explicit × close at the leading edge so the user has
+            an obvious dismiss target beyond tapping the backdrop. */}
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(false)}
+            aria-label="Close tags panel"
+            style={{
+              background: 'transparent',
+              color: '#a0a8b8',
+              border: 0,
+              padding: 0,
+              width: 28,
+              height: 28,
+              font: '20px -apple-system, sans-serif',
+              lineHeight: 1,
+              cursor: 'pointer',
+              flex: '0 0 auto',
+              marginTop: 2,
+            }}
+          >
+            ×
+          </button>
+        )}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1, minWidth: 0 }}>
           <MatchupRow player={p1} />
           {/* Sits vertically aligned with the 32px-tall thumb row above the
@@ -515,38 +637,42 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {/* B12: drag handle pinned to the sidebar's right edge. Sits above the
           right border with a transparent default; the inner pill brightens on
           hover and becomes a solid accent when actively dragging so the
-          affordance is discoverable without being noisy. */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
-        onMouseDown={onResizeHandleMouseDown}
-        onMouseEnter={() => setResizeHandleHover(true)}
-        onMouseLeave={() => setResizeHandleHover(false)}
-        onDoubleClick={() => {
-          const next = SIDEBAR_WIDTH_DEFAULT;
-          setSidebarWidth(next);
-          try { localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next)); } catch {}
-        }}
-        title="Drag to resize (double-click to reset)"
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          width: 6,
-          height: '100%',
-          cursor: 'ew-resize',
-          userSelect: 'none',
-          background: resizeHandleActive
-            ? 'rgba(74, 124, 255, 0.45)'
-            : resizeHandleHover
-            ? 'rgba(74, 124, 255, 0.18)'
-            : 'transparent',
-          transition: 'background 120ms ease',
-          zIndex: 10,
-        }}
-      />
+          affordance is discoverable without being noisy. Hidden on mobile
+          where the sidebar is a fixed-width drawer. */}
+      {!isMobile && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onMouseDown={onResizeHandleMouseDown}
+          onMouseEnter={() => setResizeHandleHover(true)}
+          onMouseLeave={() => setResizeHandleHover(false)}
+          onDoubleClick={() => {
+            const next = SIDEBAR_WIDTH_DEFAULT;
+            setSidebarWidth(next);
+            try { localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next)); } catch {}
+          }}
+          title="Drag to resize (double-click to reset)"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 6,
+            height: '100%',
+            cursor: 'ew-resize',
+            userSelect: 'none',
+            background: resizeHandleActive
+              ? 'rgba(74, 124, 255, 0.45)'
+              : resizeHandleHover
+              ? 'rgba(74, 124, 255, 0.18)'
+              : 'transparent',
+            transition: 'background 120ms ease',
+            zIndex: 10,
+          }}
+        />
+      )}
     </aside>
+    </>
   );
 }
 
