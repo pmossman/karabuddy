@@ -49,9 +49,11 @@ export function s3CardImageURL(
 
     const tokenIds = ['3941784506', '3463348370', '7268926664', '9415311381', '8752877738', '2007868442', '6665455613']
     if (cardType?.includes('token') || (card.id && tokenIds.includes(card.id))) {
-        // Tokens live at cards/_tokens/<format>/... with no locale segment
-        // (no localized art for token cards).
-        return s3ImageURL(`cards/_tokens/${format}/${card.id}.webp`);
+        // Tokens now live under the `en/` locale segment alongside cards
+        // (B50). The older numeric-id tokens may still be mirrored at the
+        // no-locale path, but newer named tokens (e.g. `mandalorian-id`)
+        // only exist under en/. Use the locale-prefixed path for everything.
+        return s3ImageURL(`cards/_tokens/en/${format}/${card.id}.webp`);
     }
 
     let cardNumber = setId.number.toString().padStart(3, '0')

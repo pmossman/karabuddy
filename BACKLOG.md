@@ -49,6 +49,10 @@ _empty_
 
 ## Done
 
+### [B50] Fix: token art for newer named tokens (mandalorian-id) was 404ing
+_completed: 2026-05-28_
+Same root cause as B43, this time for tokens. `cards/_tokens/<format>/<id>.webp` worked for the old numeric-id tokens that karabast mirrors at the no-locale path, but newer named tokens like `mandalorian-id` are only served under the locale segment. Updated `s3Utils.ts` to build `cards/_tokens/en/<format>/<id>.webp` for all tokens — older numeric-id tokens are likely also mirrored at the en/ path (same as B43's pattern with cards) so the locale-prefixed form is safe across the board.
+
 ### [B49] Fix: tag author attribution — local user's tags landing under the opponent's name
 _completed: 2026-05-28_
 Same root cause as B32/B33: karabast's `players` map has arbitrary key iteration order. `getOrCreateAuthor` in `02-decoder.js` was walking `Object.values(players)` and returning the FIRST non-anonymous username it found — which is the opponent half the time. So Parker tagged a moment, mid-match, as ReprintConfiscate, and the tag came back attributed to SerRaf. Fix: `getOrCreateAuthor` now accepts `localPlayerId` (which the recorder already tracks per B33 via the hand-visibility asymmetry) and looks up that specific player's username directly instead of iterating. Falls back to the persisted `anon-XXXX` handle when `localPlayerId` is null (e.g. very early frames before any hand data is visible) OR when the local player is anonymous on karabast (no real username). Bumped to v0.4.4.
