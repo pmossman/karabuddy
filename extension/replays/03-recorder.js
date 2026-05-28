@@ -432,7 +432,10 @@
     // comment editor.
     const addTag = (comment = '') => {
         const d = D();
-        const author = d.getOrCreateAuthor(lastFullGamestate?.players);
+        // Pass localPlayerId so the decoder picks the LOCAL player's
+        // username instead of "first non-anonymous in iteration order"
+        // (which Object.values gives us arbitrarily — often the opponent).
+        const author = d.getOrCreateAuthor(lastFullGamestate?.players, localPlayerId);
         const frameIndex = Math.max(0, gamestateCount - 1);
         // No color stored on the tag — derived at render time from author
         // vs the game's player roster so the scheme stays consistent when

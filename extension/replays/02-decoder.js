@@ -370,19 +370,24 @@
         return 'tag-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
     };
 
-    // Try the in-game username first; fall back to a persisted anon-XXXX
-    // handle. The anon handle is generated once per browser profile and
-    // reused so the same person's tags are color-stable across replays.
-    const getOrCreateAuthor = (livePlayers) => {
-        // Path 1: live recording or playback — sniff the gamestate for a
-        // real karabast username.
-        if (livePlayers && typeof livePlayers === 'object') {
-            for (const p of Object.values(livePlayers)) {
-                const u = p?.user?.username;
-                if (u && !isAnonymousUsername(u)) return u;
-            }
+    // Resolve the tag author's display name. Priority:
+    //   1. If localPlayerId is known (set by the recorder via the hand-
+    //      visibility asymmetry in 03-recorder.js — same signal B33 uses
+    //      for POV detection) AND that player has a real (non-anonymous)
+    //      karabast username, use it. Karabast's players map key order is
+    //      arbitrary, so the previous "first non-anonymous username" walk
+    //      attributed the local user's tags to whichever player happened
+    //      to land first in the map — frequently the opponent.
+    //   2. Persisted anon-XXXX handle in localStorage. Used when:
+    //        - localPlayerId hasn't been detected yet (e.g. very early
+    //          frames with empty hands), OR
+    //        - the local player is anonymous on karabast (no real username)
+    //   3. Fresh anon-XXXX (and persist) when no handle exists yet.
+    const getOrCreateAuthor = (livePlayers, localPlayerId = null) => {
+        if (localPlayerId && livePlayers && typeof livePlayers === 'object') {
+            const u = livePlayers[localPlayerId]?.user?.username;
+            if (u && !isAnonymousUsername(u)) return u;
         }
-        // Path 2: persisted anon handle.
         try {
             const stored = localStorage.getItem(TAG_AUTHOR_KEY);
             if (stored) return stored;
