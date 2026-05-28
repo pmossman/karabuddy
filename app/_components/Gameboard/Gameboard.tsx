@@ -26,8 +26,13 @@ import { useCosmetics } from '@/app/_contexts/CosmeticsContext';
 const Gameboard: React.FC = () => {
     const { getOpponent, connectedPlayer, gameState, isSpectator } = useGame();
     const { getBackground } = useCosmetics();
-    // B5: sidebar is always open (TagSidebar is always rendered in the viewer).
-    const sidebarOpen = true;
+    // The upstream gameboard reserves ~20% right-padding for an in-board
+    // ChatDrawer that we deleted in B4. The TagSidebar lives in a separate
+    // flex column OUTSIDE this gameboard, so the padding was never doing
+    // anything useful — it just created visible asymmetry (B45: gameboard
+    // pinned to the left edge, gap on the right where chat used to be).
+    // Set false so the gameboard renders edge-to-edge.
+    const sidebarOpen = false;
 
     const user = gameState?.players?.[connectedPlayer]?.user;
     const background = getBackground(isSpectator ? null : user?.cosmetics?.background ?? null);
