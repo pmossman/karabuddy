@@ -132,6 +132,11 @@ export const replays = pgTable(
     //   - draws (rare in SWU; if karabast does emit a draw signal, the
     //     extractor would store an empty [] instead of null).
     winners: jsonb('winners'),
+    // B59-followup: the recorder's local-player id from the payload
+    // (B33 POV detection). Lets the Result filter on /replays?tab=mine
+    // ask "did the owner win this match?" without a karabast-username
+    // lookup. Set ONCE on first insert; later uploads don't overwrite.
+    ownerPlayerId: text('owner_player_id'),
     // B53: user-editable display name. Null falls back to the auto-matchup
     // text the viewer / card teaser composes from the players array.
     displayName: text('display_name'),

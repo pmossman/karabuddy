@@ -35,7 +35,12 @@ interface Row {
   // B59: winning playerIds on the replay. Null for pre-B59 uploads or
   // games that ended without a winner signal.
   winners?: string[] | null;
+  // B59-followup: the recorder POV's playerId — the owner's player in
+  // this replay. Combined with `winners` it answers "did I win?".
+  ownerPlayerId?: string | null;
 }
+
+type ResultFilter = '' | 'wins' | 'losses';
 
 type ViewMode = 'table' | 'grid' | 'by-leader' | 'timeline';
 const VIEW_MODES: readonly ViewMode[] = ['table', 'grid', 'by-leader', 'timeline'] as const;
@@ -71,6 +76,10 @@ export function ReplayFilters({
   const [format, setFormat] = useState(() => searchParams.get('format') || '');
   const [mode, setMode] = useState(() => searchParams.get('mode') || '');
   const [label, setLabel] = useState(() => searchParams.get('label') || '');
+  const [result, setResult] = useState<ResultFilter>(() => {
+    const v = searchParams.get('result') || '';
+    return v === 'wins' || v === 'losses' ? v : '';
+  });
   const [view, setView] = useState<ViewMode>(() => parseView(searchParams.get('view')));
 
   useEffect(() => {
@@ -84,12 +93,13 @@ export function ReplayFilters({
     setOrDelete('format', format);
     setOrDelete('mode', mode);
     setOrDelete('label', label);
+    setOrDelete('result', result);
     setOrDelete('view', view === DEFAULT_VIEW ? '' : view);
     const next = params.toString();
     if (next !== searchParams.toString()) {
       router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
     }
-  }, [leader, opp, since, format, mode, label, view, pathname, router, searchParams]);
+  }, [leader, opp, since, format, mode, label, result, view, pathname, router, searchParams]);
 
   const allLeaders = useMemo(() => {
     const set = new Set<string>();
@@ -148,12 +158,22 @@ export function ReplayFilters({
       if (label) {
         if (!Array.isArray(r.labels) || !r.labels.includes(label)) return false;
       }
+      if (result) {
+        // Require a winner signal AND a known owner player to answer
+        // "did I win?". Pre-B59 rows + games-without-winners drop out
+        // when the filter is on (deliberate — Any leaves them in).
+        const winners = Array.isArray(r.winners) ? r.winners : null;
+        if (!winners || !r.ownerPlayerId) return false;
+        const won = winners.includes(r.ownerPlayerId);
+        if (result === 'wins' && !won) return false;
+        if (result === 'losses' && won) return false;
+      }
       return true;
     });
-  }, [rows, leader, opp, since, format, mode, label]);
+  }, [rows, leader, opp, since, format, mode, label, result]);
 
   const clearAll = () => {
-    setLeader(''); setOpp(''); setSince(''); setFormat(''); setMode(''); setLabel('');
+    setLeader(''); setOpp(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
   };
 
   const activeChips: { key: string; label: string; onClear: () => void }[] = [];
@@ -163,6 +183,7 @@ export function ReplayFilters({
   if (format) activeChips.push({ key: 'fmt', label: FORMAT_LABEL[format] || format, onClear: () => setFormat('') });
   if (mode) activeChips.push({ key: 'mode', label: MODE_LABEL[mode] || mode, onClear: () => setMode('') });
   if (label) activeChips.push({ key: 'label', label: `#${label}`, onClear: () => setLabel('') });
+  if (result) activeChips.push({ key: 'result', label: result === 'wins' ? 'Wins' : 'Losses', onClear: () => setResult('') });
 
   return (
     <>
@@ -176,6 +197,7 @@ export function ReplayFilters({
         mode={mode} setMode={setMode}
         label={label} setLabel={setLabel}
         labels={allLabels}
+        result={result} setResult={setResult}
       />
 
       {activeChips.length > 0 && (
@@ -567,6 +589,7 @@ function FilterControls({
   format, setFormat,
   mode, setMode,
   label, setLabel, labels,
+  result, setResult,
 }: {
   leader: string; setLeader: (v: string) => void; leaders: string[];
   opp: string; setOpp: (v: string) => void; usernames: string[];
@@ -574,6 +597,7 @@ function FilterControls({
   format: string; setFormat: (v: string) => void;
   mode: string; setMode: (v: string) => void;
   label: string; setLabel: (v: string) => void; labels: string[];
+  result: ResultFilter; setResult: (v: ResultFilter) => void;
 }) {
   // Stable id for the <input list="..."> ↔ <datalist id="..."> pairing.
   const oppListId = useId();
@@ -634,6 +658,13 @@ function FilterControls({
         <select value={mode} onChange={(e) => setMode(e.target.value)} style={selectStyle}>
           <option value="">Any</option>
           {Object.entries(MODE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </Field>
+      <Field label="Result">
+        <select value={result} onChange={(e) => setResult((e.target.value as ResultFilter) || '')} style={selectStyle}>
+          <option value="">Any</option>
+          <option value="wins">Wins</option>
+          <option value="losses">Losses</option>
         </select>
       </Field>
       {labels.length > 0 && (

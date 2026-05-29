@@ -60,6 +60,8 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
     displayName: r.displayName ?? null,
     labels: r.labels ?? null,
     ownerName: r.ownerName ?? null,
+    winners: r.winners ?? null,
+    ownerPlayerId: r.ownerPlayerId ?? null,
   }));
 
   return (

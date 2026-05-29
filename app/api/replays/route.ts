@@ -194,6 +194,10 @@ export async function POST(req: Request) {
       match: parsed.match ?? null,
       decks: parsed.decks ?? null,
       winners,
+      // B59-followup: stash the recorder's POV so the "Wins" filter on
+      // /replays?tab=mine knows which player was "me" without a per-
+      // row karabast-username lookup.
+      ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
       visibility: 'unlisted',
     });
 

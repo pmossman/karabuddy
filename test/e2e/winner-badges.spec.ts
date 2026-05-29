@@ -58,6 +58,67 @@ test('replay browser table cell shows W/L badges next to player names', async ({
   await expect(cell.getByTestId('result-badge-L').first()).toBeVisible();
 });
 
+// Result filter on /replays?tab=mine — "Wins" / "Losses" / "Any".
+test('result filter: Wins shows only replays the owner won', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'WinFilter', email: 'wf@example.com' });
+  const localA = 'wf-l-' + Math.random().toString(36).slice(2, 8);
+  const oppA = 'wf-o-' + Math.random().toString(36).slice(2, 8);
+  const winReplay = await uploadReplay(request, {
+    local: { id: localA, username: 'WinFilter' },
+    opponent: { id: oppA, username: 'OppWin' },
+    winners: [localA],
+  });
+  await claimInstallToken(page, winReplay.installToken);
+
+  const localB = 'wf-l2-' + Math.random().toString(36).slice(2, 8);
+  const oppB = 'wf-o2-' + Math.random().toString(36).slice(2, 8);
+  const lossReplay = await uploadReplay(request, {
+    local: { id: localB, username: 'WinFilter' },
+    opponent: { id: oppB, username: 'OppLoss' },
+    winners: [oppB],
+  });
+  await claimInstallToken(page, lossReplay.installToken);
+
+  await page.goto('/replays?tab=mine');
+  // Both rows present initially.
+  await expect(page.getByRole('link', { name: /WinFilter vs OppWin/ })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: /WinFilter vs OppLoss/ })).toHaveCount(1);
+
+  await page.getByLabel('Result').selectOption('wins');
+  await expect.poll(() => new URL(page.url()).searchParams.get('result')).toBe('wins');
+  await expect(page.getByRole('link', { name: /WinFilter vs OppWin/ })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: /WinFilter vs OppLoss/ })).toHaveCount(0);
+
+  // Flip to Losses → opposite set.
+  await page.getByLabel('Result').selectOption('losses');
+  await expect(page.getByRole('link', { name: /WinFilter vs OppWin/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /WinFilter vs OppLoss/ })).toHaveCount(1);
+});
+
+test('result filter: replays without winner data are hidden when filter is on', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'NoData', email: 'nd@example.com' });
+  // One replay with winner, one without.
+  const localId = 'nd-l-' + Math.random().toString(36).slice(2, 8);
+  const oppId = 'nd-o-' + Math.random().toString(36).slice(2, 8);
+  const withWin = await uploadReplay(request, {
+    local: { id: localId, username: 'NoData' },
+    opponent: { id: oppId, username: 'OppKnown' },
+    winners: [localId],
+  });
+  await claimInstallToken(page, withWin.installToken);
+
+  const noWin = await uploadReplay(request, {
+    local: { username: 'NoData' },
+    opponent: { username: 'OppUnknown' },
+    // no winners array — game ended via disconnect / abandon
+  });
+  await claimInstallToken(page, noWin.installToken);
+
+  await page.goto('/replays?tab=mine&result=wins');
+  await expect(page.getByRole('link', { name: /NoData vs OppKnown/ })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: /NoData vs OppUnknown/ })).toHaveCount(0);
+});
+
 test('replay with no winner data: no badges rendered', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'NoWin', email: 'nw@example.com' });
   const r = await uploadReplay(request, {

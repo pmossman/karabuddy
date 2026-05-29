@@ -82,6 +82,9 @@ function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string
     // B59: winning playerIds (matches player.id in players[]) — drives
     // the W/L badges in table / grid / viewer.
     winners: r.winners ?? null,
+    // B59-followup: which player was the owner (recorder POV). Used by
+    // the "Wins" filter to ask "did I win?" per row.
+    ownerPlayerId: r.ownerPlayerId ?? null,
     // Uploader display name for the Member column in the table view.
     // Null for anonymous uploads — TableView renders "—" in that case.
     ownerName,
