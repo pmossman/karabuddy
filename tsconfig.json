@@ -37,6 +37,9 @@
   ],
   "exclude": [
     "node_modules",
-    "extension"
+    "extension",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "test"
   ]
 }

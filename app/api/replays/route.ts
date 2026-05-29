@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
+import { put } from '@/lib/blob';
 import { desc, eq, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';

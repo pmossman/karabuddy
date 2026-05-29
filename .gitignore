@@ -32,3 +32,9 @@ npm-debug.log*
 .claude/
 .vercel
 .env*
+
+# Test artifacts
+test-results/
+playwright-report/
+coverage/
+.vitest-cache/

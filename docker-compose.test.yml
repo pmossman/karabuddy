@@ -1,0 +1,22 @@
+# Local + CI Postgres for the test suite. Port 5433 so it doesn't clash
+# with a system Postgres on 5432 if one's running. The test DB is wiped +
+# remigrated on every `test:setup` so no persistent volume.
+#
+# Use:
+#   docker compose -f docker-compose.test.yml up -d
+#   npm run test:setup   # runs migrations against this DB
+#   npm test
+services:
+  test-db:
+    image: postgres:16-alpine
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: karabuddy_test
+      POSTGRES_PASSWORD: karabuddy_test
+      POSTGRES_DB: karabuddy_test
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U karabuddy_test']
+      interval: 2s
+      timeout: 3s
+      retries: 20

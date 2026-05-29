@@ -52,6 +52,34 @@ chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })
 
 Then load `./extension/` unpacked at `chrome://extensions` (Developer mode on). Reload from `chrome://extensions` after editing extension files — no build step.
 
+## Tests
+
+Three layers, each runnable independently:
+
+```sh
+# Unit — pure logic, no infra. Fast (~1s).
+npm run test:unit
+
+# API integration — real Postgres via Docker. Tests route handlers
+# directly against a real DB.
+npm run test:db:up     # one-time: start the Docker Postgres
+npm run test:api
+
+# E2E — Playwright drives a real browser against the dev server.
+npm run test:e2e:install   # one-time: install Chromium
+npm run test:e2e           # boots dev server + runs E2E
+
+# Everything
+npm test
+```
+
+Test scaffolding:
+- `lib/*.test.ts` + `extension/**/*.test.js` — unit tests
+- `test/api/*.test.ts` — API integration tests (vi.mock of `@/auth` per test; real Drizzle + Postgres)
+- `test/e2e/*.spec.ts` — Playwright E2E (test sign-in via `/api/test/sign-in`, in-memory Vercel Blob)
+
+The Docker Postgres lives on port 5433 (avoids clashing with system Postgres). CI runs the same suite via `.github/workflows/test.yml` — Postgres as a service container, no Docker compose needed there.
+
 ## Status
 
 Pre-1.0. The webapp + extension are deployed and capturing real matches. Major recent moves: extension stripped down to ~2200 lines (a small floating launcher + WebSocket recorder + bridge), in-place playback removed (the webapp owns the viewer), solo-testing surface removed (planned to return inside the webapp via forceteki, not by automating karabast.net). See [BACKLOG.md](./BACKLOG.md) for the running log.
