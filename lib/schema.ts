@@ -170,5 +170,73 @@ export const tags = pgTable(
 
 export type Replay = typeof replays.$inferSelect;
 export type NewReplay = typeof replays.$inferInsert;
+
+// ----- B55a: Teams + membership + invites
+//
+// A team is a group of karabuddy users. Anyone can create a team and get
+// a fresh slug. The creator is an owner; they can promote other members
+// to owner. Membership is recorded in `team_members`; invites are short
+// random codes that grant membership on visit.
+//
+// Slugs are short (~6 chars, generated via generateTeamSlug in lib/slug)
+// so `/teams/xyz123` is shareable as a URL. `name` is the display string
+// and can change without breaking the slug.
+export const teams = pgTable('teams', {
+  slug: text('slug').primaryKey(),
+  name: text('name').notNull(),
+  createdBy: text('created_by')
+    .notNull()
+    .references(() => users.id, { onDelete: 'set null' as any }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const teamMembers = pgTable(
+  'team_members',
+  {
+    teamSlug: text('team_slug')
+      .notNull()
+      .references(() => teams.slug, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // 'owner' can rename the team, generate invites, kick members, delete
+    // the team. 'member' can only view + leave. Every team must have at
+    // least one owner; the creator starts as one.
+    role: text('role').notNull().default('member'), // 'owner' | 'member'
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamSlug, t.userId] }),
+    userIdx: index('team_members_user_idx').on(t.userId),
+    teamIdx: index('team_members_team_idx').on(t.teamSlug),
+  })
+);
+
+// Invite codes for joining a team. Reusable by default — `expiresAt` and
+// `usesRemaining` are both nullable for the "never expires, unlimited"
+// case. When usesRemaining hits 0, the code stops working but the row
+// stays (revocable record).
+export const teamInvites = pgTable(
+  'team_invites',
+  {
+    code: text('code').primaryKey(),
+    teamSlug: text('team_slug')
+      .notNull()
+      .references(() => teams.slug, { onDelete: 'cascade' }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'set null' as any }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    usesRemaining: integer('uses_remaining'),
+  },
+  (t) => ({
+    teamIdx: index('team_invites_team_idx').on(t.teamSlug),
+  })
+);
+
+export type Team = typeof teams.$inferSelect;
+export type TeamMember = typeof teamMembers.$inferSelect;
+export type TeamInvite = typeof teamInvites.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;

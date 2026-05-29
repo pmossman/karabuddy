@@ -16,3 +16,17 @@ export function generateTagId(): string {
   // 16 char id for tags — collisions truly negligible.
   return generateSlug('tag_', 16);
 }
+
+// B55a: team slugs — 6 chars without prefix so URLs look like `/teams/k7x4dq`
+// instead of `/teams/t_k7x4dq`. Same alphabet (Crockford-ish base32, no
+// ambiguous chars). 32^6 ≈ 1B possibilities; collision on retry-once.
+export function generateTeamSlug(): string {
+  return generateSlug('', 6);
+}
+
+// B55a: team invite codes — 10 chars, no prefix. Longer than slugs because
+// invites grant write access (membership) and are URL-shared; harder to
+// guess matters more here than visual brevity.
+export function generateInviteCode(): string {
+  return generateSlug('', 10);
+}
