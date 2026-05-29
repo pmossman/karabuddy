@@ -36,9 +36,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     async session({ session, user }) {
-      // Expose our users.id on the session so the rest of the app can use
-      // it without re-querying. (Auth.js's default omits it.)
-      if (user) (session.user as any).id = user.id;
+      // Expose our users.id + karabastUsername on the session so the rest
+      // of the app can use them without re-querying. Auth.js's default
+      // omits both. karabastUsername is the preferred attribution name
+      // for tags/comments — matches what shows on karabast.net.
+      if (user) {
+        (session.user as any).id = user.id;
+        (session.user as any).karabastUsername = (user as any).karabastUsername || null;
+      }
       return session;
     },
   },

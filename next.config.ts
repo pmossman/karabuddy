@@ -32,6 +32,12 @@ const config: NextConfig = {
       },
     ],
   },
+  // Test-mode dependencies that ship a runtime WASM payload — bundlers
+  // mangle their internal file paths. Marking them external so they
+  // load from node_modules at runtime. Prod build doesn't import them
+  // (KARABUDDY_DB_DRIVER=pglite is test-only); listing them here is
+  // free in production since they're never imported.
+  serverExternalPackages: ['@electric-sql/pglite'],
 };
 
 export default config;

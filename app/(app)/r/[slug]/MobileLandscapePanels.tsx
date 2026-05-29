@@ -1,0 +1,318 @@
+'use client';
+
+// B66: mobile gets two new chrome elements that don't exist on desktop:
+//
+//   - <StepModeOverlay>  — small floating pill next to the ☰ button,
+//                          always visible so users can flip Action↔Frame
+//                          stepping without opening any drawer.
+//
+//   - <MatchupPanel>     — slide-in panel that opens with the ☰ button
+//                          alongside the tags drawer. Anchored LEFT in
+//                          landscape (slides from the left edge) and
+//                          TOP in portrait (slides from the top edge —
+//                          portrait is too narrow for two horizontal
+//                          panels, so we split vertically instead).
+//                          Carries matchup thumbs + chips + the View-
+//                          decks button so the tags drawer stays slim.
+
+import { useState } from 'react';
+import { cardImageUrl } from '@/lib/cardImage';
+import { matchChips } from '@/lib/matchMetadata';
+import { DecksModal } from './DecksModal';
+import type { DecksByUserId, MatchMeta, Frame } from '@/lib/replayDecoder';
+
+interface ReplayShape {
+  slug: string;
+  displayName?: string | null;
+  labels?: string[] | null;
+  players: any;
+}
+
+export function StepModeOverlay({
+  mode,
+  setMode,
+  landscape,
+  drawerOpen,
+  drawerWidth,
+  portraitDrawerOpen,
+}: {
+  mode: 'action' | 'frame';
+  setMode: (m: 'action' | 'frame') => void;
+  // Landscape (desktop or mobile-landscape) parks it directly LEFT of
+  // the ☰ menu button — hugs the sidebar/drawer outer edge so it
+  // tracks open/close + resize. Portrait can't share that corner with
+  // the player's hand cards — pin to bottom-center; when the bottom
+  // drawer is open, lift it above the drawer's top edge.
+  landscape: boolean;
+  // When provided, shifts the overlay LEFT by drawerWidth so the
+  // overlay stays alongside the sidebar instead of being covered by it.
+  drawerOpen?: boolean;
+  drawerWidth?: string;
+  // Portrait drawer (bottom slide-up) → lift the overlay above it.
+  portraitDrawerOpen?: boolean;
+}) {
+  const positionStyle: React.CSSProperties = landscape
+    ? {
+        bottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+        // Slot 50px LEFT of the ☰ button. When sidebar/drawer is open,
+        // the ☰ button has already shifted past it, so step overlay
+        // follows the same shift to stay adjacent.
+        right: drawerOpen && drawerWidth
+          ? `calc(${drawerWidth} + 12px + 50px)`
+          : 'calc(max(12px, env(safe-area-inset-right, 12px)) + 50px)',
+      }
+    : {
+        bottom: portraitDrawerOpen
+          ? 'calc(60vh + 12px)'
+          : 'max(12px, env(safe-area-inset-bottom, 12px))',
+        left: '50%',
+        transform: 'translateX(-50%)',
+      };
+  return (
+    <div
+      data-testid="step-mode-overlay"
+      style={{
+        position: 'fixed',
+        zIndex: 90,
+        transition: 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'rgba(17, 20, 26, 0.85)',
+        border: '1px solid rgba(74, 124, 255, 0.4)',
+        borderRadius: 6,
+        padding: '4px 8px',
+        backdropFilter: 'blur(6px)',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
+        ...positionStyle,
+      }}
+    >
+      <span style={{
+        fontSize: 10,
+        color: '#6c7588',
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        fontWeight: 700,
+        fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+      }}>
+        Step by:
+      </span>
+      <div style={{ display: 'flex', gap: 0 }}>
+        <ModeButton active={mode === 'action'} onClick={() => setMode('action')}>Action</ModeButton>
+        <ModeButton active={mode === 'frame'} onClick={() => setMode('frame')}>Frame</ModeButton>
+      </div>
+    </div>
+  );
+}
+
+function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        background: active ? 'rgba(74, 124, 255, 0.4)' : 'transparent',
+        color: active ? '#fff' : '#a0c4ff',
+        border: 0,
+        padding: '4px 10px',
+        fontSize: 11,
+        fontWeight: 700,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        borderRadius: 4,
+        lineHeight: 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function MatchupPanel({
+  open,
+  onClose,
+  anchor,
+  replay,
+  matchMeta,
+  decks,
+  localPlayerId,
+  frames,
+}: {
+  open: boolean;
+  onClose: () => void;
+  // 'left' = landscape (slides from left edge, narrow column).
+  // 'top'  = portrait  (slides from top edge, full width minus margins).
+  anchor: 'left' | 'top';
+  replay: ReplayShape;
+  matchMeta: MatchMeta | null;
+  decks: DecksByUserId | null;
+  localPlayerId: string | null;
+  frames: Frame[] | null;
+}) {
+  const [decksOpen, setDecksOpen] = useState(false);
+  const players = (replay.players as any[]) || [];
+  const [p1, p2] = players;
+  const chips = matchChips(matchMeta);
+
+  const anchorStyle: React.CSSProperties = anchor === 'left'
+    ? {
+        left: 'max(8px, env(safe-area-inset-left, 8px))',
+        width: 'min(280px, 60vw)',
+        transform: open ? 'translateX(0)' : 'translateX(calc(-100% - 16px))',
+      }
+    : {
+        left: 'max(8px, env(safe-area-inset-left, 8px))',
+        right: 'max(8px, env(safe-area-inset-right, 8px))',
+        transform: open ? 'translateY(0)' : 'translateY(calc(-100% - 16px))',
+      };
+
+  return (
+    <>
+      <aside
+        data-testid="match-panel"
+        data-anchor={anchor}
+        // Auto-height — anchored at the top-left of the viewport,
+        // just tall enough for its content. Full-height was eating
+        // real estate for nothing.
+        style={{
+          position: 'fixed',
+          top: 'calc(var(--kb-header-h, 0px) + max(8px, env(safe-area-inset-top, 8px)))',
+          maxHeight: 'calc(100vh - var(--kb-header-h, 0px) - 16px)',
+          zIndex: 80,
+          transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+          boxShadow: open ? '0 8px 24px rgba(0,0,0,0.45)' : 'none',
+          background: 'rgba(17, 20, 26, 0.97)',
+          border: '1px solid #2e333c',
+          borderRadius: 10,
+          color: '#e6e6e6',
+          font: '12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
+          padding: '12px 14px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          overflow: 'auto',
+          ...anchorStyle,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <a href="/" style={{ color: '#a0a8b8', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>← karabuddy</a>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close matchup panel"
+            style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0, width: 24, height: 24 }}
+          >
+            ×
+          </button>
+        </div>
+
+        {chips.length > 0 && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {chips.map((c) => (
+              <span key={c} style={chipStyle}>{c}</span>
+            ))}
+          </div>
+        )}
+
+        {replay.displayName && (
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e6e6e6', lineHeight: 1.3 }}>
+            {replay.displayName}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <MatchupPlayer player={p1} />
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', paddingTop: 11 }}>VS</span>
+          <MatchupPlayer player={p2} />
+        </div>
+
+        {decks && Object.keys(decks).length > 0 && (
+          <button
+            type="button"
+            onClick={() => setDecksOpen(true)}
+            style={{
+              // Was `marginTop: auto` to pin to the bottom of a full-
+              // height panel — panel's now auto-height so the button
+              // sits naturally below the matchup row.
+              background: 'transparent',
+              border: '1px solid #2e333c',
+              borderRadius: 4,
+              padding: '8px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#a0c4ff',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textAlign: 'left',
+            }}
+          >
+            View decks →
+          </button>
+        )}
+      </aside>
+
+      {decks && (
+        <DecksModal
+          open={decksOpen}
+          onClose={() => setDecksOpen(false)}
+          decks={decks}
+          localPlayerId={localPlayerId}
+          replaySlug={replay.slug}
+          frames={frames}
+        />
+      )}
+    </>
+  );
+}
+
+function MatchupPlayer({ player }: { player: any }) {
+  if (!player) return <div style={{ flex: 1 }} />;
+  const leaderImg = cardImageUrl(player.leader, true);
+  const baseImg = cardImageUrl(player.base, false);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 2 }}>
+        <Thumb src={leaderImg} alt={player.leader?.name} />
+        <Thumb src={baseImg} alt={player.base?.name} />
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 600, color: '#d6d6d6', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+        {playerUsername(player)}
+      </span>
+    </div>
+  );
+}
+
+function Thumb({ src, alt }: { src: string | null; alt?: string }) {
+  if (!src) return <div style={thumbBoxStyle} title={alt || ''} />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt || ''} loading="lazy" style={thumbImgStyle} />;
+}
+
+function playerUsername(p: any): string {
+  const u: string | undefined = p?.username;
+  if (!u || /^anonymous\s/i.test(u)) return 'anon';
+  return u;
+}
+
+const thumbImgStyle: React.CSSProperties = {
+  width: 44,
+  height: 30,
+  objectFit: 'contain',
+  borderRadius: 3,
+  background: '#0a0c10',
+  display: 'block',
+};
+const thumbBoxStyle: React.CSSProperties = { ...thumbImgStyle, border: '1px solid #2e333c' };
+
+const chipStyle: React.CSSProperties = {
+  background: 'rgba(74, 124, 255, 0.12)',
+  border: '1px solid rgba(74, 124, 255, 0.3)',
+  color: '#a0c4ff',
+  borderRadius: 999,
+  padding: '1px 8px',
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+};

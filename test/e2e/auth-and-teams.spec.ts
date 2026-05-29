@@ -4,14 +4,11 @@ import { test, expect } from '@playwright/test';
 // (no real OAuth) and verifies the /teams page renders with the
 // real session cookie set. Proves the whole stack works:
 // browser → dev server → DB → Auth.js session lookup → page render.
-//
-// More E2E tests can copy this scaffold; the signInAsTestUser helper
-// lives in test/e2e/helpers.ts.
 
 import { signInAsTestUser } from './helpers';
 
-test('signed-in user can reach /teams and create one', async ({ page, request }) => {
-  await signInAsTestUser(page, request, { name: 'Tester' });
+test('signed-in user can reach /teams and create one', async ({ page }) => {
+  await signInAsTestUser(page, { name: 'Tester' });
 
   await page.goto('/teams');
   await expect(page.getByRole('heading', { name: 'Teams', level: 1 })).toBeVisible();

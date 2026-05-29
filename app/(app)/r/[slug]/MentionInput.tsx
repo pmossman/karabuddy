@@ -42,6 +42,14 @@ type Suggestion =
 
 const MAX_SUGGESTIONS = 6;
 
+// Replace whitespace with underscore so a multi-word team name stays a
+// single mention token (`@team:My_Team`). The renderer reverses this
+// substitution when drawing the pill, so users see "My Team" not the
+// underscored form. Slugs are deliberately NEVER surfaced.
+function teamHandle(name: string): string {
+  return name.replace(/\s+/g, '_');
+}
+
 // Build the suggestion list filtered by what the user typed after `@`.
 function buildSuggestions(data: MentionData, prefix: string): Suggestion[] {
   const p = prefix.toLowerCase();
@@ -50,7 +58,7 @@ function buildSuggestions(data: MentionData, prefix: string): Suggestion[] {
   if (p.startsWith('team:')) {
     const teamPrefix = p.slice('team:'.length);
     return data.teams
-      .filter((t) => t.name.toLowerCase().startsWith(teamPrefix) || t.slug.toLowerCase().startsWith(teamPrefix))
+      .filter((t) => t.name.toLowerCase().startsWith(teamPrefix))
       .map((t) => ({ kind: 'team' as const, slug: t.slug, name: t.name }))
       .slice(0, MAX_SUGGESTIONS);
   }
@@ -58,7 +66,7 @@ function buildSuggestions(data: MentionData, prefix: string): Suggestion[] {
     .filter((m) => m.handle.toLowerCase().startsWith(p) || m.displayName.toLowerCase().startsWith(p))
     .map((m) => ({ kind: 'user' as const, userId: m.userId, handle: m.handle, displayName: m.displayName, image: m.image }));
   const teams = data.teams
-    .filter((t) => t.name.toLowerCase().startsWith(p) || t.slug.toLowerCase().startsWith(p))
+    .filter((t) => t.name.toLowerCase().startsWith(p))
     .map((t) => ({ kind: 'team' as const, slug: t.slug, name: t.name }));
   return [...members, ...teams].slice(0, MAX_SUGGESTIONS);
 }
@@ -166,7 +174,13 @@ export function MentionInput({
     }
     if (atIndex === -1) return;
 
-    const insertText = sugg.kind === 'user' ? `@${sugg.handle} ` : `@team:${sugg.slug} `;
+    // Team mentions insert the team NAME (with whitespace collapsed to
+    // underscores), NOT the slug. The slug is opaque and shouldn't leak
+    // into user-visible text. Structured `mentions.teamSlugs` is still
+    // authoritative for routing (notifications etc).
+    const insertText = sugg.kind === 'user'
+      ? `@${sugg.handle} `
+      : `@team:${teamHandle(sugg.name)} `;
     const next = value.slice(0, atIndex) + insertText + value.slice(cursor);
     onChange(next);
     if (sugg.kind === 'user') onMention('user', sugg.userId);
@@ -319,8 +333,8 @@ export function MentionInput({
                   }}>
                     T
                   </span>
-                  <span style={{ color: '#6bd968', fontWeight: 600 }}>@team:{s.slug}</span>
-                  <span style={{ color: '#6c7588', fontSize: 11 }}>{s.name}</span>
+                  <span style={{ color: '#6bd968', fontWeight: 600 }}>@{s.name}</span>
+                  <span style={{ color: '#6c7588', fontSize: 11 }}>team</span>
                 </>
               )}
             </button>
@@ -331,40 +345,49 @@ export function MentionInput({
   );
 }
 
-// B55c: render a comment string with `@handle` / `@team:slug` substrings
-// highlighted as colored chips. Used by tag rows in the viewer. Doesn't
-// link to anything (TBD when we have user profiles); the visual lift
-// alone makes mentioned-in-this-comment scannable.
+// B55c: render a comment string with `@handle` / `@team:name` substrings
+// highlighted as colored chips. Used by tag rows in the viewer.
+//
+// Team mention syntax in the inserted text is `@team:<TeamName>` where
+// any whitespace in the team name has been collapsed to underscores
+// (see `teamHandle` above). The pill displays just the team name (with
+// underscores reversed back to spaces) — the underlying team SLUG is
+// never exposed to the user.
 export function MentionedComment({ text }: { text: string }) {
-  // Token scan: split on whitespace boundaries, transform @-prefixed tokens.
-  // Preserve whitespace exactly.
   const parts: React.ReactNode[] = [];
   let i = 0;
   let key = 0;
   while (i < text.length) {
     if (text[i] === '@' && (i === 0 || /\s/.test(text[i - 1]))) {
-      // Consume up to next whitespace or end.
       let j = i + 1;
       while (j < text.length && !/\s/.test(text[j])) j++;
       const token = text.slice(i, j); // includes the @
       const isTeam = token.startsWith('@team:');
+      // Pill display: for teams, drop the `@team:` prefix and reverse the
+      // underscore-for-space encoding so a name like "My Team" reads
+      // naturally instead of as "@team:My_Team".
+      const display = isTeam
+        ? token.slice('@team:'.length).replace(/_/g, ' ')
+        : token;
       parts.push(
         <span
           key={key++}
+          data-testid={isTeam ? 'team-mention-pill' : 'user-mention-pill'}
           style={{
             color: isTeam ? '#6bd968' : '#5da9ff',
             fontWeight: 600,
             background: isTeam ? 'rgba(107, 217, 104, 0.10)' : 'rgba(74, 124, 255, 0.10)',
-            padding: '0 4px',
-            borderRadius: 3,
+            padding: '0 6px',
+            borderRadius: 999,
+            fontSize: 11,
+            border: isTeam ? '1px solid rgba(107, 217, 104, 0.3)' : '1px solid rgba(74, 124, 255, 0.3)',
           }}
         >
-          {token}
+          {isTeam ? `@${display}` : display}
         </span>
       );
       i = j;
     } else {
-      // Consume up to next @ (or end).
       let j = i + 1;
       while (j < text.length && text[j] !== '@') j++;
       parts.push(<span key={key++}>{text.slice(i, j)}</span>);

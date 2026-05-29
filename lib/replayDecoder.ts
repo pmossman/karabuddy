@@ -131,6 +131,51 @@ export interface UserDeck {
 
 export type DecksByUserId = Record<string, UserDeck>;
 
+// B65: scan every frame's gamestate for cards that appeared in a given
+// player's VISIBLE zones (groundArena, spaceArena, discard, capturedZone,
+// plus attached upgrades). Hand + deck + resources are masked/face-down
+// and excluded. Dedupe by uuid so the same card appearing in many frames
+// counts once; aggregate copies seen by card id.
+export function extractSeenCards(frames: Frame[], playerId: string): DeckCardRef[] {
+  const seenUuids = new Set<string>();
+  const byCardId = new Map<string, { count: number; cost?: number | null }>();
+
+  const addCard = (card: any) => {
+    if (!card || !card.setId || !card.setId.set || card.setId.number == null) return;
+    const uuid: string | undefined = card.uuid;
+    if (uuid) {
+      if (seenUuids.has(uuid)) return;
+      seenUuids.add(uuid);
+    }
+    const id = `${card.setId.set}_${String(card.setId.number).padStart(3, '0')}`;
+    const entry = byCardId.get(id);
+    if (entry) {
+      entry.count++;
+    } else {
+      byCardId.set(id, { count: 1, cost: card.cost ?? null });
+    }
+    if (Array.isArray(card.upgrades)) {
+      for (const u of card.upgrades) addCard(u);
+    }
+  };
+
+  for (const frame of frames) {
+    const player = frame.state?.players?.[playerId];
+    if (!player) continue;
+    const piles = player.cardPiles || {};
+    for (const zoneName of ['groundArena', 'spaceArena', 'discard', 'capturedZone'] as const) {
+      const zone = piles[zoneName];
+      if (Array.isArray(zone)) for (const c of zone) addCard(c);
+    }
+  }
+
+  return Array.from(byCardId.entries()).map(([id, v]) => ({
+    id,
+    count: v.count,
+    cost: v.cost ?? null,
+  }));
+}
+
 export interface DecodedReplay {
   frames: Frame[];
   sideEvents: SideEvent[];

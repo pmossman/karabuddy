@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
+import { matchChips } from '@/lib/matchMetadata';
 
 interface ReplayRow {
   slug: string;
@@ -27,25 +28,8 @@ interface ReplayRow {
   labels?: string[] | null;
 }
 
-// B42: pretty labels for the format chip on the card teaser.
-const FORMAT_LABEL: Record<string, string> = {
-  premier: 'Premier', eternal: 'Eternal', open: 'Open', limited: 'Limited',
-};
-const POOL_LABEL: Record<string, string> = {
-  current: 'Current', nextSet: 'Next Set', unlimited: 'Unlimited',
-};
-const MODE_LABEL: Record<string, string> = {
-  bestOfOne: 'Bo1', bestOfThree: 'Bo3',
-};
-
-function formatChipParts(match: ReplayRow['match']): string[] {
-  if (!match) return [];
-  const parts: string[] = [];
-  if (match.gameFormat && FORMAT_LABEL[match.gameFormat]) parts.push(FORMAT_LABEL[match.gameFormat]);
-  if (match.cardPool && POOL_LABEL[match.cardPool] && match.cardPool !== 'current') parts.push(POOL_LABEL[match.cardPool]);
-  if (match.gamesToWinMode && MODE_LABEL[match.gamesToWinMode]) parts.push(MODE_LABEL[match.gamesToWinMode]);
-  return parts;
-}
+// B42 chip labels live in lib/matchMetadata.ts; see the shared
+// matchChips() helper used everywhere.
 
 export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage: boolean }) {
   const router = useRouter();
@@ -143,7 +127,7 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
         )}
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
-          {formatChipParts(replay.match).map((label) => (
+          {matchChips(replay.match).map((label) => (
             <span
               key={label}
               style={{

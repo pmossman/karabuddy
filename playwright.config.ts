@@ -27,14 +27,26 @@ export default defineConfig({
     // Use `next dev` for fast iteration; CI can override with `next start`
     // after a build, but for E2E correctness `next dev` is identical
     // to user-facing prod for our purposes (no build-time RSC distinction).
-    command: `next dev -p ${PORT}`,
+    // `next start` (not `next dev`) so we can run alongside a developer's
+    // active `npm run dev` on 3000 — Next refuses to spawn a second
+    // `next dev` in the same directory, but `next start` is fine. The
+    // tradeoff is needing a one-time `next build` (~10s) before the
+    // first E2E run; subsequent runs reuse .next-test/. CI builds fresh.
+    //
+    // The pre-test build is wired as `pretest:e2e` in package.json.
+    command: `next start -p ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
     env: {
+      // Isolated build dir so the test server doesn't trample a
+      // developer's .next/ from `npm run dev`.
+      NEXT_DIST_DIR: '.next-test',
       NODE_ENV: 'test',
       KARABUDDY_TEST_API: '1',
-      KARABUDDY_DB_DRIVER: 'pg',
+      // Default to pglite (zero-install). Override with KARABUDDY_DB_DRIVER=pg
+      // to point at a real Postgres (Docker / CI).
+      KARABUDDY_DB_DRIVER: process.env.KARABUDDY_DB_DRIVER || 'pglite',
       KARABUDDY_BLOB_MODE: 'memory',
       KARABUDDY_TEST_ORIGIN: BASE_URL,
       POSTGRES_URL: process.env.POSTGRES_URL || 'postgres://karabuddy_test:karabuddy_test@localhost:5433/karabuddy_test',

@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { auth } from '@/auth';
+import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 
 export const runtime = 'nodejs';
 
@@ -12,16 +13,13 @@ export function OPTIONS(req: Request) {
 }
 
 // Ownership: signed-in user matching replays.userId, OR caller holding the
-// original installToken (X-Install-Token header). Mirrors the tag CRUD
-// pattern so an extension can still mutate its own anonymous uploads
-// before the user links/claims them.
+// original installToken (X-Install-Token header). Predicate lives in
+// lib/replayPermissions; this wrapper just resolves the session for the
+// caller convenience.
 async function canMutate(row: { userId: string | null; ownerToken: string }, req: Request) {
   const session = await auth();
   const sessionUserId: string | null = (session?.user as any)?.id || null;
-  if (sessionUserId && row.userId === sessionUserId) return true;
-  const headerToken = req.headers.get('x-install-token');
-  if (headerToken && row.ownerToken === headerToken) return true;
-  return false;
+  return canMutateReplay(row, authContextFromRequest(req, sessionUserId));
 }
 
 // GET /api/replays/:slug — metadata + tags + payload URL.

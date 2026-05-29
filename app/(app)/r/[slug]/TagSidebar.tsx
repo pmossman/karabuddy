@@ -5,11 +5,14 @@ import { useSession } from 'next-auth/react';
 import type { Frame, MatchMeta, DecksByUserId } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
+import { matchChips } from '@/lib/matchMetadata';
+import { canDeleteTag, canEditTag, canMutateReplay, type AuthContext } from '@/lib/replayPermissions';
 import { Popover } from '@/app/_components/Popover';
-import { Decks } from './Decks';
+import { DecksModal } from './DecksModal';
 import { ShareWithTeam } from './ShareWithTeam';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
-import { EditReplayMeta } from './EditReplayMeta';
+import { EditableTitle } from './EditableTitle';
+import { LabelsRow } from './LabelsRow';
 
 interface ReplayRow {
   slug: string;
@@ -67,6 +70,17 @@ interface Props {
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
   isMobile: boolean;
+  // B66: when EITHER mobileLandscape or mobilePortrait is true, the
+  // matchup header + decks button render in the separate MatchupPanel
+  // instead of inside this drawer, and the step toggle moves to a fixed
+  // overlay. mobilePortrait additionally re-anchors this drawer to the
+  // BOTTOM edge (slides up) so the gameboard stays visible above.
+  mobileLandscape: boolean;
+  mobilePortrait: boolean;
+  // B66b: sidebar width lifted up to ReplayViewer so FrameNavOverlay
+  // (a sibling) can track it for the right-chevron offset.
+  sidebarWidth: number;
+  setSidebarWidth: React.Dispatch<React.SetStateAction<number>>;
   // B42: deck snapshots + match metadata captured by the recorder. Null
   // for older replays uploaded before B42 landed.
   matchMeta: MatchMeta | null;
@@ -74,24 +88,9 @@ interface Props {
   localPlayerId: string | null;
 }
 
-// B42 chip labels — also used by ReplayCard.tsx with the same mapping.
-const FORMAT_LABEL: Record<string, string> = {
-  premier: 'Premier', eternal: 'Eternal', open: 'Open', limited: 'Limited',
-};
-const POOL_LABEL: Record<string, string> = {
-  current: 'Current', nextSet: 'Next Set', unlimited: 'Unlimited',
-};
-const MODE_LABEL: Record<string, string> = {
-  bestOfOne: 'Bo1', bestOfThree: 'Bo3',
-};
-const matchChips = (m: MatchMeta | null): string[] => {
-  if (!m) return [];
-  const parts: string[] = [];
-  if (m.gameFormat && FORMAT_LABEL[m.gameFormat]) parts.push(FORMAT_LABEL[m.gameFormat]);
-  if (m.cardPool && POOL_LABEL[m.cardPool] && m.cardPool !== 'current') parts.push(POOL_LABEL[m.cardPool]);
-  if (m.gamesToWinMode && MODE_LABEL[m.gamesToWinMode]) parts.push(MODE_LABEL[m.gamesToWinMode]);
-  return parts;
-}
+// B42 chip labels live in lib/matchMetadata.ts — single source of truth
+// shared with ReplayCard, ReplayFilters, MobileLandscapePanels, and the
+// per-player deck page.
 
 const TAG_PLAYER = '#6bd968';
 const TAG_REVIEWER = '#e0c64a';
@@ -121,11 +120,12 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, matchMeta, decks, localPlayerId }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  const [decksOpen, setDecksOpen] = useState(false);
   const [draft, setDraft] = useState('');
   // B55c: structured mentions for the in-progress tag draft. Cleared on
   // submit/cancel. Userid + teamSlug picked from the autocomplete popover.
@@ -139,7 +139,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [visBusy, setVisBusy] = useState(false);
   // B12: sidebar width starts at the default during SSR/first paint, then
   // hydrates from localStorage in an effect to avoid hydration mismatch.
-  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_WIDTH_DEFAULT);
+  // B66b: sidebarWidth state moved up to ReplayViewer; props are passed
+  // in. This local placeholder kept only to silence the unused-default
+  // constant — actual state is the props above.
   const [resizeHandleHover, setResizeHandleHover] = useState(false);
   const [resizeHandleActive, setResizeHandleActive] = useState(false);
   const dragStateRef = useRef<{ startX: number; startW: number } | null>(null);
@@ -155,6 +157,18 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     setSidebarWidth(clampSidebarWidth(loadStoredSidebarWidth()));
   }, []);
 
+  // Bug surfaced live: signed-in tags were attributed to the extension's
+  // anon-XXX handle (the localStorage default), not the user's account
+  // display name. Override authorName once the session resolves so the
+  // "Tagging as X" label + persisted authorName both reflect the user's
+  // identity. karabastUsername is the most accurate handle (matches what
+  // shows on karabast.net); fall back to the OAuth display name.
+  useEffect(() => {
+    const su = session?.user as any;
+    const preferred: string | undefined = su?.karabastUsername || su?.name;
+    if (preferred) setAuthorName(preferred);
+  }, [session]);
+
   // B12: install global mousemove/mouseup listeners while a drag is in
   // progress. Ported from the extension's onDragStart loop — using a ref for
   // dragState so React state updates don't recreate the listeners.
@@ -162,7 +176,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     const onMove = (e: MouseEvent) => {
       const s = dragStateRef.current;
       if (!s) return;
-      const next = clampSidebarWidth(s.startW + (e.clientX - s.startX));
+      // B66b: sidebar is right-anchored — drag LEFT (negative deltaX)
+      // widens it, so invert the sign.
+      const next = clampSidebarWidth(s.startW - (e.clientX - s.startX));
       setSidebarWidth(next);
     };
     const onUp = () => {
@@ -198,13 +214,14 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     setResizeHandleActive(true);
   };
 
-  // Owner = session user owns the replay OR this browser's installToken
-  // matches the upload's ownerToken. Mirrors the server's canMutate check
-  // in app/api/replays/[slug]/route.ts (purely UI gating; API enforces).
-  // Drives both B6 (share / visibility) and B7 (replay-owner tag delete).
-  const isOwner =
-    (!!sessionUserId && sessionUserId === replay.userId) ||
-    (!!installToken && installToken === replay.ownerToken);
+  // B66d: shared predicate module so server enforcement + client UI
+  // gating can't drift. Drives both B6 (share / visibility) and B7
+  // (replay-owner tag delete).
+  const authCtx: AuthContext = { sessionUserId, installToken: installToken || null };
+  const isOwner = canMutateReplay(
+    { userId: replay.userId, ownerToken: replay.ownerToken },
+    authCtx,
+  );
 
   const copyLink = async () => {
     const url = `${window.location.origin}/r/${replay.slug}`;
@@ -348,13 +365,39 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   const tagsAtCurrent = tagsByFrame.get(currentIndex) || [];
 
-  // B44: mobile drawer styling overrides desktop's flex-child positioning.
+  // B44/B66: mobile drawer styling overrides desktop's flex-child positioning.
   // The aside takes itself out of normal flow with position:fixed so the
   // gameboard's flex container reclaims the width; the drawer slides in/out
-  // via transform, which animates cheaper than width.
+  // via transform, which animates cheaper than width. Landscape anchors to
+  // the RIGHT edge; portrait anchors to the BOTTOM (slides up) so the
+  // gameboard remains visible above between the top MatchupPanel and this
+  // drawer.
   const mobileWidth = 'min(380px, 100vw)';
-  const asideStyle: React.CSSProperties = isMobile
+  const asideStyle: React.CSSProperties = mobilePortrait
     ? {
+        position: 'fixed',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        maxHeight: '60vh',
+        zIndex: 80,
+        transform: drawerOpen ? 'translateY(0)' : 'translateY(100%)',
+        transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        boxShadow: drawerOpen ? '0 -8px 24px rgba(0,0,0,0.45)' : 'none',
+        background: 'rgba(17, 20, 26, 0.97)',
+        borderTop: '1px solid #2e333c',
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
+        color: '#e6e6e6',
+        font: '12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }
+    : isMobile
+    ? {
+        // Mobile landscape: right-anchored overlay slide-in. Doesn't
+        // displace the gameboard — slides over the right edge instead.
         position: 'fixed',
         top: 'var(--kb-header-h, 0px)',
         right: 0,
@@ -373,10 +416,14 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         overflow: 'hidden',
       }
     : {
+        // Desktop: flex-child anchored to the RIGHT side of the viewport
+        // (gameboard takes the left). Toggling closed unmounts the aside
+        // so the gameboard reclaims the width. State (popovers, scroll)
+        // resets on reopen — acceptable tradeoff for the simpler model.
         width: sidebarWidth,
         flex: `0 0 ${sidebarWidth}px`,
         background: 'rgba(17, 20, 26, 0.95)',
-        borderRight: '1px solid #2e333c',
+        borderLeft: '1px solid #2e333c',
         color: '#e6e6e6',
         font: '12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
         display: 'flex',
@@ -387,43 +434,56 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   return (
     <>
-      {/* B44 mobile: small circular drawer-open button. Title attribute
-          still surfaces "Open tags" on long-press for accessibility, but
-          the visual is intentionally minimal so it doesn't compete with
-          the gameboard for attention. Bottom offset uses env(safe-area-
-          inset-bottom) so iOS home-indicator devices don't clip it. */}
-      {isMobile && !drawerOpen && (
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Open tags panel"
-          title="Open tags"
-          style={{
-            position: 'fixed',
-            bottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
-            right: 'max(12px, env(safe-area-inset-right, 12px))',
-            zIndex: 70,
-            width: 38,
-            height: 38,
-            background: 'rgba(36, 48, 68, 0.85)',
-            color: '#d6e7ff',
-            border: '1px solid rgba(74, 124, 255, 0.4)',
-            borderRadius: '50%',
-            padding: 0,
-            fontSize: 16,
-            lineHeight: 1,
-            cursor: 'pointer',
-            fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backdropFilter: 'blur(6px)',
-          }}
-        >
-          ☰
-        </button>
-      )}
+      {/* B44/B66b: single ☰ toggle — opens AND closes the sidebar so the
+          affordance doesn't relocate between states. Shifts horizontally
+          past the sidebar/drawer when open so it stays alongside the
+          drawer's outer edge (instead of getting buried under the panel).
+          Portrait: shifts UP past the bottom drawer instead. */}
+      {(() => {
+        // Outer edge of the sidebar/drawer when open — the toggle hugs it
+        // from outside so its position feels continuous with the drawer.
+        const horizontalRight = mobilePortrait
+          ? 'max(12px, env(safe-area-inset-right, 12px))'
+          : drawerOpen
+          ? `calc(${isMobile ? mobileWidth : `${sidebarWidth}px`} + 12px)`
+          : 'max(12px, env(safe-area-inset-right, 12px))';
+        const bottomOffset = mobilePortrait && drawerOpen
+          ? 'calc(60vh + 12px)'
+          : 'max(12px, env(safe-area-inset-bottom, 12px))';
+        return (
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(!drawerOpen)}
+            aria-label={drawerOpen ? 'Close tags panel' : 'Open tags panel'}
+            title={drawerOpen ? 'Close tags' : 'Open tags'}
+            style={{
+              position: 'fixed',
+              bottom: bottomOffset,
+              right: horizontalRight,
+              zIndex: 90,
+              width: 38,
+              height: 38,
+              background: drawerOpen ? 'rgba(74, 124, 255, 0.32)' : 'rgba(36, 48, 68, 0.85)',
+              color: '#d6e7ff',
+              border: '1px solid rgba(74, 124, 255, 0.4)',
+              borderRadius: '50%',
+              padding: 0,
+              fontSize: 16,
+              lineHeight: 1,
+              cursor: 'pointer',
+              fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backdropFilter: 'blur(6px)',
+              transition: 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1), background 160ms ease',
+            }}
+          >
+            ☰
+          </button>
+        );
+      })()}
 
       {/* B44 mobile: dimmed backdrop — fades in with the drawer, dismisses
           on tap. Only rendered while the drawer is open AND we're on mobile;
@@ -450,14 +510,21 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           referenced by the backdrop above. */}
       <style>{`@keyframes kb-fade-in { from { opacity: 0; } to { opacity: 1; } }`}</style>
 
-      <aside style={asideStyle}>
+      {/* B66b: desktop unmounts the aside when closed so the gameboard
+          flex-sibling reclaims width. Mobile keeps it mounted and slides
+          out via transform so internal state (scroll, popovers) survives. */}
+      {(isMobile || drawerOpen) && (
+      <aside data-testid="tags-drawer" style={asideStyle}>
       {/* B10: compact header — leader+base per player, share collapsed
           into a top-right popover. B12: usernames now wrap to their own
           line beneath the thumbs, so the row aligns to the top of the
           thumbs to keep VS visually centered against the cards (not the
-          taller two-line player column). */}
-      <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
-        {(matchChips(matchMeta).length > 0 || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
+          taller two-line player column). B66: hidden on ANY mobile —
+          the MatchupPanel (left on landscape, top on portrait) takes
+          over this content. */}
+      {!isMobile && (
+      <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+        {matchChips(matchMeta).length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {matchChips(matchMeta).map((label) => (
               <span
@@ -477,56 +544,35 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 {label}
               </span>
             ))}
-            {/* B53: user-set labels as chips alongside the match-meta chips. */}
-            {(replay.labels || []).map((l: string) => (
-              <span
-                key={`l-${l}`}
-                style={{
-                  background: 'rgba(160, 196, 255, 0.08)',
-                  border: '1px solid rgba(160, 196, 255, 0.25)',
-                  color: '#a0c4ff',
-                  borderRadius: 999,
-                  padding: '1px 8px',
-                  fontSize: 10,
-                  fontWeight: 600,
-                }}
-              >
-                {l}
-              </span>
-            ))}
           </div>
         )}
-        {/* B53: user-set display name above the matchup if present. */}
-        {replay.displayName && (
-          <div style={{ fontSize: 14, color: '#e6e6e6', fontWeight: 700, lineHeight: 1.3 }}>
-            {replay.displayName}
-          </div>
+        {/* B66b/B66c: replay title — inline-editable. Falls back to the
+            same "username vs username" string the browser uses if no
+            display name has been set. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <EditableTitle
+            replaySlug={replay.slug}
+            installToken={installToken}
+            initialDisplayName={replay.displayName ?? null}
+            defaultText={defaultTitleFor(replay)}
+            canEdit={isOwner}
+          />
+        </div>
+        {/* B66c: labels as their own pill row + plus button, separate
+            from the title affordance. Always render the row so the +
+            button is discoverable even with zero labels. */}
+        {(isOwner || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
+          <LabelsRow
+            replaySlug={replay.slug}
+            installToken={installToken}
+            initialLabels={Array.isArray(replay.labels) ? replay.labels : []}
+            canEdit={isOwner}
+          />
         )}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        {/* B44 mobile: explicit × close at the leading edge so the user has
-            an obvious dismiss target beyond tapping the backdrop. */}
-        {isMobile && (
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(false)}
-            aria-label="Close tags panel"
-            style={{
-              background: 'transparent',
-              color: '#a0a8b8',
-              border: 0,
-              padding: 0,
-              width: 28,
-              height: 28,
-              font: '20px -apple-system, sans-serif',
-              lineHeight: 1,
-              cursor: 'pointer',
-              flex: '0 0 auto',
-              marginTop: 2,
-            }}
-          >
-            ×
-          </button>
-        )}
+        {/* B66b: × close button removed — the floating ☰ toggle outside
+            the sidebar handles both open + close so the affordance stays
+            in one place. */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1, minWidth: 0 }}>
           <MatchupRow player={p1} />
           {/* Sits vertically aligned with the 32px-tall thumb row above the
@@ -569,62 +615,30 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 <ShareWithTeam replaySlug={replay.slug} installToken={installToken} />
               </div>
             )}
-            {isOwner && (
-              <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
-                <EditReplayMeta
-                  replaySlug={replay.slug}
-                  installToken={installToken}
-                  initialDisplayName={replay.displayName ?? null}
-                  initialLabels={Array.isArray(replay.labels) ? replay.labels : []}
-                />
-              </div>
-            )}
+            {/* B66b: EditReplayMeta moved out of this popover into the
+                sidebar title row above for first-class discoverability. */}
           </div>
         </Popover>
         </div>
       </header>
-
-      {/* B48 mobile: drawer-only chrome — gives mobile users somewhere to
-          configure the chevron-overlay step mode AND a way back to home
-          since the persistent header is hidden on mobile viewer pages.
-          A compact row to keep vertical density tight. */}
-      {isMobile && (
-        <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-          <a
-            href="/"
-            style={{ color: '#a0a8b8', fontSize: 12, fontWeight: 600, textDecoration: 'none', flex: '0 0 auto' }}
-          >
-            ← karabuddy
-          </a>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
-            <span style={{ fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step by</span>
-            <ModeSegmented
-              mode={mode}
-              setMode={setMode}
-              title="Affects the ← / → chevrons"
-            />
-          </div>
-          <span style={{ fontSize: 11, color: '#d6d6d6', fontWeight: 600, flex: '0 0 auto', width: '100%', textAlign: 'center', paddingTop: 4 }}>
-            {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
-          </span>
-        </section>
       )}
 
-      {/* B10: nav row tightens — arrows flank an inline frame counter,
-          arrow-key hint becomes tooltips on the arrows. Step-mode toggle
-          hides behind a gear popover next to the counter. B12: prev/next-tag
-          buttons moved out of here and down next to "+ Tag this frame" so all
-          tag-related actions cluster together. B46: hidden on mobile — the
-          gameboard-overlay chevrons take over the prev/next role and the
-          freed vertical space goes to the FrameLog. */}
-      {!isMobile && (
-        <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-            <FooterBtn onClick={() => onStep(-1)} title="Previous frame (←)">←</FooterBtn>
-            <span style={{ fontSize: 12, color: '#d6d6d6', fontWeight: 600, padding: '0 8px', flex: 1, textAlign: 'center' }}>
-              {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
-            </span>
-            <FooterBtn onClick={() => onStep(1)} title="Next frame (→)">→</FooterBtn>
+      {/* B48/B66/B66b: frame-counter row inside the drawer on every
+          viewport. Step-by toggle and prev/next arrows moved out to the
+          gameboard overlays (StepModeOverlay + FrameNavOverlay). */}
+      <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, color: '#d6d6d6', fontWeight: 600 }}>
+          {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
+        </span>
+      </section>
+
+      {/* B66b dead-store: previous desktop-only nav/step row got replaced
+          by the floating overlays. Block kept-but-gated so the imports
+          (Popover/IconBtn/GearIcon/ModeSegmented) above this file's
+          export still resolve until a cleanup pass strips them. */}
+      {false && (
+        <section>
+          <div>
             <Popover
               align="right"
               label="Step settings"
@@ -634,16 +648,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 </IconBtn>
               )}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 180 }}>
-                <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step by</div>
-                <ModeSegmented
-                  mode={mode}
-                  setMode={setMode}
-                  title={`Hold ⇧ + ← → to step by ${mode === 'action' ? 'Frame' : 'Action'}`}
-                />
-                <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-                  Hold ⇧ + ← → to step by {mode === 'action' ? 'Frame' : 'Action'}
-                </div>
+              <div>
+                <ModeSegmented mode={mode} setMode={setMode} />
               </div>
             </Popover>
           </div>
@@ -718,11 +724,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This frame</div>
             {tagsAtCurrent.map((t) => {
-              const isAuthor =
-                (!!installToken && t.authorToken === installToken) ||
-                (!!sessionUserId && t.userId === sessionUserId);
-              const canEdit = isAuthor;
-              const canDelete = isAuthor || isOwner;
+              const canEdit = canEditTag(t, authCtx);
+              const canDelete = canDeleteTag(t, { userId: replay.userId, ownerToken: replay.ownerToken }, authCtx);
               const c = tagColor(t.authorName, playerUsernames);
               return (
                 <TagRowView
@@ -759,11 +762,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[...otherTags].sort((a, b) => a.frameIndex - b.frameIndex).map((t) => {
-                  const isAuthor =
-                    (!!installToken && t.authorToken === installToken) ||
-                    (!!sessionUserId && t.userId === sessionUserId);
-                  const canEdit = isAuthor;
-                  const canDelete = isAuthor || isOwner;
+                  const canEdit = canEditTag(t, authCtx);
+                  const canDelete = canDeleteTag(t, { userId: replay.userId, ownerToken: replay.ownerToken }, authCtx);
                   const c = tagColor(t.authorName, playerUsernames);
                   return (
                     <TagRowView
@@ -785,12 +785,41 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         )}
       </section>
 
-      {/* B42: deck snapshot section. Renders only when the replay's
-          payload carried `decks` (newer extension uploads). Collapsible —
-          a full main+side for both players is a lot of vertical real
-          estate to chew through unprompted. */}
-      {decks && Object.keys(decks).length > 0 && (
-        <DecksDisclosure decks={decks} localPlayerId={localPlayerId} />
+      {/* B42 / B64 / B66: deck snapshot launcher. Hidden on ANY mobile
+          — the MatchupPanel (left/top) owns the View-decks button so
+          the drawer stays slim and dedicated to discussion. */}
+      {decks && Object.keys(decks).length > 0 && !isMobile && (
+        <section style={{ borderTop: '1px solid #2e333c', padding: '10px 22px', flex: '0 0 auto' }}>
+          <button
+            type="button"
+            onClick={() => setDecksOpen(true)}
+            style={{
+              background: 'transparent',
+              border: '1px solid #2e333c',
+              borderRadius: 4,
+              padding: '8px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#a0c4ff',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              width: '100%',
+              textAlign: 'left',
+            }}
+          >
+            View decks →
+          </button>
+        </section>
+      )}
+      {decks && Object.keys(decks).length > 0 && !isMobile && (
+        <DecksModal
+          open={decksOpen}
+          onClose={() => setDecksOpen(false)}
+          decks={decks}
+          localPlayerId={localPlayerId}
+          replaySlug={replay.slug}
+          frames={frames}
+        />
       )}
 
       {/* B34: prev/next tag nav lives below the tag display, not above —
@@ -803,11 +832,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         </section>
       )}
 
-      {/* B12: drag handle pinned to the sidebar's right edge. Sits above the
-          right border with a transparent default; the inner pill brightens on
-          hover and becomes a solid accent when actively dragging so the
-          affordance is discoverable without being noisy. Hidden on mobile
-          where the sidebar is a fixed-width drawer. */}
+      {/* B12: drag handle pinned to the sidebar's LEFT edge (B66b moved
+          the sidebar to the right side of the viewport — the handle has
+          to live on its leading inward edge so drag-left widens it). */}
       {!isMobile && (
         <div
           role="separator"
@@ -825,7 +852,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           style={{
             position: 'absolute',
             top: 0,
-            right: 0,
+            left: 0,
             width: 6,
             height: '100%',
             cursor: 'ew-resize',
@@ -841,6 +868,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         />
       )}
     </aside>
+    )}
     </>
   );
 }
@@ -1005,6 +1033,21 @@ function renderMessage(msg: any, playerColor: Map<string, string>): React.ReactN
     }
     return <React.Fragment key={i}>{name}</React.Fragment>;
   });
+}
+
+// B66c: default replay title — mirrors what the replay browser shows
+// ("<username> vs <username>") so the title row never reads as blank
+// when no custom displayName is set.
+function defaultTitleFor(replay: { players: any }): string {
+  const players = Array.isArray(replay.players) ? replay.players : [];
+  const [p1, p2] = players;
+  const name = (p: any) => {
+    const u: string | undefined = p?.username;
+    if (!u || /^anonymous\s/i.test(u)) return 'anon';
+    return u;
+  };
+  if (!p1 && !p2) return 'Replay';
+  return `${name(p1)} vs ${name(p2)}`;
 }
 
 // B10: compact variant — leader and base side-by-side at a smaller thumb
@@ -1361,43 +1404,5 @@ function VisibilityPill({
   );
 }
 
-// B42: collapsible disclosure wrapping the Decks renderer. Default-collapsed
-// to keep the sidebar from being dominated by 50+ card thumbnails on first
-// render; the user opts in.
-function DecksDisclosure({
-  decks,
-  localPlayerId,
-}: {
-  decks: DecksByUserId;
-  localPlayerId: string | null;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <section style={{ borderTop: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column' }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          background: 'transparent',
-          border: 0,
-          padding: '10px 22px',
-          color: '#a0a8b8',
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          fontWeight: 600,
-          textAlign: 'left',
-          cursor: 'pointer',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontFamily: 'inherit',
-        }}
-      >
-        <span>Decks</span>
-        <span style={{ fontSize: 10, color: '#6c7588' }}>{open ? '▾' : '▸'}</span>
-      </button>
-      {open && <Decks decks={decks} localPlayerId={localPlayerId} />}
-    </section>
-  );
-}
+// B42's in-sidebar DecksDisclosure was removed in B64 — see the
+// "View decks →" button + DecksModal above for the replacement.

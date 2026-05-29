@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { eq, desc } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays } from '@/lib/schema';
+import { replays, users } from '@/lib/schema';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
 import { ReplayFilters } from './ReplayFilters';
@@ -25,11 +25,18 @@ export default async function ReplaysIndex({ searchParams }: PageProps) {
   const tab: Tab = tabParam === 'public' ? 'public' : 'mine';
 
   const db = getDb();
-  let rows: any[] = [];
+  // LEFT JOIN users so we can surface the uploader display name in the
+  // new Member column without an N+1. Anonymous-owned replays (userId
+  // null) leave ownerName as null and the column renders "—".
+  const baseSelect = db
+    .select({ replay: replays, ownerName: users.name })
+    .from(replays)
+    .leftJoin(users, eq(users.id, replays.userId));
+  let rows: { replay: typeof replays.$inferSelect; ownerName: string | null }[] = [];
   if (tab === 'mine' && userId) {
-    rows = await db.select().from(replays).where(eq(replays.userId, userId)).orderBy(desc(replays.createdAt)).limit(100);
+    rows = await baseSelect.where(eq(replays.userId, userId)).orderBy(desc(replays.createdAt)).limit(100);
   } else if (tab === 'public') {
-    rows = await db.select().from(replays).where(eq(replays.visibility, 'public')).orderBy(desc(replays.createdAt)).limit(50);
+    rows = await baseSelect.where(eq(replays.visibility, 'public')).orderBy(desc(replays.createdAt)).limit(50);
   }
 
   return (
@@ -55,7 +62,7 @@ export default async function ReplaysIndex({ searchParams }: PageProps) {
   );
 }
 
-function serializeRow(r: any) {
+function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string | null }) {
   return {
     slug: r.slug,
     gameId: r.gameId,
@@ -72,6 +79,9 @@ function serializeRow(r: any) {
     // B53: user-set display name + labels for the teaser.
     displayName: r.displayName ?? null,
     labels: r.labels ?? null,
+    // Uploader display name for the Member column in the table view.
+    // Null for anonymous uploads — TableView renders "—" in that case.
+    ownerName,
   };
 }
 

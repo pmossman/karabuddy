@@ -3,17 +3,13 @@ import { and, eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, replayTeamShares, teamMembers, teams } from '@/lib/schema';
+import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 
 export const runtime = 'nodejs';
 
-// Owner check for replay mutations. Mirrors the share/visibility check
-// used elsewhere — signed-in userId matches replay.userId, OR the
-// X-Install-Token header matches replay.ownerToken.
-async function isReplayOwner(replay: { userId: string | null; ownerToken: string }, req: Request, sessionUserId: string | null) {
-  if (sessionUserId && replay.userId === sessionUserId) return true;
-  const headerToken = req.headers.get('x-install-token');
-  if (headerToken && replay.ownerToken === headerToken) return true;
-  return false;
+// Owner check — shared predicate lives in lib/replayPermissions.
+function isReplayOwner(replay: { userId: string | null; ownerToken: string }, req: Request, sessionUserId: string | null) {
+  return canMutateReplay(replay, authContextFromRequest(req, sessionUserId));
 }
 
 // GET /api/replays/[slug]/team-shares — list teams this replay is shared

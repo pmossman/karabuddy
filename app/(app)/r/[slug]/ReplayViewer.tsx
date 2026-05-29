@@ -10,6 +10,7 @@ import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, type Frame, type DecodedReplay } from '@/lib/replayDecoder';
 import { TagSidebar } from './TagSidebar';
+import { StepModeOverlay, MatchupPanel } from './MobileLandscapePanels';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
@@ -96,10 +97,30 @@ function ViewerShell({ replay, initialTags }: Props) {
   // desktop chrome regardless of window width (until they shrink past 900px,
   // at which point mobile mode is the more usable layout anyway).
   const isMobile = useMediaQuery('(max-width: 900px), (pointer: coarse)');
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // B66: landscape-vs-portrait split. Mobile landscape gets a left
+  // matchup panel + the step-mode overlay, freeing the right drawer to
+  // be slim (tags/log only). Portrait splits TOP/BOTTOM instead.
+  const isLandscape = useMediaQuery('(orientation: landscape)');
+  const mobileLandscape = isMobile && isLandscape;
+  const mobilePortrait = isMobile && !isLandscape;
+  // B66b: desktop now also uses the toggleable sidebar — same chrome on
+  // every viewport. Open by default on desktop, closed on mobile so the
+  // first paint shows the full gameboard. We track "did the user touch
+  // it" so the isMobile-based auto-sync doesn't clobber a manual choice.
+  const [drawerOpen, setDrawerOpenRaw] = useState(false);
+  const userTouchedDrawerRef = useRef(false);
   useEffect(() => {
-    if (!isMobile && drawerOpen) setDrawerOpen(false);
-  }, [isMobile, drawerOpen]);
+    if (userTouchedDrawerRef.current) return;
+    setDrawerOpenRaw(!isMobile);
+  }, [isMobile]);
+  const setDrawerOpen = useCallback((next: boolean) => {
+    userTouchedDrawerRef.current = true;
+    setDrawerOpenRaw(next);
+  }, []);
+  // B66b: lifted from TagSidebar so FrameNavOverlay's right-chevron
+  // offset can track the actual desktop sidebar width (was hardcoded to
+  // the mobile drawer width, making it float in dead space).
+  const [sidebarWidth, setSidebarWidth] = useState<number>(360);
 
   // B48: on mobile the persistent (app)-layout header eats too much
   // vertical real estate from the gameboard. Toggle a body-level class
@@ -303,6 +324,19 @@ function ViewerShell({ replay, initialTags }: Props) {
 
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - var(--kb-header-h, 0px))', overflow: 'hidden' }}>
+      {/* B66b: gameboard first, sidebar second — sidebar now lives on
+          the RIGHT (matches mobile drawer anchor). When the desktop
+          sidebar is closed, TagSidebar unmounts its <aside>, so the
+          gameboard's flex:1 reclaims the full width. */}
+      <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+        {frames ? (
+          <Gameboard />
+        ) : (
+          <div style={{ padding: 32, color: '#a0a8b8', fontFamily: 'var(--font-barlow), sans-serif' }}>
+            Loading replay…
+          </div>
+        )}
+      </div>
       <TagSidebar
         replay={replay}
         frames={frames}
@@ -320,6 +354,10 @@ function ViewerShell({ replay, initialTags }: Props) {
         drawerOpen={drawerOpen}
         setDrawerOpen={setDrawerOpen}
         isMobile={isMobile}
+        mobileLandscape={mobileLandscape}
+        mobilePortrait={mobilePortrait}
+        sidebarWidth={sidebarWidth}
+        setSidebarWidth={setSidebarWidth}
         // B42: prefer DB columns (replay.match / replay.decks) since they're
         // already populated server-side; fall back to decoder.meta if a
         // historical replay only has them embedded in the blob.
@@ -327,23 +365,49 @@ function ViewerShell({ replay, initialTags }: Props) {
         decks={replay.decks ?? decoded?.meta.decks ?? null}
         localPlayerId={decoded?.meta.localPlayerId ?? null}
       />
-      <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-        {frames ? (
-          <Gameboard />
-        ) : (
-          <div style={{ padding: 32, color: '#a0a8b8', fontFamily: 'var(--font-barlow), sans-serif' }}>
-            Loading replay…
-          </div>
-        )}
-      </div>
       <FrameNavOverlay
-        isMobile={isMobile}
         drawerOpen={drawerOpen}
+        leftPanelOpen={mobileLandscape && drawerOpen}
+        leftPanelWidth="min(280px, 60vw)"
+        // Portrait's bottom drawer covers vertical 50%; shift chevrons
+        // up to the centerline above it so they stay reachable.
+        verticalCenter={mobilePortrait && drawerOpen ? '20%' : '50%'}
         onStep={step}
         canPrev={currentIndex > 0}
         canNext={!!frames && currentIndex < frames.length - 1}
-        drawerWidth={MOBILE_DRAWER_WIDTH}
+        // B66b: track the actual desktop sidebar width so the right
+        // chevron hugs the sidebar's left edge as it resizes. Mobile
+        // sticks with the fixed mobile drawer width.
+        drawerWidth={isMobile ? MOBILE_DRAWER_WIDTH : `${sidebarWidth}px`}
+        // Desktop only: faint keyboard hint adjacent to each chevron.
+        showKeyboardHint={!isMobile}
       />
+      {/* B66b: floating step-mode toggle on every viewport. Tracks the
+          sidebar — shifts LEFT past it when open so it doesn't get
+          buried; lifts UP above the portrait bottom drawer. */}
+      <StepModeOverlay
+        mode={mode}
+        setMode={setMode}
+        landscape={isLandscape || !isMobile}
+        drawerOpen={drawerOpen}
+        drawerWidth={isMobile ? MOBILE_DRAWER_WIDTH : `${sidebarWidth}px`}
+        portraitDrawerOpen={mobilePortrait && drawerOpen}
+      />
+      {/* B66: mobile matchup panel. Anchored LEFT in landscape, TOP in
+          portrait — same ☰ trigger that opens the tags drawer (which
+          anchors RIGHT in landscape, BOTTOM in portrait) opens this. */}
+      {isMobile && (
+        <MatchupPanel
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          anchor={isLandscape ? 'left' : 'top'}
+          replay={replay}
+          matchMeta={replay.match ?? decoded?.meta.match ?? null}
+          decks={replay.decks ?? decoded?.meta.decks ?? null}
+          localPlayerId={decoded?.meta.localPlayerId ?? null}
+          frames={frames}
+        />
+      )}
     </div>
   );
 }

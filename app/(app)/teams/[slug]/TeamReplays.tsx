@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
+import { ReplayFilters } from '@/app/(app)/replays/ReplayFilters';
 
-// B55b: client-fetched team replays grid. Uses the existing ReplayCard
-// teaser so visual parity with /replays is automatic. Surface rule (tag
-// by team member OR explicit share) is enforced server-side.
+// B55b: client-fetched team replays grid.
+// B52-followup: now wrapped in ReplayFilters so the team page gets the
+// same filter UI + URL persistence + view switcher as /replays. Surface
+// rule (tag by team member OR explicit share) is still enforced server-side.
 export function TeamReplays({ teamSlug }: { teamSlug: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [rows, setRows] = useState<any[]>([]);
@@ -46,37 +47,32 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
     );
   }
 
-  if (rows.length === 0) {
-    return (
-      <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
-        No team replays yet. Replays surface here when a team member tags one,
-        or when an owner explicitly shares a replay with the team from its
-        viewer page.
-      </div>
-    );
-  }
+  const normalized = rows.map((r) => ({
+    slug: r.slug,
+    gameId: r.gameId,
+    userId: r.userId,
+    players: r.players,
+    durationMs: r.durationMs,
+    actionCount: r.actionCount,
+    visibility: r.visibility,
+    createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
+    match: r.match ?? null,
+    displayName: r.displayName ?? null,
+    labels: r.labels ?? null,
+    ownerName: r.ownerName ?? null,
+  }));
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 12 }}>
-      {rows.map((r) => (
-        <ReplayCard
-          key={r.slug}
-          replay={{
-            slug: r.slug,
-            gameId: r.gameId,
-            userId: r.userId,
-            players: r.players,
-            durationMs: r.durationMs,
-            actionCount: r.actionCount,
-            visibility: r.visibility,
-            createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
-            match: r.match ?? null,
-            displayName: r.displayName ?? null,
-            labels: r.labels ?? null,
-          }}
-          canManage={false}
-        />
-      ))}
-    </div>
+    <ReplayFilters
+      rows={normalized}
+      canManage={false}
+      emptyState={
+        <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
+          No team replays yet. Replays surface here when a team member tags one,
+          or when an owner explicitly shares a replay with the team from its
+          viewer page.
+        </div>
+      }
+    />
   );
 }

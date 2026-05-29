@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq, and, ne, isNull } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { users, replays, tags } from '@/lib/schema';
 import { auth } from '@/auth';
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     const anonReplays = await db
       .select()
       .from(replays)
-      .where(and(eq(replays.userId, null as any), ne(replays.ownerToken, '')));
+      .where(and(isNull(replays.userId), ne(replays.ownerToken, '')));
     const matchSlugs: string[] = [];
     for (const row of anonReplays) {
       const players = (row.players as any[]) || [];
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     const orphanTags = await db
       .select({ id: tags.id })
       .from(tags)
-      .where(and(eq(tags.userId, null as any), eq(tags.authorName, username)));
+      .where(and(isNull(tags.userId), eq(tags.authorName, username)));
     for (const t of orphanTags) {
       await db.update(tags).set({ userId }).where(eq(tags.id, t.id));
       claimedTags++;

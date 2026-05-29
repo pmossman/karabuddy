@@ -26,7 +26,7 @@ export default async function ReplayPage({ params }: PageProps) {
     ...row,
     createdAt: row.createdAt.toISOString(),
   };
-  const tagList = tagRows.map((t) => ({
+  const tagList = tagRows.map((t: any) => ({
     ...t,
     createdAt: t.createdAt.toISOString(),
   }));

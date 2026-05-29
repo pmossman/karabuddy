@@ -1,33 +1,40 @@
 'use client';
 
-// B46: gameboard-overlay frame navigation. Two slim chevron buttons pinned
-// to the left and right edges of the viewport — easy to thumb-tap on mobile
-// without obscuring much of the board. The right-edge button shifts left
-// when the mobile drawer is open so it doesn't slide behind it.
+import { useRef, useState } from 'react';
+
+// B46/B66b: gameboard-overlay frame navigation. Two slim chevron buttons
+// pinned to the left and right edges of the viewport — used on every
+// viewport now (B66b removed the desktop-sidebar-only fallback so chrome
+// is consistent across breakpoints). The right-edge button shifts left
+// when a drawer/sidebar is open so it doesn't slide behind it.
 //
-// Rendered only when isMobile so desktop users keep the existing sidebar
-// arrows + keyboard nav.
+// Desktop also gets a faint "← / →" keyboard hint adjacent to each
+// chevron so users discover the keyboard shortcuts without having to
+// hover for the title tooltip.
 export function FrameNavOverlay({
-  isMobile,
   drawerOpen,
+  leftPanelOpen,
+  leftPanelWidth,
+  verticalCenter,
   onStep,
   canPrev,
   canNext,
   drawerWidth,
+  showKeyboardHint,
 }: {
-  isMobile: boolean;
   drawerOpen: boolean;
+  leftPanelOpen?: boolean;
+  leftPanelWidth?: string;
+  verticalCenter?: string;
   onStep: (dir: 1 | -1) => void;
   canPrev: boolean;
   canNext: boolean;
   drawerWidth: string;
+  showKeyboardHint?: boolean;
 }) {
-  if (!isMobile) return null;
-
-  // Respect iOS safe-area insets so the chevrons don't sit underneath the
-  // home indicator or notch in landscape. env() falls back to the literal
-  // 8px on browsers without safe-area support.
-  const leftOffset = 'max(8px, env(safe-area-inset-left, 8px))';
+  const leftOffset = leftPanelOpen && leftPanelWidth
+    ? `calc(${leftPanelWidth} + 16px)`
+    : 'max(8px, env(safe-area-inset-left, 8px))';
   const rightOffset = drawerOpen
     ? `calc(${drawerWidth} + 8px)`
     : 'max(8px, env(safe-area-inset-right, 8px))';
@@ -37,18 +44,22 @@ export function FrameNavOverlay({
       <ChevronButton
         side="left"
         offset={leftOffset}
+        verticalCenter={verticalCenter ?? '50%'}
         ariaLabel="Previous frame"
         disabled={!canPrev}
         onClick={() => onStep(-1)}
+        keyboardHint={showKeyboardHint ? '←' : null}
       >
         ‹
       </ChevronButton>
       <ChevronButton
         side="right"
         offset={rightOffset}
+        verticalCenter={verticalCenter ?? '50%'}
         ariaLabel="Next frame"
         disabled={!canNext}
         onClick={() => onStep(1)}
+        keyboardHint={showKeyboardHint ? '→' : null}
       >
         ›
       </ChevronButton>
@@ -59,35 +70,56 @@ export function FrameNavOverlay({
 function ChevronButton({
   side,
   offset,
+  verticalCenter,
   ariaLabel,
   disabled,
   onClick,
+  keyboardHint,
   children,
 }: {
   side: 'left' | 'right';
   offset: string;
+  verticalCenter: string;
   ariaLabel: string;
   disabled: boolean;
   onClick: () => void;
+  keyboardHint: string | null;
   children: React.ReactNode;
 }) {
+  // Press animation: briefly nudge the chevron in the step direction +
+  // pulse the background. Reset via a short timeout so successive taps
+  // re-trigger reliably. Pressed state is local to each button.
+  const [pressed, setPressed] = useState(false);
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerPress = () => {
+    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+    setPressed(true);
+    pressTimerRef.current = setTimeout(() => setPressed(false), 180);
+  };
+  const handleClick = () => {
+    if (disabled) return;
+    triggerPress();
+    onClick();
+  };
+
+  // Direction of the nudge: left chevron pulls leftward when pressed,
+  // right chevron pulls rightward — visual reinforcement of the action.
+  const nudge = side === 'left' ? -6 : 6;
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={handleClick}
       disabled={disabled}
       aria-label={ariaLabel}
       style={{
         position: 'fixed',
         [side]: offset,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        zIndex: 60,
+        top: verticalCenter,
+        transform: `translateY(-50%) translateX(${pressed ? nudge : 0}px)`,
+        zIndex: 90,
         width: 36,
-        // Tall enough for a comfortable thumb target without dominating
-        // the gameboard. Vertically narrow profile keeps it out of the way.
         height: 84,
-        background: 'rgba(36, 48, 68, 0.7)',
+        background: pressed ? 'rgba(74, 124, 255, 0.45)' : 'rgba(36, 48, 68, 0.7)',
         color: disabled ? '#4a4e56' : '#d6e7ff',
         border: '1px solid rgba(74, 124, 255, 0.3)',
         borderRadius: 10,
@@ -103,10 +135,29 @@ function ChevronButton({
         alignItems: 'center',
         justifyContent: 'center',
         backdropFilter: 'blur(6px)',
-        transition: 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease',
+        transition: 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms ease',
       }}
     >
       {children}
+      {keyboardHint && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            [side === 'left' ? 'right' : 'left']: -22,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            fontSize: 10,
+            color: '#6c7588',
+            fontWeight: 600,
+            opacity: 0.7,
+            pointerEvents: 'none',
+            letterSpacing: '0.04em',
+          }}
+        >
+          {keyboardHint}
+        </span>
+      )}
     </button>
   );
 }

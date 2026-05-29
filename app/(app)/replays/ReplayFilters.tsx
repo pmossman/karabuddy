@@ -1,20 +1,21 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
+import { cardImageUrl } from '@/lib/cardImage';
+import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
 
-// B52 MVP: client-side filtering over a pre-fetched (server or API) row
-// set. Filters: leader (any side), opponent username, date range, match
-// format, bo3 mode, label. State persists in URL via `?leader=&format=&
-// mode=&label=&since=&opp=`. Filter chips render at the top with × per
-// chip + Clear all.
-//
-// Server-side filtering / pagination is the obvious follow-up when
-// libraries push past the 100-row server limit. Until then this is fast
-// enough (filter pass over ≤100 objects is microseconds).
-//
-// Alternate views (by-leader, timeline) deferred — they're scoped in
-// the B52 spec but the filter UX is the higher-value half.
+// B52 MVP shipped local-state filters. B52-followup added URL persistence
+// + by-leader / timeline views + reuse on /teams/[slug]. This pass:
+//   - Renamed "Cards" → "Grid".
+//   - New **Table** view, now the default — info-dense, sortable headers,
+//     scales better than the grid as libraries grow.
+//   - Opponent input is now a `<datalist>` combobox (type-to-filter over
+//     usernames seen in the row set), and explicitly opts out of LastPass
+//     / 1Password autofill so password managers don't render their icon
+//     over the field.
 
 interface Row {
   slug: string;
@@ -28,7 +29,13 @@ interface Row {
   match?: any;
   displayName?: string | null;
   labels?: string[] | null;
+  // Uploader display name (joined server-side). Null = anonymous upload.
+  ownerName?: string | null;
 }
+
+type ViewMode = 'table' | 'grid' | 'by-leader' | 'timeline';
+const VIEW_MODES: readonly ViewMode[] = ['table', 'grid', 'by-leader', 'timeline'] as const;
+const DEFAULT_VIEW: ViewMode = 'table';
 
 const SINCE_OPTIONS = [
   { value: '', label: 'All time' },
@@ -37,10 +44,9 @@ const SINCE_OPTIONS = [
   { value: '90d', label: 'Past 90 days' },
 ];
 
-const FORMAT_LABEL: Record<string, string> = {
-  premier: 'Premier', eternal: 'Eternal', open: 'Open', limited: 'Limited',
-};
-const MODE_LABEL: Record<string, string> = { bestOfOne: 'Bo1', bestOfThree: 'Bo3' };
+function parseView(raw: string | null): ViewMode {
+  return VIEW_MODES.includes(raw as ViewMode) ? (raw as ViewMode) : DEFAULT_VIEW;
+}
 
 export function ReplayFilters({
   rows,
@@ -51,16 +57,36 @@ export function ReplayFilters({
   canManage: boolean;
   emptyState: React.ReactNode;
 }) {
-  // Filter state (in-component for v1; URL sync can come later).
-  const [leader, setLeader] = useState('');
-  const [opp, setOpp] = useState('');
-  const [since, setSince] = useState('');
-  const [format, setFormat] = useState('');
-  const [mode, setMode] = useState('');
-  const [label, setLabel] = useState('');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  // Build option sets from the data so users see only filters that
-  // actually narrow something.
+  const [leader, setLeader] = useState(() => searchParams.get('leader') || '');
+  const [opp, setOpp] = useState(() => searchParams.get('opp') || '');
+  const [since, setSince] = useState(() => searchParams.get('since') || '');
+  const [format, setFormat] = useState(() => searchParams.get('format') || '');
+  const [mode, setMode] = useState(() => searchParams.get('mode') || '');
+  const [label, setLabel] = useState(() => searchParams.get('label') || '');
+  const [view, setView] = useState<ViewMode>(() => parseView(searchParams.get('view')));
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const setOrDelete = (key: string, val: string) => {
+      if (val) params.set(key, val); else params.delete(key);
+    };
+    setOrDelete('leader', leader);
+    setOrDelete('opp', opp);
+    setOrDelete('since', since);
+    setOrDelete('format', format);
+    setOrDelete('mode', mode);
+    setOrDelete('label', label);
+    setOrDelete('view', view === DEFAULT_VIEW ? '' : view);
+    const next = params.toString();
+    if (next !== searchParams.toString()) {
+      router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
+    }
+  }, [leader, opp, since, format, mode, label, view, pathname, router, searchParams]);
+
   const allLeaders = useMemo(() => {
     const set = new Set<string>();
     for (const r of rows) {
@@ -68,6 +94,21 @@ export function ReplayFilters({
       for (const p of players) {
         const name = p?.leader?.name;
         if (name) set.add(name);
+      }
+    }
+    return Array.from(set).sort();
+  }, [rows]);
+
+  // Opponent combobox suggestions — every username seen across the row set,
+  // skipping the "anonymous-XXX"-style autogenerated handles. Filter logic
+  // still uses substring match, so typing freely also works.
+  const allUsernames = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const players = Array.isArray(r.players) ? r.players : [];
+      for (const p of players) {
+        const u: string | undefined = p?.username;
+        if (u && !/^anonymous\s/i.test(u)) set.add(u);
       }
     }
     return Array.from(set).sort();
@@ -81,7 +122,6 @@ export function ReplayFilters({
     return Array.from(set).sort();
   }, [rows]);
 
-  // Apply filters.
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       const players = Array.isArray(r.players) ? r.players : [];
@@ -126,6 +166,7 @@ export function ReplayFilters({
         leader={leader} setLeader={setLeader}
         leaders={allLeaders}
         opp={opp} setOpp={setOpp}
+        usernames={allUsernames}
         since={since} setSince={setSince}
         format={format} setFormat={setFormat}
         mode={mode} setMode={setMode}
@@ -140,17 +181,7 @@ export function ReplayFilters({
               key={c.key}
               type="button"
               onClick={c.onClear}
-              style={{
-                background: 'rgba(74, 124, 255, 0.18)',
-                border: '1px solid rgba(74, 124, 255, 0.5)',
-                color: '#a0c4ff',
-                padding: '3px 10px',
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
+              style={chipButtonStyle}
             >
               {c.label} <span style={{ color: '#6c7588', marginLeft: 4 }}>×</span>
             </button>
@@ -165,38 +196,379 @@ export function ReplayFilters({
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: '#6c7588', marginTop: 12 }}>
-        Showing {filtered.length} of {rows.length}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: '#6c7588' }}>
+          Showing {filtered.length} of {rows.length}
+        </div>
+        <ViewSwitcher view={view} setView={setView} />
       </div>
 
       {filtered.length === 0 ? (
         <div style={{ marginTop: 16 }}>{activeChips.length > 0 ? <NoMatchesEmpty /> : emptyState}</div>
+      ) : view === 'table' ? (
+        <TableView rows={filtered} />
+      ) : view === 'by-leader' ? (
+        <ByLeaderGroups rows={filtered} canManage={canManage} />
+      ) : view === 'timeline' ? (
+        <TimelineGroups rows={filtered} canManage={canManage} />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 16 }}>
-          {filtered.map((r) => (
-            <ReplayCard key={r.slug} replay={r as any} canManage={canManage} />
-          ))}
-        </div>
+        <CardGrid rows={filtered} canManage={canManage} />
       )}
     </>
   );
 }
 
+function CardGrid({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 16 }}>
+      {rows.map((r) => (
+        <ReplayCard key={r.slug} replay={r as any} canManage={canManage} />
+      ))}
+    </div>
+  );
+}
+
+function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
+  const groups = useMemo(() => {
+    const m = new Map<string, Row[]>();
+    for (const r of rows) {
+      const players = Array.isArray(r.players) ? r.players : [];
+      const name = players[0]?.leader?.name || '(unknown leader)';
+      const arr = m.get(name);
+      if (arr) arr.push(r); else m.set(name, [r]);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [rows]);
+
+  return (
+    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {groups.map(([leaderName, group]) => (
+        <section key={leaderName}>
+          <h2
+            data-testid="leader-group-heading"
+            style={{ fontSize: 14, fontWeight: 600, color: '#e6e6e6', margin: '0 0 10px', display: 'flex', gap: 8, alignItems: 'baseline' }}
+          >
+            {leaderName}
+            <span style={{ fontSize: 11, color: '#6c7588', fontWeight: 400 }}>{group.length}</span>
+          </h2>
+          <CardGrid rows={group} canManage={canManage} />
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
+  const groups = useMemo(() => {
+    const m = new Map<string, Row[]>();
+    for (const r of rows) {
+      const d = new Date(r.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const arr = m.get(key);
+      if (arr) arr.push(r); else m.set(key, [r]);
+    }
+    return Array.from(m.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [rows]);
+
+  return (
+    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {groups.map(([day, group]) => (
+        <section key={day}>
+          <h2
+            data-testid="timeline-day-heading"
+            style={{ fontSize: 14, fontWeight: 600, color: '#e6e6e6', margin: '0 0 10px', display: 'flex', gap: 8, alignItems: 'baseline' }}
+          >
+            {day}
+            <span style={{ fontSize: 11, color: '#6c7588', fontWeight: 400 }}>{group.length}</span>
+          </h2>
+          <CardGrid rows={group} canManage={canManage} />
+        </section>
+      ))}
+    </div>
+  );
+}
+
+// -- Table view --------------------------------------------------------------
+
+type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member';
+
+function matchupText(r: Row): string {
+  if (r.displayName) return r.displayName;
+  const players = Array.isArray(r.players) ? r.players : [];
+  const [p1, p2] = players;
+  return `${nameText(p1)} vs ${nameText(p2)}`;
+}
+
+function nameText(p: any) {
+  const u: string | undefined = p?.username;
+  if (!u || /^anonymous\s/i.test(u)) return 'anon';
+  return u;
+}
+
+function leaderText(r: Row): string {
+  const players = Array.isArray(r.players) ? r.players : [];
+  return players[0]?.leader?.name || '';
+}
+
+function formatChipText(match: Row['match']): string {
+  if (!match) return '';
+  return [
+    match.gameFormat ? FORMAT_LABEL[match.gameFormat] : '',
+    match.gamesToWinMode ? MODE_LABEL[match.gamesToWinMode] : '',
+  ].filter(Boolean).join(' / ');
+}
+
+function formatDuration(ms: number) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m === 0) return `${s}s`;
+  return `${m}m ${String(r).padStart(2, '0')}s`;
+}
+
+function formatDateShort(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
+}
+
+function TableView({ rows }: { rows: Row[] }) {
+  // Default: newest first (matches the grid's pre-existing order).
+  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const sorted = useMemo(() => {
+    const val = (r: Row): string | number => {
+      switch (sortKey) {
+        case 'date': return new Date(r.createdAt).getTime();
+        case 'replay': return matchupText(r).toLowerCase();
+        case 'leader': return leaderText(r).toLowerCase();
+        case 'format': return (r.match?.gameFormat || '').toLowerCase();
+        case 'mode': return (r.match?.gamesToWinMode || '').toLowerCase();
+        case 'length': return r.durationMs || 0;
+        case 'member': return (r.ownerName || '').toLowerCase();
+      }
+    };
+    return [...rows].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [rows, sortKey, sortDir]);
+
+  const onHeaderClick = (k: SortKey) => {
+    if (sortKey === k) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(k);
+      // Sensible defaults: dates go newest first; everything else ascending.
+      setSortDir(k === 'date' || k === 'length' ? 'desc' : 'asc');
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 16, overflowX: 'auto', border: '1px solid #2e333c', borderRadius: 8 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: '#d6d6d6' }}>
+        <thead>
+          <tr style={{ background: 'rgba(17,20,26,0.6)' }}>
+            <SortHeader k="date" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Date</SortHeader>
+            <SortHeader k="replay" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Replay</SortHeader>
+            <SortHeader k="member" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Member</SortHeader>
+            <SortHeader k="format" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Format</SortHeader>
+            <PlainHeader>Labels</PlainHeader>
+            <SortHeader k="length" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Length</SortHeader>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r) => (
+            <tr key={r.slug} style={{ borderTop: '1px solid #2e333c' }}>
+              <td style={cellStyle}>{formatDateShort(r.createdAt)}</td>
+              <td style={cellStyle} data-testid="replay-cell">
+                <ReplayCellLink replay={r} />
+              </td>
+              <td style={cellStyle} data-testid="member-cell">{r.ownerName || '—'}</td>
+              <td style={cellStyle}>{formatChipText(r.match) || '—'}</td>
+              <td style={cellStyle}>
+                {Array.isArray(r.labels) && r.labels.length > 0 ? (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {r.labels.map((l) => (
+                      <span key={l} style={labelChipStyle}>{l}</span>
+                    ))}
+                  </div>
+                ) : '—'}
+              </td>
+              <td style={cellStyle}>{formatDuration(r.durationMs || 0)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Replay cell: leader+base mini thumbnails for each player, separated by
+// "vs", with the matchup text below. Wrapped in <Link> so the whole cell
+// (text + thumbs) navigates to /r/<slug>.
+function ReplayCellLink({ replay }: { replay: Row }) {
+  const players = Array.isArray(replay.players) ? replay.players : [];
+  const [p1, p2] = players;
+  return (
+    <Link href={`/r/${replay.slug}`} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <PlayerThumbs player={p1} />
+        <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, letterSpacing: '0.08em' }}>VS</span>
+        <PlayerThumbs player={p2} />
+      </div>
+      <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{matchupText(replay)}</span>
+    </Link>
+  );
+}
+
+// Per-player leader + base stacked vertically. Tiny — meant for at-a-glance
+// scanning down the table, not for reading card text.
+function PlayerThumbs({ player }: { player: any }) {
+  const leader = cardImageUrl(player?.leader, true);
+  const base = cardImageUrl(player?.base, false);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Thumb src={leader} alt={player?.leader?.name} />
+      <Thumb src={base} alt={player?.base?.name} />
+    </div>
+  );
+}
+
+function Thumb({ src, alt }: { src: string | null; alt?: string }) {
+  if (!src) {
+    return <div style={thumbBoxStyle} title={alt || ''} />;
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt || ''} loading="lazy" style={thumbImgStyle} />;
+}
+
+const thumbImgStyle: React.CSSProperties = {
+  width: 38,
+  height: 26,
+  objectFit: 'contain',
+  borderRadius: 2,
+  background: '#0a0c10',
+  display: 'block',
+};
+const thumbBoxStyle: React.CSSProperties = {
+  ...thumbImgStyle,
+  border: '1px solid #2e333c',
+};
+
+function SortHeader({
+  k, current, dir, onClick, children,
+}: {
+  k: SortKey;
+  current: SortKey;
+  dir: 'asc' | 'desc';
+  onClick: (k: SortKey) => void;
+  children: React.ReactNode;
+}) {
+  const active = current === k;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      style={{
+        textAlign: 'left',
+        padding: '8px 10px',
+        fontSize: 11,
+        fontWeight: 700,
+        color: active ? '#e6e6e6' : '#a0a8b8',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+      onClick={() => onClick(k)}
+    >
+      {children}
+      {active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </th>
+  );
+}
+
+function PlainHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <th
+      scope="col"
+      style={{
+        textAlign: 'left',
+        padding: '8px 10px',
+        fontSize: 11,
+        fontWeight: 700,
+        color: '#a0a8b8',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
+const cellStyle: React.CSSProperties = { padding: '8px 10px', verticalAlign: 'middle' };
+const labelChipStyle: React.CSSProperties = {
+  background: 'rgba(160, 196, 255, 0.08)',
+  border: '1px solid rgba(160, 196, 255, 0.2)',
+  color: '#a0c4ff',
+  fontSize: 10,
+  fontWeight: 600,
+  padding: '1px 6px',
+  borderRadius: 999,
+};
+
+function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode) => void }) {
+  const item = (v: ViewMode, label: string) => (
+    <button
+      key={v}
+      type="button"
+      onClick={() => setView(v)}
+      aria-pressed={view === v}
+      style={{
+        background: view === v ? 'rgba(74, 124, 255, 0.18)' : 'transparent',
+        color: view === v ? '#e6e6e6' : '#a0a8b8',
+        border: '1px solid ' + (view === v ? 'rgba(74, 124, 255, 0.5)' : '#2e333c'),
+        padding: '4px 10px',
+        fontSize: 11,
+        fontWeight: 600,
+        borderRadius: 4,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div role="group" style={{ display: 'flex', gap: 4 }}>
+      {item('table', 'Table')}
+      {item('grid', 'Grid')}
+      {item('by-leader', 'By leader')}
+      {item('timeline', 'Timeline')}
+    </div>
+  );
+}
+
 function FilterControls({
   leader, setLeader, leaders,
-  opp, setOpp,
+  opp, setOpp, usernames,
   since, setSince,
   format, setFormat,
   mode, setMode,
   label, setLabel, labels,
 }: {
   leader: string; setLeader: (v: string) => void; leaders: string[];
-  opp: string; setOpp: (v: string) => void;
+  opp: string; setOpp: (v: string) => void; usernames: string[];
   since: string; setSince: (v: string) => void;
   format: string; setFormat: (v: string) => void;
   mode: string; setMode: (v: string) => void;
   label: string; setLabel: (v: string) => void; labels: string[];
 }) {
+  // Stable id for the <input list="..."> ↔ <datalist id="..."> pairing.
+  const oppListId = useId();
   return (
     <div
       style={{
@@ -217,13 +589,27 @@ function FilterControls({
         </select>
       </Field>
       <Field label="Opponent (username)">
+        {/*
+          Combobox: native <datalist> lets the user pick from prior opponents
+          OR type freely to substring-filter. The autoComplete=off +
+          data-lpignore + data-form-type attrs suppress LastPass / 1Password
+          autofill icons — without them, password managers latch onto any
+          text input that looks remotely username-y.
+        */}
         <input
           type="text"
           value={opp}
           onChange={(e) => setOpp(e.target.value)}
           placeholder="contains…"
+          list={oppListId}
+          autoComplete="off"
+          data-lpignore="true"
+          data-form-type="other"
           style={inputStyle}
         />
+        <datalist id={oppListId}>
+          {usernames.map((u) => <option key={u} value={u} />)}
+        </datalist>
       </Field>
       <Field label="Date">
         <select value={since} onChange={(e) => setSince(e.target.value)} style={selectStyle}>
@@ -284,3 +670,14 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 };
 const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' };
+const chipButtonStyle: React.CSSProperties = {
+  background: 'rgba(74, 124, 255, 0.18)',
+  border: '1px solid rgba(74, 124, 255, 0.5)',
+  color: '#a0c4ff',
+  padding: '3px 10px',
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};

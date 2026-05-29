@@ -30,8 +30,9 @@ export default defineConfig({
       },
       {
         // API integration — exercises route handlers + Drizzle against
-        // the local Docker Postgres. setupFiles runs migrations once per
-        // suite and gives each test a fresh schema via TRUNCATE.
+        // an in-process pglite Postgres (or pg if KARABUDDY_DB_DRIVER=pg
+        // is set explicitly). setupFiles runs migrations once per suite
+        // and gives each test a fresh schema via TRUNCATE CASCADE.
         extends: false,
         test: {
           name: 'api',
@@ -45,6 +46,17 @@ export default defineConfig({
           // come later if test count grows.
           pool: 'forks',
           poolOptions: { forks: { singleFork: true } },
+          env: {
+            // Inline defaults so a bare `vitest run --project api` works
+            // without the env-var prefix in package.json. npm scripts can
+            // still override.
+            KARABUDDY_DB_DRIVER: process.env.KARABUDDY_DB_DRIVER || 'pglite',
+            KARABUDDY_BLOB_MODE: process.env.KARABUDDY_BLOB_MODE || 'memory',
+            AUTH_SECRET: process.env.AUTH_SECRET || 'test-secret',
+            AUTH_URL: process.env.AUTH_URL || 'http://localhost:3001',
+            KARABUDDY_TEST_API: '1',
+            NODE_ENV: 'test',
+          },
         },
         resolve: {
           alias: { '@': path.resolve(__dirname) },

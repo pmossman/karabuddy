@@ -5,15 +5,19 @@
 // only has leader/base (karabast masks the rest). Cards are grouped by
 // card-cost so the layout reads more like a deckbuilder list.
 
+import Link from 'next/link';
 import { cardImageUrl } from '@/lib/cardImage';
 import type { DecksByUserId, UserDeck, DeckCardRef } from '@/lib/replayDecoder';
 
 interface Props {
   decks: DecksByUserId | null;
   localPlayerId: string | null;
+  // B58: when provided, each player block gets a "View full page →" link
+  // to /r/[slug]/deck/[playerId] for the shareable dedicated view.
+  replaySlug?: string;
 }
 
-export function Decks({ decks, localPlayerId }: Props) {
+export function Decks({ decks, localPlayerId, replaySlug }: Props) {
   if (!decks || Object.keys(decks).length === 0) {
     return (
       <div style={{ padding: '14px 22px', fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>
@@ -33,13 +37,14 @@ export function Decks({ decks, localPlayerId }: Props) {
           key={pid}
           deck={decks[pid]}
           isLocal={pid === localPlayerId}
+          fullPageHref={replaySlug ? `/r/${replaySlug}/deck/${pid}` : null}
         />
       ))}
     </div>
   );
 }
 
-function DeckBlock({ deck, isLocal }: { deck: UserDeck; isLocal: boolean }) {
+export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isLocal: boolean; fullPageHref: string | null }) {
   const hasFullDeck = Array.isArray(deck.deck) && deck.deck.length > 0;
   const totalMain = hasFullDeck ? sumCounts(deck.deck!) : null;
   const totalSide = deck.sideboard ? sumCounts(deck.sideboard) : 0;
@@ -60,13 +65,21 @@ function DeckBlock({ deck, isLocal }: { deck: UserDeck; isLocal: boolean }) {
           </span>
         ) : (
           <span style={{ fontSize: 11, color: '#e0c64a', fontStyle: 'italic' }}>
-            Leader + base only (karabast doesn&apos;t share the opponent&apos;s full list)
+            Full list not available (karabast doesn&apos;t share the opponent&apos;s full deck)
           </span>
         )}
         {deck.name && (
           <span style={{ fontSize: 11, color: '#a0a8b8', fontStyle: 'italic' }}>
             “{deck.name}”
           </span>
+        )}
+        {fullPageHref && (
+          <Link
+            href={fullPageHref}
+            style={{ marginLeft: 'auto', fontSize: 11, color: '#5da9ff', textDecoration: 'none', fontWeight: 600 }}
+          >
+            View full page →
+          </Link>
         )}
       </header>
 
@@ -85,7 +98,7 @@ function DeckBlock({ deck, isLocal }: { deck: UserDeck; isLocal: boolean }) {
   );
 }
 
-function DeckList({ title, cards }: { title: string; cards: DeckCardRef[] }) {
+export function DeckList({ title, cards }: { title: string; cards: DeckCardRef[] }) {
   // Sort by cost asc, then by id for stable ordering. Matches karabast's
   // deckbuilder display order.
   const sorted = [...cards].sort((a, b) => {
@@ -95,20 +108,20 @@ function DeckList({ title, cards }: { title: string; cards: DeckCardRef[] }) {
     return a.id.localeCompare(b.id);
   });
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <h3 style={{ margin: 0, fontSize: 11, color: '#a0a8b8', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
         {title}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 4 }}>
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
         {sorted.map((c, i) => (
           <CardThumb key={`${c.id}-${i}`} card={c} />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
-function CardThumb({ card, isLeader = false }: { card: DeckCardRef; isLeader?: boolean }) {
+export function CardThumb({ card, isLeader = false }: { card: DeckCardRef; isLeader?: boolean }) {
   const setId = parseSetIdLocal(card.id);
   const url = setId ? cardImageUrl({ set: setId.set, number: setId.number }, isLeader) : null;
   return (
@@ -117,37 +130,55 @@ function CardThumb({ card, isLeader = false }: { card: DeckCardRef; isLeader?: b
       target="_blank"
       rel="noreferrer"
       title={card.id + (card.cost != null ? ` · cost ${card.cost}` : '')}
+      // Padding-bottom reserves space for the count badge that hangs
+      // below the card art, matching karabast's deck-view layout.
       style={{
         position: 'relative',
-        aspectRatio: '1.4',
-        background: '#0b0b12',
-        border: '1px solid #2e333c',
-        borderRadius: 4,
-        backgroundImage: url ? `url(${url})` : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
         display: 'block',
         textDecoration: 'none',
         color: '#e6e6e6',
+        paddingBottom: 16,
       }}
     >
-      {card.count > 1 && (
-        <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            right: 2,
-            background: 'rgba(0,0,0,0.78)',
-            color: '#fff',
-            fontSize: 11,
-            fontWeight: 700,
-            padding: '1px 5px',
-            borderRadius: 4,
-          }}
-        >
-          ×{card.count}
-        </span>
-      )}
+      <div
+        style={{
+          aspectRatio: isLeader ? '1.4' : '0.71',
+          background: '#0b0b12',
+          border: '1px solid #2e333c',
+          borderRadius: 6,
+          backgroundImage: url ? `url(${url})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          minHeight: 100,
+        }}
+      />
+      <span
+        // karabast-style count badge: circular, dark, hangs over the
+        // bottom-center edge of the card. Always rendered (even for
+        // count === 1) — matches karabast's deck-view affordance, makes
+        // copy counts scannable at a glance.
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          background: '#0a0c10',
+          border: '2px solid #2e333c',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          lineHeight: 1,
+          boxShadow: '0 2px 6px rgba(0,0,0,0.45)',
+        }}
+      >
+        {card.count}
+      </span>
     </a>
   );
 }

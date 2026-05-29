@@ -38,3 +38,4 @@ test-results/
 playwright-report/
 coverage/
 .vitest-cache/
+.next-test/
