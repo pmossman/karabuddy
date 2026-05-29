@@ -13,7 +13,44 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-_empty_
+### [B54] Anonymous replay browsing via extension token + auto-claim on sign-in
+
+- **Why:** Today, a user without a karabuddy.app account who records replays through the extension can't view those replays anywhere — `/replays?tab=mine` requires sign-in, and the extension's local IDB cap is 50. They're invisible to their own owner until they create an account and run the claim flow. Worse, the friction of "create an account before you can use the thing you installed" tanks adoption.
+- **Acceptance:**
+  - **Anonymous viewing:** if a visitor is NOT signed in but the extension IS installed on this browser, `/replays?tab=mine` probes the bridge for the install token and renders replays owned by that token. Tab labelled the same; visual distinction (e.g. small "anonymous (via extension)" hint).
+  - **Auto-claim on sign-in:** when a session goes null → signed-in AND the extension is installed AND the install token isn't already linked to this account, silently POST `/api/me/claim` with the token. One-time toast: "Linked N replays from this extension to your account."
+  - **GET endpoint already supports** anonymous owner queries (`?owner=<token>`), so no new API surface needed for browse — just wire the page.
+  - **No claim required for view-only access** — the user might choose to stay anonymous forever; they should still see their own replays.
+- **Refs:** `app/(app)/replays/page.tsx` (SSR for signed-in, client for anonymous-with-extension), `lib/extensionBridge.ts` (probe helper already exists), `app/api/me/claim/route.ts` (auto-claim caller), `app/(app)/layout.tsx` or a new mount-level component (auto-claim trigger), `app/(app)/replays/MineEmpty.tsx` (similar probe pattern to follow).
+
+### [B53] Rename replays + add user-defined tags for filtering
+
+- **Why:** Replay teasers today show "Lando Calrissian vs The Mandalorian" — the matchup. Useful, but you can't distinguish "Lando vs Mando match where I tried the new Yoda tech" from the dozen other Lando-vs-Mando matches. Plus collections (deck-tuning sessions, tournament prep, etc.) need a way to filter beyond date.
+- **Acceptance:**
+  - **Display name:** users can give a replay a custom title that displays in place of the auto-matchup text on `/r/[slug]` viewer and on `/replays` teasers. Defaults to the matchup; empty string falls back to matchup.
+  - **Replay tags:** a set of free-form short labels per replay (e.g. "tournament", "vs-yoda", "post-meta-shift"). Distinct from FRAME tags — these are top-level filter labels on the whole replay.
+  - Owner-only editing for both name + tags. Server-side enforced via the same `canMutate` check that gates visibility toggles.
+  - Filter UI on `/replays?tab=mine` (and maybe `?tab=public` for public replay tags): chips for active tags + a search input.
+- **Refs:** Drizzle migration: new `display_name` text column + `tags` text[] column on `replays`. PATCH route extension. New filter UI on the replays index. Owner of both columns shipped together since they share the same edit ergonomic.
+
+### [B52] Replay browser overhaul: filters + alternate views
+
+- **Why:** `/replays?tab=mine|public` is a flat grid sorted by recency. Once a user has more than ~50 replays, finding "every match where I played a specific leader" or "everything from last week" or "all my matches against this opponent" becomes painful. The data we already capture (players, leader, base, date, match meta from B42, opponent username) makes powerful filtering trivial.
+- **Acceptance:**
+  - **Filter sidebar on `/replays`:**
+    - Leader: mine or opponent's (multi-select)
+    - Opponent username (text search + autocomplete from past matchups)
+    - Date range (last 7d, 30d, custom)
+    - Match format (Premier / Eternal / Open / Limited) + bo3 mode
+    - Optional: deckLink — if multiple replays share the same deckLink, group/show them as "deck history"
+  - **Alternate views:**
+    - **Card grid** (today's default)
+    - **By leader** — group replays under leader portraits with win/loss counts (depends on B53 if we track outcomes)
+    - **Timeline** — chronological lane per day, ordered by start time
+  - Filters and view state persist in URL search params for shareable views.
+  - Filter chips render across the top; clear-all link prominent.
+- **Refs:** `app/(app)/replays/page.tsx` (rework as filter-aware query + URL state), new `Filters.tsx` component, possibly a new `/api/replays/search` endpoint if the existing GET grows too many params (TBD).
+- **Depends on:** B42 (match metadata) — DONE. Filtering by tags depends on B53.
 
 ## Continuation prompt
 
