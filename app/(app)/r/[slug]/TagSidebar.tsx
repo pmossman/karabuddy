@@ -7,6 +7,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
 import { Popover } from '@/app/_components/Popover';
 import { Decks } from './Decks';
+import { ShareWithTeam } from './ShareWithTeam';
 
 interface ReplayRow {
   slug: string;
@@ -503,6 +504,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 {visibility === 'public'
                   ? 'Listed publicly on /replays.'
                   : 'Anyone with the link can view.'}
+              </div>
+            )}
+            {isOwner && (
+              <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
+                <ShareWithTeam replaySlug={replay.slug} installToken={installToken} />
               </div>
             )}
           </div>

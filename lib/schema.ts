@@ -238,5 +238,36 @@ export const teamInvites = pgTable(
 export type Team = typeof teams.$inferSelect;
 export type TeamMember = typeof teamMembers.$inferSelect;
 export type TeamInvite = typeof teamInvites.$inferSelect;
+
+// B55b: explicit "share this replay with team X" link. A replay surfaces
+// in a team's view via two signals:
+//   1. ANY team member has tagged the replay (implicit — no row in this
+//      table; the team-grid query joins tags + team_members instead).
+//   2. The replay's owner explicitly added this row (this table).
+// Signal #2 covers the "I want my teammates to see this match even
+// though nobody's tagged it yet" case. Set + unset by the replay owner
+// from the viewer's Share popover.
+export const replayTeamShares = pgTable(
+  'replay_team_shares',
+  {
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    teamSlug: text('team_slug')
+      .notNull()
+      .references(() => teams.slug, { onDelete: 'cascade' }),
+    sharedBy: text('shared_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'set null' as any }),
+    sharedAt: timestamp('shared_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.replaySlug, t.teamSlug] }),
+    teamIdx: index('replay_team_shares_team_idx').on(t.teamSlug),
+    replayIdx: index('replay_team_shares_replay_idx').on(t.replaySlug),
+  })
+);
+
+export type ReplayTeamShare = typeof replayTeamShares.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;

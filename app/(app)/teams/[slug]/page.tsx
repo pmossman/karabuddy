@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
+import { TeamReplays } from './TeamReplays';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,7 @@ export default async function TeamPage({ params }: PageProps) {
   return (
     <main
       style={{
-        maxWidth: 720,
+        maxWidth: 1100,
         margin: '0 auto',
         padding: '32px 28px 80px',
         color: '#e6e6e6',
@@ -138,13 +139,11 @@ export default async function TeamPage({ params }: PageProps) {
         ))}
       </section>
 
-      <section style={{ marginTop: 28, padding: 16, background: 'rgba(74, 124, 255, 0.04)', border: '1px dashed #2e333c', borderRadius: 8 }}>
-        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+      <section style={{ marginTop: 28 }}>
+        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
           Team replays
         </div>
-        <p style={{ margin: 0, fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
-          Coming soon (B55b). Replays your team members tag or share will surface here.
-        </p>
+        <TeamReplays teamSlug={slug} />
       </section>
     </main>
   );
