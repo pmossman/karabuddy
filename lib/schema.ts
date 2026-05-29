@@ -124,6 +124,14 @@ export const replays = pgTable(
     // upload where the extension didn't catch a lobbystate first.
     match: jsonb('match'),
     decks: jsonb('decks'),
+    // B59: winners extracted from the final gamestate at upload (and
+    // re-extracted on snapshot upserts). Array of playerIds from the
+    // payload's `players` map. Null on:
+    //   - replays uploaded before B59
+    //   - games that ended via disconnect / abandon (no winner signal)
+    //   - draws (rare in SWU; if karabast does emit a draw signal, the
+    //     extractor would store an empty [] instead of null).
+    winners: jsonb('winners'),
     // B53: user-editable display name. Null falls back to the auto-matchup
     // text the viewer / card teaser composes from the players array.
     displayName: text('display_name'),

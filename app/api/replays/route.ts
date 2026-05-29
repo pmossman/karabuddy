@@ -7,6 +7,7 @@ import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
+import { extractWinners, lastGamestateSnapshot } from '@/lib/replayDecoder';
 
 export const runtime = 'nodejs';
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -53,7 +54,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'no gameId in payload' }, { status: 400, headers });
     }
     const players = snapshot?.players
-      ? Object.values(snapshot.players).map((p: any) => ({
+      ? Object.entries(snapshot.players).map(([id, p]: [string, any]) => ({
+          // B59: keep the playerId on each serialized player so the UI
+          // can match winners[] → player and render the W/L badge.
+          id,
           username: p.user?.username || '',
           leader: p.leader ? { name: p.leader.name || '', set: p.leader.setId?.set || '', number: p.leader.setId?.number || 0 } : null,
           base: p.base ? { name: p.base.name || '', set: p.base.setId?.set || '', number: p.base.setId?.number || 0 } : null,
@@ -63,6 +67,12 @@ export async function POST(req: Request) {
     const db = getDb();
     const recordedUsername = players.find((p: any) => p?.username)?.username || null;
     const userId = await resolveUserId({ installToken, recordedUsername });
+
+    // B59: extract winner(s) from the LAST gamestate snapshot in the
+    // payload. Periodic snapshots before game-end produce null here;
+    // the final snapshot at game-end carries the winner signal.
+    const finalSnapshot = lastGamestateSnapshot(parsed);
+    const winners = extractWinners(finalSnapshot);
 
     // Upsert by gameId. The recorder fires periodic snapshots during an
     // active match (B26) plus the final on game-end; each one overwrites the
@@ -119,6 +129,10 @@ export async function POST(req: Request) {
       };
       if (parsed.match !== undefined) updates.match = parsed.match;
       if (!replay.decks && parsed.decks) updates.decks = parsed.decks;
+      // B59: only write winners on the upsert path if we actually
+      // detected them THIS upload. A periodic snapshot before game-end
+      // shouldn't clobber a previously-extracted winner.
+      if (winners !== null) updates.winners = winners;
       await db.update(replays).set(updates).where(eq(replays.slug, replay.slug));
 
       // Upsert payload-carried tags. New tag ids are inserted; existing ids
@@ -179,6 +193,7 @@ export async function POST(req: Request) {
       // pre-B42 extension versions, populated for new uploads.
       match: parsed.match ?? null,
       decks: parsed.decks ?? null,
+      winners,
       visibility: 'unlisted',
     });
 

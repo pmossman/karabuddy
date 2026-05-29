@@ -79,6 +79,9 @@ function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string
     // B53: user-set display name + labels for the teaser.
     displayName: r.displayName ?? null,
     labels: r.labels ?? null,
+    // B59: winning playerIds (matches player.id in players[]) — drives
+    // the W/L badges in table / grid / viewer.
+    winners: r.winners ?? null,
     // Uploader display name for the Member column in the table view.
     // Null for anonymous uploads — TableView renders "—" in that case.
     ownerName,

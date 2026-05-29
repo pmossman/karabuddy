@@ -45,16 +45,6 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
   - Link from the inline `DecksDisclosure` to the dedicated page (already a "view full deck →" hook in the viewer's deck section).
 - **Refs:** `app/(app)/r/[slug]/Decks.tsx` (existing inline render), `lib/replayDecoder.ts` (`DecksByUserId` / `UserDeck` types), `lib/cardImage.ts` (card art URL helper), karabast's DeckPage layout in `~/code/karabast-dev/forceteki-client/` as visual reference (lift the layout patterns, not the code).
 
-### [B59] Capture + surface replay winner (W/L badges in the browser)
-
-- **Why:** Currently every replay shows the matchup but not who won. The extension's `02-decoder.js` already detects game-end via `state.winners | state.winner | state.endGameInfo | state.endResult | state.gameOver | state.phase==='endgame'` (see `looksLikeGameEnd`) to know when to stop recording — but it doesn't extract or persist the winner identity. Adding W/L badges next to each player in the table, grid teaser, and viewer header would turn the browser into a "review my losses" tool.
-- **Acceptance:**
-  - Server-side: extract `winners: string[] | null` from the final gamestate in the payload at upload time (lift the existing `looksLikeGameEnd` shape-detection into `lib/replayDecoder.ts` to also resolve the winning playerId(s)). Persist on a new `winners` jsonb column on `replays` (nullable for replays uploaded before this lands; truncated/disconnect-ended games stay null).
-  - Server-side: ALSO extract from any updated gamestate during snapshot upserts, since a snapshot can land before vs after game-end.
-  - UI: green "W" / red "L" pill next to the player's username in the Replay table cell + grid card + viewer header — based on whether that player's id is in `winners`. Draws (rare in SWU) render as "—".
-  - Filter: new "Result" select (Any / Wins / Losses) on the local-player perspective for `/replays?tab=mine`. Reuses the URL-persistence scaffolding from B52-followup.
-- **Refs:** `extension/replays/02-decoder.js:131` (`looksLikeGameEnd`), `app/api/replays/route.ts` POST (insert + upsert path — extract winners alongside players), `lib/schema.ts` (new column + migration), `app/(app)/replays/ReplayFilters.tsx` (Result filter + W/L badges in TableView + ReplayCellLink), `app/(app)/replays/ReplayCard.tsx` (W/L next to player usernames), `app/(app)/r/[slug]/TagSidebar.tsx` (viewer header).
-
 ### [B56] Discord notifications for @-mentions (per-team configurable)
 
 - **Why:** B55c/d landed structural @-mentions + a `/mentions` inbox, but a user has to actively visit the inbox to see anything. Discord is where the SWU + karabast communities already live; a ping when someone mentions me (or my team) closes the notification loop without forcing users to learn another inbox.
@@ -83,6 +73,14 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B59] Replay winner extraction + W/L badges
+_completed: 2026-05-29 by claude (TDD)_
+karabast already emits a winner signal on game-end (`state.winners | state.winner | state.endGameInfo | state.endResult | state.gameOver | state.phase === 'endgame'` per the extension's `looksLikeGameEnd`), but the karabuddy server was never extracting it. **Server:** new `lastGamestateSnapshot()` + `extractWinners()` in `lib/replayDecoder.ts` (pure functions covering all the signal shapes). `POST /api/replays` calls both at upload — also on the upsert path, where a winner is only written if THIS upload detected one (periodic snapshots before game-end don't clobber an earlier-extracted winner). New `winners` jsonb column on `replays` (migration `0008_winners.sql`). The upload route's player serializer was extended to also stash each player's `id` so the UI can match `winners[]` → player. **UI:** new `<ResultBadge>` component renders a green 16px "W" or red "L" pill, gated on the row having `winners` AND the player having an `id` (so pre-B59 replays render cleanly without ambiguous badges). Wired into 4 surfaces: `MatchupRow` (sidebar — TagSidebar.tsx), `MatchupPlayer` (mobile MatchupPanel), `ReplayCellLink` (browser table cell), and `ReplayCard`'s Matchup column. **Deferred** (filed conceptually): a "Result" filter on `/replays?tab=mine` (server has the data; just a UI add); winner extraction during snapshot upserts is in place but the discussion feed doesn't surface W/L yet. 4 new TDD-first E2E tests guard upload extraction, viewer rendering, table-cell rendering, and the no-data path. All 83 tests green.
+
+### [B66e] Mobile MatchupPanel: title edit + labels picker
+_completed: 2026-05-29 by claude (TDD)_
+Mobile MatchupPanel was rendering plain `displayName` text with no edit affordance — the B66c title row + labels picker shipped on desktop only. Hooked `EditableTitle` + `LabelsRow` into MatchupPanel under the same owner-gating logic the sidebar uses. Ownership (`isOwner`) + `installToken` lifted up to ReplayViewer so both TagSidebar (desktop) and MatchupPanel (mobile) read from the same source via `canMutateReplay` from `lib/replayPermissions`. `defaultTitleFor` helper mirrored from TagSidebar so the placeholder shows the same "username vs username" string the replay browser uses. 1 new TDD-first E2E test sweeps both landscape and portrait viewports.
 
 ### [B66] Mobile landscape viewer: split chrome into left matchup panel + step-mode overlay
 _completed: 2026-05-28 by claude (TDD)_

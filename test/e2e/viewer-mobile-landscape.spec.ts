@@ -141,6 +141,18 @@ test('step-mode overlay shows an explicit "Step by:" label (landscape + portrait
   await expect(page.getByTestId('step-mode-overlay').getByText(/Step by/i)).toBeVisible();
 });
 
+test('mobile MatchupPanel exposes title-edit + add-label affordances (landscape + portrait)', async ({ page, request }) => {
+  for (const viewport of [MOBILE_LANDSCAPE, MOBILE_PORTRAIT]) {
+    await page.setViewportSize(viewport);
+    const r = await loadReplay(page, request);
+    await page.goto(`/r/${r.slug}`);
+    await page.getByRole('button', { name: /Open tags/i }).click();
+    const panel = page.getByTestId('match-panel');
+    await expect(panel.getByRole('button', { name: /Edit replay title/i })).toBeVisible();
+    await expect(panel.getByRole('button', { name: /Add label/i })).toBeVisible();
+  }
+});
+
 test('mobile portrait: ☰ reveals a TOP-anchored matchup panel + bottom drawer (split top/bottom)', async ({ page, request }) => {
   await page.setViewportSize(MOBILE_PORTRAIT);
   const r = await loadReplay(page, request);

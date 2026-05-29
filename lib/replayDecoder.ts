@@ -131,6 +131,60 @@ export interface UserDeck {
 
 export type DecksByUserId = Record<string, UserDeck>;
 
+// B59: extract winner playerId(s) from a gamestate snapshot. Returns
+// the array of winning playerIds (usually one in SWU; multi could
+// indicate a team mode someday), or null if no winner signal is
+// present yet. Mirrors the same shape detection the extension's
+// 02-decoder.js uses for `looksLikeGameEnd` — karabast emits any of
+// several fields depending on flow, so we check all of them.
+//
+// Server-side caller (POST /api/replays) walks the LAST gamestate in
+// the events array and feeds it here. Per-frame extraction during
+// playback isn't needed — the same final snapshot is what the user
+// sees at game-end.
+export function extractWinners(snapshot: any): string[] | null {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+
+  const pickStrings = (v: unknown): string[] => {
+    if (!Array.isArray(v)) return [];
+    return v.filter((x): x is string => typeof x === 'string' && x.length > 0);
+  };
+
+  // Direct on the snapshot.
+  const direct = pickStrings(snapshot.winners);
+  if (direct.length > 0) return direct;
+  if (typeof snapshot.winner === 'string' && snapshot.winner) return [snapshot.winner];
+
+  // endGameInfo / endResult — karabast emits one of these on completion.
+  for (const key of ['endGameInfo', 'endResult'] as const) {
+    const block = (snapshot as any)[key];
+    if (block && typeof block === 'object') {
+      const arr = pickStrings(block.winners);
+      if (arr.length > 0) return arr;
+      const single = block.winnerId ?? block.winner;
+      if (typeof single === 'string' && single) return [single];
+    }
+  }
+  return null;
+}
+
+// Pull the last gamestate snapshot from a parsed replay payload. The
+// extension fires periodic + final gamestate events; the last one in
+// the events array is the freshest. Returns null if the payload
+// carries no gamestate yet (very-early uploads).
+export function lastGamestateSnapshot(parsed: any): any | null {
+  const events = (parsed?.events as any[] | undefined) || [];
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e?.event !== 'gamestate') continue;
+    const arg = e?.args?.[0];
+    if (!arg) continue;
+    // v2: { full: {...} } envelope. v1: bare snapshot.
+    return arg.full ?? arg;
+  }
+  return null;
+}
+
 // B65: scan every frame's gamestate for cards that appeared in a given
 // player's VISIBLE zones (groundArena, spaceArena, discard, capturedZone,
 // plus attached upgrades). Hand + deck + resources are masked/face-down

@@ -32,6 +32,10 @@ export interface SyntheticReplayOpts {
     cardPool?: string;
     gamesToWinMode?: string;
   };
+  // Optional winner playerId list (B59). When provided, the final
+  // gamestate's `winners` field is populated so the upload route's
+  // extractor picks it up + persists.
+  winners?: string[];
   // Optional deck snapshot (B42). When provided, the upload route persists
   // it into the `decks` jsonb column, which the deck page (B58) renders.
   // Shape is `Record<playerId, UserDeck>` from lib/replayDecoder.
@@ -134,7 +138,7 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
       t: 0,
       dir: 'in',
       event: 'gamestate',
-      args: [{ full: { id: gameId, players } }],
+      args: [{ full: { id: gameId, players, ...(opts.winners ? { winners: opts.winners } : {}) } }],
     },
   ];
 

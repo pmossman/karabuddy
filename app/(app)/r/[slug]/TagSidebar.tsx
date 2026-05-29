@@ -7,6 +7,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
 import { matchChips } from '@/lib/matchMetadata';
 import { canDeleteTag, canEditTag, canMutateReplay, type AuthContext } from '@/lib/replayPermissions';
+import { ResultBadge } from './ResultBadge';
 import { Popover } from '@/app/_components/Popover';
 import { DecksModal } from './DecksModal';
 import { ShareWithTeam } from './ShareWithTeam';
@@ -28,6 +29,7 @@ interface ReplayRow {
   // never edited.
   displayName?: string | null;
   labels?: string[] | null;
+  winners?: string[] | null;
 }
 
 interface TagRow {
@@ -574,11 +576,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             the sidebar handles both open + close so the affordance stays
             in one place. */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1, minWidth: 0 }}>
-          <MatchupRow player={p1} />
+          <MatchupRow player={p1} winners={replay.winners} />
           {/* Sits vertically aligned with the 32px-tall thumb row above the
               username — pad-top half the thumb height minus half text. */}
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto', paddingTop: 11 }}>VS</span>
-          <MatchupRow player={p2} />
+          <MatchupRow player={p2} winners={replay.winners} />
         </div>
         <Popover
           align="right"
@@ -1055,7 +1057,7 @@ function defaultTitleFor(replay: { players: any }): string {
 // so longer handles (e.g. `anonymous 95d0c6`) render in full at the default
 // 360px sidebar width without ellipsis. Replaces the old two-row stacked
 // Matchup which dominated the sidebar header.
-function MatchupRow({ player }: { player: any }) {
+function MatchupRow({ player, winners }: { player: any; winners?: string[] | null }) {
   if (!player) return <div style={{ flex: 1, minWidth: 0 }} />;
   return (
     <div
@@ -1073,19 +1075,21 @@ function MatchupRow({ player }: { player: any }) {
         <CardImg src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
         <CardImg src={cardImageUrl(player.base, false)} alt={player.base?.name} />
       </div>
-      <span
-        style={{
-          fontSize: 11,
-          color: '#a0a8b8',
-          textAlign: 'center',
-          maxWidth: '100%',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {player.username || 'anon'}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
+        <ResultBadge playerId={player.id} winners={winners} />
+        <span
+          style={{
+            fontSize: 11,
+            color: '#a0a8b8',
+            textAlign: 'center',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {player.username || 'anon'}
+        </span>
+      </div>
     </div>
   );
 }

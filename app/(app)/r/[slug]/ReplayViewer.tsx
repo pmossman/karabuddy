@@ -13,6 +13,9 @@ import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MatchupPanel } from './MobileLandscapePanels';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { useSession } from 'next-auth/react';
+import { getOrCreateInstallToken } from '@/lib/installToken';
+import { canMutateReplay } from '@/lib/replayPermissions';
 
 const MOBILE_DRAWER_WIDTH = 'min(380px, 100vw)';
 
@@ -31,6 +34,11 @@ interface ReplayRow {
   // B42: nullable JSONB columns persisted by the server route.
   match?: any;
   decks?: any;
+  displayName?: string | null;
+  labels?: any;
+  // B59: winning playerIds extracted from the final gamestate at upload.
+  // Null on pre-B59 replays + games ended via disconnect / abandon.
+  winners?: any;
 }
 
 interface TagRow {
@@ -121,6 +129,18 @@ function ViewerShell({ replay, initialTags }: Props) {
   // offset can track the actual desktop sidebar width (was hardcoded to
   // the mobile drawer width, making it float in dead space).
   const [sidebarWidth, setSidebarWidth] = useState<number>(360);
+
+  // B66e: ownership resolved here so both TagSidebar (desktop) AND
+  // MatchupPanel (mobile) can show owner-only affordances from the
+  // same source of truth.
+  const { data: session } = useSession();
+  const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
+  const [installToken, setInstallToken] = useState('');
+  useEffect(() => { setInstallToken(getOrCreateInstallToken()); }, []);
+  const isOwner = canMutateReplay(
+    { userId: replay.userId, ownerToken: replay.ownerToken },
+    { sessionUserId, installToken: installToken || null },
+  );
 
   // B48: on mobile the persistent (app)-layout header eats too much
   // vertical real estate from the gameboard. Toggle a body-level class
@@ -406,6 +426,8 @@ function ViewerShell({ replay, initialTags }: Props) {
           decks={replay.decks ?? decoded?.meta.decks ?? null}
           localPlayerId={decoded?.meta.localPlayerId ?? null}
           frames={frames}
+          installToken={installToken}
+          isOwner={isOwner}
         />
       )}
     </div>

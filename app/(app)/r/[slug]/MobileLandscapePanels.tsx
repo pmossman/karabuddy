@@ -19,6 +19,9 @@ import { useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
 import { DecksModal } from './DecksModal';
+import { EditableTitle } from './EditableTitle';
+import { LabelsRow } from './LabelsRow';
+import { ResultBadge } from './ResultBadge';
 import type { DecksByUserId, MatchMeta, Frame } from '@/lib/replayDecoder';
 
 interface ReplayShape {
@@ -26,6 +29,7 @@ interface ReplayShape {
   displayName?: string | null;
   labels?: string[] | null;
   players: any;
+  winners?: string[] | null;
 }
 
 export function StepModeOverlay({
@@ -138,6 +142,8 @@ export function MatchupPanel({
   decks,
   localPlayerId,
   frames,
+  installToken,
+  isOwner,
 }: {
   open: boolean;
   onClose: () => void;
@@ -149,6 +155,11 @@ export function MatchupPanel({
   decks: DecksByUserId | null;
   localPlayerId: string | null;
   frames: Frame[] | null;
+  // B66e: title + labels edit affordances are now mirrored from the
+  // desktop sidebar so mobile users can rename + re-tag without
+  // bouncing out of the panel. Owner-gated client-side; server enforces.
+  installToken: string;
+  isOwner: boolean;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
   const players = (replay.players as any[]) || [];
@@ -215,16 +226,29 @@ export function MatchupPanel({
           </div>
         )}
 
-        {replay.displayName && (
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e6e6e6', lineHeight: 1.3 }}>
-            {replay.displayName}
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <EditableTitle
+            replaySlug={replay.slug}
+            installToken={installToken}
+            initialDisplayName={replay.displayName ?? null}
+            defaultText={defaultTitleFor(replay)}
+            canEdit={isOwner}
+          />
+        </div>
+
+        {(isOwner || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
+          <LabelsRow
+            replaySlug={replay.slug}
+            installToken={installToken}
+            initialLabels={Array.isArray(replay.labels) ? replay.labels : []}
+            canEdit={isOwner}
+          />
         )}
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <MatchupPlayer player={p1} />
+          <MatchupPlayer player={p1} winners={replay.winners} />
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', paddingTop: 11 }}>VS</span>
-          <MatchupPlayer player={p2} />
+          <MatchupPlayer player={p2} winners={replay.winners} />
         </div>
 
         {decks && Object.keys(decks).length > 0 && (
@@ -266,7 +290,7 @@ export function MatchupPanel({
   );
 }
 
-function MatchupPlayer({ player }: { player: any }) {
+function MatchupPlayer({ player, winners }: { player: any; winners?: string[] | null }) {
   if (!player) return <div style={{ flex: 1 }} />;
   const leaderImg = cardImageUrl(player.leader, true);
   const baseImg = cardImageUrl(player.base, false);
@@ -276,9 +300,12 @@ function MatchupPlayer({ player }: { player: any }) {
         <Thumb src={leaderImg} alt={player.leader?.name} />
         <Thumb src={baseImg} alt={player.base?.name} />
       </div>
-      <span style={{ fontSize: 11, fontWeight: 600, color: '#d6d6d6', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-        {playerUsername(player)}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
+        <ResultBadge playerId={player.id} winners={winners} />
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#d6d6d6', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {playerUsername(player)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -293,6 +320,15 @@ function playerUsername(p: any): string {
   const u: string | undefined = p?.username;
   if (!u || /^anonymous\s/i.test(u)) return 'anon';
   return u;
+}
+
+// Mirrors TagSidebar's defaultTitleFor — the same string the replay
+// browser uses when no display name has been set.
+function defaultTitleFor(replay: ReplayShape): string {
+  const players = Array.isArray(replay.players) ? replay.players : [];
+  const [p1, p2] = players;
+  if (!p1 && !p2) return 'Replay';
+  return `${playerUsername(p1)} vs ${playerUsername(p2)}`;
 }
 
 const thumbImgStyle: React.CSSProperties = {

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
+import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
 // + by-leader / timeline views + reuse on /teams/[slug]. This pass:
@@ -31,6 +32,9 @@ interface Row {
   labels?: string[] | null;
   // Uploader display name (joined server-side). Null = anonymous upload.
   ownerName?: string | null;
+  // B59: winning playerIds on the replay. Null for pre-B59 uploads or
+  // games that ended without a winner signal.
+  winners?: string[] | null;
 }
 
 type ViewMode = 'table' | 'grid' | 'by-leader' | 'timeline';
@@ -418,7 +422,11 @@ function ReplayCellLink({ replay }: { replay: Row }) {
         <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, letterSpacing: '0.08em' }}>VS</span>
         <PlayerThumbs player={p2} />
       </div>
-      <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{matchupText(replay)}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <ResultBadge playerId={p1?.id} winners={replay.winners} />
+        <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{matchupText(replay)}</span>
+        <ResultBadge playerId={p2?.id} winners={replay.winners} />
+      </div>
     </Link>
   );
 }
