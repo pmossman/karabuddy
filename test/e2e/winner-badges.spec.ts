@@ -5,6 +5,41 @@ import { signInAsTestUser, uploadReplay, claimInstallToken } from './helpers';
 // it on the row, and the UI renders green W / red L pills next to each
 // player's username in the viewer + browser teasers + table cell.
 
+test('extractor resolves winner-by-username to playerId (matches karabast shape)', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'WinByName', email: 'wbn@example.com' });
+  const localId = 'wbn-l-' + Math.random().toString(36).slice(2, 8);
+  const oppId = 'wbn-o-' + Math.random().toString(36).slice(2, 8);
+  // Karabast's payload puts the WINNER'S USERNAME in `winners`, not the
+  // playerId. The extractor must resolve it to the playerId so the
+  // ResultBadge (which checks `winners.includes(player.id)`) lights up.
+  const r = await uploadReplay(request, {
+    local: { id: localId, username: 'WinByName' },
+    opponent: { id: oppId, username: 'OppByName' },
+    winners: ['WinByName'], // username, not localId
+  });
+  const res = await request.get(`/api/replays/${r.slug}`);
+  const body = await res.json();
+  expect(body.data.winners).toEqual([localId]);
+});
+
+test('upload extracts winner from a PATCH-delta gamestate (mirrors karabast recorder)', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'WinPatch', email: 'wp@example.com' });
+  const localId = 'wp-l-' + Math.random().toString(36).slice(2, 8);
+  const oppId = 'wp-o-' + Math.random().toString(36).slice(2, 8);
+  const r = await uploadReplay(request, {
+    local: { id: localId, username: 'WinPatch' },
+    opponent: { id: oppId, username: 'OppP' },
+    winners: [localId],
+    winnersViaPatch: true,
+  });
+  const res = await request.get(`/api/replays/${r.slug}`);
+  const body = await res.json();
+  expect(body.ok).toBe(true);
+  // The patch event set winners after the full snapshot. Extractor
+  // must reconstruct via applyPatch + read from the final state.
+  expect(body.data.winners).toEqual([localId]);
+});
+
 test('upload extracts winner from final gamestate; GET /api/replays/[slug] returns it', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'WinExtract', email: 'we@example.com' });
   const localId = 'we-l-' + Math.random().toString(36).slice(2, 8);

@@ -36,6 +36,11 @@ export interface SyntheticReplayOpts {
   // gamestate's `winners` field is populated so the upload route's
   // extractor picks it up + persists.
   winners?: string[];
+  // If true, emit the winners via a `{patch: {winners: [...]}}` event
+  // AFTER the initial full snapshot — matches karabast's real recorder
+  // format (full at start, patches after). Default false (emits via
+  // the full snapshot directly) for older tests that haven't moved.
+  winnersViaPatch?: boolean;
   // Optional deck snapshot (B42). When provided, the upload route persists
   // it into the `decks` jsonb column, which the deck page (B58) renders.
   // Shape is `Record<playerId, UserDeck>` from lib/replayDecoder.
@@ -133,14 +138,25 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
   // Second gamestate so distinctActivePlayers >= 2 if you flip both
   // active flags. For now one is enough — we don't exercise that gate
   // server-side.
-  const events = [
+  const initialWinners = opts.winners && !opts.winnersViaPatch ? opts.winners : undefined;
+  const events: any[] = [
     {
       t: 0,
       dir: 'in',
       event: 'gamestate',
-      args: [{ full: { id: gameId, players, ...(opts.winners ? { winners: opts.winners } : {}) } }],
+      args: [{ full: { id: gameId, players, ...(initialWinners ? { winners: initialWinners } : {}) } }],
     },
   ];
+  if (opts.winners && opts.winnersViaPatch) {
+    // Mirror karabast: the initial full snapshot has no winners, then a
+    // later patch sets them when the match resolves.
+    events.push({
+      t: 1,
+      dir: 'in',
+      event: 'gamestate',
+      args: [{ patch: { winners: opts.winners } }],
+    });
+  }
 
   const payload = JSON.stringify({
     version: 2,

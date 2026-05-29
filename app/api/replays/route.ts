@@ -7,7 +7,7 @@ import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { extractWinners, lastGamestateSnapshot } from '@/lib/replayDecoder';
+import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
 
 export const runtime = 'nodejs';
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -68,10 +68,13 @@ export async function POST(req: Request) {
     const recordedUsername = players.find((p: any) => p?.username)?.username || null;
     const userId = await resolveUserId({ installToken, recordedUsername });
 
-    // B59: extract winner(s) from the LAST gamestate snapshot in the
-    // payload. Periodic snapshots before game-end produce null here;
-    // the final snapshot at game-end carries the winner signal.
-    const finalSnapshot = lastGamestateSnapshot(parsed);
+    // B59: reconstruct the FINAL gamestate by applying all gamestate
+    // patches in order, then extract winners from it. The recorder
+    // emits one {full:...} at start and {patch:...} deltas after — a
+    // naïve "last gamestate" read returns a delta object with no
+    // winner field. Reconstruction handles both the (rare) full-only
+    // case AND the (common) full + N patches case.
+    const finalSnapshot = reconstructFinalState(parsed);
     const winners = extractWinners(finalSnapshot);
 
     // Upsert by gameId. The recorder fires periodic snapshots during an

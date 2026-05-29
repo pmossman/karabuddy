@@ -150,39 +150,66 @@ export function extractWinners(snapshot: any): string[] | null {
     return v.filter((x): x is string => typeof x === 'string' && x.length > 0);
   };
 
-  // Direct on the snapshot.
+  // Find the raw winner identifiers — karabast emits these as usernames
+  // (e.g. ["ReprintConfiscate"]), NOT playerIds. We normalize to
+  // playerIds below so callers can do `winners.includes(player.id)`.
+  let raw: string[] | null = null;
   const direct = pickStrings(snapshot.winners);
-  if (direct.length > 0) return direct;
-  if (typeof snapshot.winner === 'string' && snapshot.winner) return [snapshot.winner];
-
-  // endGameInfo / endResult — karabast emits one of these on completion.
-  for (const key of ['endGameInfo', 'endResult'] as const) {
-    const block = (snapshot as any)[key];
-    if (block && typeof block === 'object') {
-      const arr = pickStrings(block.winners);
-      if (arr.length > 0) return arr;
-      const single = block.winnerId ?? block.winner;
-      if (typeof single === 'string' && single) return [single];
+  if (direct.length > 0) raw = direct;
+  else if (typeof snapshot.winner === 'string' && snapshot.winner) raw = [snapshot.winner];
+  else {
+    for (const key of ['endGameInfo', 'endResult'] as const) {
+      const block = (snapshot as any)[key];
+      if (block && typeof block === 'object') {
+        const arr = pickStrings(block.winners);
+        if (arr.length > 0) { raw = arr; break; }
+        const single = block.winnerId ?? block.winner;
+        if (typeof single === 'string' && single) { raw = [single]; break; }
+      }
     }
   }
-  return null;
+  if (!raw || raw.length === 0) return null;
+
+  // Normalize to playerIds. A raw value that already matches a key in
+  // snapshot.players is treated as a playerId; otherwise resolve by
+  // matching against the player's username. Unresolvable values pass
+  // through untouched (best-effort — a username we can't find still
+  // beats null).
+  const players = snapshot.players && typeof snapshot.players === 'object'
+    ? (snapshot.players as Record<string, any>)
+    : null;
+  if (!players) return raw;
+  return raw.map((w) => {
+    if (players[w]) return w;
+    for (const [pid, p] of Object.entries(players)) {
+      if (p?.user?.username === w) return pid;
+    }
+    return w;
+  });
 }
 
-// Pull the last gamestate snapshot from a parsed replay payload. The
-// extension fires periodic + final gamestate events; the last one in
-// the events array is the freshest. Returns null if the payload
-// carries no gamestate yet (very-early uploads).
-export function lastGamestateSnapshot(parsed: any): any | null {
+// Reconstruct the final gamestate from a parsed replay payload by
+// applying all patches in order to the seed full snapshot. Necessary
+// because karabast's recorder emits a single `{full: ...}` at start
+// and then `{patch: {...}}` deltas for the rest of the match —
+// reading just the last event gives you a delta object with no winner
+// field. Returns null if the payload has no gamestate yet.
+export function reconstructFinalState(parsed: any): any | null {
   const events = (parsed?.events as any[] | undefined) || [];
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
+  let state: any = null;
+  for (const e of events) {
     if (e?.event !== 'gamestate') continue;
     const arg = e?.args?.[0];
     if (!arg) continue;
-    // v2: { full: {...} } envelope. v1: bare snapshot.
-    return arg.full ?? arg;
+    if (arg.full && typeof arg.full === 'object') {
+      // Deep-clone so applyPatch's mutation doesn't poison subsequent
+      // re-uses of the same payload (e.g. on upsert reprocessing).
+      state = JSON.parse(JSON.stringify(arg.full));
+    } else if (arg.patch && state) {
+      applyPatch(state, arg.patch);
+    }
   }
-  return null;
+  return state;
 }
 
 // B65: scan every frame's gamestate for cards that appeared in a given
