@@ -97,6 +97,40 @@ export interface SideEvent {
   frameIndex: number;
 }
 
+// B42: match metadata + per-user deck snapshots captured by the extension
+// from karabast's lobbyState. Same shape that the server persists as JSONB
+// columns on the replays table; embedded in the blob payload too so the
+// shape is consistent across both data paths.
+export interface MatchMeta {
+  lobbyId?: string | null;
+  lobbyName?: string | null;
+  gameType?: string | null; // 'quick' | 'privateLobby' | etc.
+  gameFormat?: string | null; // 'premier' | 'eternal' | 'open' | 'limited'
+  cardPool?: string | null; // 'current' | 'nextSet' | 'unlimited'
+  gamesToWinMode?: string | null; // 'bestOfOne' | 'bestOfThree'
+  isPrivate?: boolean;
+}
+
+export interface DeckCardRef {
+  id: string; // SET_NNN
+  count: number;
+  cost?: number | null;
+  internalName?: string | null;
+}
+
+export interface UserDeck {
+  username: string | null;
+  name?: string | null;
+  leader: DeckCardRef | null;
+  base: DeckCardRef | null;
+  // Local user has full deck + sideboard; opponent only has leader/base
+  // (karabast masks). null on opponent for both fields.
+  deck: DeckCardRef[] | null;
+  sideboard: DeckCardRef[] | null;
+}
+
+export type DecksByUserId = Record<string, UserDeck>;
+
 export interface DecodedReplay {
   frames: Frame[];
   sideEvents: SideEvent[];
@@ -114,6 +148,10 @@ export interface DecodedReplay {
     // uploaded before the recorder started embedding it — viewer falls
     // back to first-player.
     localPlayerId?: string | null;
+    // B42: lobby-state snapshot frozen at first gamestate. Both null on
+    // replays uploaded by pre-B42 extension versions.
+    match?: MatchMeta | null;
+    decks?: DecksByUserId | null;
   };
   tags: Tag[];
 }
@@ -186,6 +224,8 @@ export function decodeReplay(file: any): DecodedReplay {
       reason: file.reason,
       version: file.version,
       localPlayerId: typeof file.localPlayerId === 'string' ? file.localPlayerId : null,
+      match: file.match || null,
+      decks: file.decks || null,
     },
     tags: Array.isArray(file.tags) ? file.tags : [],
   };

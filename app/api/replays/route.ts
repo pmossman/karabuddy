@@ -103,15 +103,22 @@ export async function POST(req: Request) {
 
       // Refresh metadata; bump userId if the install has since claimed an
       // account (resolveUserId can promote null → real userId).
-      await db.update(replays)
-        .set({
-          userId: userId || replay.userId,
-          players,
-          durationMs: parsed.durationMs || 0,
-          actionCount: parsed.actionCount || 0,
-          payloadSizeBytes: payloadText.length,
-        })
-        .where(eq(replays.slug, replay.slug));
+      //
+      // B42: `match` is OK to overwrite — it might change mid-match (e.g.
+      // bo3 score updates). `decks` is set ONCE on first write and never
+      // re-written; the deck registered at match start is canonical, and
+      // periodic snapshots shouldn't overwrite it with a possibly-null
+      // value (e.g. if the recorder lost lobby state across a refresh).
+      const updates: Record<string, unknown> = {
+        userId: userId || replay.userId,
+        players,
+        durationMs: parsed.durationMs || 0,
+        actionCount: parsed.actionCount || 0,
+        payloadSizeBytes: payloadText.length,
+      };
+      if (parsed.match !== undefined) updates.match = parsed.match;
+      if (!replay.decks && parsed.decks) updates.decks = parsed.decks;
+      await db.update(replays).set(updates).where(eq(replays.slug, replay.slug));
 
       // Upsert payload-carried tags. New tag ids are inserted; existing ids
       // get their mutable fields refreshed from the extension's local copy
@@ -161,6 +168,10 @@ export async function POST(req: Request) {
       actionCount: parsed.actionCount || 0,
       payloadBlobUrl: blob.url,
       payloadSizeBytes: payloadText.length,
+      // B42: nullable JSONB columns — undefined for replays uploaded by
+      // pre-B42 extension versions, populated for new uploads.
+      match: parsed.match ?? null,
+      decks: parsed.decks ?? null,
       visibility: 'unlisted',
     });
 

@@ -57,6 +57,10 @@ function serializeRow(r: any) {
     actionCount: r.actionCount,
     visibility: r.visibility,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    // B42: pass match meta so the card teaser can render a format chip.
+    // Decks are intentionally excluded here — too much payload for a list
+    // page; the viewer loads them on demand.
+    match: r.match ?? null,
   };
 }
 

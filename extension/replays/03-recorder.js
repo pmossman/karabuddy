@@ -45,6 +45,15 @@
     // karabuddy.app viewer renders the right side at the bottom instead of
     // guessing via Object.keys(players)[0]. Captured on first gamestate.
     let localPlayerId = null;
+    // B42: lobby state cache + match-start snapshot. karabast emits
+    // `lobbystate` events independently of `gamestate` (verified via debug
+    // capture); we keep the most recent one in `latestLobbyState` and freeze
+    // it into `matchLobbySnapshot` on the first gamestate of each match.
+    // matchLobbySnapshot is what gets embedded in the upload payload — see
+    // buildLobbySnapshot() for the shape extracted (deliberately narrow:
+    // format, cardPool, gameType, bo3 mode, and per-player deck data).
+    let latestLobbyState = null;
+    let matchLobbySnapshot = null;
 
     const resetRecording = () => {
         recording.length = 0;
@@ -55,6 +64,10 @@
         lastFullGamestate = null;
         autoDownloadScheduled = false;
         localPlayerId = null;
+        // matchLobbySnapshot is per-match; clear so the next match's first
+        // gamestate freezes a fresh snapshot. latestLobbyState is preserved —
+        // karabast may have already pushed it before the new match starts.
+        matchLobbySnapshot = null;
         stopPeriodicUploads();
         // Note: currentKarabuddyUrl intentionally NOT cleared here — keeps
         // the "Open on karabuddy" link visible after a match finalizes
@@ -119,37 +132,59 @@
         return true;
     };
 
-    // B42 investigation debug capture (temporary — remove in v0.4.6).
-    // Stashes the first few of each non-gamestate event to window.__kbDebug
-    // so we can inspect karabast's lobby state, find where deck + match
-    // metadata lives, and design the deck-snapshot implementation.
-    const KB_DEBUG_LIMITS = { lobbystate: 3, lobby: 2, connectedUser: 2, message: 2 };
-    if (typeof window !== 'undefined' && !window.__kbDebug) {
-        window.__kbDebug = { samples: {}, outbound: [], wsCount: 0, startedAt: new Date().toISOString() };
-    }
-    const debugCapture = (dir, frame) => {
-        try {
-            const dbg = window.__kbDebug;
-            if (!dbg) return;
-            if (dir === 'out') {
-                if (dbg.outbound.length < 10) dbg.outbound.push({ event: frame.event, args: frame.args, t: Date.now() });
-                return;
-            }
-            const cap = KB_DEBUG_LIMITS[frame.event];
-            if (!cap) return;
-            (dbg.samples[frame.event] ||= []);
-            if (dbg.samples[frame.event].length < cap) {
-                dbg.samples[frame.event].push({ at: new Date().toISOString(), args: structuredClone(frame.args) });
-            }
-        } catch {}
+    // B42: extract the narrow subset of lobbystate we care about. karabast's
+    // full payload includes user metadata, chat history, connection links,
+    // etc. — all noise for our purpose. We only want match config + per-user
+    // deck data. Returns null if the payload doesn't look like a lobbystate.
+    const buildLobbySnapshot = (lobbyState) => {
+        if (!lobbyState || typeof lobbyState !== 'object') return null;
+        const users = Array.isArray(lobbyState.users) ? lobbyState.users : [];
+        const decksByUserId = {};
+        for (const u of users) {
+            if (!u?.id) continue;
+            const deck = u.deck || {};
+            // Opponent's deck only includes leader + base — karabast masks
+            // the full list. Local user gets everything (deck array +
+            // sideboard). We preserve whatever's there as-is; the viewer
+            // decides how to render "partial" vs "complete".
+            decksByUserId[u.id] = {
+                username: u.username || null,
+                name: deck.name || null,
+                leader: deck.leader || null,
+                base: deck.base || null,
+                deck: Array.isArray(deck.deck) ? deck.deck : null,
+                sideboard: Array.isArray(deck.sideboard) ? deck.sideboard : null
+            };
+        }
+        return {
+            match: {
+                lobbyId: lobbyState.id || null,
+                lobbyName: lobbyState.lobbyName || null,
+                gameType: lobbyState.gameType || null,
+                gameFormat: lobbyState.gameFormat || null,
+                cardPool: lobbyState.cardPool || null,
+                gamesToWinMode: lobbyState.winHistory?.gamesToWinMode || null,
+                isPrivate: !!lobbyState.isPrivate
+            },
+            decks: decksByUserId
+        };
     };
 
     // ----- record(dir, frame): the WebSocket interceptor feeds us packets. -----
     const record = (dir, frame) => {
         const d = D();
         if (frame.kind !== 'event') return;
-        debugCapture(dir, frame);
         if (!d.RECORDED_EVENTS.has(frame.event)) return;
+
+        if (frame.event === 'lobbystate') {
+            // Cache the latest lobby state. Snapshot will be frozen on the
+            // first gamestate of the next match (see gamestate branch).
+            // Skip outbound `lobbystate` (would only fire if we sent it).
+            if (dir === 'in') {
+                latestLobbyState = frame.args?.[0] || null;
+            }
+            return;
+        }
 
         if (frame.event === 'gamestate') {
             const original = frame.args[0];
@@ -188,6 +223,10 @@
                 // karabuddy URL (if any) and surface a toast so the user knows
                 // the recorder is live even with the launcher collapsed.
                 currentKarabuddyUrl = null;
+                // B42: freeze the lobby snapshot at match start. This is
+                // the source of truth for format/cardPool/decks throughout
+                // the match — periodic snapshots don't re-capture it.
+                matchLobbySnapshot = buildLobbySnapshot(latestLobbyState);
                 T()?.show?.('Recording…', { kind: 'info' });
                 startPeriodicUploads();
             } else {
@@ -279,6 +318,11 @@
             reason,
             actionCount,
             localPlayerId,
+            // B42: match metadata + per-user deck snapshots. Both null if
+            // we never saw a lobbystate before the first gamestate (rare —
+            // typically only if the user joined an in-progress spectate).
+            match: matchLobbySnapshot?.match || null,
+            decks: matchLobbySnapshot?.decks || null,
             gamestateFormat: {
                 note: 'gamestate events carry either {full: state} (initial/full snapshot) or {patch: {path: value, ...}} (overwrite leaf at slash-delimited path). Apply in order to reconstruct each frame.',
                 strippedTopLevel: [...d.TOP_NOISE],
@@ -523,18 +567,9 @@
         construct(target, args) {
             const ws = Reflect.construct(target, args);
             const url = args[0];
-            // B42 debug: log + count every WS construction regardless of
-            // URL so we can confirm karabast's socket is being intercepted
-            // and find its actual hostname.
-            try {
-                if (window.__kbDebug) {
-                    window.__kbDebug.wsCount = (window.__kbDebug.wsCount || 0) + 1;
-                    (window.__kbDebug.wsUrls ||= []).push(String(url));
-                }
-            } catch {}
+            // Match karabast.net AND api.karabast.net (confirmed via B42
+            // debug capture — karabast's WS is at wss://api.karabast.net).
             if (typeof url === 'string' && /karabast/.test(url)) {
-                // Relaxed from /karabast\.net/ to /karabast/ for debug —
-                // matches api.karabast.net, ws.karabast.net, any subdomain.
                 // Lazy lookup — NS.Recorder is the exports object at the
                 // bottom of this IIFE; safe by the time karabast's bundle
                 // constructs its socket.

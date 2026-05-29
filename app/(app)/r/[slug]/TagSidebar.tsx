@@ -2,10 +2,11 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import type { Frame } from '@/lib/replayDecoder';
+import type { Frame, MatchMeta, DecksByUserId } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
 import { Popover } from '@/app/_components/Popover';
+import { Decks } from './Decks';
 
 interface ReplayRow {
   slug: string;
@@ -59,6 +60,30 @@ interface Props {
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
   isMobile: boolean;
+  // B42: deck snapshots + match metadata captured by the recorder. Null
+  // for older replays uploaded before B42 landed.
+  matchMeta: MatchMeta | null;
+  decks: DecksByUserId | null;
+  localPlayerId: string | null;
+}
+
+// B42 chip labels — also used by ReplayCard.tsx with the same mapping.
+const FORMAT_LABEL: Record<string, string> = {
+  premier: 'Premier', eternal: 'Eternal', open: 'Open', limited: 'Limited',
+};
+const POOL_LABEL: Record<string, string> = {
+  current: 'Current', nextSet: 'Next Set', unlimited: 'Unlimited',
+};
+const MODE_LABEL: Record<string, string> = {
+  bestOfOne: 'Bo1', bestOfThree: 'Bo3',
+};
+const matchChips = (m: MatchMeta | null): string[] => {
+  if (!m) return [];
+  const parts: string[] = [];
+  if (m.gameFormat && FORMAT_LABEL[m.gameFormat]) parts.push(FORMAT_LABEL[m.gameFormat]);
+  if (m.cardPool && POOL_LABEL[m.cardPool] && m.cardPool !== 'current') parts.push(POOL_LABEL[m.cardPool]);
+  if (m.gamesToWinMode && MODE_LABEL[m.gamesToWinMode]) parts.push(MODE_LABEL[m.gamesToWinMode]);
+  return parts;
 }
 
 const TAG_PLAYER = '#6bd968';
@@ -89,7 +114,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, matchMeta, decks, localPlayerId }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -395,7 +420,30 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           line beneath the thumbs, so the row aligns to the top of the
           thumbs to keep VS visually centered against the cards (not the
           taller two-line player column). */}
-      <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+        {matchChips(matchMeta).length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {matchChips(matchMeta).map((label) => (
+              <span
+                key={label}
+                style={{
+                  background: 'rgba(74, 124, 255, 0.12)',
+                  border: '1px solid rgba(74, 124, 255, 0.3)',
+                  color: '#a0c4ff',
+                  borderRadius: 999,
+                  padding: '1px 8px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         {/* B44 mobile: explicit × close at the leading edge so the user has
             an obvious dismiss target beyond tapping the backdrop. */}
         {isMobile && (
@@ -459,6 +507,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             )}
           </div>
         </Popover>
+        </div>
       </header>
 
       {/* B48 mobile: drawer-only chrome — gives mobile users somewhere to
@@ -654,6 +703,14 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           })()
         )}
       </section>
+
+      {/* B42: deck snapshot section. Renders only when the replay's
+          payload carried `decks` (newer extension uploads). Collapsible —
+          a full main+side for both players is a lot of vertical real
+          estate to chew through unprompted. */}
+      {decks && Object.keys(decks).length > 0 && (
+        <DecksDisclosure decks={decks} localPlayerId={localPlayerId} />
+      )}
 
       {/* B34: prev/next tag nav lives below the tag display, not above —
           natural "after you've read the current frame's tags, jump to the
@@ -1220,5 +1277,46 @@ function VisibilityPill({
       />
       {visibility}
     </button>
+  );
+}
+
+// B42: collapsible disclosure wrapping the Decks renderer. Default-collapsed
+// to keep the sidebar from being dominated by 50+ card thumbnails on first
+// render; the user opts in.
+function DecksDisclosure({
+  decks,
+  localPlayerId,
+}: {
+  decks: DecksByUserId;
+  localPlayerId: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section style={{ borderTop: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          background: 'transparent',
+          border: 0,
+          padding: '10px 22px',
+          color: '#a0a8b8',
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          fontWeight: 600,
+          textAlign: 'left',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontFamily: 'inherit',
+        }}
+      >
+        <span>Decks</span>
+        <span style={{ fontSize: 10, color: '#6c7588' }}>{open ? '▾' : '▸'}</span>
+      </button>
+      {open && <Decks decks={decks} localPlayerId={localPlayerId} />}
+    </section>
   );
 }

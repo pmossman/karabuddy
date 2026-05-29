@@ -27,6 +27,9 @@ interface ReplayRow {
   payloadSizeBytes: number;
   visibility: string;
   createdAt: string;
+  // B42: nullable JSONB columns persisted by the server route.
+  match?: any;
+  decks?: any;
 }
 
 interface TagRow {
@@ -317,6 +320,12 @@ function ViewerShell({ replay, initialTags }: Props) {
         drawerOpen={drawerOpen}
         setDrawerOpen={setDrawerOpen}
         isMobile={isMobile}
+        // B42: prefer DB columns (replay.match / replay.decks) since they're
+        // already populated server-side; fall back to decoder.meta if a
+        // historical replay only has them embedded in the blob.
+        matchMeta={replay.match ?? decoded?.meta.match ?? null}
+        decks={replay.decks ?? decoded?.meta.decks ?? null}
+        localPlayerId={decoded?.meta.localPlayerId ?? null}
       />
       <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
         {frames ? (

@@ -117,6 +117,13 @@ export const replays = pgTable(
     actionCount: integer('action_count').notNull().default(0),
     payloadBlobUrl: text('payload_blob_url').notNull(),
     payloadSizeBytes: integer('payload_size_bytes').notNull().default(0),
+    // B42: match metadata (format, cardPool, bo3 mode, etc.) + per-user
+    // deck snapshots (leader/base for both players; full deck + sideboard
+    // for the local player only — karabast masks opponent's full list).
+    // Both null on historical replays uploaded before B42 + on any future
+    // upload where the extension didn't catch a lobbystate first.
+    match: jsonb('match'),
+    decks: jsonb('decks'),
     visibility: text('visibility').notNull().default('unlisted'), // 'unlisted' | 'public'
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

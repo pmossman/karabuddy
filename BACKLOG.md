@@ -13,45 +13,7 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B42] Capture deck snapshot + match metadata (format, card pool, bo3 score) in replay payload
-
-- **Why:** Two motivations.
-  1. **Decks rot.** karabast deck links are mutable — the same URL can return different cards a week later if the user edited their saved deck. Replays without a snapshot of the actual cards played become harder to review over time.
-  2. **Match context is currently lost.** A replay today carries player names, leader, base, action count — but not the format (Premier / Eternal / Open / Limited), the card pool (Current / NextSet / Unlimited), the bo3 game number, or the bo3 series score. All meaningful to the reviewer.
-- **What we already know from `~/code/karabast-dev/forceteki-client/`:**
-  - **In `gameState` (what we already record):** `players[id].cardPiles` has keys `hand`, `discard`, `resources`, `groundArena`, `spaceArena`, `capturedZone`, plus (implied) `deck`. The full starting 50 cards = sum of every pile at game start. Local player's piles contain full card data; opponent's hidden zones contain stubs (the asymmetry B33 already keys on).
-  - **In `lobbyState` (we don't record yet):** the karabast client receives `lobbystate` events alongside `gamestate`. Confirmed fields on the lobbyState payload:
-    - `gameFormat` (`SwuGameFormat`: `premier` / `eternal` / `open` / `limited`)
-    - `cardPool` (`CardPool`: `current` / `nextSet` / `unlimited`)
-    - `gameType` (`MatchmakingType`: `quick` / `privateLobby` / etc.)
-    - `winHistory: { gamesToWinMode: 'bestOfOne' | 'bestOfThree', setEndResult: ... }` — wins per player + bo3 set end conditions
-    - `users[].deck: { leader, base, deckCards, sideboard }` — registered deck WITH sideboard, per `ILobbyDeckData`. **This is the snapshot we want.** It's the karabast-resolved canonical list, not the raw deckLink URL.
-    - `connectionLink`, `lobbyOwnerId`, etc. (irrelevant to us)
-- **Acceptance:**
-  - **Recorder additions** (`02-decoder.js` + `03-recorder.js`):
-    - Intercept the `lobbystate` socket.io event in addition to existing `gamestate` events. Already trivial — `attachInterceptor` sees every WS message, just need a new event branch.
-    - Cache the most recent lobbyState in the recorder. On first gamestate of a new match, snapshot the relevant fields into the upload payload.
-    - `payload.match` = `{ format, cardPool, gameType, gamesToWinMode, currentGame, seriesScore }` (currentGame + seriesScore derived from winHistory). All fields optional — older replays where lobby state never arrived render as null.
-    - `payload.decks` = `{ [playerId]: { leader, base, deckCards, sideboard } | null }`. Local player always complete (lobby state always carries the local user's deck); opponent complete IF karabast exposes opponent's lobby deck (need to verify), partial otherwise. For partial, also include `observed: [...]` — cards observed in play during the match.
-  - **Server** (`app/api/replays/route.ts` POST):
-    - Accept the new `match` + `decks` fields, persist as JSONB columns on the `replays` table (single migration). Single-row storage is fine — a complete deck is ~50 small objects, ballpark a few KB.
-    - Surface in the GET response so the viewer can render without re-fetching the blob.
-  - **Decoder** (`lib/replayDecoder.ts`): plumb both fields through `meta`. Graceful null on older replays.
-  - **Viewer:**
-    - Header chip on `/r/[slug]` showing format + cardPool + (if bo3) "Game N of 3 · 1-0".
-    - New "Decks" tab/section in the sidebar (or a popover from a new "Decks" button) showing both players' lists. Card thumbnails with quantity badges. Opponent's partial list visually distinct from complete.
-    - `/replays?tab=mine|public` card teasers also surface format + bo3 game number next to the existing matchup text.
-- **Server-side dedup consideration:** B26's upsert path overwrites by gameId. Periodic snapshots should refresh `match.currentGame` + `match.seriesScore` (live during the match) but NOT clobber `decks` (those are fixed at match start). Add an "only set decks on first write" rule in the upsert.
-- **Remaining open questions (need a live-match console probe to resolve):**
-  - Exact event name karabast emits for lobby state: is it `lobbystate` (Game.context.tsx confirms this string) or something else mid-flight?
-  - Does opponent's lobby deck come through, or is it server-redacted? Same masking question as gameState — but lobby state predates match start so might be uncensored.
-  - When does the gameState's first FULL snapshot include all pre-mulligan cards vs the post-mulligan starting hand? (Matters for the deck-reconstruction-from-gameState fallback path if lobby capture fails.)
-- **Why NOT just resolve deckLink server-side:** karabast lobbies do carry a `deckLink` URL (SWUDB / SWUStats). Resolving it post-upload would technically work but has three downsides vs capturing lobby-state directly: (1) third-party dependency for every replay upload, (2) staleness risk identical to the original problem if the user edits the deck before we resolve, (3) doesn't give us format / cardPool / bo3 — those are karabast-side only. Lobby-state capture handles all of it.
-- **Refs:** `extension/replays/02-decoder.js` (new event-type branch alongside `gamestate`), `extension/replays/03-recorder.js` (lobbyState cache + payload integration), `app/api/replays/route.ts` POST, `lib/replayDecoder.ts` (plumb new meta), `app/(app)/r/[slug]/TagSidebar.tsx` or new `Decks.tsx` component, `app/(app)/replays/ReplayCard.tsx` (format chip). New Drizzle migration.
-
-## Continuation prompt
-
-## Continuation prompt
+_empty_
 
 ## Continuation prompt
 
@@ -62,6 +24,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B42] Capture deck snapshot + match metadata (format, card pool, bo3 mode) in replay payload
+_completed: 2026-05-28_
+Long-running feature: replays now carry a full deck snapshot + match context, frozen at match start. **Recorder** (`03-recorder.js` + `02-decoder.js`): caches every incoming `lobbystate` event into a `latestLobbyState` slot; on the first gamestate of a new match, freezes a narrow projection (`{ match: { gameFormat, cardPool, gameType, gamesToWinMode, lobbyName, isPrivate, lobbyId }, decks: { [userId]: { username, name, leader, base, deck, sideboard } } }`) into `matchLobbySnapshot`. `buildPayloadText` includes both as top-level `payload.match` + `payload.decks`. **Asymmetry preserved:** karabast's lobbyState only carries the local user's full deck + sideboard; opponent only has leader + base. We pass that through honestly (`deck: null`, `sideboard: null` for opponent) and the viewer renders a "leader + base only" hint instead of pretending. **Server** (`app/api/replays/route.ts`): new `match` + `decks` JSONB columns on `replays` (drizzle migration `0003_early_alex_power.sql`). Upsert path: `match` overwrites on every snapshot (might evolve mid-match, e.g. bo3 score), `decks` is set ONCE on first write and never overwritten — they're immutable per match and a periodic snapshot with `decks: null` shouldn't clobber an earlier valid capture. **Decoder** (`lib/replayDecoder.ts`): new `MatchMeta` / `DecksByUserId` / `UserDeck` / `DeckCardRef` types; both plumbed through `meta`. **Viewer:** new `Decks.tsx` component renders deck blocks per player (local first), card thumbnails grouped + cost-sorted, swudb.com links on click. Mounted inside the sidebar as a collapsed-by-default `DecksDisclosure` so it doesn't dominate vertical real estate. Format/cardPool/bo3 chips render in the sidebar header AND on `ReplayCard` teasers in `/replays?tab=mine|public`. **Extension bumped** from v0.4.5-debug → v0.4.6 (debug capture stripped from the recorder, WebSocket-proxy URL filter restored from relaxed `/karabast/` to its original tight match).
 
 ### [B51] Fix: upgrade subcard strip rendering as a solid black box
 _completed: 2026-05-28_

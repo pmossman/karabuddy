@@ -14,6 +14,34 @@ interface ReplayRow {
   actionCount: number;
   visibility: string;
   createdAt: string;
+  // B42: match metadata. Null for replays uploaded by pre-B42 extension
+  // versions; new replays carry { gameFormat, cardPool, gamesToWinMode, ... }.
+  match?: {
+    gameFormat?: string | null;
+    cardPool?: string | null;
+    gamesToWinMode?: string | null;
+    gameType?: string | null;
+  } | null;
+}
+
+// B42: pretty labels for the format chip on the card teaser.
+const FORMAT_LABEL: Record<string, string> = {
+  premier: 'Premier', eternal: 'Eternal', open: 'Open', limited: 'Limited',
+};
+const POOL_LABEL: Record<string, string> = {
+  current: 'Current', nextSet: 'Next Set', unlimited: 'Unlimited',
+};
+const MODE_LABEL: Record<string, string> = {
+  bestOfOne: 'Bo1', bestOfThree: 'Bo3',
+};
+
+function formatChipParts(match: ReplayRow['match']): string[] {
+  if (!match) return [];
+  const parts: string[] = [];
+  if (match.gameFormat && FORMAT_LABEL[match.gameFormat]) parts.push(FORMAT_LABEL[match.gameFormat]);
+  if (match.cardPool && POOL_LABEL[match.cardPool] && match.cardPool !== 'current') parts.push(POOL_LABEL[match.cardPool]);
+  if (match.gamesToWinMode && MODE_LABEL[match.gamesToWinMode]) parts.push(MODE_LABEL[match.gamesToWinMode]);
+  return parts;
 }
 
 export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage: boolean }) {
@@ -76,8 +104,26 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
         <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
           {nameText(p1)} vs {nameText(p2)}
         </div>
-        <div style={{ fontSize: 12, color: '#6c7588' }}>
-          {formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}
+        <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
+          {formatChipParts(replay.match).map((label) => (
+            <span
+              key={label}
+              style={{
+                background: 'rgba(74, 124, 255, 0.12)',
+                border: '1px solid rgba(74, 124, 255, 0.3)',
+                color: '#a0c4ff',
+                borderRadius: 999,
+                padding: '1px 8px',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {label}
+            </span>
+          ))}
         </div>
       </Link>
       {canManage && (
