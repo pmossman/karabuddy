@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, tags, users } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
+import { orderPlayersOwnerFirst } from '@/lib/players';
 
 export const runtime = 'nodejs';
 
@@ -100,7 +101,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
       if (!replay) return null;
       return {
         slug: replaySlug,
-        players: replay.players,
+        // B59-followup: owner-first ordering for the matchup mini-thumbs.
+        players: orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId),
         displayName: replay.displayName,
         latestTag: {
           id: agg.latest.id,

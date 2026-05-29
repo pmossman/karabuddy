@@ -20,18 +20,8 @@ export function ResultBadge({ playerId, winners }: Props) {
       data-testid={won ? 'result-badge-W' : 'result-badge-L'}
       title={won ? 'Won this match' : 'Lost this match'}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 16,
-        height: 16,
-        borderRadius: 4,
-        fontSize: 10,
         fontWeight: 800,
-        lineHeight: 1,
-        color: '#fff',
-        background: won ? 'rgba(107, 217, 104, 0.85)' : 'rgba(255, 107, 107, 0.85)',
-        border: won ? '1px solid #6bd968' : '1px solid #ff6b6b',
+        color: won ? '#6bd968' : '#ff6b6b',
         letterSpacing: '0.04em',
         fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
       }}

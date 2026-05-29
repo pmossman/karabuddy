@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { eq, asc } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
+import { orderPlayersOwnerFirst } from '@/lib/players';
 import { ReplayViewer } from './ReplayViewer';
 
 export const dynamic = 'force-dynamic';
@@ -21,10 +22,14 @@ export default async function ReplayPage({ params }: PageProps) {
     .where(eq(tags.replaySlug, slug))
     .orderBy(asc(tags.frameIndex));
 
-  // Serialize timestamps for client transport.
+  // Serialize timestamps for client transport. Owner-first player order
+  // (B59-followup) so the sidebar matchup + default title both read
+  // "<me> vs <them>" instead of being order-dependent on the raw jsonb
+  // key sort.
   const replay = {
     ...row,
     createdAt: row.createdAt.toISOString(),
+    players: orderPlayersOwnerFirst(row.players, row.ownerPlayerId),
   };
   const tagList = tagRows.map((t: any) => ({
     ...t,

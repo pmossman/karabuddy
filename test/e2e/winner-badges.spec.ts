@@ -154,6 +154,25 @@ test('result filter: replays without winner data are hidden when filter is on', 
   await expect(page.getByRole('link', { name: /NoData vs OppUnknown/ })).toHaveCount(0);
 });
 
+test('owner is rendered first even when jsonb sorts their playerId last', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'OrderFix', email: 'of@example.com' });
+  // Pick IDs where the OWNER's id sorts AFTER the opponent's by jsonb
+  // rules (jsonb normalizes by length then lex). Same length → lex
+  // order; 'z...' > 'a...' so opp comes first in the raw column.
+  const localId = 'zzzz-' + Math.random().toString(36).slice(2, 8);
+  const oppId = 'aaaa-' + Math.random().toString(36).slice(2, 8);
+  const r = await uploadReplay(request, {
+    local: { id: localId, username: 'OrderFix' },
+    opponent: { id: oppId, username: 'OppBefore' },
+  });
+  await claimInstallToken(page, r.installToken);
+
+  await page.goto('/replays?tab=mine');
+  // The matchup text should be "OrderFix vs OppBefore" — owner first.
+  const cell = page.getByTestId('replay-cell').first();
+  await expect(cell.getByRole('link')).toContainText(/OrderFix vs OppBefore/);
+});
+
 test('replay with no winner data: no badges rendered', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'NoWin', email: 'nw@example.com' });
   const r = await uploadReplay(request, {

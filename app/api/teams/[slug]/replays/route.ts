@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, users } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
+import { orderPlayersOwnerFirst } from '@/lib/players';
 
 export const runtime = 'nodejs';
 
@@ -38,7 +39,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     .limit(200);
 
   // Flatten {replay, ownerName} so TeamReplays sees the same shape it
-  // always has, with ownerName tacked on for the Member column.
-  const flat = rows.map(({ replay, ownerName }) => ({ ...replay, ownerName }));
+  // always has, with ownerName tacked on for the Member column. Players
+  // are reordered owner-first (B59-followup).
+  const flat = rows.map(({ replay, ownerName }) => ({
+    ...replay,
+    players: orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId),
+    ownerName,
+  }));
   return NextResponse.json({ ok: true, data: flat });
 }

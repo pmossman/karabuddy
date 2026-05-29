@@ -3,6 +3,7 @@ import { eq, desc } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, users } from '@/lib/schema';
+import { orderPlayersOwnerFirst } from '@/lib/players';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
 import { ReplayFilters } from './ReplayFilters';
@@ -67,7 +68,9 @@ function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string
     slug: r.slug,
     gameId: r.gameId,
     userId: r.userId,
-    players: r.players,
+    // B59-followup: reorder so the recorder's POV is listed first.
+    // jsonb's key sort means raw players[] order isn't insertion-order.
+    players: orderPlayersOwnerFirst(r.players, r.ownerPlayerId),
     durationMs: r.durationMs,
     actionCount: r.actionCount,
     visibility: r.visibility,
