@@ -497,25 +497,30 @@
     };
 
     // ----- Tag API -----
-    // addTag(comment?) anchors at the current frame (latest gamestate seen).
-    // Returns the freshly-created tag so the UI can scroll to it / focus its
-    // comment editor.
-    const addTag = (comment = '') => {
+    // addTag(comment?, mentions?) anchors at the current frame.
+    // `mentions` is an optional { userIds: string[], teamSlugs: string[] }
+    // structure captured by the footer's autocomplete popover (B55c).
+    // Stored on the tag and shipped with the upload payload.
+    const addTag = (comment = '', mentions = null) => {
         const d = D();
         // Pass localPlayerId so the decoder picks the LOCAL player's
         // username instead of "first non-anonymous in iteration order"
         // (which Object.values gives us arbitrarily — often the opponent).
         const author = d.getOrCreateAuthor(lastFullGamestate?.players, localPlayerId);
         const frameIndex = Math.max(0, gamestateCount - 1);
-        // No color stored on the tag — derived at render time from author
-        // vs the game's player roster so the scheme stays consistent when
-        // replays change hands between players and reviewers.
+        const m = mentions && typeof mentions === 'object'
+            ? {
+                userIds: Array.isArray(mentions.userIds) ? mentions.userIds.filter((x) => typeof x === 'string') : [],
+                teamSlugs: Array.isArray(mentions.teamSlugs) ? mentions.teamSlugs.filter((x) => typeof x === 'string') : [],
+            }
+            : null;
         const tag = {
             id: d.makeTagId(),
             frameIndex,
             author,
             comment: String(comment || ''),
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            ...(m && (m.userIds.length || m.teamSlugs.length) ? { mentions: m } : {})
         };
         tags.push(tag);
         schedulePersist();

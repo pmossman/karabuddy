@@ -491,6 +491,65 @@
         return btn;
     };
 
+    // B55c: cached mention autocomplete data. Loaded on first tag-form
+    // open via the bridge → service worker → karabuddy.app fetch. 5-min
+    // TTL — stale enough that user roster changes propagate, fresh
+    // enough that we don't hammer the API on every tag attempt.
+    let mentionDataCache = null;
+    let mentionDataLoadedAt = 0;
+    const MENTION_TTL_MS = 5 * 60 * 1000;
+    const loadMentionData = async (force = false) => {
+        if (!force && mentionDataCache && Date.now() - mentionDataLoadedAt < MENTION_TTL_MS) {
+            return mentionDataCache;
+        }
+        try {
+            const result = await B().getTeamsMentionData?.();
+            if (result && result.ok && result.data && (result.data.teams?.length || result.data.members?.length)) {
+                mentionDataCache = { teams: result.data.teams || [], members: result.data.members || [] };
+                mentionDataLoadedAt = Date.now();
+                return mentionDataCache;
+            }
+        } catch {}
+        return null;
+    };
+
+    // Detect `@<prefix>` immediately before the cursor (no whitespace
+    // between @ and cursor). Returns the prefix string after `@`, or
+    // null. Mirrors the web MentionInput.tsx logic.
+    const detectMentionContext = (text, cursor) => {
+        let i = cursor - 1;
+        while (i >= 0) {
+            const ch = text[i];
+            if (ch === '@') {
+                if (i === 0 || /\s/.test(text[i - 1])) {
+                    return text.slice(i + 1, cursor);
+                }
+                return null;
+            }
+            if (/\s/.test(ch)) return null;
+            i--;
+        }
+        return null;
+    };
+
+    const buildMentionSuggestions = (data, prefix) => {
+        const p = prefix.toLowerCase();
+        if (p.startsWith('team:')) {
+            const teamPrefix = p.slice(5);
+            return (data.teams || [])
+                .filter((t) => t.name.toLowerCase().startsWith(teamPrefix) || t.slug.toLowerCase().startsWith(teamPrefix))
+                .map((t) => ({ kind: 'team', slug: t.slug, name: t.name }))
+                .slice(0, 6);
+        }
+        const members = (data.members || [])
+            .filter((m) => m.handle.toLowerCase().startsWith(p) || (m.displayName || '').toLowerCase().startsWith(p))
+            .map((m) => ({ kind: 'user', userId: m.userId, handle: m.handle, displayName: m.displayName }));
+        const teams = (data.teams || [])
+            .filter((t) => t.name.toLowerCase().startsWith(p) || t.slug.toLowerCase().startsWith(p))
+            .map((t) => ({ kind: 'team', slug: t.slug, name: t.name }));
+        return [...members, ...teams].slice(0, 6);
+    };
+
     // Compact tag block: button toggles a textarea + Save/Cancel inline.
     const buildTagBlock = () => {
         const wrap = document.createElement('div');
@@ -521,8 +580,13 @@
             'border-radius: 6px'
         ].join(';'));
 
+        // B55c: relative wrapper so the autocomplete popover can anchor
+        // below the textarea.
+        const textareaWrap = document.createElement('div');
+        textareaWrap.setAttribute('style', 'position: relative; display: flex; flex-direction: column;');
+
         const input = document.createElement('textarea');
-        input.placeholder = 'Optional comment for this moment…';
+        input.placeholder = 'Optional comment for this moment… @mention to notify';
         input.rows = 2;
         input.setAttribute('style', [
             'background: #11141a',
@@ -539,12 +603,177 @@
         // launcher drag through the header handler.
         input.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
+        // B55c: structured mentions for the in-progress tag draft. Reset
+        // on form open/close. Picked from the autocomplete popover; bare
+        // typed `@word` without selecting is just text and won't notify.
+        let formMentions = { userIds: [], teamSlugs: [] };
+        const addMention = (kind, id) => {
+            if (kind === 'user') {
+                if (!formMentions.userIds.includes(id)) formMentions.userIds.push(id);
+            } else if (kind === 'team') {
+                if (!formMentions.teamSlugs.includes(id)) formMentions.teamSlugs.push(id);
+            }
+        };
+
+        // Autocomplete popover element (built lazily on first @-detect).
+        let popover = null;
+        let popoverActiveIndex = 0;
+        let popoverSuggestions = [];
+
+        const closePopover = () => {
+            if (popover) {
+                popover.remove();
+                popover = null;
+            }
+            popoverSuggestions = [];
+            popoverActiveIndex = 0;
+        };
+
+        const renderPopover = (suggestions) => {
+            if (!popover) {
+                popover = document.createElement('div');
+                popover.setAttribute('style', [
+                    'position: absolute',
+                    'top: 100%',
+                    'left: 0',
+                    'right: 0',
+                    'margin-top: 4px',
+                    'background: rgba(17, 20, 26, 0.98)',
+                    'border: 1px solid rgba(74, 124, 255, 0.4)',
+                    'border-radius: 6px',
+                    'padding: 4px',
+                    'z-index: 50',
+                    'box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5)',
+                    'max-height: 240px',
+                    'overflow-y: auto'
+                ].join(';'));
+                popover.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+                textareaWrap.appendChild(popover);
+            }
+            popoverSuggestions = suggestions;
+            popover.innerHTML = '';
+            suggestions.forEach((s, i) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                const isActive = i === popoverActiveIndex;
+                btn.setAttribute('style', [
+                    'display: flex',
+                    'align-items: center',
+                    'gap: 8px',
+                    'width: 100%',
+                    'padding: 6px 8px',
+                    'background: ' + (isActive ? 'rgba(74, 124, 255, 0.18)' : 'transparent'),
+                    'border: 0',
+                    'border-radius: 4px',
+                    'color: #e6e6e6',
+                    'font: 12px -apple-system, BlinkMacSystemFont, sans-serif',
+                    'cursor: pointer',
+                    'text-align: left'
+                ].join(';'));
+                if (s.kind === 'user') {
+                    const handle = document.createElement('span');
+                    handle.setAttribute('style', 'color: #5da9ff; font-weight: 600;');
+                    handle.textContent = '@' + s.handle;
+                    btn.appendChild(handle);
+                    if (s.displayName && s.displayName !== s.handle) {
+                        const sub = document.createElement('span');
+                        sub.setAttribute('style', 'color: #6c7588; font-size: 11px;');
+                        sub.textContent = s.displayName;
+                        btn.appendChild(sub);
+                    }
+                } else {
+                    const badge = document.createElement('span');
+                    badge.setAttribute('style', [
+                        'display: inline-flex',
+                        'align-items: center',
+                        'justify-content: center',
+                        'width: 18px',
+                        'height: 18px',
+                        'border-radius: 4px',
+                        'background: rgba(107, 217, 104, 0.15)',
+                        'color: #6bd968',
+                        'font: 700 9px -apple-system, sans-serif'
+                    ].join(';'));
+                    badge.textContent = 'T';
+                    btn.appendChild(badge);
+                    const handle = document.createElement('span');
+                    handle.setAttribute('style', 'color: #6bd968; font-weight: 600;');
+                    handle.textContent = '@team:' + s.slug;
+                    btn.appendChild(handle);
+                    const sub = document.createElement('span');
+                    sub.setAttribute('style', 'color: #6c7588; font-size: 11px;');
+                    sub.textContent = s.name;
+                    btn.appendChild(sub);
+                }
+                btn.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    insertSuggestion(s);
+                });
+                btn.addEventListener('mouseenter', () => {
+                    popoverActiveIndex = i;
+                    renderPopover(suggestions);
+                });
+                popover.appendChild(btn);
+            });
+        };
+
+        const insertSuggestion = (sugg) => {
+            const cursor = input.selectionStart || 0;
+            const text = input.value;
+            let atIndex = -1;
+            for (let i = cursor - 1; i >= 0; i--) {
+                if (text[i] === '@') { atIndex = i; break; }
+                if (/\s/.test(text[i])) break;
+            }
+            if (atIndex === -1) return;
+            const insertText = sugg.kind === 'user' ? '@' + sugg.handle + ' ' : '@team:' + sugg.slug + ' ';
+            const next = text.slice(0, atIndex) + insertText + text.slice(cursor);
+            input.value = next;
+            const pos = atIndex + insertText.length;
+            input.setSelectionRange(pos, pos);
+            input.focus();
+            if (sugg.kind === 'user') addMention('user', sugg.userId);
+            else addMention('team', sugg.slug);
+            closePopover();
+        };
+
+        const recomputePopover = async () => {
+            const text = input.value;
+            const cursor = input.selectionStart || 0;
+            const ctx = detectMentionContext(text, cursor);
+            if (ctx === null) {
+                closePopover();
+                return;
+            }
+            const data = await loadMentionData();
+            if (!data) {
+                closePopover();
+                return;
+            }
+            const suggestions = buildMentionSuggestions(data, ctx);
+            if (suggestions.length === 0) {
+                closePopover();
+                return;
+            }
+            if (popoverActiveIndex >= suggestions.length) popoverActiveIndex = 0;
+            renderPopover(suggestions);
+        };
+
         const openForm = () => {
             form.style.display = 'flex';
             input.value = '';
+            formMentions = { userIds: [], teamSlugs: [] };
+            // Kick off mention data fetch in parallel with form open —
+            // it'll be cached by the time the user types `@`.
+            loadMentionData();
             setTimeout(() => input.focus(), 0);
         };
-        const closeForm = () => { form.style.display = 'none'; };
+        const closeForm = () => {
+            form.style.display = 'none';
+            closePopover();
+            formMentions = { userIds: [], teamSlugs: [] };
+        };
 
         addBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
         addBtn.addEventListener('click', (e) => {
@@ -554,15 +783,49 @@
         });
 
         input.addEventListener('keydown', (e) => {
+            // B55c: popover-active keyboard nav takes precedence.
+            if (popover) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    popoverActiveIndex = (popoverActiveIndex + 1) % popoverSuggestions.length;
+                    renderPopover(popoverSuggestions);
+                    return;
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    popoverActiveIndex = (popoverActiveIndex - 1 + popoverSuggestions.length) % popoverSuggestions.length;
+                    renderPopover(popoverSuggestions);
+                    return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    if (popoverSuggestions[popoverActiveIndex]) insertSuggestion(popoverSuggestions[popoverActiveIndex]);
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closePopover();
+                    return;
+                }
+            }
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
-                R().addTag(input.value.trim());
+                R().addTag(input.value.trim(), formMentions);
                 closeForm();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 closeForm();
             }
         });
+        // B55c: re-check mention context on any keyup (covers arrow-key
+        // cursor movement and printable typing alike).
+        input.addEventListener('input', () => { recomputePopover(); });
+        input.addEventListener('keyup', (e) => {
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
+                recomputePopover();
+            }
+        });
+        input.addEventListener('click', () => { recomputePopover(); });
 
         const btnRow = document.createElement('div');
         btnRow.setAttribute('style', 'display: flex; gap: 6px; align-self: flex-end;');
@@ -598,13 +861,14 @@
         saveBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
         saveBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            R().addTag(input.value.trim());
+            R().addTag(input.value.trim(), formMentions);
             closeForm();
         });
 
         btnRow.appendChild(cancelBtn);
         btnRow.appendChild(saveBtn);
-        form.appendChild(input);
+        textareaWrap.appendChild(input);
+        form.appendChild(textareaWrap);
         form.appendChild(btnRow);
 
         wrap.appendChild(addBtn);

@@ -6,6 +6,7 @@ import { replays, tags } from '@/lib/schema';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
+import { sanitizeIncomingMentions } from '@/lib/mentions';
 
 export const runtime = 'nodejs';
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -127,15 +128,20 @@ export async function POST(req: Request) {
       const payloadTagsExisting = Array.isArray(parsed.tags) ? parsed.tags : [];
       const validTags = payloadTagsExisting
         .filter((t: any) => Number.isFinite(t?.frameIndex))
-        .map((t: any) => ({
-          id: t.id || generateTagId(),
-          replaySlug: replay.slug,
-          frameIndex: Math.max(0, Math.floor(t.frameIndex)),
-          userId,
-          authorToken: installToken,
-          authorName: String(t.author || 'anon'),
-          comment: String(t.comment || ''),
-        }));
+        .map((t: any) => {
+          // B55c: extension may now include structured mentions on tags.
+          const m = sanitizeIncomingMentions(t.mentions);
+          return {
+            id: t.id || generateTagId(),
+            replaySlug: replay.slug,
+            frameIndex: Math.max(0, Math.floor(t.frameIndex)),
+            userId,
+            authorToken: installToken,
+            authorName: String(t.author || 'anon'),
+            comment: String(t.comment || ''),
+            mentions: m.userIds.length || m.teamSlugs.length ? m : null,
+          };
+        });
       if (validTags.length > 0) {
         await db.insert(tags).values(validTags).onConflictDoUpdate({
           target: tags.id,
@@ -143,6 +149,7 @@ export async function POST(req: Request) {
             comment: sql`excluded.comment`,
             authorName: sql`excluded.author_name`,
             frameIndex: sql`excluded.frame_index`,
+            mentions: sql`excluded.mentions`,
           },
         });
       }
@@ -184,15 +191,19 @@ export async function POST(req: Request) {
       await db.insert(tags).values(
         payloadTags
           .filter((t: any) => Number.isFinite(t?.frameIndex))
-          .map((t: any) => ({
-            id: t.id || generateTagId(),
-            replaySlug: slug,
-            frameIndex: Math.max(0, Math.floor(t.frameIndex)),
-            userId,
-            authorToken: installToken,
-            authorName: String(t.author || 'anon'),
-            comment: String(t.comment || ''),
-          }))
+          .map((t: any) => {
+            const m = sanitizeIncomingMentions(t.mentions);
+            return {
+              id: t.id || generateTagId(),
+              replaySlug: slug,
+              frameIndex: Math.max(0, Math.floor(t.frameIndex)),
+              userId,
+              authorToken: installToken,
+              authorName: String(t.author || 'anon'),
+              comment: String(t.comment || ''),
+              mentions: m.userIds.length || m.teamSlugs.length ? m : null,
+            };
+          })
       );
     }
 

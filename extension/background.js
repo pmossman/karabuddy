@@ -179,6 +179,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'openReplaysPage') {
                 await openReplaysPage({ tab: msg.tab });
                 sendResponse({ ok: true });
+            } else if (msg.type === 'getTeamsMentionData') {
+                // B55c: proxy fetch of karabuddy.app's mention data API.
+                // Caller is the page-world recorder/footer; can't fetch
+                // cross-origin from MAIN, so we route through the SW which
+                // has host_permissions on karabuddy.app. Cookies (auth
+                // session) ride along with `credentials: 'include'`.
+                try {
+                    const endpoint = await getKarabuddyEndpoint();
+                    const res = await fetch(`${endpoint}/api/me/teams-mention-data`, {
+                        credentials: 'include',
+                    });
+                    if (res.status === 401) {
+                        sendResponse({ ok: false, error: 'not signed in', status: 401 });
+                        return;
+                    }
+                    const body = await res.json();
+                    sendResponse({ ok: !!body.ok, data: body, status: res.status });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
             } else {
                 sendResponse({ ok: false, error: `Unknown message type: ${msg.type}` });
             }

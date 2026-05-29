@@ -86,6 +86,12 @@
         // detects the install token via karabuddy-bridge.js's postMessage
         // protocol, so the extension doesn't need its own claim entry point.
         openReplays: (tab = 'mine') =>
-            companionRequest({ type: 'openReplaysPage', tab })
+            companionRequest({ type: 'openReplaysPage', tab }),
+        // B55c: fetch the @-mention autocomplete data (teams + members).
+        // Returns null on failure or if not signed in — caller treats
+        // that as "no autocomplete available, text-only mode."
+        getTeamsMentionData: () =>
+            companionRequest({ type: 'getTeamsMentionData' }, 8000)
+                .catch(() => null)
     };
 })();
