@@ -3,9 +3,9 @@ import { eq, desc } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays } from '@/lib/schema';
-import { ReplayCard } from './ReplayCard';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
+import { ReplayFilters } from './ReplayFilters';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,14 +42,14 @@ export default async function ReplaysIndex({ searchParams }: PageProps) {
         // fetches `?owner=<token>`, and falls through to MineEmpty (install
         // pitch) if there's no extension.
         <MineAnonymous />
-      ) : rows.length === 0 ? (
-        tab === 'mine' ? <MineEmpty /> : <Empty tab={tab} />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 24 }}>
-          {rows.map((r) => (
-            <ReplayCard key={r.slug} replay={serializeRow(r)} canManage={tab === 'mine'} />
-          ))}
-        </div>
+        // B52: filter UI sits above the grid. ReplayFilters handles
+        // chip bar + filter application + grid render.
+        <ReplayFilters
+          rows={rows.map(serializeRow)}
+          canManage={tab === 'mine'}
+          emptyState={tab === 'mine' ? <MineEmpty /> : <Empty tab={tab} />}
+        />
       )}
     </main>
   );

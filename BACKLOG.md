@@ -13,24 +13,14 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B52] Replay browser overhaul: filters + alternate views
+### [B52-followup] Replay browser: URL persistence + alternate views (timeline, by-leader)
 
-- **Why:** `/replays?tab=mine|public` is a flat grid sorted by recency. Once a user has more than ~50 replays, finding "every match where I played a specific leader" or "everything from last week" or "all my matches against this opponent" becomes painful. The data we already capture (players, leader, base, date, match meta from B42, opponent username) makes powerful filtering trivial.
+- **Why:** B52 MVP shipped filter UI but state lives in React (not URL), and the alternate "by-leader" + "timeline" views from the original spec are still deferred. Add when there's user demand.
 - **Acceptance:**
-  - **Filter sidebar on `/replays`:**
-    - Leader: mine or opponent's (multi-select)
-    - Opponent username (text search + autocomplete from past matchups)
-    - Date range (last 7d, 30d, custom)
-    - Match format (Premier / Eternal / Open / Limited) + bo3 mode
-    - Optional: deckLink — if multiple replays share the same deckLink, group/show them as "deck history"
-  - **Alternate views:**
-    - **Card grid** (today's default)
-    - **By leader** — group replays under leader portraits with win/loss counts (depends on B53 if we track outcomes)
-    - **Timeline** — chronological lane per day, ordered by start time
-  - Filters and view state persist in URL search params for shareable views.
-  - Filter chips render across the top; clear-all link prominent.
-- **Refs:** `app/(app)/replays/page.tsx` (rework as filter-aware query + URL state), new `Filters.tsx` component, possibly a new `/api/replays/search` endpoint if the existing GET grows too many params (TBD).
-- **Depends on:** B42 (match metadata) — DONE. Filtering by tags depends on B53.
+  - Filter state mirrors to URL search params (`?leader=&format=&label=&since=&opp=&mode=`) so filtered views are shareable + survive refresh.
+  - View switcher: `card` (default) | `by-leader` | `timeline`. By-leader groups replays under leader portraits with counts; timeline is chronological lanes per day.
+  - Server-side filtering + pagination when libraries push past ~200 replays. Today's client-side filter is fine until then.
+- **Refs:** `app/(app)/replays/ReplayFilters.tsx` (add `useSearchParams` + `router.replace` on every filter change), `app/(app)/replays/page.tsx` (optional server-side filter shortcut when query has params), new view-mode component(s).
 
 ## Continuation prompt
 
@@ -41,6 +31,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B52-mvp] Replay browser filters (leader, opponent, date, format, mode, label)
+_completed: 2026-05-28_
+MVP of B52 — alternate views (by-leader, timeline) + URL persistence filed as `B52-followup`. New `ReplayFilters.tsx` client component wraps the replay grid on `/replays?tab=mine` (signed-in), `/replays?tab=public`, AND `MineAnonymous` (anonymous-extension). Filters: **Leader** (select — populated from leaders actually present in the row set so the dropdown narrows to your real catalog), **Opponent username** (substring text search), **Date range** (All time / 7d / 30d / 90d), **Match format** (Premier/Eternal/Open/Limited from B42's metadata), **Mode** (Bo1/Bo3 from B42), **Label** (only shown when ≥1 label exists in the user's catalog, from B53). Active filters render as blue chips above the grid with × per chip + a Clear all link. Result count shown above the grid ("Showing N of M"). No-matches state distinct from the empty-library state. Implementation is client-side over the existing 100-row server fetch — instant, no API changes. Server-side filtering + pagination deferred until libraries hit ~200 replays (filed as part of B52-followup).
 
 ### [B53] Rename replays + add user-defined labels for filtering
 _completed: 2026-05-28_

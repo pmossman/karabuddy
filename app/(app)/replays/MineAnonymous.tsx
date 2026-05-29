@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ReplayCard } from './ReplayCard';
 import { MineEmpty } from './MineEmpty';
+import { ReplayFilters } from './ReplayFilters';
 import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
 
 // B54: anonymous-but-extension-installed view of /replays?tab=mine.
@@ -92,27 +92,23 @@ export function MineAnonymous() {
           to attribute these to an account (they&apos;ll auto-link).
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 16 }}>
-        {replays.map((r) => (
-          <ReplayCard
-            key={r.slug}
-            replay={{
-              slug: r.slug,
-              gameId: r.gameId,
-              userId: r.userId,
-              players: r.players,
-              durationMs: r.durationMs,
-              actionCount: r.actionCount,
-              visibility: r.visibility,
-              createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
-              match: r.match ?? null,
-              displayName: r.displayName ?? null,
-              labels: r.labels ?? null,
-            }}
-            canManage={true}
-          />
-        ))}
-      </div>
+      <ReplayFilters
+        rows={replays.map((r) => ({
+          slug: r.slug,
+          gameId: r.gameId,
+          userId: r.userId,
+          players: r.players,
+          durationMs: r.durationMs,
+          actionCount: r.actionCount,
+          visibility: r.visibility,
+          createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
+          match: r.match ?? null,
+          displayName: r.displayName ?? null,
+          labels: r.labels ?? null,
+        }))}
+        canManage={true}
+        emptyState={<MineEmpty />}
+      />
     </>
   );
 }
