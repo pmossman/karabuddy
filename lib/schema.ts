@@ -159,6 +159,12 @@ export const tags = pgTable(
     authorToken: text('author_token').notNull(),
     authorName: text('author_name').notNull(),
     comment: text('comment').notNull().default(''),
+    // B55c: structured mention targets parsed out of the comment text at
+    // tag-write time. Shape: `{ userIds: string[], teamSlugs: string[] }`.
+    // The comment text itself still contains the bare `@handle` for
+    // display; this column is authoritative for queries (mentions inbox,
+    // notifications). Null on tags created before B55c.
+    mentions: jsonb('mentions'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

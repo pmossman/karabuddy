@@ -71,6 +71,7 @@ export async function Header() {
           <NavLink href="/replays?tab=public">Browse</NavLink>
           {signedIn && <NavLink href="/replays?tab=mine">My replays</NavLink>}
           {signedIn && <NavLink href="/teams">Teams</NavLink>}
+          {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
           {signedIn && <NavLink href="/settings">Settings</NavLink>}
           <SessionMenu compact />
         </nav>

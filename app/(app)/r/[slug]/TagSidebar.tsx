@@ -8,6 +8,7 @@ import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installTok
 import { Popover } from '@/app/_components/Popover';
 import { Decks } from './Decks';
 import { ShareWithTeam } from './ShareWithTeam';
+import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
 
 interface ReplayRow {
   slug: string;
@@ -121,6 +122,13 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [authorName, setAuthorName] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  // B55c: structured mentions for the in-progress tag draft. Cleared on
+  // submit/cancel. Userid + teamSlug picked from the autocomplete popover.
+  const [draftMentions, setDraftMentions] = useState<{ userIds: string[]; teamSlugs: string[] }>({ userIds: [], teamSlugs: [] });
+  // Mention autocomplete data — loaded lazily when the user opens the
+  // tag form for the first time. Null = not loaded yet / not signed in.
+  const [mentionData, setMentionData] = useState<MentionData | null>(null);
+  const mentionLoadedRef = useRef(false);
   const [visibility, setVisibility] = useState(replay.visibility);
   const [copied, setCopied] = useState(false);
   const [visBusy, setVisBusy] = useState(false);
@@ -252,6 +260,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   const submitTag = async () => {
     if (!installToken || !frames) return;
+    const hasMentions = draftMentions.userIds.length > 0 || draftMentions.teamSlugs.length > 0;
     const res = await fetch(`/api/replays/${replay.slug}/tags`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -260,6 +269,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         authorName,
         frameIndex: currentIndex,
         comment: draft,
+        // B55c: structured mentions selected via autocomplete. Only sent
+        // when non-empty so old API consumers stay backward-compatible.
+        ...(hasMentions ? { mentions: draftMentions } : {}),
       }),
     });
     const body = await res.json();
@@ -280,8 +292,26 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       },
     ]);
     setDraft('');
+    setDraftMentions({ userIds: [], teamSlugs: [] });
     setFormOpen(false);
   };
+
+  // Lazy-load the mention autocomplete data when the user first opens
+  // the tag form. Fails silently if not signed in or no teams — popover
+  // just doesn't appear.
+  useEffect(() => {
+    if (!formOpen || mentionLoadedRef.current) return;
+    mentionLoadedRef.current = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/me/teams-mention-data');
+        const body = await res.json();
+        if (body.ok && (body.teams?.length || body.members?.length)) {
+          setMentionData({ teams: body.teams || [], members: body.members || [] });
+        }
+      } catch {}
+    })();
+  }, [formOpen]);
 
   const deleteTag = async (id: string) => {
     if (!confirm('Delete this tag?')) return;
@@ -605,12 +635,27 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
               <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: tagColor(authorName, playerUsernames) }} />
               <span>Tagging as {authorName}</span>
             </div>
-            <textarea
+            <MentionInput
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Your note about this moment…"
+              onChange={setDraft}
+              onMention={(kind, id) => {
+                setDraftMentions((prev) => {
+                  if (kind === 'user') {
+                    if (prev.userIds.includes(id)) return prev;
+                    return { ...prev, userIds: [...prev.userIds, id] };
+                  }
+                  if (prev.teamSlugs.includes(id)) return prev;
+                  return { ...prev, teamSlugs: [...prev.teamSlugs, id] };
+                });
+              }}
+              mentionData={mentionData}
+              placeholder="Your note about this moment… @mention to notify"
               rows={2}
-              style={{
+              onSubmit={submitTag}
+              onCancel={() => setFormOpen(false)}
+              textareaStyle={{
+                width: '100%',
+                boxSizing: 'border-box',
                 background: '#11141a',
                 color: '#e6e6e6',
                 border: '1px solid #2e333c',
@@ -620,14 +665,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 resize: 'vertical',
                 outline: 'none',
                 minHeight: 50,
-              }}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                  e.preventDefault();
-                  submitTag();
-                } else if (e.key === 'Escape') {
-                  setFormOpen(false);
-                }
               }}
             />
             <div style={{ display: 'flex', gap: 6, alignSelf: 'flex-end' }}>
@@ -1196,7 +1233,7 @@ function TagRowView({
           <div
             style={{ fontSize: 12, color: tag.comment ? '#d6d6d6' : '#6c7588', lineHeight: 1.35, wordWrap: 'break-word', whiteSpace: 'pre-wrap', fontStyle: tag.comment ? 'normal' : 'italic' }}
           >
-            {tag.comment || '(no comment)'}
+            {tag.comment ? <MentionedComment text={tag.comment} /> : '(no comment)'}
           </div>
         )}
       </div>

@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { auth } from '@/auth';
+import { sanitizeIncomingMentions } from '@/lib/mentions';
 
 // Edit (PATCH): tag author only — signed-in user matches tag.userId, OR
 // the X-Install-Token header matches tag.authorToken. Replay owners
@@ -69,7 +70,15 @@ export async function PATCH(
     if (!(await canEdit(row, req))) {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });
     }
-    await db.update(tags).set({ comment }).where(eq(tags.id, id));
+    // B55c: mentions are optional on PATCH. If absent, leave existing
+    // mentions in place (the user may have edited just the text). If
+    // present (even empty), accept the client's structure as authoritative.
+    const updates: Record<string, unknown> = { comment };
+    if (body.mentions !== undefined) {
+      const m = sanitizeIncomingMentions(body.mentions);
+      updates.mentions = m.userIds.length || m.teamSlugs.length ? m : null;
+    }
+    await db.update(tags).set(updates).where(eq(tags.id, id));
     return NextResponse.json({ ok: true }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] PATCH tag failed:', err);

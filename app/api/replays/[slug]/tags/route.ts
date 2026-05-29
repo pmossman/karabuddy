@@ -6,6 +6,7 @@ import { generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { auth } from '@/auth';
+import { sanitizeIncomingMentions } from '@/lib/mentions';
 
 export const runtime = 'nodejs';
 
@@ -40,6 +41,11 @@ export async function POST(
     const session = await auth();
     const userId = await resolveUserId({ installToken, recordedUsername: null });
     const id = generateTagId();
+    // B55c: structured mentions { userIds[], teamSlugs[] }. Caller picks
+    // these from the autocomplete popover; we trust + persist them. The
+    // server doesn't re-parse the comment text — autocomplete is the
+    // disambiguation layer (free-typed @something is just text).
+    const mentions = sanitizeIncomingMentions(body.mentions);
     await db.insert(tags).values({
       id,
       replaySlug: slug,
@@ -48,6 +54,7 @@ export async function POST(
       authorToken: installToken,
       authorName: session?.user?.name || authorName,
       comment,
+      mentions: mentions.userIds.length || mentions.teamSlugs.length ? mentions : null,
     });
     return NextResponse.json({ ok: true, id }, { headers });
   } catch (err: any) {
