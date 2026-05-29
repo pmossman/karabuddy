@@ -13,15 +13,6 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B54] Anonymous replay browsing via extension token + auto-claim on sign-in
-
-- **Why:** Today, a user without a karabuddy.app account who records replays through the extension can't view those replays anywhere — `/replays?tab=mine` requires sign-in, and the extension's local IDB cap is 50. They're invisible to their own owner until they create an account and run the claim flow. Worse, the friction of "create an account before you can use the thing you installed" tanks adoption.
-- **Acceptance:**
-  - **Anonymous viewing:** if a visitor is NOT signed in but the extension IS installed on this browser, `/replays?tab=mine` probes the bridge for the install token and renders replays owned by that token. Tab labelled the same; visual distinction (e.g. small "anonymous (via extension)" hint).
-  - **Auto-claim on sign-in:** when a session goes null → signed-in AND the extension is installed AND the install token isn't already linked to this account, silently POST `/api/me/claim` with the token. One-time toast: "Linked N replays from this extension to your account."
-  - **GET endpoint already supports** anonymous owner queries (`?owner=<token>`), so no new API surface needed for browse — just wire the page.
-  - **No claim required for view-only access** — the user might choose to stay anonymous forever; they should still see their own replays.
-- **Refs:** `app/(app)/replays/page.tsx` (SSR for signed-in, client for anonymous-with-extension), `lib/extensionBridge.ts` (probe helper already exists), `app/api/me/claim/route.ts` (auto-claim caller), `app/(app)/layout.tsx` or a new mount-level component (auto-claim trigger), `app/(app)/replays/MineEmpty.tsx` (similar probe pattern to follow).
 
 ### [B53] Rename replays + add user-defined tags for filtering
 
@@ -61,6 +52,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B54] Anonymous replay browsing via extension token + auto-claim on sign-in
+_completed: 2026-05-28_
+Two related fixes for the "I installed the extension but don't have an account" flow. **Anonymous viewing:** new `MineAnonymous.tsx` client component renders on `/replays?tab=mine` when the visitor isn't signed in. Probes the existing bridge for the extension's install token, then fetches `GET /api/replays?owner=<token>` and renders the same `ReplayCard` teasers a signed-in user gets. A blue banner above the grid prompts sign-in to link the captures to an account. Falls through to the existing `MineEmpty` install-pitch if the bridge doesn't answer. **Auto-claim on sign-in:** new top-level `AutoClaim.tsx` mounted in `(app)/layout.tsx`. On every authenticated page load it probes the bridge; if a token comes back AND we haven't already claimed this (userId, token) pair in this tab's sessionStorage, silently POSTs `/api/me/claim`. On success with >0 claimed replays it surfaces a one-time top-right toast via the new `Toast.tsx` component. **Default tab change:** `/replays` now defaults to `mine` for everyone (not just signed-in users) since anonymous viewers can usefully resolve too. Public stays explicit (`?tab=public`). **API tweak:** `GET /api/replays?owner=` now `orderBy(desc(createdAt))` to match the SSR signed-in path. Removed dead `SignInPrompt` from `page.tsx`.
 
 ### [B42] Capture deck snapshot + match metadata (format, card pool, bo3 mode) in replay payload
 _completed: 2026-05-28_

@@ -1,5 +1,6 @@
 import { Header } from '@/app/_components/Header';
 import { Footer } from '@/app/_components/Footer';
+import { AutoClaim } from '@/app/_components/AutoClaim';
 
 // Wraps every "regular" page (homepage, /replays, /settings, /signin,
 // /claim, /privacy) with the persistent header + footer. The replay
@@ -11,6 +12,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Header />
       <div style={{ flex: '1 1 auto' }}>{children}</div>
       <Footer />
+      {/* B54: on every authenticated page load, silently link the
+          extension's install token to the user's account (if not already).
+          Suppresses re-runs in the same tab via sessionStorage; idempotent
+          server-side, so cross-tab re-fires are harmless. */}
+      <AutoClaim />
     </div>
   );
 }

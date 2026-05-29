@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { replays } from '@/lib/schema';
 import { ReplayCard } from './ReplayCard';
 import { MineEmpty } from './MineEmpty';
+import { MineAnonymous } from './MineAnonymous';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,10 @@ export default async function ReplaysIndex({ searchParams }: PageProps) {
   const { tab: tabParam } = await searchParams;
   const session = await auth();
   const userId: string | null = (session?.user as any)?.id || null;
-  const tab: Tab = tabParam === 'public' ? 'public' : userId ? 'mine' : 'public';
+  // B54: default to mine for everyone — anonymous viewers fall through to
+  // MineAnonymous which can still surface their extension's replays.
+  // Public stays explicit (?tab=public) to avoid surprise.
+  const tab: Tab = tabParam === 'public' ? 'public' : 'mine';
 
   const db = getDb();
   let rows: any[] = [];
@@ -33,7 +37,11 @@ export default async function ReplaysIndex({ searchParams }: PageProps) {
       <h1 style={{ margin: '0 0 20px', fontSize: 26, fontWeight: 600 }}>Replays</h1>
       <Tabs current={tab} signedIn={!!userId} />
       {tab === 'mine' && !userId ? (
-        <SignInPrompt />
+        // B54: anonymous viewers can still see THEIR OWN replays via the
+        // extension's install token. MineAnonymous probes the bridge,
+        // fetches `?owner=<token>`, and falls through to MineEmpty (install
+        // pitch) if there's no extension.
+        <MineAnonymous />
       ) : rows.length === 0 ? (
         tab === 'mine' ? <MineEmpty /> : <Empty tab={tab} />
       ) : (
@@ -87,17 +95,6 @@ function Tabs({ current, signedIn }: { current: Tab; signedIn: boolean }) {
     <div style={{ display: 'flex', gap: 8 }}>
       {signedIn && link('mine', 'My replays')}
       {link('public', 'Public')}
-    </div>
-  );
-}
-
-function SignInPrompt() {
-  return (
-    <div style={{ marginTop: 32, padding: 32, border: '1px dashed #2e333c', borderRadius: 8, textAlign: 'center' }}>
-      <p style={{ margin: 0, color: '#a0a8b8' }}>Sign in to see your replays.</p>
-      <Link href="/signin?callbackUrl=/replays" style={{ display: 'inline-block', marginTop: 16, padding: '10px 16px', background: '#4a7cff', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
-        Sign in
-      </Link>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { generateSlug, generateTagId } from '@/lib/slug';
@@ -204,8 +204,9 @@ export async function POST(req: Request) {
 }
 
 // GET /api/replays?owner=<installToken> — list replays. With no owner param,
-// returns recent public replays (TBD when we have public ones); with owner,
-// returns that token's library.
+// returns recent public replays; with owner, returns that token's library
+// (regardless of whether the install has been claimed by an account — the
+// token itself is the auth signal for view-only access, B54).
 export async function GET(req: Request) {
   const headers = corsHeaders(req.headers.get('origin'));
   try {
@@ -213,8 +214,8 @@ export async function GET(req: Request) {
     const owner = url.searchParams.get('owner');
     const db = getDb();
     const rows = owner
-      ? await db.select().from(replays).where(eq(replays.ownerToken, owner)).limit(100)
-      : await db.select().from(replays).where(eq(replays.visibility, 'public')).limit(50);
+      ? await db.select().from(replays).where(eq(replays.ownerToken, owner)).orderBy(desc(replays.createdAt)).limit(100)
+      : await db.select().from(replays).where(eq(replays.visibility, 'public')).orderBy(desc(replays.createdAt)).limit(50);
     return NextResponse.json({ ok: true, data: rows }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] GET /api/replays failed:', err);
