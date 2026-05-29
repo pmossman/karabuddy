@@ -69,6 +69,9 @@ function serializeRow(r: any) {
     // Decks are intentionally excluded here — too much payload for a list
     // page; the viewer loads them on demand.
     match: r.match ?? null,
+    // B53: user-set display name + labels for the teaser.
+    displayName: r.displayName ?? null,
+    labels: r.labels ?? null,
   };
 }
 

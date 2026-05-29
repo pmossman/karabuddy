@@ -52,7 +52,13 @@ export async function GET(
   }
 }
 
-// PATCH /api/replays/:slug  { visibility?: 'unlisted' | 'public' }
+// PATCH /api/replays/:slug
+//   body: {
+//     visibility?: 'unlisted' | 'public'
+//     displayName?: string | null   // B53: rename. Pass null/'' to clear.
+//     labels?: string[]             // B53: free-form labels; trimmed +
+//                                     deduped + capped server-side.
+//   }
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ slug: string }> }
@@ -67,9 +73,33 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });
     }
     const body = await req.json().catch(() => ({}));
-    const update: Partial<{ visibility: string }> = {};
+    const update: Record<string, unknown> = {};
     if (typeof body.visibility === 'string' && ['unlisted', 'public'].includes(body.visibility)) {
       update.visibility = body.visibility;
+    }
+    if (body.displayName !== undefined) {
+      // B53: explicit null/empty string clears the override and the
+      // viewer falls back to the auto-matchup text.
+      const raw = body.displayName == null ? '' : String(body.displayName);
+      const trimmed = raw.trim().slice(0, 120);
+      update.displayName = trimmed.length > 0 ? trimmed : null;
+    }
+    if (body.labels !== undefined) {
+      // B53: text[] — trim, dedupe case-insensitively (preserves first
+      // casing seen), drop empties, cap to 20 labels × 40 chars each.
+      const incoming = Array.isArray(body.labels) ? body.labels : [];
+      const seen = new Set<string>();
+      const cleaned: string[] = [];
+      for (const raw of incoming) {
+        const s = String(raw || '').trim().slice(0, 40);
+        if (!s) continue;
+        const key = s.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        cleaned.push(s);
+        if (cleaned.length >= 20) break;
+      }
+      update.labels = cleaned.length > 0 ? cleaned : null;
     }
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400, headers });

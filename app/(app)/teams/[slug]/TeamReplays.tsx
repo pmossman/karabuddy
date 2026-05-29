@@ -71,6 +71,8 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
             visibility: r.visibility,
             createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
             match: r.match ?? null,
+            displayName: r.displayName ?? null,
+            labels: r.labels ?? null,
           }}
           canManage={false}
         />

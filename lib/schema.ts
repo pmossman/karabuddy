@@ -124,6 +124,14 @@ export const replays = pgTable(
     // upload where the extension didn't catch a lobbystate first.
     match: jsonb('match'),
     decks: jsonb('decks'),
+    // B53: user-editable display name. Null falls back to the auto-matchup
+    // text the viewer / card teaser composes from the players array.
+    displayName: text('display_name'),
+    // B53: free-form labels for filter/find later. Distinct from frame
+    // tags (those live in the `tags` table and anchor to specific frames);
+    // these tag the whole replay. Stored as text[]; client trims, dedupes,
+    // and caps server-side.
+    labels: jsonb('labels'),
     visibility: text('visibility').notNull().default('unlisted'), // 'unlisted' | 'public'
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

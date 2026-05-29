@@ -22,6 +22,9 @@ interface ReplayRow {
     gamesToWinMode?: string | null;
     gameType?: string | null;
   } | null;
+  // B53: user-set display name + labels. Both null when never edited.
+  displayName?: string | null;
+  labels?: string[] | null;
 }
 
 // B42: pretty labels for the format chip on the card teaser.
@@ -98,12 +101,46 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
           <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
           <Matchup player={p2} />
         </div>
-        <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.35, fontWeight: 600 }}>
-          {deckText(p1)} vs {deckText(p2)}
-        </div>
+        {/* B53: user-set display name takes precedence over the auto
+            deck-text. The auto deck-text moves to a smaller sub-line. */}
+        {replay.displayName ? (
+          <>
+            <div style={{ fontSize: 14, color: '#e6e6e6', lineHeight: 1.3, fontWeight: 700 }}>
+              {replay.displayName}
+            </div>
+            <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
+              {deckText(p1)} vs {deckText(p2)}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.35, fontWeight: 600 }}>
+            {deckText(p1)} vs {deckText(p2)}
+          </div>
+        )}
         <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
           {nameText(p1)} vs {nameText(p2)}
         </div>
+        {/* B53: user-set labels as small chips below the names. */}
+        {Array.isArray(replay.labels) && replay.labels.length > 0 && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {replay.labels.map((l) => (
+              <span
+                key={l}
+                style={{
+                  background: 'rgba(160, 196, 255, 0.08)',
+                  border: '1px solid rgba(160, 196, 255, 0.2)',
+                  color: '#a0c4ff',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: '1px 6px',
+                  borderRadius: 999,
+                }}
+              >
+                {l}
+              </span>
+            ))}
+          </div>
+        )}
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
           {formatChipParts(replay.match).map((label) => (

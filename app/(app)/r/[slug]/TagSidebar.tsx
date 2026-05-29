@@ -9,6 +9,7 @@ import { Popover } from '@/app/_components/Popover';
 import { Decks } from './Decks';
 import { ShareWithTeam } from './ShareWithTeam';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
+import { EditReplayMeta } from './EditReplayMeta';
 
 interface ReplayRow {
   slug: string;
@@ -20,6 +21,10 @@ interface ReplayRow {
   userId: string | null;
   ownerToken: string;
   visibility: string;
+  // B53: optional user-set display name + labels. Both null on replays
+  // never edited.
+  displayName?: string | null;
+  labels?: string[] | null;
 }
 
 interface TagRow {
@@ -452,11 +457,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           thumbs to keep VS visually centered against the cards (not the
           taller two-line player column). */}
       <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
-        {matchChips(matchMeta).length > 0 && (
+        {(matchChips(matchMeta).length > 0 || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {matchChips(matchMeta).map((label) => (
               <span
-                key={label}
+                key={`m-${label}`}
                 style={{
                   background: 'rgba(74, 124, 255, 0.12)',
                   border: '1px solid rgba(74, 124, 255, 0.3)',
@@ -472,6 +477,29 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 {label}
               </span>
             ))}
+            {/* B53: user-set labels as chips alongside the match-meta chips. */}
+            {(replay.labels || []).map((l: string) => (
+              <span
+                key={`l-${l}`}
+                style={{
+                  background: 'rgba(160, 196, 255, 0.08)',
+                  border: '1px solid rgba(160, 196, 255, 0.25)',
+                  color: '#a0c4ff',
+                  borderRadius: 999,
+                  padding: '1px 8px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
+              >
+                {l}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* B53: user-set display name above the matchup if present. */}
+        {replay.displayName && (
+          <div style={{ fontSize: 14, color: '#e6e6e6', fontWeight: 700, lineHeight: 1.3 }}>
+            {replay.displayName}
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
@@ -539,6 +567,16 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             {isOwner && (
               <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
                 <ShareWithTeam replaySlug={replay.slug} installToken={installToken} />
+              </div>
+            )}
+            {isOwner && (
+              <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
+                <EditReplayMeta
+                  replaySlug={replay.slug}
+                  installToken={installToken}
+                  initialDisplayName={replay.displayName ?? null}
+                  initialLabels={Array.isArray(replay.labels) ? replay.labels : []}
+                />
               </div>
             )}
           </div>

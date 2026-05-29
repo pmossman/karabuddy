@@ -13,61 +13,6 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-
-### [B55] Teams + team replays + @-mentions
-
-- **Why:** karabuddy is rapidly becoming a single-player tool with public replay browsing as the only multi-user surface. Teams unlock the use case it's actually designed for: deck-tuning groups, tournament prep crews, and SWU friend circles reviewing each other's matches together. The full story is "I play a match → teammate sees it surfaced in our team view → tags a play to ask about → I get a mention notification → we discuss inline on the replay." Today none of that exists.
-- **Acceptance (full feature):**
-  - **Teams data model + membership:**
-    - `teams` table: `id`, `slug` (short URL-safe id), `name`, `createdBy`, `createdAt`.
-    - `team_members` table: `teamId`, `userId`, `role` (`owner` | `member`), `joinedAt`. Unique on `(teamId, userId)`.
-    - `team_invites` table: `code` (random URL-safe id), `teamId`, `createdBy`, `expiresAt?`, `usesRemaining?`. Both fields nullable for "infinite" invites.
-    - One user can be in multiple teams. A team can have multiple owners.
-  - **Team management UI:**
-    - `/teams` — index of teams the signed-in user belongs to, plus a "create team" CTA.
-    - `/teams/[slug]` — team home: member list, replay grid (see below), settings (rename, generate invite, leave team) — settings owner-only.
-    - `/teams/join?code=<code>` — accepts an invite. If not signed in, redirects to sign-in then back. If already a member, redirects to `/teams/[slug]`.
-    - Owners get a button to copy an invite link. Invites default to "never expire, unlimited uses" for friction-free sharing.
-  - **Team replay surfacing rules:**
-    - A replay surfaces in `team/[slug]`'s view if EITHER:
-      - (a) **Tagged by a team member**: any tag exists on the replay where `tag.userId` is a member of the team, OR
-      - (b) **Explicitly shared with the team**: new `replay_team_shares` table (`replaySlug`, `teamId`, `sharedBy`, `sharedAt`). The replay viewer gets a "Share with team..." dropdown in the existing Share popover.
-    - "Tagged by team member" means tags whose author is in the team — NOT random reviewer tags. Server-side enforced in the query.
-  - **Access control:** if a replay is surfaced in any of your teams, you can view it regardless of `visibility` (unlisted is fine). Server-side `canViewReplay(viewer, replay)` check used by both the viewer page + the replay GET API.
-  - **Mentions (B55c):**
-    - Tag comments support `@username` and `@team:<slug>` mention syntax. Stored structurally: tags gain a `mentions` JSONB column `{ userIds: string[], teamIds: string[] }`. Comment text uses bare `@<handle>` for editing; the structured field is authoritative for queries.
-    - **Extension autocomplete:** when tagging mid-game, typing `@` opens a popover with: (1) the user's team members across all teams, (2) the user's teams themselves (renders as `@team-name`). Filter by typed prefix. Selecting inserts the bare `@<handle>` into the comment AND adds the userId/teamId to the structured mentions.
-    - Extension fetches team data via the bridge: new `GET /api/me/teams-mention-data` returns `{ teams: [{slug, name}], members: [{userId, username}] }`. Cache in `chrome.storage.local` with 5-min TTL.
-    - Karabuddy viewer renders `@username` as a clickable badge linking to the user's profile (TBD if profiles exist) or to a filtered view.
-  - **Mentions inbox (B55d):**
-    - `/mentions` page: list of tags where the signed-in user (or any of their teams) was mentioned. Click → jumps to the tagged frame on the replay.
-    - Unread count badge in the header nav next to "My replays".
-    - Mark-as-read on view.
-  - **Tie-in with B52 (filter overhaul):** "team" becomes another filter dimension on the replay browser ("only show replays surfaced to team X"). Mentions of me become a saved filter ("@me").
-  - **Tie-in with B53 (replay tags):** team-shared replays might inherit team-level tag conventions later (e.g. "tournament-prep"), but that's stretch.
-- **Sub-tasks for incremental shipping** (each independently mergeable):
-  - **B55a** — Teams data model, membership, `/teams` + `/teams/[slug]` + invite flow. No replay integration yet; just the social plumbing. Ship first to validate the create/join UX.
-  - **B55b** — Team replays surfacing + access control. The "team replays" grid on `/teams/[slug]` + the `canViewReplay` server check. Adds the `replay_team_shares` table + "Share with team..." dropdown in the viewer's Share popover.
-  - **B55c** — Extension `@`-mention autocomplete. New API endpoint, new bridge protocol message, new `chrome.storage.local` cache, new popover UI in the tag form. Server-side tag write supports the `mentions` JSONB column.
-  - **B55d** — `/mentions` inbox page + nav badge. Probably also email digest of unread mentions if user opts in (stretch).
-- **Out of scope (filed as future stretch):**
-  - Team chat / threaded replay discussions
-  - Team-level deck library
-  - Per-team stats / leaderboards
-  - Team-private replays (currently all team replays inherit the owner's chosen visibility for non-team viewers; if you want a third state of "this is for my team's eyes only", that's a v2)
-  - Anonymous-extension-user mentions: requires accounts. Anonymous users can be tagged-as but not mention-targeted.
-- **Refs:** New Drizzle migrations for `teams`, `team_members`, `team_invites`, `replay_team_shares`. New routes under `app/(app)/teams/`. New API endpoints under `app/api/teams/` + `app/api/me/teams-mention-data/` + `app/api/me/mentions/`. Extension bridge protocol extension. Viewer tag form gets the autocomplete popover. Header gets the mentions badge.
-
-### [B53] Rename replays + add user-defined tags for filtering
-
-- **Why:** Replay teasers today show "Lando Calrissian vs The Mandalorian" — the matchup. Useful, but you can't distinguish "Lando vs Mando match where I tried the new Yoda tech" from the dozen other Lando-vs-Mando matches. Plus collections (deck-tuning sessions, tournament prep, etc.) need a way to filter beyond date.
-- **Acceptance:**
-  - **Display name:** users can give a replay a custom title that displays in place of the auto-matchup text on `/r/[slug]` viewer and on `/replays` teasers. Defaults to the matchup; empty string falls back to matchup.
-  - **Replay tags:** a set of free-form short labels per replay (e.g. "tournament", "vs-yoda", "post-meta-shift"). Distinct from FRAME tags — these are top-level filter labels on the whole replay.
-  - Owner-only editing for both name + tags. Server-side enforced via the same `canMutate` check that gates visibility toggles.
-  - Filter UI on `/replays?tab=mine` (and maybe `?tab=public` for public replay tags): chips for active tags + a search input.
-- **Refs:** Drizzle migration: new `display_name` text column + `tags` text[] column on `replays`. PATCH route extension. New filter UI on the replays index. Owner of both columns shipped together since they share the same edit ergonomic.
-
 ### [B52] Replay browser overhaul: filters + alternate views
 
 - **Why:** `/replays?tab=mine|public` is a flat grid sorted by recency. Once a user has more than ~50 replays, finding "every match where I played a specific leader" or "everything from last week" or "all my matches against this opponent" becomes painful. The data we already capture (players, leader, base, date, match meta from B42, opponent username) makes powerful filtering trivial.
@@ -96,6 +41,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B53] Rename replays + add user-defined labels for filtering
+_completed: 2026-05-28_
+Foundation for B52's filter overhaul + general "make replays findable" UX. **Schema** (drizzle migration `0007_brainy_joshua_kane.sql`): `display_name` text + `labels` jsonb columns on `replays`. Both null on historical replays (untouched UX). **PATCH route** (`/api/replays/[slug]`): accepts `displayName?` (trim, ≤120 chars, null/empty clears) + `labels?` (text[] — trim, dedupe case-insensitively preserving first casing, drop empties, cap at 20 × 40 chars each). Owner-only via existing `canMutate`. **New `EditReplayMeta` component** in the viewer's Share popover — owner-only editor with display-name input + label chip manager (Enter or comma to add, click chip to remove). Optimistic save → router.refresh(). **Display name rendering:** `ReplayCard` teaser shows display name (bold, larger) in place of the deck-text when set; deck-text falls back to a smaller sub-line. TagSidebar viewer header shows the display name on its own line above the matchup row. **Label rendering:** card teasers get small pill chips below the player names; TagSidebar header chips them alongside the B42 format chips. Labels deliberately blend with format chips so filtering UX later can treat them as one rank of facets. Plumbed `displayName` + `labels` through all three serializer paths (mine page, MineAnonymous, TeamReplays).
 
 ### [B55c-ext] Extension @-mention autocomplete in the in-game tag form
 _completed: 2026-05-28_
