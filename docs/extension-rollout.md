@@ -55,13 +55,38 @@ Versioning is hybrid:
   `extension/manifest.json` yourself in the same change; CI sees the new
   (unreleased) version and releases it as-is instead of auto-patching.
 
-**To actually ship to users:** pick a GitHub Release → download its zip →
-CWS dashboard → submit. Batch meaningful changes; don't submit per-build.
-(`npm run package:extension` builds the same zip locally if needed.)
-
 > Branch protection note: CI pushes the auto-patch bump to `main` with
 > `GITHUB_TOKEN`. If `main` ever gets protected against direct pushes, give
 > the workflow an exception or switch to bumping the manifest by hand.
+
+## Submitting to the Chrome Web Store (deliberate)
+
+Promotion to users is a manual trigger, not per-push. Two equivalent paths:
+
+- **GitHub Action (preferred):** Actions tab → **extension-submit-cws** → Run
+  workflow → pick the tag (blank = latest `ext-v*`) and whether to publish
+  (submit for review) or upload a draft. It downloads that Release's zip and
+  pushes it to CWS via the API. Batch meaningful changes; don't submit per build.
+- **By hand:** download a Release's zip → CWS dashboard → upload → submit.
+  (`npm run package:extension` builds the same zip locally.)
+
+### Chrome Web Store API creds (one-time, for the Action)
+
+The submit Action needs four repo secrets (Settings → Secrets and variables →
+Actions). Getting them once:
+
+1. **`CWS_EXTENSION_ID`** — the item id from the CWS developer dashboard URL.
+2. **Google OAuth client** — Google Cloud Console → enable the *Chrome Web
+   Store API* → create an OAuth 2.0 Client ID (type: Desktop app). That gives
+   **`CWS_CLIENT_ID`** + **`CWS_CLIENT_SECRET`**.
+3. **`CWS_REFRESH_TOKEN`** — a long-lived token for that client. Easiest is the
+   interactive helper: `npx chrome-webstore-upload-keys` (walks the OAuth
+   consent for scope `https://www.googleapis.com/auth/chromewebstore` and
+   prints the refresh token). See the `chrome-webstore-upload` project docs.
+4. Add all four as repo secrets. Then the Action works.
+
+These creds can publish the extension — keep them as Actions secrets only
+(repo admins), never in the repo.
 
 ## Adding a new contract baseline
 

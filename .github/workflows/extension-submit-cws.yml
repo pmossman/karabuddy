@@ -1,0 +1,83 @@
+name: extension-submit-cws
+
+# Manually submit a built extension release to the Chrome Web Store. This is
+# the DELIBERATE promotion step (the auto extension-release workflow only
+# builds GitHub Releases; it never touches CWS). Trigger from the Actions tab
+# → "Run workflow", pick the tag, optionally publish for review.
+#
+# Requires four repo secrets (Settings → Secrets and variables → Actions):
+#   CWS_EXTENSION_ID   the extension's Web Store item id
+#   CWS_CLIENT_ID      Google OAuth client id  (Chrome Web Store API)
+#   CWS_CLIENT_SECRET  Google OAuth client secret
+#   CWS_REFRESH_TOKEN  long-lived refresh token for that client
+# Setup walkthrough: docs/extension-rollout.md → "Chrome Web Store API creds".
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to submit (e.g. ext-v0.5.1). Blank = latest ext-v* release.'
+        required: false
+        default: ''
+      publish:
+        description: 'Submit for review after upload (uncheck to upload a draft only)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read # read + download the GitHub Release
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify CWS secrets are configured
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          missing=""
+          [ -z "$CWS_EXTENSION_ID" ] && missing="$missing CWS_EXTENSION_ID"
+          [ -z "$CWS_CLIENT_ID" ] && missing="$missing CWS_CLIENT_ID"
+          [ -z "$CWS_CLIENT_SECRET" ] && missing="$missing CWS_CLIENT_SECRET"
+          [ -z "$CWS_REFRESH_TOKEN" ] && missing="$missing CWS_REFRESH_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing CWS secret(s):$missing — see docs/extension-rollout.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4 # for docs ref only; cheap
+
+      - name: Resolve the release tag + download its zip
+        id: dl
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="$(gh release list --limit 30 --json tagName -q '[.[].tagName | select(startswith("ext-v"))][0]')"
+          fi
+          if [ -z "$TAG" ]; then echo "::error::no ext-v* release found"; exit 1; fi
+          echo "submitting release: $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.zip' --dir dist
+          ZIP="$(ls dist/*.zip | head -1)"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Upload to the Chrome Web Store${{ inputs.publish && ' + submit for review' || ' (draft)' }}
+        env:
+          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          npx --yes chrome-webstore-upload-cli@3 upload \
+            --source "${{ steps.dl.outputs.zip }}" \
+            ${{ inputs.publish && '--auto-publish' || '' }}
+          echo "✓ ${{ steps.dl.outputs.tag }} uploaded${{ inputs.publish && ' + submitted for review' || ' as a draft' }}."
