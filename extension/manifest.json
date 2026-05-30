@@ -1,13 +1,16 @@
 {
     "manifest_version": 3,
     "name": "KaraBuddy",
-    "version": "0.5.1",
-    "version_name": "0.5.1",
+    "version": "0.5.2",
+    "version_name": "0.5.2",
     "description": "Records your karabast.net matches automatically and lets you tag key moments. Watch replays on karabuddy.app.",
     "icons": {
         "128": "icons/128.png"
     },
-    "permissions": ["storage", "tabs"],
+    "permissions": [
+        "storage",
+        "tabs"
+    ],
     "host_permissions": [
         "https://karabast.net/*",
         "https://karabuddy.app/*",
@@ -29,7 +32,9 @@
     },
     "content_scripts": [
         {
-            "matches": ["https://karabast.net/*"],
+            "matches": [
+                "https://karabast.net/*"
+            ],
             "js": [
                 "replays/00-comment-scope.js",
                 "replays/01-namespace.js",
@@ -44,8 +49,12 @@
             "world": "MAIN"
         },
         {
-            "matches": ["https://karabast.net/*"],
-            "js": ["content.js"],
+            "matches": [
+                "https://karabast.net/*"
+            ],
+            "js": [
+                "content.js"
+            ],
             "run_at": "document_start",
             "all_frames": false
         },
@@ -56,7 +65,9 @@
                 "https://*.vercel.app/*",
                 "http://localhost:3000/*"
             ],
-            "js": ["karabuddy-bridge.js"],
+            "js": [
+                "karabuddy-bridge.js"
+            ],
             "run_at": "document_idle",
             "all_frames": false
         }
