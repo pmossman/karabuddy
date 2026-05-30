@@ -32,6 +32,17 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
   - **Rollout runbook** (`docs/extension-rollout.md`) encoding the safe order: preview-test → CI compat gate → deploy server → submit ext → CWS approves. Note the default posture: **support backwards-compat; the kill-switch is the last-resort safety valve, not a routine version gate.**
 - **Refs:** existing `.github/workflows/test.yml`, `scripts/maybe-migrate.js`, `extension/background.js` (`getKarabuddyEndpoint`, SW ping site), `extension/replays/06-bootstrap.js` + `content.js` (existing context-invalidated toast to build on). Designed in chat 2026-05-30.
 
+### [B74] Local dev DB isolation + prod-snapshot-to-local
+
+- **Why:** `.env.local` points at the **production** Neon DB (`ep-bitter-lab-aqep2weh/neondb`), so local dev runs against prod data — risky (a local `db:migrate`, a stray write, or testing destructive flows hits prod; surfaced when B71's 0010 had to be applied to prod just to unblock localhost). Local should have its own DB, ideally seedable from a prod snapshot so local data is realistic.
+- **Acceptance:**
+  - Local dev points at a **separate** database (a Neon branch off prod, or a local Postgres via `docker-compose.test.yml`'s pattern), configured in `.env.local` — never prod.
+  - A script to **snapshot prod → local**: e.g. `scripts/pull-prod-snapshot.ts` (or a documented `pg_dump | pg_restore` / Neon branch-create) that loads a recent prod copy into the local DB, with PII/scale caveats noted. Blob payloads can stay pointed at prod URLs (read-only) or be skipped.
+  - Local migrations run against the local DB (`db:migrate`), decoupled from prod.
+  - Doc in README/CLAUDE.md on the local setup.
+- **Relation:** sibling to **B72** (preview DB isolation via Neon branching) — same root cause (one shared DB), different surface (local dev vs Vercel previews). Could share the Neon-branching mechanism.
+- **Refs:** `.env.local`, `drizzle.config.ts`, `scripts/maybe-migrate.js`, `docker-compose.test.yml` (existing local-Postgres pattern for tests). Surfaced in chat 2026-05-30 when localhost 500'd on a missing `tag_team_scope`.
+
 ### [B63] Mini frame preview in discussion rows (with hover-to-zoom)
 
 - **Why:** Discussion rows show participants and the latest comment but not WHAT the discussion is actually about visually. A small game-board preview rendered from the gamestate at the latest-tag's frame would let teammates scan the feed at a glance and recognize "oh, I remember that moment". Hover to enlarge gives a quick deep-dive without leaving the team page.
