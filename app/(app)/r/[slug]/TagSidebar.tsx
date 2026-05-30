@@ -47,6 +47,8 @@ interface TagRow {
   // B71: team slugs this tag is visible to (empty/absent = personal).
   // Returned by GET /tags so the viewer can show + edit each tag's audience.
   scope?: string[];
+  // B55c: structured @-mentions, so the edit form can pre-fill them.
+  mentions?: { userIds: string[]; teamSlugs: string[] } | null;
 }
 
 type StepMode = 'action' | 'frame';
@@ -368,9 +370,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   // Lazy-load the mention autocomplete data when the user first opens
   // the tag form. Fails silently if not signed in or no teams — popover
-  // just doesn't appear.
-  useEffect(() => {
-    if (!formOpen || mentionLoadedRef.current) return;
+  // just doesn't appear. Loaded once; triggered when the new-tag form opens
+  // AND when a row enters edit (so @-mention autocomplete works there too).
+  const ensureMentionData = () => {
+    if (mentionLoadedRef.current) return;
     mentionLoadedRef.current = true;
     (async () => {
       try {
@@ -381,6 +384,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         }
       } catch {}
     })();
+  };
+  useEffect(() => {
+    if (formOpen) ensureMentionData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formOpen]);
 
   const deleteTag = async (id: string) => {
@@ -400,18 +407,29 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // B71-followup: editing a tag can also change its team scope. teamSlugs
   // undefined → comment-only edit (scope untouched); an array → re-scope
   // (server clamps to shares ∩ the author's memberships and returns it).
-  const updateComment = async (id: string, comment: string, teamSlugs?: string[]) => {
+  const updateComment = async (
+    id: string,
+    comment: string,
+    teamSlugs?: string[],
+    mentions?: { userIds: string[]; teamSlugs: string[] },
+  ) => {
     const res = await fetch(`/api/replays/${replay.slug}/tags/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
-      body: JSON.stringify({ comment, ...(teamSlugs !== undefined ? { teamSlugs } : {}) }),
+      body: JSON.stringify({
+        comment,
+        ...(teamSlugs !== undefined ? { teamSlugs } : {}),
+        ...(mentions !== undefined ? { mentions } : {}),
+      }),
     });
     const body = await res.json();
     if (!body.ok) {
       alert(`Failed to update: ${body.error || 'unknown'}`);
       return;
     }
-    setTags((prev) => prev.map((t) => (t.id === id ? { ...t, comment, ...(body.scope ? { scope: body.scope } : {}) } : t)));
+    setTags((prev) => prev.map((t) => (t.id === id
+      ? { ...t, comment, ...(body.scope ? { scope: body.scope } : {}), ...(mentions !== undefined ? { mentions } : {}) }
+      : t)));
   };
 
   const tagsAtCurrent = tagsByFrame.get(currentIndex) || [];
@@ -809,9 +827,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                   canEdit={canEdit}
                   canDelete={canDelete}
                   armedTeams={armedTeams}
+                  mentionData={mentionData}
+                  ensureMentionData={ensureMentionData}
                   onJumpTo={() => {}}
                   onDelete={() => deleteTag(t.id)}
-                  onUpdate={(comment, teamSlugs) => updateComment(t.id, comment, teamSlugs)}
+                  onUpdate={(comment, teamSlugs, mentions) => updateComment(t.id, comment, teamSlugs, mentions)}
                 />
               );
             })}
@@ -848,9 +868,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                       canEdit={canEdit}
                       canDelete={canDelete}
                       armedTeams={armedTeams}
+                      mentionData={mentionData}
+                      ensureMentionData={ensureMentionData}
                       onJumpTo={() => onJump(t.frameIndex)}
                       onDelete={() => deleteTag(t.id)}
-                      onUpdate={(comment, teamSlugs) => updateComment(t.id, comment, teamSlugs)}
+                      onUpdate={(comment, teamSlugs, mentions) => updateComment(t.id, comment, teamSlugs, mentions)}
                     />
                   );
                 })}
@@ -1385,6 +1407,8 @@ function TagRowView({
   canEdit,
   canDelete,
   armedTeams,
+  mentionData,
+  ensureMentionData,
   onJumpTo,
   onDelete,
   onUpdate,
@@ -1400,32 +1424,50 @@ function TagRowView({
   // B71: teams the viewer could scope this tag to (replay shares ∩ their
   // teams). Drives the per-tag "Visible to:" readout + edit chip.
   armedTeams: { slug: string; name: string }[];
+  mentionData: MentionData | null;
+  ensureMentionData: () => void;
   onJumpTo: () => void;
   onDelete: () => void;
-  onUpdate: (comment: string, teamSlugs?: string[]) => void;
+  onUpdate: (comment: string, teamSlugs?: string[], mentions?: { userIds: string[]; teamSlugs: string[] }) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tag.comment);
-  const [editScope, setEditScope] = useState<string[]>(tag.scope ?? []);
+  // B55c: @-mentions on the in-progress edit (pre-filled from the tag).
+  const [editMentions, setEditMentions] = useState<{ userIds: string[]; teamSlugs: string[] }>(
+    tag.mentions ?? { userIds: [], teamSlugs: [] },
+  );
+  // null = follow the mentions (mention-driven), else a manual override.
+  const [scopeOverride, setScopeOverride] = useState<string[] | null>(tag.scope ?? []);
   const [scopeExpanded, setScopeExpanded] = useState(false);
 
   const armedSlugs = armedTeams.map((t) => t.slug);
   const teamNames = Object.fromEntries(armedTeams.map((t) => [t.slug, t.name])) as Record<string, string>;
   const canScope = armedSlugs.length >= 1; // replay shared with ≥1 of my teams
 
+  const memberTeams = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const m of mentionData?.members ?? []) map[m.userId] = m.teamSlugs;
+    return map;
+  }, [mentionData]);
+  const mentionDrivenScope = scopeFromMentions({ armedTeams: armedSlugs, mentionedUserIds: editMentions.userIds, memberTeams });
+  const effectiveScope = scopeOverride ?? mentionDrivenScope;
+
   const beginEdit = () => {
     setDraft(tag.comment);
-    setEditScope(tag.scope ?? []);
+    setEditMentions(tag.mentions ?? { userIds: [], teamSlugs: [] });
+    setScopeOverride(tag.scope ?? []);
     setScopeExpanded(false);
+    ensureMentionData();
     setEditing(true);
   };
   const save = () => {
-    onUpdate(draft.trim(), canScope ? editScope : undefined);
+    onUpdate(draft.trim(), canScope ? effectiveScope : undefined, editMentions);
     setEditing(false);
   };
   const cancel = () => {
     setDraft(tag.comment);
-    setEditScope(tag.scope ?? []);
+    setEditMentions(tag.mentions ?? { userIds: [], teamSlugs: [] });
+    setScopeOverride(tag.scope ?? []);
     setEditing(false);
   };
 
@@ -1451,12 +1493,24 @@ function TagRowView({
           <span>frame {tag.frameIndex + 1}</span>
         </div>
         {editing ? (
-          <>
-            <textarea
+          <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <MentionInput
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={setDraft}
+              onMention={(kind, id) => {
+                setEditMentions((prev) => {
+                  if (kind === 'user') return prev.userIds.includes(id) ? prev : { ...prev, userIds: [...prev.userIds, id] };
+                  return prev.teamSlugs.includes(id) ? prev : { ...prev, teamSlugs: [...prev.teamSlugs, id] };
+                });
+                // A new mention re-drives the scope (until you touch the chip).
+                setScopeOverride(null);
+              }}
+              mentionData={mentionData}
               autoFocus
-              style={{
+              rows={2}
+              onSubmit={save}
+              onCancel={cancel}
+              textareaStyle={{
                 width: '100%',
                 boxSizing: 'border-box',
                 background: '#11141a',
@@ -1464,32 +1518,27 @@ function TagRowView({
                 border: '1px solid #4a7cff',
                 borderRadius: 4,
                 padding: '4px 6px',
-                font: '12px inherit',
+                font: '12px var(--font-barlow), -apple-system, sans-serif',
                 resize: 'vertical',
                 outline: 'none',
               }}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
-                else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-              }}
             />
             {canScope && (
-              <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+              <div style={{ marginTop: 4 }}>
                 <ScopeChip
                   armedTeams={armedTeams}
-                  effectiveScope={editScope}
+                  effectiveScope={effectiveScope}
                   teamNames={teamNames}
                   expanded={scopeExpanded}
                   onToggleExpand={() => setScopeExpanded((v) => !v)}
                   onToggleTeam={(slug) =>
-                    setEditScope((prev) => {
-                      const set = new Set(prev);
+                    setScopeOverride((prev) => {
+                      const set = new Set(prev ?? effectiveScope);
                       if (set.has(slug)) set.delete(slug); else set.add(slug);
                       return armedSlugs.filter((s) => set.has(s));
                     })
                   }
-                  onPersonal={() => setEditScope([])}
+                  onPersonal={() => setScopeOverride([])}
                 />
               </div>
             )}
@@ -1497,7 +1546,7 @@ function TagRowView({
               <FooterBtn variant="ghost" onClick={(e?: any) => { e?.stopPropagation?.(); cancel(); }}>Cancel</FooterBtn>
               <FooterBtn onClick={(e?: any) => { e?.stopPropagation?.(); save(); }}>Save</FooterBtn>
             </div>
-          </>
+          </div>
         ) : (
           <>
             <div

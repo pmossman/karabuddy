@@ -336,3 +336,39 @@ test('viewer: a tag shows its scope and can be re-scoped via the edit chip', asy
   await expect.poll(() => comments(teamB)).toContain('ui rescope me');
   expect(await comments(teamA)).not.toContain('ui rescope me');
 });
+
+test('editing a tag can add an @mention that reaches the mentioned member', async ({ page, browser, request }) => {
+  await signInAsTestUser(page, { name: 'MentionEditor', email: 'mentionedit@example.com' });
+  const { slug: team } = await createTeam(page, 'Mention Edit Team');
+  const { code } = await generateInvite(page, team);
+
+  // Teammate joins.
+  const ctxB = await browser.newContext();
+  const bob = await ctxB.newPage();
+  const { userId: bobId } = await signInAsTestUser(bob, { name: 'BobEdit', email: 'bobedit@example.com' });
+  await bob.request.post('/api/teams/join', { data: { code } });
+
+  const r = await uploadReplay(request, { local: { username: 'MentionEditor' }, opponent: { username: 'Foe' } });
+  await claimInstallToken(page, r.installToken);
+  await page.request.post(`/api/replays/${r.slug}/team-shares`, {
+    data: { teamSlug: team }, headers: { 'X-Install-Token': r.installToken },
+  });
+  // Create a plain comment (no mention) scoped to the team by default.
+  const created = await page.request.post(`/api/replays/${r.slug}/tags`, {
+    data: { installToken: r.installToken, authorName: 'MentionEditor', frameIndex: 0, comment: 'hey look at this' },
+  });
+  const { id } = await created.json();
+
+  // Edit it to add an @mention of Bob.
+  await page.request.patch(`/api/replays/${r.slug}/tags/${id}`, {
+    data: { comment: 'hey @BobEdit look at this', mentions: { userIds: [bobId], teamSlugs: [] } },
+    headers: { 'X-Install-Token': r.installToken },
+  });
+
+  // Bob's inbox now surfaces it.
+  const res = await bob.request.get('/api/me/mentions');
+  const comments = ((await res.json()).data as any[]).map((t) => t.comment);
+  expect(comments).toContain('hey @BobEdit look at this');
+
+  await ctxB.close();
+});
