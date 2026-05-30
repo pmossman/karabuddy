@@ -36,16 +36,32 @@ compatible — make it additive instead.
    safe: prod already supports the new ext and still supports the old one.
 6. **CWS approves** → users auto-update → nothing breaks.
 
-## Cutting an extension release
+## Cutting an extension release (automatic)
 
-1. Bump `version` + `version_name` in `extension/manifest.json`.
-2. Tag it: `git tag ext-vX.Y.Z && git push --tags`. The
-   `extension-release` workflow validates the manifest version matches the
-   tag, runs the extension unit tests (incl. the `commentScope` parity
-   check), syncs shared files, builds `dist/karabuddy-extension-X.Y.Z.zip`,
-   and attaches it to a GitHub Release.
-3. Download that zip → CWS dashboard → submit. (`package:extension` runs the
-   same build locally if you'd rather not wait for CI.)
+Releases are cut automatically by the `extension-release` workflow whenever
+extension code lands on `main` (`extension/**` or `lib/commentScope.js`). It
+runs the extension unit tests (incl. the `commentScope` parity check), builds
+`dist/karabuddy-extension-X.Y.Z.zip`, and publishes a **GitHub Release**.
+
+It does **NOT** submit to the Chrome Web Store — that's a deliberate human
+step, so tiny pushes never flood CWS review. (Users only ever get the latest
+*approved* version anyway, so intermediate auto-builds cost nothing.)
+
+Versioning is hybrid:
+- **Patch** is hands-off — push extension changes and CI auto-increments the
+  patch (commits the bump back to `main` via `GITHUB_TOKEN`, which doesn't
+  re-trigger CI) and releases it.
+- **Minor / major** — bump `version` + `version_name` in
+  `extension/manifest.json` yourself in the same change; CI sees the new
+  (unreleased) version and releases it as-is instead of auto-patching.
+
+**To actually ship to users:** pick a GitHub Release → download its zip →
+CWS dashboard → submit. Batch meaningful changes; don't submit per-build.
+(`npm run package:extension` builds the same zip locally if needed.)
+
+> Branch protection note: CI pushes the auto-patch bump to `main` with
+> `GITHUB_TOKEN`. If `main` ever gets protected against direct pushes, give
+> the workflow an exception or switch to bumping the manifest by hand.
 
 ## Adding a new contract baseline
 

@@ -1,47 +1,103 @@
 name: extension-release
 
-# Cut an extension release from a version tag. Validates the manifest
-# version matches the tag, runs the extension unit tests (incl. the
-# commentScope parity check), builds the CWS-ready zip, and attaches it to
-# a GitHub Release. Submitting to the Chrome Web Store stays manual (or add
-# CWS API creds as secrets later — see docs/extension-rollout.md).
+# Auto-cut an extension GitHub Release whenever extension code lands on main.
+# This builds + versions an ARTIFACT only — it does NOT submit to the Chrome
+# Web Store. CWS submission stays a deliberate, batched human step (download
+# the Release zip → upload), so tiny pushes never flood the CWS review queue.
+# See docs/extension-rollout.md.
+#
+# Versioning is hybrid:
+#   • If extension/manifest.json's version isn't released yet (you bumped it,
+#     e.g. a minor/major) → release THAT version as-is.
+#   • If it's already released → auto-increment the patch, commit the bump
+#     back to main, and release the new patch.
+# The bump commit + tag are pushed with GITHUB_TOKEN, which does NOT
+# re-trigger workflows — so there's no release loop.
 
 on:
   push:
-    tags: ['ext-v*']
+    branches: [main]
+    paths:
+      - 'extension/**'
+      - 'lib/commentScope.js'
+      - 'scripts/package-extension.sh'
+      - '.github/workflows/extension-release.yml'
+  workflow_dispatch: {}
 
 permissions:
-  contents: write # create the GitHub Release
+  contents: write # push the version bump + create the tag/release
+
+concurrency:
+  group: extension-release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need tags to know what's already been released
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
 
-      - name: Validate manifest version matches the tag
+      # Keep the extension's copy of the shared scope rule byte-identical.
+      - run: npm run sync:extension-shared
+
+      - name: Resolve the release version (release-as-is, else auto-patch)
+        id: ver
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#ext-v}"
-          MANIFEST_VERSION="$(node -p "require('./extension/manifest.json').version")"
-          echo "tag=$GITHUB_REF_NAME  tag_version=$TAG_VERSION  manifest=$MANIFEST_VERSION"
-          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
-            echo "::error::tag $GITHUB_REF_NAME implies version $TAG_VERSION but extension/manifest.json is $MANIFEST_VERSION — bump the manifest or retag."
-            exit 1
+          CURRENT="$(node -p "require('./extension/manifest.json').version")"
+          if git rev-parse -q --verify "refs/tags/ext-v$CURRENT" >/dev/null; then
+            # Already released → bump the patch in the manifest.
+            NEW="$(node -e '
+              const fs = require("fs"), p = "./extension/manifest.json";
+              const m = JSON.parse(fs.readFileSync(p, "utf8"));
+              const [a, b, c] = m.version.split(".").map(Number);
+              m.version = m.version_name = [a, b, (c || 0) + 1].join(".");
+              fs.writeFileSync(p, JSON.stringify(m, null, 4) + "\n");
+              console.log(m.version);
+            ')"
+            echo "bumped=1" >> "$GITHUB_OUTPUT"
+            echo "version=$NEW" >> "$GITHUB_OUTPUT"
+            echo "version $CURRENT already released → auto-bumped to $NEW"
+          else
+            echo "bumped=0" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+            echo "releasing manifest version $CURRENT as-is (not yet released)"
           fi
 
       # Extension JS unit tests, incl. commentScope.parity (guards the
       # byte-for-byte shared-file copy in extension/replays/00-comment-scope.js).
       - run: npm run test:unit
 
-      # Syncs shared files then zips → dist/karabuddy-extension-<version>.zip
+      # Syncs shared files (again, no-op) then zips → dist/karabuddy-extension-<version>.zip
       - run: npm run package:extension
 
-      - name: Create GitHub Release with the zip
+      - name: Commit version bump / shared-file sync back to main
+        run: |
+          if [ -n "$(git status --porcelain extension lib/commentScope.js)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add extension lib/commentScope.js
+            git commit -m "chore(ext): release ext-v${{ steps.ver.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create the GitHub Release with the zip
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/karabuddy-extension-*.zip --generate-notes --title "$GITHUB_REF_NAME"
+        run: |
+          TAG="ext-v${{ steps.ver.outputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists — skipping"
+            exit 0
+          fi
+          gh release create "$TAG" dist/karabuddy-extension-*.zip \
+            --target "$(git rev-parse HEAD)" \
+            --title "$TAG" \
+            --generate-notes \
+            --notes "Automated extension build. NOT yet submitted to the Chrome Web Store — download the zip and upload it deliberately. See docs/extension-rollout.md."
