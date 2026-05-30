@@ -175,3 +175,42 @@ test('mentions inbox respects scope — off-scope team-mention does not leak', a
 
   await ctxBob.close();
 });
+
+// --- Upload write-path: the extension's armed shareTeamSlugs create the
+// replay's shares AND become the lifted in-game tags' scope. Per-tag
+// teamSlugs narrows. B71.
+
+test('upload applies armed shares and scopes lifted in-game tags', async ({ page }) => {
+  await signInAsTestUser(page, { name: 'Recorder', email: 'recorder@example.com' });
+  const { slug: teamA } = await createTeam(page, 'Up Alpha');
+  const { slug: teamB } = await createTeam(page, 'Up Bravo');
+
+  // Both uploads arm teams A + B. Separate replays so each tag shows as its
+  // own discussion item (the feed collapses to one latest-tag per replay).
+  // Replay 1: a broadcast tag (no per-tag teamSlugs → defaults to the shares).
+  await uploadReplay(page.request, {
+    local: { username: 'Recorder' }, opponent: { username: 'Foe1' },
+    shareTeamSlugs: [teamA, teamB],
+    tags: [{ id: 'ig-broadcast', frameIndex: 0, author: 'Recorder', comment: 'broadcast note' }],
+  });
+  // Replay 2: a tag narrowed to Alpha even though the replay is shared with both.
+  await uploadReplay(page.request, {
+    local: { username: 'Recorder' }, opponent: { username: 'Foe2' },
+    shareTeamSlugs: [teamA, teamB],
+    tags: [{ id: 'ig-alpha', frameIndex: 0, author: 'Recorder', comment: 'alpha note', teamSlugs: [teamA] }],
+  });
+
+  const comments = async (slug: string) => {
+    const res = await page.request.get(`/api/teams/${slug}/discussion`);
+    const body = await res.json();
+    return (body.data as any[]).map((i) => i.latestTag?.comment).filter(Boolean);
+  };
+
+  // Alpha sees both; Bravo sees only the broadcast (the armed shares were
+  // applied by the upload, and the narrowed tag is withheld from Bravo).
+  const a = await comments(teamA);
+  const b = await comments(teamB);
+  expect(a).toEqual(expect.arrayContaining(['broadcast note', 'alpha note']));
+  expect(b).toContain('broadcast note');
+  expect(b).not.toContain('alpha note');
+});

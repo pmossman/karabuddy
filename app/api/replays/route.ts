@@ -1,19 +1,61 @@
 import { NextResponse } from 'next/server';
 import { put } from '@/lib/blob';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, tags } from '@/lib/schema';
+import { replays, replayTeamShares, tags, teamMembers } from '@/lib/schema';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
+import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
 
 export function OPTIONS(req: Request) {
   return preflight(req);
+}
+
+// B71: the extension's bubble arms a set of teams to share this match's
+// replay with. Apply those shares as part of the upload (validated:
+// uploader must be a member of each) BEFORE lifting tags, so the lifted
+// in-game tags' default scope resolves to the just-created shares. Returns
+// nothing — idempotent, best-effort (a bad slug just doesn't share).
+async function applyUploadShares(slug: string, userId: string | null, shareTeamSlugs: unknown): Promise<void> {
+  if (!userId || !Array.isArray(shareTeamSlugs) || shareTeamSlugs.length === 0) return;
+  const requested = shareTeamSlugs.filter((s): s is string => typeof s === 'string');
+  if (requested.length === 0) return;
+  const db = getDb();
+  // Only teams the uploader actually belongs to (same guard as the
+  // team-shares endpoint — can't pollute a team you're not in).
+  const memberRows = await db
+    .select({ teamSlug: teamMembers.teamSlug })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.userId, userId), inArray(teamMembers.teamSlug, requested)));
+  if (memberRows.length === 0) return;
+  await db
+    .insert(replayTeamShares)
+    .values(memberRows.map((m) => ({ replaySlug: slug, teamSlug: m.teamSlug, sharedBy: userId })))
+    .onConflictDoNothing();
+}
+
+// B71: scope each lifted payload tag. Default (no per-tag teamSlugs) →
+// the replay's shares (just applied above); an explicit teamSlugs on the
+// tag narrows it. resolveTagScope clamps to (shares ∩ author memberships).
+async function scopeLiftedTags(
+  slug: string,
+  userId: string | null,
+  payloadTags: any[],
+): Promise<void> {
+  for (const t of payloadTags) {
+    if (!Number.isFinite(t?.frameIndex) || !t?.id) continue;
+    const requested = Array.isArray(t.teamSlugs)
+      ? t.teamSlugs.filter((s: unknown) => typeof s === 'string')
+      : undefined;
+    const scope = await resolveTagScope({ replaySlug: slug, authorUserId: userId, requested });
+    await writeTagScope(t.id, scope);
+  }
 }
 
 // POST /api/replays — upload a replay payload + create metadata row.
@@ -25,6 +67,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     const installToken: string = String(body.installToken || '').trim();
     const payloadText: string = typeof body.payload === 'string' ? body.payload : '';
+    // B71: teams the bubble armed for this match. Applied as replay shares
+    // (validated) and used as the default audience for lifted in-game tags.
+    const shareTeamSlugs: unknown = body.shareTeamSlugs;
     if (!installToken) {
       return NextResponse.json({ ok: false, error: 'installToken required' }, { status: 400, headers });
     }
@@ -142,23 +187,25 @@ export async function POST(req: Request) {
       // get their mutable fields refreshed from the extension's local copy
       // (so extension-side edits during a match propagate). Tags added on
       // karabuddy.app aren't in the payload and stay untouched.
-      const payloadTagsExisting = Array.isArray(parsed.tags) ? parsed.tags : [];
-      const validTags = payloadTagsExisting
-        .filter((t: any) => Number.isFinite(t?.frameIndex))
-        .map((t: any) => {
-          // B55c: extension may now include structured mentions on tags.
-          const m = sanitizeIncomingMentions(t.mentions);
-          return {
-            id: t.id || generateTagId(),
-            replaySlug: replay.slug,
-            frameIndex: Math.max(0, Math.floor(t.frameIndex)),
-            userId,
-            authorToken: installToken,
-            authorName: String(t.author || 'anon'),
-            comment: String(t.comment || ''),
-            mentions: m.userIds.length || m.teamSlugs.length ? m : null,
-          };
-        });
+      const payloadTagsExisting = (Array.isArray(parsed.tags) ? parsed.tags : [])
+        .filter((t: any) => Number.isFinite(t?.frameIndex));
+      // Normalise ids up-front so the insert and the scope-write below use
+      // the same id (B71 scoping reads t.id).
+      for (const t of payloadTagsExisting) if (!t.id) t.id = generateTagId();
+      const validTags = payloadTagsExisting.map((t: any) => {
+        // B55c: extension may now include structured mentions on tags.
+        const m = sanitizeIncomingMentions(t.mentions);
+        return {
+          id: t.id,
+          replaySlug: replay.slug,
+          frameIndex: Math.max(0, Math.floor(t.frameIndex)),
+          userId,
+          authorToken: installToken,
+          authorName: String(t.author || 'anon'),
+          comment: String(t.comment || ''),
+          mentions: m.userIds.length || m.teamSlugs.length ? m : null,
+        };
+      });
       if (validTags.length > 0) {
         await db.insert(tags).values(validTags).onConflictDoUpdate({
           target: tags.id,
@@ -170,6 +217,9 @@ export async function POST(req: Request) {
           },
         });
       }
+      // B71: apply the bubble's armed shares, then scope the lifted tags.
+      await applyUploadShares(replay.slug, userId, shareTeamSlugs);
+      await scopeLiftedTags(replay.slug, userId, payloadTagsExisting);
 
       return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, snapshot: true }, { headers });
     }
@@ -208,26 +258,30 @@ export async function POST(req: Request) {
     // page reads them via the same relational source as web-added tags.
     // Same user-attribution logic as the replay row: signed-in or matched
     // by karabastUsername → userId; otherwise anon by installToken.
-    const payloadTags = Array.isArray(parsed.tags) ? parsed.tags : [];
+    const payloadTags = (Array.isArray(parsed.tags) ? parsed.tags : [])
+      .filter((t: any) => Number.isFinite(t?.frameIndex));
+    for (const t of payloadTags) if (!t.id) t.id = generateTagId();
     if (payloadTags.length > 0) {
       await db.insert(tags).values(
-        payloadTags
-          .filter((t: any) => Number.isFinite(t?.frameIndex))
-          .map((t: any) => {
-            const m = sanitizeIncomingMentions(t.mentions);
-            return {
-              id: t.id || generateTagId(),
-              replaySlug: slug,
-              frameIndex: Math.max(0, Math.floor(t.frameIndex)),
-              userId,
-              authorToken: installToken,
-              authorName: String(t.author || 'anon'),
-              comment: String(t.comment || ''),
-              mentions: m.userIds.length || m.teamSlugs.length ? m : null,
-            };
-          })
+        payloadTags.map((t: any) => {
+          const m = sanitizeIncomingMentions(t.mentions);
+          return {
+            id: t.id,
+            replaySlug: slug,
+            frameIndex: Math.max(0, Math.floor(t.frameIndex)),
+            userId,
+            authorToken: installToken,
+            authorName: String(t.author || 'anon'),
+            comment: String(t.comment || ''),
+            mentions: m.userIds.length || m.teamSlugs.length ? m : null,
+          };
+        })
       );
     }
+    // B71: apply the bubble's armed shares, then scope the lifted tags
+    // (default → the just-applied shares; per-tag teamSlugs narrows).
+    await applyUploadShares(slug, userId, shareTeamSlugs);
+    await scopeLiftedTags(slug, userId, payloadTags);
 
     return NextResponse.json({ ok: true, slug, url: `/r/${slug}` }, { headers });
   } catch (err: any) {

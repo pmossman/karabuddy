@@ -24,8 +24,9 @@ export interface SyntheticReplayOpts {
     username: string;
     seenCards?: Array<{ set: string; number: number; uuid?: string }>;
   };
-  // Optional tags to embed.
-  tags?: Array<{ id?: string; frameIndex?: number; author?: string; comment?: string; mentions?: { userIds: string[]; teamSlugs: string[] } }>;
+  // Optional tags to embed. B71: teamSlugs narrows a tag's audience
+  // (subset of the armed shareTeamSlugs); omitted → defaults to the shares.
+  tags?: Array<{ id?: string; frameIndex?: number; author?: string; comment?: string; mentions?: { userIds: string[]; teamSlugs: string[] }; teamSlugs?: string[] }>;
   // Optional match metadata (B42).
   match?: {
     gameFormat?: string;

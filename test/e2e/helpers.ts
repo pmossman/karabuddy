@@ -39,12 +39,14 @@ export async function signInAsTestUser(
 // Upload a synthetic replay. Auth-free — uploads use install token, not session.
 export async function uploadReplay(
   request: APIRequestContext,
-  opts: SyntheticReplayOpts & { installToken?: string }
+  opts: SyntheticReplayOpts & { installToken?: string; shareTeamSlugs?: string[] }
 ): Promise<{ slug: string; installToken: string; gameId: string; localPlayerId: string }> {
   const installToken = opts.installToken ?? `kbx_${randomUUID()}`;
   const { payload, gameId, localPlayerId } = syntheticReplayPayload(opts);
   const res = await request.post('/api/replays', {
-    data: { installToken, payload },
+    // B71: shareTeamSlugs mirrors the extension bubble's armed teams — the
+    // upload applies them as shares and uses them as lifted tags' default scope.
+    data: { installToken, payload, ...(opts.shareTeamSlugs ? { shareTeamSlugs: opts.shareTeamSlugs } : {}) },
   });
   if (!res.ok()) {
     throw new Error(`upload replay failed: ${res.status()} ${await res.text()}`);
