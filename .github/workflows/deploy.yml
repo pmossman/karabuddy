@@ -1,0 +1,99 @@
+name: deploy
+
+# Gated production deploy. Push to main → run the full test suite → deploy a
+# Vercel PREVIEW against the isolated ci-preview DB → smoke-test that live
+# preview → only then build + deploy a FRESH production deployment (prod env
+# / prod DB). Prod never serves the preview artifact, so the ci-preview DB
+# can't leak into prod. Vercel's own auto-deploy on main is turned off via
+# vercel.json (git.deploymentEnabled.main=false) so this is the only path.
+#
+# Requires repo secrets: VERCEL_TOKEN, CI_PREVIEW_POSTGRES_URL.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_ORG_ID: team_zhQXNAyy8XQ6E6Gq2x2LhAAY
+  VERCEL_PROJECT_ID: prj_jZXlguFRng6qwsS9JWgqN2gYtXey
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: karabuddy_test
+          POSTGRES_PASSWORD: karabuddy_test
+          POSTGRES_DB: karabuddy_test
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 3s --health-retries 10
+        ports: ['5433:5432']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:api
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          POSTGRES_URL: postgres://karabuddy_test:karabuddy_test@localhost:5433/karabuddy_test
+          CI: '1'
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm i -g vercel@latest
+
+      # Bring the shared ci-preview branch up to the latest schema (the
+      # preview build's prebuild skips migration on non-prod).
+      - name: Migrate ci-preview DB
+        run: npm run db:migrate
+        env:
+          POSTGRES_URL_NON_POOLING: ${{ secrets.CI_PREVIEW_POSTGRES_URL }}
+
+      - name: Build + deploy a preview (ci-preview DB)
+        id: preview
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          vercel build --token="$VERCEL_TOKEN"
+          URL=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN" \
+            --env POSTGRES_URL="${{ secrets.CI_PREVIEW_POSTGRES_URL }}" \
+            --env POSTGRES_URL_NON_POOLING="${{ secrets.CI_PREVIEW_POSTGRES_URL }}")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "preview: $URL"
+
+      - name: Smoke-test the live preview
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test --config playwright.smoke.config.ts
+        env:
+          SMOKE_BASE_URL: ${{ steps.preview.outputs.url }}
+
+      # Only reached if the smoke suite passed: fresh PROD build (prod env +
+      # prod DB; prebuild runs migrations against prod) → deploy to prod.
+      - name: Build + deploy to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

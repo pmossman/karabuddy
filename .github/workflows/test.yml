@@ -1,8 +1,9 @@
 name: test
 
+# PRs run the full suite here. Pushes to main are gated by the `deploy`
+# workflow (which runs the same suite before deploying), so main isn't
+# double-tested.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 jobs:
