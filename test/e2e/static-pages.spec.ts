@@ -34,3 +34,22 @@ test.describe('static pages render', () => {
     await expect(page.getByRole('heading', { name: 'Replays', level: 1 })).toBeVisible();
   });
 });
+
+// B72: extension status endpoint (kill-switch). Default policy: latest
+// 0.5.1, minSupported 0.0.0 (nobody blocked until deliberately raised).
+import { test as test72, expect as expect72 } from '@playwright/test';
+test72.describe('extension status endpoint', () => {
+  test72('reports ok at latest, nag below it, ok for unknown version', async ({ request }) => {
+    const get = async (v?: string) => {
+      const res = await request.get(`/api/extension/status${v !== undefined ? `?v=${v}` : ''}`);
+      expect72(res.ok()).toBe(true);
+      return res.json();
+    };
+    expect72((await get('0.5.1')).status).toBe('ok');
+    expect72((await get('0.5.0')).status).toBe('nag');
+    expect72((await get()).status).toBe('ok');
+    const body = await get('0.5.0');
+    expect72(body.latestVersion).toBe('0.5.1');
+    expect72(body.capabilities).toContain('teamScopedComments');
+  });
+});
