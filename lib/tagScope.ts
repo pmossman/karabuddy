@@ -55,6 +55,39 @@ export async function resolveTagScope(opts: {
   return requested.filter((slug) => eligible.has(slug));
 }
 
+// Viewer-side visibility predicate (pure, unit-testable). A tag is visible
+// to a viewer when they authored it (by account or install token) or when
+// it's scoped to a team the viewer belongs to. Personal tags (empty scope)
+// are visible only to their author.
+export function tagVisibleToViewer(
+  tag: { userId: string | null; authorToken: string },
+  scope: Set<string>,
+  viewer: { userId: string | null; installToken: string | null; teams: Set<string> },
+): boolean {
+  if (viewer.userId && tag.userId === viewer.userId) return true;
+  if (viewer.installToken && tag.authorToken === viewer.installToken) return true;
+  for (const teamSlug of scope) if (viewer.teams.has(teamSlug)) return true;
+  return false;
+}
+
+// Load the team-scope sets for a batch of tag ids → Map<tagId, Set<slug>>.
+// Tags with no rows simply get an empty set (personal).
+export async function loadTagScopes(tagIds: string[]): Promise<Map<string, Set<string>>> {
+  const map = new Map<string, Set<string>>();
+  if (tagIds.length === 0) return map;
+  const db = getDb();
+  const rows = await db
+    .select({ tagId: tagTeamScope.tagId, teamSlug: tagTeamScope.teamSlug })
+    .from(tagTeamScope)
+    .where(inArray(tagTeamScope.tagId, tagIds));
+  for (const row of rows) {
+    let set = map.get(row.tagId);
+    if (!set) { set = new Set(); map.set(row.tagId, set); }
+    set.add(row.teamSlug);
+  }
+  return map;
+}
+
 // Persist a tag's scope. Callers insert fresh tags, so there are no prior
 // rows to clear; onConflictDoNothing guards the re-lift-on-reupload path.
 export async function writeTagScope(tagId: string, teamSlugs: string[]): Promise<void> {

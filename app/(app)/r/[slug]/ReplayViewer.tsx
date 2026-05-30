@@ -137,6 +137,28 @@ function ViewerShell({ replay, initialTags }: Props) {
   const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
   const [installToken, setInstallToken] = useState('');
   useEffect(() => { setInstallToken(getOrCreateInstallToken()); }, []);
+
+  // B71: tags are fetched (not SSR'd) so the server can scope them to the
+  // viewer — own comments + tags scoped to a team they're in. Refetched
+  // when the install token resolves (identifies an anonymous author) or
+  // the session changes (team membership).
+  useEffect(() => {
+    if (!installToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/replays/${replay.slug}/tags`, {
+          headers: { 'X-Install-Token': installToken },
+        });
+        const body = await res.json();
+        if (cancelled || !body.ok) return;
+        setTagState((body.data as TagRow[]) ?? []);
+      } catch {
+        /* keep whatever's already in state */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [installToken, sessionUserId, replay.slug]);
   const isOwner = canMutateReplay(
     { userId: replay.userId, ownerToken: replay.ownerToken },
     { sessionUserId, installToken: installToken || null },

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { signInAsTestUser, createTeam, uploadReplay, claimInstallToken } from './helpers';
+import { signInAsTestUser, createTeam, uploadReplay, claimInstallToken, generateInvite } from './helpers';
 
 // B71: per-team comment scoping. A tag is visible only to the teams in
 // its scope (subset of the replay's shares); empty scope = personal.
@@ -71,4 +71,68 @@ test('default scope: an unscoped comment goes to the teams the replay is shared 
   });
 
   expect(comments(await discussion(page, teamA))).toContain('shared by default');
+});
+
+// --- Viewer sidebar scoping: GET /api/replays/[slug]/tags returns only
+// tags the viewer may see (own, or scoped to a team they're in). B71.
+
+test('viewer tag fetch scopes by team membership and authorship', async ({ page, browser, request }) => {
+  await signInAsTestUser(page, { name: 'OwnerV', email: 'ownerv@example.com' });
+  const { slug: teamA } = await createTeam(page, 'View Alpha');
+  const { slug: teamB } = await createTeam(page, 'View Bravo');
+  const { code: codeA } = await generateInvite(page, teamA);
+  const { code: codeB } = await generateInvite(page, teamB);
+
+  const r = await uploadReplay(request, { local: { username: 'OwnerV' }, opponent: { username: 'Foe' } });
+  await claimInstallToken(page, r.installToken);
+  for (const teamSlug of [teamA, teamB]) {
+    await page.request.post(`/api/replays/${r.slug}/team-shares`, {
+      data: { teamSlug }, headers: { 'X-Install-Token': r.installToken },
+    });
+  }
+  // Owner (member of both) writes one comment per audience.
+  const tag = (comment: string, teamSlugs?: string[]) =>
+    page.request.post(`/api/replays/${r.slug}/tags`, {
+      data: { installToken: r.installToken, authorName: 'OwnerV', frameIndex: 0, comment, ...(teamSlugs ? { teamSlugs } : { teamSlugs: undefined }) },
+    });
+  await tag('alpha only', [teamA]);
+  await tag('bravo only', [teamB]);
+  await page.request.post(`/api/replays/${r.slug}/tags`, {
+    data: { installToken: r.installToken, authorName: 'OwnerV', frameIndex: 0, comment: 'my private note', teamSlugs: [] },
+  });
+
+  const fetchComments = async (p: any) => {
+    const res = await p.request.get(`/api/replays/${r.slug}/tags`);
+    const body = await res.json();
+    return (body.data as any[]).map((t) => t.comment);
+  };
+
+  // Amy is in Alpha only.
+  const ctxAmy = await browser.newContext();
+  const amy = await ctxAmy.newPage();
+  await signInAsTestUser(amy, { name: 'Amy', email: 'amy@example.com' });
+  await amy.request.post('/api/teams/join', { data: { code: codeA } });
+
+  // Bob is in Bravo only.
+  const ctxBob = await browser.newContext();
+  const bob = await ctxBob.newPage();
+  await signInAsTestUser(bob, { name: 'Bob', email: 'bob@example.com' });
+  await bob.request.post('/api/teams/join', { data: { code: codeB } });
+
+  const amyComments = await fetchComments(amy);
+  expect(amyComments).toContain('alpha only');
+  expect(amyComments).not.toContain('bravo only');
+  expect(amyComments).not.toContain('my private note');
+
+  const bobComments = await fetchComments(bob);
+  expect(bobComments).toContain('bravo only');
+  expect(bobComments).not.toContain('alpha only');
+  expect(bobComments).not.toContain('my private note');
+
+  // Owner authored all three → sees all three.
+  const ownerComments = await fetchComments(page);
+  expect(ownerComments).toEqual(expect.arrayContaining(['alpha only', 'bravo only', 'my private note']));
+
+  await ctxAmy.close();
+  await ctxBob.close();
 });

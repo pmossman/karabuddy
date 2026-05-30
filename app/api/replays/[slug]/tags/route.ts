@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { generateTagId } from '@/lib/slug';
@@ -7,12 +7,55 @@ import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { auth } from '@/auth';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
+import { getMyTeamSlugs } from '@/lib/teamSurface';
+import { loadTagScopes, resolveTagScope, tagVisibleToViewer, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
 
 export function OPTIONS(req: Request) {
   return preflight(req);
+}
+
+// GET /api/replays/:slug/tags
+// Header: X-Install-Token (optional — identifies an anonymous author).
+// B71: the viewer fetches its tags here (rather than SSR) so the server
+// can scope them to the viewer. Returns only tags the caller may see:
+// their own (by account or install token) + tags scoped to a team they
+// belong to. Personal tags by others, and other teams' tags, are withheld.
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const headers = corsHeaders(req.headers.get('origin'));
+  try {
+    const { slug } = await params;
+    const installToken = (req.headers.get('x-install-token') || '').trim() || null;
+    const viewerUserId = await resolveUserId({ installToken });
+    const viewerTeams = new Set(viewerUserId ? await getMyTeamSlugs(viewerUserId) : []);
+
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(tags)
+      .where(eq(tags.replaySlug, slug))
+      .orderBy(asc(tags.frameIndex));
+    const scopes = await loadTagScopes(rows.map((t) => t.id));
+
+    const visible = rows
+      .filter((t) =>
+        tagVisibleToViewer(t, scopes.get(t.id) ?? new Set(), {
+          userId: viewerUserId,
+          installToken,
+          teams: viewerTeams,
+        }),
+      )
+      .map((t) => ({ ...t, createdAt: t.createdAt.toISOString() }));
+
+    return NextResponse.json({ ok: true, data: visible }, { headers });
+  } catch (err: any) {
+    console.error('[karabuddy] GET /api/replays/:slug/tags failed:', err);
+    return NextResponse.json({ ok: false, error: err?.message || 'internal error' }, { status: 500, headers });
+  }
 }
 
 // POST /api/replays/:slug/tags
