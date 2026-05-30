@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { eq, inArray } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teamMembers, teams, users } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
+import { resolveUserIdFromRequest } from '@/lib/userResolution';
 
 export const runtime = 'nodejs';
 
@@ -27,8 +27,10 @@ export function OPTIONS(req: Request) {
 // CORS lets us short-circuit later if useful).
 export async function GET(req: Request) {
   const headers = corsHeaders(req.headers.get('origin'));
-  const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  // Accept either an Auth.js session OR a known install token. Extension
+  // SW fetches often arrive WITHOUT cookies (SameSite=Lax on cross-
+  // origin) but always carry the install token in a header.
+  const userId = await resolveUserIdFromRequest(req);
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401, headers });
   }

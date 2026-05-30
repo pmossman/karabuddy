@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { eq, inArray } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays } from '@/lib/schema';
 import { getMyTeamSlugs, surfacedReplaySlugs } from '@/lib/teamSurface';
+import { resolveUserIdFromRequest } from '@/lib/userResolution';
 
 export const runtime = 'nodejs';
 
@@ -13,10 +13,11 @@ export const runtime = 'nodejs';
 //   2. Replays surfaced (via lib/teamSurface) to any team they belong to
 //
 // Used by the in-viewer label picker so users can re-tag with the same
-// labels they (or their teammates) have already used.
-export async function GET() {
-  const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+// labels they (or their teammates) have already used. Auth accepts
+// either an Auth.js session OR an install-token header (same dual path
+// the rest of the extension-facing endpoints take).
+export async function GET(req: Request) {
+  const userId = await resolveUserIdFromRequest(req);
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }

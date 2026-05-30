@@ -228,14 +228,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 }
             } else if (msg.type === 'getTeamsMentionData') {
                 // B55c: proxy fetch of karabuddy.app's mention data API.
-                // Caller is the page-world recorder/footer; can't fetch
-                // cross-origin from MAIN, so we route through the SW which
-                // has host_permissions on karabuddy.app. Cookies (auth
-                // session) ride along with `credentials: 'include'`.
+                // Routed through the SW so the page world doesn't deal
+                // with cross-origin CORS. B67: install token sent as
+                // header — Auth.js's SameSite=Lax session cookie isn't
+                // reliable on cross-origin extension fetches, but the
+                // install token is already linked to a user via the
+                // extension_tokens table, so the server resolves us via
+                // either credential.
                 try {
                     const endpoint = await getKarabuddyEndpoint();
+                    const installToken = await getKarabuddyInstallToken();
                     const res = await fetch(`${endpoint}/api/me/teams-mention-data`, {
                         credentials: 'include',
+                        headers: { 'X-Install-Token': installToken },
                     });
                     if (res.status === 401) {
                         sendResponse({ ok: false, error: 'not signed in', status: 401 });

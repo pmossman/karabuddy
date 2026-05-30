@@ -685,13 +685,18 @@
     let mentionDataCache = null;
     let mentionDataLoadedAt = 0;
     const MENTION_TTL_MS = 5 * 60 * 1000;
+    // Returns:
+    //   { teams: [...], members: [...] }  on successful auth (even if both are empty)
+    //   null                              on auth failure / network failure
+    // The shape difference matters for the share-teams panel — "401"
+    // and "signed-in but in 0 teams" need different copy.
     const loadMentionData = async (force = false) => {
         if (!force && mentionDataCache && Date.now() - mentionDataLoadedAt < MENTION_TTL_MS) {
             return mentionDataCache;
         }
         try {
             const result = await B().getTeamsMentionData?.();
-            if (result && result.ok && result.data && (result.data.teams?.length || result.data.members?.length)) {
+            if (result && result.ok && result.data) {
                 mentionDataCache = { teams: result.data.teams || [], members: result.data.members || [] };
                 mentionDataLoadedAt = Date.now();
                 return mentionDataCache;

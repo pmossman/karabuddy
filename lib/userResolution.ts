@@ -12,6 +12,17 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { extensionTokens, users } from '@/lib/schema';
 
+// Convenience: same resolution as resolveUserId, but the install token
+// is sourced from the request's X-Install-Token header. Use this on
+// read-only "who am I" endpoints called from the extension SW where
+// Auth.js's SameSite=Lax cookies don't reliably ride along on cross-
+// origin extension fetches — the install token (already linked to a
+// user via `extension_tokens`) gets us the same answer without
+// depending on cookie semantics.
+export async function resolveUserIdFromRequest(req: Request): Promise<string | null> {
+  return resolveUserId({ installToken: req.headers.get('x-install-token') });
+}
+
 export async function resolveUserId(opts: {
   installToken?: string | null;
   recordedUsername?: string | null;
