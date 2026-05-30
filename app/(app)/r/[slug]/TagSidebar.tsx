@@ -314,7 +314,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   );
   // Manual override (chip checkboxes) wins until reset; else follow mentions.
   const effectiveScope = scopeOverride ?? mentionDrivenScope;
-  const showScopeChip = armedSlugs.length >= 2;
+  // Show whenever the replay is shared with ≥1 of your teams: confirms the
+  // audience, and the expanded checkboxes let you narrow (2+) or go personal.
+  const showScopeChip = armedSlugs.length >= 1;
 
   const resetScope = () => { setScopeOverride(null); setScopeExpanded(false); };
 

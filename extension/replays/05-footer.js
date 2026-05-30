@@ -1042,8 +1042,9 @@
             return scopeFromMentions({ armedTeams: armed, mentionedUserIds: formMentions.userIds, memberTeams });
         };
 
-        // B73: live "Visible to: …" readout mirroring the web scope chip.
-        // Only meaningful with 2+ armed teams (otherwise nothing to narrow).
+        // B73: live "Visible to: …" readout — always shown so you can see a
+        // comment's audience before saving. @mentions narrow it when 2+ teams
+        // are armed; with one armed team it confirms the destination.
         const scopeReadout = document.createElement('div');
         scopeReadout.setAttribute('style', [
             'font: 600 10px -apple-system, BlinkMacSystemFont, sans-serif',
@@ -1052,11 +1053,15 @@
         ].join(';'));
         const refreshScopeReadout = () => {
             const armed = getShareTeamSlugs();
-            if (armed.length < 2) { scopeReadout.style.display = 'none'; return; }
             scopeReadout.style.display = 'block';
             const teamNames = {};
             for (const t of (mentionDataCache && mentionDataCache.teams) || []) teamNames[t.slug] = t.name;
-            scopeReadout.textContent = 'Visible to: ' + scopeLabel(computeTagScope() || [], armed, teamNames);
+            // Always show where this comment will go: the armed team(s) (and
+            // @mentions narrow it when 2+ are armed), or "just you" when no
+            // team is armed. Confidence > minimalism for a privacy control.
+            scopeReadout.textContent = armed.length === 0
+                ? 'Visible to: just you (personal)'
+                : 'Visible to: ' + scopeLabel(computeTagScope() || [], armed, teamNames);
         };
 
         // Autocomplete popover element (built lazily on first @-detect).
