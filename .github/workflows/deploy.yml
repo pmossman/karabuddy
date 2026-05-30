@@ -1,11 +1,13 @@
 name: deploy
 
-# Gated production deploy. Push to main → run the full test suite → deploy a
-# Vercel PREVIEW against the isolated ci-preview DB → smoke-test that live
-# preview → only then build + deploy a FRESH production deployment (prod env
-# / prod DB). Prod never serves the preview artifact, so the ci-preview DB
-# can't leak into prod. Vercel's own auto-deploy on main is turned off via
-# vercel.json (git.deploymentEnabled.main=false) so this is the only path.
+# Gated production deploy. Push to main → full test suite → build the real
+# prod bundle and smoke it locally against the isolated ci-preview Neon
+# branch → only on green, deploy a fresh production build (prod env/DB).
+#
+# CI-local smoke (not a deployed Vercel preview) because preview deploys are
+# SSO-protected and the bypass is Pro-only — this still verifies the real
+# build + real isolated DB end to end. Vercel's own main auto-deploy is off
+# (vercel.json git.deploymentEnabled.main=false), so this is the only path.
 #
 # Requires repo secrets: VERCEL_TOKEN, CI_PREVIEW_POSTGRES_URL.
 
@@ -51,7 +53,7 @@ jobs:
           POSTGRES_URL: postgres://karabuddy_test:karabuddy_test@localhost:5433/karabuddy_test
           CI: '1'
 
-  deploy:
+  smoke-and-deploy:
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -60,40 +62,47 @@ jobs:
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
       - run: npm i -g vercel@latest
+      - run: npx playwright install --with-deps chromium
 
-      # Bring the shared ci-preview branch up to the latest schema (the
-      # preview build's prebuild skips migration on non-prod).
+      # Bring the shared ci-preview branch to the latest schema (prod build's
+      # prebuild only migrates production, so do it explicitly here).
       - name: Migrate ci-preview DB
         run: npm run db:migrate
         env:
           POSTGRES_URL_NON_POOLING: ${{ secrets.CI_PREVIEW_POSTGRES_URL }}
 
-      - name: Build + deploy a preview (ci-preview DB)
-        id: preview
+      # Build the real prod bundle once for the local smoke. `next build`
+      # directly (not `npm run build`) skips the maybe-migrate prebuild.
+      - name: Build prod bundle for smoke
+        run: npx next build
+        env:
+          POSTGRES_URL: ${{ secrets.CI_PREVIEW_POSTGRES_URL }}
+          KARABUDDY_BLOB_MODE: memory
+          AUTH_SECRET: ci-smoke-secret
+          AUTH_URL: http://localhost:3000
+          AUTH_DISCORD_ID: unused
+          AUTH_DISCORD_SECRET: unused
+          AUTH_GOOGLE_ID: unused
+          AUTH_GOOGLE_SECRET: unused
+
+      # Smoke the prebuilt prod server against the ci-preview DB. The smoke
+      # config boots `next start` (no SMOKE_BASE_URL) inheriting this env.
+      - name: Smoke the local prod server (ci-preview DB)
+        run: npx playwright test --config playwright.smoke.config.ts
+        env:
+          POSTGRES_URL: ${{ secrets.CI_PREVIEW_POSTGRES_URL }}
+          KARABUDDY_BLOB_MODE: memory
+          AUTH_SECRET: ci-smoke-secret
+          AUTH_URL: http://localhost:3000
+          AUTH_DISCORD_ID: unused
+          AUTH_DISCORD_SECRET: unused
+          AUTH_GOOGLE_ID: unused
+          AUTH_GOOGLE_SECRET: unused
+
+      # Smoke passed → deploy a FRESH production build (Vercel builds remotely
+      # with prod env; its prebuild migrates prod). No ci-preview env in scope
+      # here, so prod can't pick up the test DB.
+      - name: Deploy to production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
-          vercel build --token="$VERCEL_TOKEN"
-          URL=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN" \
-            --env POSTGRES_URL="${{ secrets.CI_PREVIEW_POSTGRES_URL }}" \
-            --env POSTGRES_URL_NON_POOLING="${{ secrets.CI_PREVIEW_POSTGRES_URL }}")
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-          echo "preview: $URL"
-
-      - name: Smoke-test the live preview
-        run: |
-          npx playwright install --with-deps chromium
-          npx playwright test --config playwright.smoke.config.ts
-        env:
-          SMOKE_BASE_URL: ${{ steps.preview.outputs.url }}
-
-      # Only reached if the smoke suite passed: fresh PROD build (prod env +
-      # prod DB; prebuild runs migrations against prod) → deploy to prod.
-      - name: Build + deploy to production
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel build --prod --token="$VERCEL_TOKEN"
-          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"
