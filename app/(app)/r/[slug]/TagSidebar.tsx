@@ -44,6 +44,9 @@ interface TagRow {
   authorName: string;
   comment: string;
   createdAt: string;
+  // B71: team slugs this tag is visible to (empty/absent = personal).
+  // Returned by GET /tags so the viewer can show + edit each tag's audience.
+  scope?: string[];
 }
 
 type StepMode = 'action' | 'frame';
@@ -394,18 +397,21 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     setTags((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const updateComment = async (id: string, comment: string) => {
+  // B71-followup: editing a tag can also change its team scope. teamSlugs
+  // undefined → comment-only edit (scope untouched); an array → re-scope
+  // (server clamps to shares ∩ the author's memberships and returns it).
+  const updateComment = async (id: string, comment: string, teamSlugs?: string[]) => {
     const res = await fetch(`/api/replays/${replay.slug}/tags/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
-      body: JSON.stringify({ comment }),
+      body: JSON.stringify({ comment, ...(teamSlugs !== undefined ? { teamSlugs } : {}) }),
     });
     const body = await res.json();
     if (!body.ok) {
       alert(`Failed to update: ${body.error || 'unknown'}`);
       return;
     }
-    setTags((prev) => prev.map((t) => (t.id === id ? { ...t, comment } : t)));
+    setTags((prev) => prev.map((t) => (t.id === id ? { ...t, comment, ...(body.scope ? { scope: body.scope } : {}) } : t)));
   };
 
   const tagsAtCurrent = tagsByFrame.get(currentIndex) || [];
@@ -802,9 +808,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                   isCurrent={true}
                   canEdit={canEdit}
                   canDelete={canDelete}
+                  armedTeams={armedTeams}
                   onJumpTo={() => {}}
                   onDelete={() => deleteTag(t.id)}
-                  onUpdate={(comment) => updateComment(t.id, comment)}
+                  onUpdate={(comment, teamSlugs) => updateComment(t.id, comment, teamSlugs)}
                 />
               );
             })}
@@ -840,9 +847,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                       isCurrent={false}
                       canEdit={canEdit}
                       canDelete={canDelete}
+                      armedTeams={armedTeams}
                       onJumpTo={() => onJump(t.frameIndex)}
                       onDelete={() => deleteTag(t.id)}
-                      onUpdate={(comment) => updateComment(t.id, comment)}
+                      onUpdate={(comment, teamSlugs) => updateComment(t.id, comment, teamSlugs)}
                     />
                   );
                 })}
@@ -1376,6 +1384,7 @@ function TagRowView({
   isCurrent,
   canEdit,
   canDelete,
+  armedTeams,
   onJumpTo,
   onDelete,
   onUpdate,
@@ -1388,12 +1397,38 @@ function TagRowView({
   // their mouth).
   canEdit: boolean;
   canDelete: boolean;
+  // B71: teams the viewer could scope this tag to (replay shares ∩ their
+  // teams). Drives the per-tag "Visible to:" readout + edit chip.
+  armedTeams: { slug: string; name: string }[];
   onJumpTo: () => void;
   onDelete: () => void;
-  onUpdate: (comment: string) => void;
+  onUpdate: (comment: string, teamSlugs?: string[]) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tag.comment);
+  const [editScope, setEditScope] = useState<string[]>(tag.scope ?? []);
+  const [scopeExpanded, setScopeExpanded] = useState(false);
+
+  const armedSlugs = armedTeams.map((t) => t.slug);
+  const teamNames = Object.fromEntries(armedTeams.map((t) => [t.slug, t.name])) as Record<string, string>;
+  const canScope = armedSlugs.length >= 1; // replay shared with ≥1 of my teams
+
+  const beginEdit = () => {
+    setDraft(tag.comment);
+    setEditScope(tag.scope ?? []);
+    setScopeExpanded(false);
+    setEditing(true);
+  };
+  const save = () => {
+    onUpdate(draft.trim(), canScope ? editScope : undefined);
+    setEditing(false);
+  };
+  const cancel = () => {
+    setDraft(tag.comment);
+    setEditScope(tag.scope ?? []);
+    setEditing(false);
+  };
+
   return (
     <div
       onClick={() => !editing && onJumpTo()}
@@ -1416,45 +1451,66 @@ function TagRowView({
           <span>frame {tag.frameIndex + 1}</span>
         </div>
         {editing ? (
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            autoFocus
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              background: '#11141a',
-              color: '#e6e6e6',
-              border: '1px solid #4a7cff',
-              borderRadius: 4,
-              padding: '4px 6px',
-              font: '12px inherit',
-              resize: 'vertical',
-              outline: 'none',
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                e.preventDefault();
-                onUpdate(draft.trim());
-                setEditing(false);
-              } else if (e.key === 'Escape') {
-                e.preventDefault();
-                setDraft(tag.comment);
-                setEditing(false);
-              }
-            }}
-            onBlur={() => {
-              onUpdate(draft.trim());
-              setEditing(false);
-            }}
-          />
+          <>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              autoFocus
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                background: '#11141a',
+                color: '#e6e6e6',
+                border: '1px solid #4a7cff',
+                borderRadius: 4,
+                padding: '4px 6px',
+                font: '12px inherit',
+                resize: 'vertical',
+                outline: 'none',
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+                else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+              }}
+            />
+            {canScope && (
+              <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+                <ScopeChip
+                  armedTeams={armedTeams}
+                  effectiveScope={editScope}
+                  teamNames={teamNames}
+                  expanded={scopeExpanded}
+                  onToggleExpand={() => setScopeExpanded((v) => !v)}
+                  onToggleTeam={(slug) =>
+                    setEditScope((prev) => {
+                      const set = new Set(prev);
+                      if (set.has(slug)) set.delete(slug); else set.add(slug);
+                      return armedSlugs.filter((s) => set.has(s));
+                    })
+                  }
+                  onPersonal={() => setEditScope([])}
+                />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, alignSelf: 'flex-end', marginTop: 4 }}>
+              <FooterBtn variant="ghost" onClick={(e?: any) => { e?.stopPropagation?.(); cancel(); }}>Cancel</FooterBtn>
+              <FooterBtn onClick={(e?: any) => { e?.stopPropagation?.(); save(); }}>Save</FooterBtn>
+            </div>
+          </>
         ) : (
-          <div
-            style={{ fontSize: 12, color: tag.comment ? '#d6d6d6' : '#6c7588', lineHeight: 1.35, wordWrap: 'break-word', whiteSpace: 'pre-wrap', fontStyle: tag.comment ? 'normal' : 'italic' }}
-          >
-            {tag.comment ? <MentionedComment text={tag.comment} /> : '(no comment)'}
-          </div>
+          <>
+            <div
+              style={{ fontSize: 12, color: tag.comment ? '#d6d6d6' : '#6c7588', lineHeight: 1.35, wordWrap: 'break-word', whiteSpace: 'pre-wrap', fontStyle: tag.comment ? 'normal' : 'italic' }}
+            >
+              {tag.comment ? <MentionedComment text={tag.comment} /> : '(no comment)'}
+            </div>
+            {canScope && (
+              <div style={{ fontSize: 10, color: '#6c7588', marginTop: 1 }}>
+                Visible to: {scopeLabel(tag.scope ?? [], armedSlugs, teamNames)}
+              </div>
+            )}
+          </>
         )}
       </div>
       {(canEdit || canDelete) && !editing && (
@@ -1464,8 +1520,7 @@ function TagRowView({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setDraft(tag.comment);
-                setEditing(true);
+                beginEdit();
               }}
               title="Edit this tag"
               style={{ background: 'transparent', border: 0, color: '#6c7588', cursor: 'pointer', padding: '0 4px', fontSize: 13, lineHeight: 1 }}

@@ -49,6 +49,7 @@ interface TagRow {
   authorName: string;
   comment: string;
   createdAt: string;
+  scope?: string[];
 }
 
 interface Props {

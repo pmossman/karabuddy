@@ -49,7 +49,7 @@ export async function GET(
           teams: viewerTeams,
         }),
       )
-      .map((t) => ({ ...t, createdAt: t.createdAt.toISOString() }));
+      .map((t) => ({ ...t, createdAt: t.createdAt.toISOString(), scope: Array.from(scopes.get(t.id) ?? []) }));
 
     // B71: the comment form's scope chip needs the teams THIS viewer can
     // scope a comment to here — i.e. teams they belong to that the replay

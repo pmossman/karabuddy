@@ -6,6 +6,7 @@ import { corsHeaders, preflight } from '@/lib/cors';
 import { auth } from '@/auth';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { authContextFromRequest, canDeleteTag, canEditTag } from '@/lib/replayPermissions';
+import { resolveTagScope, replaceTagScope } from '@/lib/tagScope';
 
 // Predicates live in lib/replayPermissions — these wrappers just
 // resolve the session (server-only) and look up the parent replay for
@@ -71,7 +72,18 @@ export async function PATCH(
       updates.mentions = m.userIds.length || m.teamSlugs.length ? m : null;
     }
     await db.update(tags).set(updates).where(eq(tags.id, id));
-    return NextResponse.json({ ok: true }, { headers });
+    // B71-followup: edit the tag's team scope. teamSlugs present (incl. [])
+    // → re-resolve against the author's memberships ∩ replay shares and
+    // replace the scope rows ([] = personal). Absent → leave scope untouched.
+    let scope: string[] | undefined;
+    if (body.teamSlugs !== undefined) {
+      const requested = Array.isArray(body.teamSlugs)
+        ? body.teamSlugs.filter((s: unknown) => typeof s === 'string')
+        : [];
+      scope = await resolveTagScope({ replaySlug: slug, authorUserId: row.userId, requested });
+      await replaceTagScope(id, scope);
+    }
+    return NextResponse.json({ ok: true, ...(scope ? { scope } : {}) }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] PATCH tag failed:', err);
     return NextResponse.json({ ok: false, error: err?.message || 'internal error' }, { status: 500, headers });

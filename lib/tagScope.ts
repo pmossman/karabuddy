@@ -193,3 +193,11 @@ export async function writeTagScope(tagId: string, teamSlugs: string[]): Promise
     .values(teamSlugs.map((teamSlug) => ({ tagId, teamSlug })))
     .onConflictDoNothing();
 }
+
+// Replace a tag's scope (for editing an existing tag): clear its rows then
+// write the new set. Empty set → personal.
+export async function replaceTagScope(tagId: string, teamSlugs: string[]): Promise<void> {
+  const db = getDb();
+  await db.delete(tagTeamScope).where(eq(tagTeamScope.tagId, tagId));
+  await writeTagScope(tagId, teamSlugs);
+}

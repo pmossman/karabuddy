@@ -255,3 +255,84 @@ test('web comment form: scope chip narrows a comment to one team', async ({ page
   await expect.poll(() => comments(teamA)).toContain('chip-narrowed to alpha');
   expect(await comments(teamB)).not.toContain('chip-narrowed to alpha');
 });
+
+// --- Editing an existing tag's scope (viewer). PATCH /tags/[id] honours
+// teamSlugs, re-resolving + replacing the tag's scope. B71-followup. ---
+
+test('editing a tag can move its team scope (and GET returns current scope)', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'Editor', email: 'editor@example.com' });
+  const { slug: teamA } = await createTeam(page, 'Edit Alpha');
+  const { slug: teamB } = await createTeam(page, 'Edit Bravo');
+
+  const r = await uploadReplay(request, { local: { username: 'Editor' }, opponent: { username: 'Foe' } });
+  await claimInstallToken(page, r.installToken);
+  for (const teamSlug of [teamA, teamB]) {
+    await page.request.post(`/api/replays/${r.slug}/team-shares`, {
+      data: { teamSlug }, headers: { 'X-Install-Token': r.installToken },
+    });
+  }
+  // Create scoped to Alpha.
+  const created = await page.request.post(`/api/replays/${r.slug}/tags`, {
+    data: { installToken: r.installToken, authorName: 'Editor', frameIndex: 0, comment: 'movable', teamSlugs: [teamA] },
+  });
+  const { id } = await created.json();
+
+  const comments = async (slug: string) => {
+    const res = await page.request.get(`/api/teams/${slug}/discussion`);
+    return ((await res.json()).data as any[]).map((i) => i.latestTag?.comment).filter(Boolean);
+  };
+  const scopeOf = async () => {
+    const res = await page.request.get(`/api/replays/${r.slug}/tags`, { headers: { 'X-Install-Token': r.installToken } });
+    return ((await res.json()).data as any[]).find((t) => t.id === id)?.scope?.sort();
+  };
+
+  // Initially Alpha only.
+  expect(await comments(teamA)).toContain('movable');
+  expect(await comments(teamB)).not.toContain('movable');
+  expect(await scopeOf()).toEqual([teamA]);
+
+  // Edit scope → Bravo.
+  const patch = await page.request.patch(`/api/replays/${r.slug}/tags/${id}`, {
+    data: { comment: 'movable', teamSlugs: [teamB] },
+    headers: { 'X-Install-Token': r.installToken },
+  });
+  expect(patch.ok()).toBe(true);
+
+  expect(await comments(teamB)).toContain('movable');
+  expect(await comments(teamA)).not.toContain('movable');
+  expect(await scopeOf()).toEqual([teamB]);
+});
+
+test('viewer: a tag shows its scope and can be re-scoped via the edit chip', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'UiEditor', email: 'uieditor@example.com' });
+  const { slug: teamA } = await createTeam(page, 'UiEdit Alpha');
+  const { slug: teamB } = await createTeam(page, 'UiEdit Bravo');
+  const r = await uploadReplay(request, { local: { username: 'UiEditor' }, opponent: { username: 'Foe' } });
+  await claimInstallToken(page, r.installToken);
+  for (const teamSlug of [teamA, teamB]) {
+    await page.request.post(`/api/replays/${r.slug}/team-shares`, {
+      data: { teamSlug }, headers: { 'X-Install-Token': r.installToken },
+    });
+  }
+  await page.request.post(`/api/replays/${r.slug}/tags`, {
+    data: { installToken: r.installToken, authorName: 'UiEditor', frameIndex: 0, comment: 'ui rescope me', teamSlugs: [teamA] },
+  });
+
+  await page.goto(`/r/${r.slug}`);
+  // The tag row shows its current audience.
+  await expect(page.getByText('Visible to: UiEdit Alpha only').first()).toBeVisible();
+
+  // Edit it → chip → switch to Bravo → save.
+  await page.getByTitle('Edit this tag').first().click();
+  await page.getByTestId('scope-chip-toggle').click();
+  await page.getByRole('checkbox', { name: 'UiEdit Bravo' }).check();
+  await page.getByRole('checkbox', { name: 'UiEdit Alpha' }).uncheck();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  const comments = async (slug: string) => {
+    const res = await page.request.get(`/api/teams/${slug}/discussion`);
+    return ((await res.json()).data as any[]).map((i) => i.latestTag?.comment).filter(Boolean);
+  };
+  await expect.poll(() => comments(teamB)).toContain('ui rescope me');
+  expect(await comments(teamA)).not.toContain('ui rescope me');
+});
