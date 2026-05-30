@@ -14,6 +14,26 @@
     const LOG = (...args) => console.info('[karabuddy:bridge]', ...args);
     LOG('loaded on', window.location.href);
 
+    // Persist the page's origin as the SW endpoint. The bridge runs on
+    // every karabuddy.app match in the manifest (prod, *.karabuddy.app,
+    // *.vercel.app, http://localhost:3000) — whichever the user is
+    // currently using is by definition the endpoint the SW should hit
+    // for whoami / teams-mention-data / team-shares calls. Without this,
+    // a dev user running localhost gets SW fetches against prod (where
+    // their install token isn't linked) and the bubble silently shows
+    // "Not signed in". Latest-visit wins; reverts cleanly when the user
+    // hits prod again.
+    (async () => {
+        try {
+            const origin = window.location.origin;
+            const { karabuddyEndpoint: current } = await chrome.storage.local.get('karabuddyEndpoint');
+            if (current !== origin) {
+                await chrome.storage.local.set({ karabuddyEndpoint: origin });
+                LOG('endpoint pinned to', origin);
+            }
+        } catch {}
+    })();
+
     // Get-or-mint the install token. Same as background.js's
     // getKarabuddyInstallToken but inlined here so the bridge can run
     // without bouncing through the SW.
