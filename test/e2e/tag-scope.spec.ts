@@ -214,3 +214,44 @@ test('upload applies armed shares and scopes lifted in-game tags', async ({ page
   expect(b).toContain('broadcast note');
   expect(b).not.toContain('alpha note');
 });
+
+// --- Web comment-form scope chip (TagSidebar). Proves the chip renders for
+// a replay shared with 2+ of my teams, and that narrowing via the chip
+// sends teamSlugs so the comment is withheld from the deselected team. B71.
+
+test('web comment form: scope chip narrows a comment to one team', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'ChipUser', email: 'chip@example.com' });
+  const { slug: teamA } = await createTeam(page, 'Chip Alpha');
+  const { slug: teamB } = await createTeam(page, 'Chip Bravo');
+
+  const r = await uploadReplay(request, { local: { username: 'ChipUser' }, opponent: { username: 'Foe' } });
+  await claimInstallToken(page, r.installToken);
+  for (const teamSlug of [teamA, teamB]) {
+    await page.request.post(`/api/replays/${r.slug}/team-shares`, {
+      data: { teamSlug }, headers: { 'X-Install-Token': r.installToken },
+    });
+  }
+
+  await page.goto(`/r/${r.slug}`);
+  await page.getByRole('button', { name: '+ Tag this frame' }).click();
+
+  // Chip appears (2 teams armed) and defaults to "All 2 teams".
+  await expect(page.getByTestId('scope-chip')).toBeVisible();
+  await expect(page.getByTestId('scope-chip-label')).toHaveText(/All 2 teams/);
+
+  // Expand, deselect Bravo → narrows to Alpha.
+  await page.getByTestId('scope-chip-toggle').click();
+  await page.getByRole('checkbox', { name: 'Chip Bravo' }).uncheck();
+  await expect(page.getByTestId('scope-chip-label')).toHaveText(/Chip Alpha only/);
+
+  await page.getByPlaceholder(/Your note about this moment/).fill('chip-narrowed to alpha');
+  await page.getByText('Save tag').click();
+
+  // Alpha sees it; Bravo does not.
+  const comments = async (slug: string) => {
+    const res = await page.request.get(`/api/teams/${slug}/discussion`);
+    return ((await res.json()).data as any[]).map((i) => i.latestTag?.comment).filter(Boolean);
+  };
+  await expect.poll(() => comments(teamA)).toContain('chip-narrowed to alpha');
+  expect(await comments(teamB)).not.toContain('chip-narrowed to alpha');
+});

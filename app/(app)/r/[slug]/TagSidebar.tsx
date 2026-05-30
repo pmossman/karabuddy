@@ -13,6 +13,9 @@ import { DecksModal } from './DecksModal';
 import { ShareWithTeam } from './ShareWithTeam';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
 import { EditableTitle } from './EditableTitle';
+// B71: shared scope-derivation — same module the extension copies, so the
+// web comment form and the in-game bubble narrow audiences identically.
+import { scopeFromMentions, scopeLabel } from '@/lib/commentScope';
 import { LabelsRow } from './LabelsRow';
 
 interface ReplayRow {
@@ -88,6 +91,10 @@ interface Props {
   matchMeta: MatchMeta | null;
   decks: DecksByUserId | null;
   localPlayerId: string | null;
+  // B71: teams the comment author can scope a tag to here = teams they're
+  // in that this replay is shared with (audience ⊆ shares). Drives the
+  // scope chip; empty / single → no chip (nothing to narrow).
+  armedTeams: { slug: string; name: string }[];
 }
 
 // B42 chip labels live in lib/matchMetadata.ts — single source of truth
@@ -122,7 +129,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -136,6 +143,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // tag form for the first time. Null = not loaded yet / not signed in.
   const [mentionData, setMentionData] = useState<MentionData | null>(null);
   const mentionLoadedRef = useRef(false);
+  // B71: per-comment scope. null = follow the mentions (the default rule);
+  // a string[] = a manual override the user set via the chip. Reset after
+  // each submit. `scopeExpanded` toggles the chip's checkbox panel.
+  const [scopeOverride, setScopeOverride] = useState<string[] | null>(null);
+  const [scopeExpanded, setScopeExpanded] = useState(false);
   const [visibility, setVisibility] = useState(replay.visibility);
   const [copied, setCopied] = useState(false);
   const [visBusy, setVisBusy] = useState(false);
@@ -282,6 +294,30 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     return m;
   }, [tags]);
 
+  // B71: scope-chip derivation. armedSlugs = the teams I can scope to here
+  // (replay shares ∩ my teams). memberTeams maps a mentioned user → their
+  // teams so the SHARED scopeFromMentions rule can narrow live. The chip
+  // only appears when there's an actual choice (2+ armed teams).
+  const armedSlugs = useMemo(() => armedTeams.map((t) => t.slug), [armedTeams]);
+  const teamNames = useMemo(
+    () => Object.fromEntries(armedTeams.map((t) => [t.slug, t.name])) as Record<string, string>,
+    [armedTeams],
+  );
+  const memberTeams = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const m of mentionData?.members ?? []) map[m.userId] = m.teamSlugs;
+    return map;
+  }, [mentionData]);
+  const mentionDrivenScope = useMemo(
+    () => scopeFromMentions({ armedTeams: armedSlugs, mentionedUserIds: draftMentions.userIds, memberTeams }),
+    [armedSlugs, draftMentions.userIds, memberTeams],
+  );
+  // Manual override (chip checkboxes) wins until reset; else follow mentions.
+  const effectiveScope = scopeOverride ?? mentionDrivenScope;
+  const showScopeChip = armedSlugs.length >= 2;
+
+  const resetScope = () => { setScopeOverride(null); setScopeExpanded(false); };
+
   const submitTag = async () => {
     if (!installToken || !frames) return;
     const hasMentions = draftMentions.userIds.length > 0 || draftMentions.teamSlugs.length > 0;
@@ -296,6 +332,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         // B55c: structured mentions selected via autocomplete. Only sent
         // when non-empty so old API consumers stay backward-compatible.
         ...(hasMentions ? { mentions: draftMentions } : {}),
+        // B71: only send teamSlugs when the chip is in play (replay shared
+        // with 2+ of my teams). With 0/1 armed teams the server default
+        // (all shares) is already correct, so we stay backward-compatible.
+        ...(showScopeChip ? { teamSlugs: effectiveScope } : {}),
       }),
     });
     const body = await res.json();
@@ -317,6 +357,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     ]);
     setDraft('');
     setDraftMentions({ userIds: [], teamSlugs: [] });
+    resetScope();
     setFormOpen(false);
   };
 
@@ -713,8 +754,30 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 minHeight: 50,
               }}
             />
+            {showScopeChip && (
+              <ScopeChip
+                armedTeams={armedTeams}
+                effectiveScope={effectiveScope}
+                teamNames={teamNames}
+                expanded={scopeExpanded}
+                onToggleExpand={() => setScopeExpanded((v) => !v)}
+                onToggleTeam={(slug) => {
+                  // First manual edit seeds the override from the current
+                  // (mention-driven) scope, then toggles this team. Further
+                  // mention edits are overridden until the tag is submitted.
+                  setScopeOverride((prev) => {
+                    const base = prev ?? effectiveScope;
+                    const set = new Set(base);
+                    if (set.has(slug)) set.delete(slug); else set.add(slug);
+                    // Keep armed order for stability.
+                    return armedSlugs.filter((s) => set.has(s));
+                  });
+                }}
+                onPersonal={() => setScopeOverride([])}
+              />
+            )}
             <div style={{ display: 'flex', gap: 6, alignSelf: 'flex-end' }}>
-              <FooterBtn variant="ghost" onClick={() => setFormOpen(false)}>Cancel</FooterBtn>
+              <FooterBtn variant="ghost" onClick={() => { resetScope(); setFormOpen(false); }}>Cancel</FooterBtn>
               <FooterBtn onClick={submitTag}>Save tag</FooterBtn>
             </div>
           </div>
@@ -1185,6 +1248,76 @@ function ModeSegmented({ mode, setMode, title }: { mode: StepMode; setMode: (m: 
     <div title={title} style={{ display: 'inline-flex', alignSelf: 'flex-start', border: '1px solid #4a4e56', borderRadius: 4, overflow: 'hidden', height: 22 }}>
       <button type="button" style={{ ...seg, ...(mode === 'action' ? sel : {}) }} onClick={() => setMode('action')}>Action</button>
       <button type="button" style={{ ...seg, ...(mode === 'frame' ? sel : {}) }} onClick={() => setMode('frame')}>Frame</button>
+    </div>
+  );
+}
+
+// B71: collapsed scope chip for the comment form. Shows a live readout of
+// who'll see the comment; click to expand the per-team checkboxes + a
+// "Just me" (personal) option. Only rendered when 2+ teams are armed.
+function ScopeChip({
+  armedTeams,
+  effectiveScope,
+  teamNames,
+  expanded,
+  onToggleExpand,
+  onToggleTeam,
+  onPersonal,
+}: {
+  armedTeams: { slug: string; name: string }[];
+  effectiveScope: string[];
+  teamNames: Record<string, string>;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onToggleTeam: (slug: string) => void;
+  onPersonal: () => void;
+}) {
+  const armedSlugs = armedTeams.map((t) => t.slug);
+  const label = scopeLabel(effectiveScope, armedSlugs, teamNames);
+  const isPersonal = effectiveScope.length === 0;
+  return (
+    <div data-testid="scope-chip" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <button
+        type="button"
+        data-testid="scope-chip-toggle"
+        onClick={onToggleExpand}
+        style={{
+          alignSelf: 'flex-start',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          background: 'rgba(74, 124, 255, 0.08)',
+          border: '1px solid rgba(74, 124, 255, 0.3)',
+          color: '#a0c4ff',
+          borderRadius: 999,
+          padding: '3px 10px',
+          fontSize: 11,
+          fontWeight: 600,
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{ color: '#6c7588' }}>Visible to:</span>
+        <span data-testid="scope-chip-label">{label}</span>
+        <span style={{ fontSize: 9 }}>{expanded ? '▴' : '▾'}</span>
+      </button>
+      {expanded && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 8px', background: '#11141a', border: '1px solid #2e333c', borderRadius: 6 }}>
+          {armedTeams.map((t) => {
+            const checked = effectiveScope.includes(t.slug);
+            return (
+              <label key={t.slug} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#e6e6e6', cursor: 'pointer' }}>
+                <input type="checkbox" checked={checked} onChange={() => onToggleTeam(t.slug)} />
+                {t.name}
+              </label>
+            );
+          })}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: isPersonal ? '#e6e6e6' : '#a0a8b8', cursor: 'pointer', borderTop: '1px solid #2e333c', paddingTop: 4, marginTop: 2 }}>
+            <input type="radio" checked={isPersonal} onChange={onPersonal} />
+            Just me (personal)
+          </label>
+        </div>
+      )}
     </div>
   );
 }

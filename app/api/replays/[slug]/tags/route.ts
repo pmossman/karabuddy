@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, tags } from '@/lib/schema';
+import { replays, replayTeamShares, tags, teams } from '@/lib/schema';
 import { generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
@@ -51,7 +51,19 @@ export async function GET(
       )
       .map((t) => ({ ...t, createdAt: t.createdAt.toISOString() }));
 
-    return NextResponse.json({ ok: true, data: visible }, { headers });
+    // B71: the comment form's scope chip needs the teams THIS viewer can
+    // scope a comment to here — i.e. teams they belong to that the replay
+    // is shared with (audience ⊆ shares). Empty/one-team → no chip shown.
+    let armedTeams: { slug: string; name: string }[] = [];
+    if (viewerTeams.size > 0) {
+      armedTeams = await db
+        .select({ slug: teams.slug, name: teams.name })
+        .from(replayTeamShares)
+        .innerJoin(teams, eq(teams.slug, replayTeamShares.teamSlug))
+        .where(and(eq(replayTeamShares.replaySlug, slug), inArray(replayTeamShares.teamSlug, Array.from(viewerTeams))));
+    }
+
+    return NextResponse.json({ ok: true, data: visible, armedTeams }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] GET /api/replays/:slug/tags failed:', err);
     return NextResponse.json({ ok: false, error: err?.message || 'internal error' }, { status: 500, headers });

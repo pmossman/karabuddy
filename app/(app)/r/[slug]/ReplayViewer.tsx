@@ -138,6 +138,11 @@ function ViewerShell({ replay, initialTags }: Props) {
   const [installToken, setInstallToken] = useState('');
   useEffect(() => { setInstallToken(getOrCreateInstallToken()); }, []);
 
+  // B71: armed teams = teams I'm in that this replay is shared with. Drives
+  // the comment form's scope chip (audience ⊆ shares). Returned alongside
+  // the scoped tags so the form knows the bounds without a second request.
+  const [armedTeams, setArmedTeams] = useState<{ slug: string; name: string }[]>([]);
+
   // B71: tags are fetched (not SSR'd) so the server can scope them to the
   // viewer — own comments + tags scoped to a team they're in. Refetched
   // when the install token resolves (identifies an anonymous author) or
@@ -153,6 +158,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         const body = await res.json();
         if (cancelled || !body.ok) return;
         setTagState((body.data as TagRow[]) ?? []);
+        setArmedTeams((body.armedTeams as { slug: string; name: string }[]) ?? []);
       } catch {
         /* keep whatever's already in state */
       }
@@ -406,6 +412,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         matchMeta={replay.match ?? decoded?.meta.match ?? null}
         decks={replay.decks ?? decoded?.meta.decks ?? null}
         localPlayerId={decoded?.meta.localPlayerId ?? null}
+        armedTeams={armedTeams}
       />
       <FrameNavOverlay
         drawerOpen={drawerOpen}
