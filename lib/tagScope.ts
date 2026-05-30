@@ -88,26 +88,39 @@ export async function loadTagScopes(tagIds: string[]): Promise<Map<string, Set<s
   return map;
 }
 
-// One-shot migration backfill (B71). Pre-B71 tags carry no scope rows;
-// surfacing used to be "tagged by a member", so they leaked. We recover
-// the unambiguous cases: a tag on a replay shared with EXACTLY ONE team
-// is scoped to that team (it could only have been meant for them).
-// Replays shared with 0 or 2+ teams stay personal (we can't infer intent).
+// One-shot migration/recovery backfill (B71/B74). Pre-B71 tags carry no
+// scope rows; surfacing used to be "tagged by a member" (often with no
+// explicit share), so after the cutover those discussions vanish. Recover
+// each replay's scope from the best available signal, per replay:
 //
-// NOT idempotent w.r.t. intentionally-personal tags: re-running after
-// go-live would wrongly scope a deliberately-personal comment on a
-// single-share replay. Run once, before/at B71 deploy.
-export async function backfillTagScopes(): Promise<{ scanned: number; scoped: number }> {
+//   1. Explicit shares → scope to the shared team(s).
+//   2. Else the single team that ALL of the replay's member-taggers have in
+//      common — i.e. the team the discussion was happening in. Solo teams
+//      (1 member) are excluded as candidates: a comment can't meaningfully
+//      "belong" to a team that's only the author, and they otherwise create
+//      false ambiguity (you in your own test team + a real team).
+//   3. Else (no shares, 0 or >1 common multi-member teams) → leave personal;
+//      intent is genuinely ambiguous and scoping would risk a leak.
+//
+// A replay's whole discussion is scoped together (all its unscoped tags get
+// the resolved team), matching the pre-B71 "all tags on a surfaced replay
+// were visible" behavior — without leaking, since the resolved team is the
+// single common one. Returns counts for reporting.
+//
+// NOT idempotent w.r.t. intentionally-personal tags. Run once, at cutover.
+export async function backfillTagScopes(): Promise<{ scanned: number; scoped: number; replaysRecovered: number }> {
   const db = getDb();
-  // Tags with no scope rows (pre-B71 / personal).
+  // Unscoped tags (pre-B71 / personal) with their author.
   const unscoped = await db
-    .select({ id: tags.id, replaySlug: tags.replaySlug })
+    .select({ id: tags.id, replaySlug: tags.replaySlug, userId: tags.userId })
     .from(tags)
     .leftJoin(tagTeamScope, eq(tagTeamScope.tagId, tags.id))
     .where(isNull(tagTeamScope.tagId));
-  if (unscoped.length === 0) return { scanned: 0, scoped: 0 };
+  if (unscoped.length === 0) return { scanned: 0, scoped: 0, replaysRecovered: 0 };
 
   const slugs = Array.from(new Set(unscoped.map((t) => t.replaySlug)));
+
+  // Explicit shares per replay (signal 1).
   const shareRows = await db
     .select({ replaySlug: replayTeamShares.replaySlug, teamSlug: replayTeamShares.teamSlug })
     .from(replayTeamShares)
@@ -119,15 +132,55 @@ export async function backfillTagScopes(): Promise<{ scanned: number; scoped: nu
     sharesByReplay.set(r.replaySlug, list);
   }
 
+  // Team memberships → userId's teams + each team's member count (to drop
+  // solo teams as candidates).
+  const memberRows = await db
+    .select({ userId: teamMembers.userId, teamSlug: teamMembers.teamSlug })
+    .from(teamMembers);
+  const teamsByUser = new Map<string, Set<string>>();
+  const teamMemberCount = new Map<string, number>();
+  for (const m of memberRows) {
+    if (!teamsByUser.has(m.userId)) teamsByUser.set(m.userId, new Set());
+    teamsByUser.get(m.userId)!.add(m.teamSlug);
+    teamMemberCount.set(m.teamSlug, (teamMemberCount.get(m.teamSlug) ?? 0) + 1);
+  }
+
+  // Member-taggers per replay (distinct authors that are in some team).
+  const taggersByReplay = new Map<string, Set<string>>();
+  for (const t of unscoped) {
+    if (t.userId && teamsByUser.has(t.userId)) {
+      if (!taggersByReplay.has(t.replaySlug)) taggersByReplay.set(t.replaySlug, new Set());
+      taggersByReplay.get(t.replaySlug)!.add(t.userId);
+    }
+  }
+
+  // Resolve the scope team(s) per replay.
+  const resolvedByReplay = new Map<string, string[]>();
+  for (const slug of slugs) {
+    const shares = sharesByReplay.get(slug) ?? [];
+    if (shares.length >= 1) {
+      resolvedByReplay.set(slug, shares);
+      continue;
+    }
+    const taggers = Array.from(taggersByReplay.get(slug) ?? []);
+    if (taggers.length === 0) continue; // personal
+    // Multi-member teams that contain every member-tagger.
+    const common = Array.from(teamMemberCount.keys()).filter(
+      (team) => (teamMemberCount.get(team) ?? 0) >= 2 && taggers.every((u) => teamsByUser.get(u)?.has(team)),
+    );
+    if (common.length === 1) resolvedByReplay.set(slug, common);
+    // 0 or >1 → leave personal (ambiguous).
+  }
+
   const inserts: { tagId: string; teamSlug: string }[] = [];
   for (const t of unscoped) {
-    const shares = sharesByReplay.get(t.replaySlug) ?? [];
-    if (shares.length === 1) inserts.push({ tagId: t.id, teamSlug: shares[0] });
+    const resolved = resolvedByReplay.get(t.replaySlug);
+    if (resolved) for (const team of resolved) inserts.push({ tagId: t.id, teamSlug: team });
   }
   if (inserts.length > 0) {
     await db.insert(tagTeamScope).values(inserts).onConflictDoNothing();
   }
-  return { scanned: unscoped.length, scoped: inserts.length };
+  return { scanned: unscoped.length, scoped: inserts.length, replaysRecovered: resolvedByReplay.size };
 }
 
 // Persist a tag's scope. Callers insert fresh tags, so there are no prior
