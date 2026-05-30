@@ -398,21 +398,22 @@
         ].join(';'));
         name.textContent = team.name;
 
-        // Status label, far right. Tiny + uppercase + tracked, like a
-        // panel readout.
-        const status = document.createElement('span');
-        status.setAttribute('style', [
-            'font: 700 9px "SF Mono", Menlo, Consolas, monospace',
-            'color: ' + (armed ? '#4dd2ff' : '#5a6170'),
-            'letter-spacing: 0.18em',
-            'text-transform: uppercase',
-            'flex: 0 0 auto'
-        ].join(';'));
-        status.textContent = armed ? 'Armed' : 'Standby';
-
         row.appendChild(led);
         row.appendChild(name);
-        row.appendChild(status);
+        // Status readout, far right. Only appears when sharing is on —
+        // disabled rows just show the LED + name, nothing else.
+        if (armed) {
+            const status = document.createElement('span');
+            status.setAttribute('style', [
+                'font: 700 9px "SF Mono", Menlo, Consolas, monospace',
+                'color: #4dd2ff',
+                'letter-spacing: 0.18em',
+                'text-transform: uppercase',
+                'flex: 0 0 auto'
+            ].join(';'));
+            status.textContent = 'Sharing';
+            row.appendChild(status);
+        }
         return row;
     };
 
