@@ -74,6 +74,10 @@ _empty_
 
 ## Done
 
+### [B67] Extension floating-bubble toggle for per-match team sharing
+_completed: 2026-05-29 by claude_
+Mid-match toggle on the karabast.net floating launcher to fan out the current (and future) match's replays into selected teams. **Collapsed header**: small green dot + "SHARED" label rendered next to the existing red REC indicator whenever ≥1 team is selected. Click toggles OFF (clears the active slugs but remembers them); next click restores. First-time toggle when no remembered selection just expands the panel so the user picks teams instead of doing nothing silently. **Expanded panel**: new "Share with teams" section in both idle + recording bodies — checkbox per team, lazy-fetched via the existing `/api/me/teams-mention-data` bridge. Empty state covers "not signed in" + "no teams". **Persistence**: chrome.storage.local under `karabuddyShareTeamSlugs` (active) + `karabuddyLastShareTeamSlugs` (restore target on toggle) — survives reloads, applies across matches. **Server hook**: new `applyTeamShares` SW message + `bridge.applyTeamShares(slug, teamSlugs)` posts N rows to `/api/replays/<slug>/team-shares` (PK-deduped server-side so the periodic upsert can safely re-fire on every snapshot). Recorder calls it on both periodic snapshot uploads + final download paths.
+
 ### [B59-followup] Result filter (Wins / Losses) on /replays?tab=mine
 _completed: 2026-05-29 by claude (TDD)_
 The "Result" filter the B59 acceptance called for. New `ownerPlayerId` text column on `replays` (migration `0009_owner_player.sql`) — populated at insert from `parsed.localPlayerId` (the recorder's POV from B33). Page serializer + team-replays normalizer both pass it through. `ReplayFilters` gains a Result select (Any / Wins / Losses) wired into the URL persistence layer (`?result=wins`), an active chip when set, and a filter pass that requires BOTH `winners` AND `ownerPlayerId` to be present (so pre-B59 rows + disconnect-ended games drop out of the filtered view — only resolved matches are filterable). 2 new TDD-first E2E tests guard Wins/Losses filtering + the no-data exclusion path. All 85 tests green.
