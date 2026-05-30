@@ -12,22 +12,39 @@
 (() => {
     const PROTOCOL_VERSION = 1;
 
+    // Get-or-mint the install token. Same as background.js's
+    // getKarabuddyInstallToken but inlined here so the bridge can run
+    // without bouncing through the SW.
+    const getOrMintToken = async () => {
+        let { karabuddyInstallToken: token } = await chrome.storage.local.get('karabuddyInstallToken');
+        if (!token) {
+            token = 'kbx_' + crypto.randomUUID();
+            await chrome.storage.local.set({ karabuddyInstallToken: token });
+        }
+        return token;
+    };
+
+    // B68: PROACTIVE announcement. On every karabuddy.app page load,
+    // post the install token immediately so AutoClaim doesn't have to
+    // poll-with-timeout to discover it. The explicit request flow below
+    // stays — handles the page-loads-before-bridge race the other way.
+    (async () => {
+        try {
+            const token = await getOrMintToken();
+            window.postMessage({
+                type: 'karabuddy:availableInstallToken',
+                token,
+                protocol: PROTOCOL_VERSION
+            }, window.location.origin);
+        } catch {}
+    })();
+
     window.addEventListener('message', async (e) => {
         if (e.source !== window) return;
         const data = e.data;
         if (!data || data.type !== 'karabuddy:requestInstallToken') return;
         try {
-            let { karabuddyInstallToken: token } = await chrome.storage.local.get('karabuddyInstallToken');
-            // Mint lazily: a fresh install on a new device has no token until
-            // the first replay upload. Without this, asking the bridge before
-            // recording any matches returns null and karabuddy.app's
-            // AutoDetectExtension shows "couldn't detect" even though the
-            // extension is fine. Generating here means the token always
-            // exists from the moment any consumer asks for it.
-            if (!token) {
-                token = 'kbx_' + crypto.randomUUID();
-                await chrome.storage.local.set({ karabuddyInstallToken: token });
-            }
+            const token = await getOrMintToken();
             window.postMessage({
                 type: 'karabuddy:installTokenResponse',
                 requestId: data.requestId,
