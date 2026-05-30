@@ -55,10 +55,13 @@ describe('scopeLabel', () => {
   it('full armed set → All N teams', () => {
     expect(scopeLabel(armed, armed, names)).toBe('All 3 teams');
   });
-  it('single team → "<name> only"', () => {
+  it('single team (of several armed) → "<name> only"', () => {
     expect(scopeLabel(['vanguard'], armed, names)).toBe('Vanguard only');
   });
   it('subset → comma-joined names', () => {
     expect(scopeLabel(['vanguard', 'locals'], armed, names)).toBe('Vanguard, Locals');
+  });
+  it('only one team armed → just the name (no "All 1 team", no "only")', () => {
+    expect(scopeLabel(['vanguard'], ['vanguard'], names)).toBe('Vanguard');
   });
 });

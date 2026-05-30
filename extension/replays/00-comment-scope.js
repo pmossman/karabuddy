@@ -61,12 +61,16 @@ function scopeFromMentions(input) {
  * @returns {string}
  */
 function scopeLabel(scope, armedTeams, teamNames) {
-  const names = (teamNames) || {};
+  const names = teamNames || {};
+  const armed = armedTeams || [];
   if (!scope || scope.length === 0) return 'Just me';
-  if (armedTeams && scope.length === armedTeams.length) {
-    return `All ${scope.length} team${scope.length === 1 ? '' : 's'}`;
+  // "All N teams" only reads right for 2+; with a single armed team just
+  // name it (no "All 1 team", no "only" — there's nothing to be only of).
+  if (armed.length >= 2 && scope.length === armed.length) return `All ${scope.length} teams`;
+  if (scope.length === 1) {
+    const name = names[scope[0]] || scope[0];
+    return armed.length >= 2 ? `${name} only` : name;
   }
-  if (scope.length === 1) return `${names[scope[0]] || scope[0]} only`;
   return scope.map((s) => names[s] || s).join(', ');
 }
 
