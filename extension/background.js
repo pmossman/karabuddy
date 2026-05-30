@@ -47,13 +47,35 @@ const getKarabuddyInstallToken = async () => {
     }
 };
 
+// B71: the bubble's currently-armed team selection (05-footer.js persists
+// it to chrome.storage.local). The SW reads it directly so the upload can
+// carry it.
+const getShareTeamSlugs = async () => {
+    try {
+        const { karabuddyShareTeamSlugs } = await chrome.storage.local.get('karabuddyShareTeamSlugs');
+        return Array.isArray(karabuddyShareTeamSlugs) ? karabuddyShareTeamSlugs : [];
+    } catch {
+        return [];
+    }
+};
+
 const uploadReplayToKarabuddy = async (payloadText) => {
     const endpoint = await getKarabuddyEndpoint();
     const installToken = await getKarabuddyInstallToken();
+    // B71: send the armed teams WITH the upload. The server applies them as
+    // shares BEFORE lifting the in-game tags, so each tag's default scope
+    // resolves to those teams (rather than personal, which is what would
+    // happen if shares were only applied by the separate call below — it
+    // runs after the upload has already lifted + scoped the tags).
+    const shareTeamSlugs = await getShareTeamSlugs();
     const res = await fetch(`${endpoint}/api/replays`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ installToken, payload: payloadText })
+        body: JSON.stringify({
+            installToken,
+            payload: payloadText,
+            ...(shareTeamSlugs.length ? { shareTeamSlugs } : {}),
+        })
     });
     if (!res.ok) {
         const body = await res.json().catch(() => ({}));
