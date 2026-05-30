@@ -5,6 +5,9 @@ name: test
 # double-tested.
 on:
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 jobs:
   unit:

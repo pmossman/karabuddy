@@ -14,6 +14,17 @@ name: deploy
 on:
   push:
     branches: [main]
+    # Skip the full test→smoke→deploy cycle for pushes that can't affect the
+    # deployed server. The run is skipped only if EVERY changed file matches
+    # one of these. `extension/**` is excluded from the Vercel build (via
+    # .vercelignore) and handled by extension-release; `lib/commentScope.js`
+    # is deliberately NOT ignored since the web app imports it.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'extension/**'
+      - '.github/workflows/extension-release.yml'
+      - '.github/workflows/extension-submit-cws.yml'
 
 concurrency:
   group: deploy-main
