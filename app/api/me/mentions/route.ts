@@ -33,6 +33,13 @@ export async function GET(req: Request) {
     .where(eq(teamMembers.userId, userId));
   const mySlugs = teamRows.map((r) => r.slug);
 
+  // B71: a mention can only reach you if you're inside the comment's team
+  // scope. With no teams there's no scope you belong to, so nothing can
+  // mention you (personal comments can't mention anyone). Short-circuit.
+  if (mySlugs.length === 0) {
+    return NextResponse.json({ ok: true, data: [] });
+  }
+
   // Postgres jsonb predicate: `mentions->'userIds' @> '["<userId>"]'`
   // matches if the array contains my id. Same for teamSlugs.
   // We OR these together; null mentions are correctly skipped because
@@ -46,8 +53,15 @@ export async function GET(req: Request) {
     ? sql`(${userIdsPredicate}) OR (${teamPredicates})`
     : userIdsPredicate;
 
+  // B71: defence-in-depth scope gate — only surface a mention if the tag
+  // is scoped to one of MY teams. Even if a comment's mentions list names
+  // a team/user outside its audience (client bug, hand-crafted request),
+  // it can't notify someone who isn't in the comment's scope.
+  const mySlugsArray = sql.raw(`ARRAY[${mySlugs.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')}]::text[]`);
+  const scopeVisible = sql`EXISTS (SELECT 1 FROM tag_team_scope tts WHERE tts.tag_id = ${tags.id} AND tts.team_slug = ANY(${mySlugsArray}))`;
+
   // Don't notify on self-authored mentions (silly).
-  const finalCondition = sql`(${condition}) AND (${tags.userId} IS DISTINCT FROM ${userId})`;
+  const finalCondition = sql`(${condition}) AND (${scopeVisible}) AND (${tags.userId} IS DISTINCT FROM ${userId})`;
 
   const rows = await db
     .select({

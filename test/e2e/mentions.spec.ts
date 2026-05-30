@@ -20,6 +20,14 @@ test("mention surfaces in mentioned user's inbox", async ({ page, browser, reque
   });
   await claimInstallToken(page, installToken);
 
+  // B71: a mention only reaches B if the comment is scoped to a team B is
+  // in. Sharing the replay with the team makes the team the comment's
+  // default audience, so the unscoped tag below scopes to it.
+  await page.request.post(`/api/replays/${replaySlug}/team-shares`, {
+    data: { teamSlug },
+    headers: { 'X-Install-Token': installToken },
+  });
+
   const tagRes = await page.request.post(`/api/replays/${replaySlug}/tags`, {
     data: {
       installToken,

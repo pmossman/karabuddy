@@ -136,3 +136,42 @@ test('viewer tag fetch scopes by team membership and authorship', async ({ page,
   await ctxAmy.close();
   await ctxBob.close();
 });
+
+// --- Mentions inbox scoping: a mention can't notify someone outside the
+// comment's team scope, even if the tag's mentions list is inconsistent. B71.
+
+test('mentions inbox respects scope — off-scope team-mention does not leak', async ({ page, browser, request }) => {
+  await signInAsTestUser(page, { name: 'OwnerM', email: 'ownerm@example.com' });
+  const { slug: teamA } = await createTeam(page, 'Inbox Alpha');
+  const { slug: teamB } = await createTeam(page, 'Inbox Bravo');
+  const { code: codeB } = await generateInvite(page, teamB);
+
+  const r = await uploadReplay(request, { local: { username: 'OwnerM' }, opponent: { username: 'Foe' } });
+  await claimInstallToken(page, r.installToken);
+  for (const teamSlug of [teamA, teamB]) {
+    await page.request.post(`/api/replays/${r.slug}/team-shares`, {
+      data: { teamSlug }, headers: { 'X-Install-Token': r.installToken },
+    });
+  }
+  // Comment scoped to Alpha only, but (inconsistently) team-mentioning Bravo.
+  await page.request.post(`/api/replays/${r.slug}/tags`, {
+    data: {
+      installToken: r.installToken, authorName: 'OwnerM', frameIndex: 0,
+      comment: 'alpha-scoped but mentions bravo', teamSlugs: [teamA],
+      mentions: { userIds: [], teamSlugs: [teamB] },
+    },
+  });
+
+  // A Bravo-only member must NOT see it in their inbox (not in Alpha scope).
+  const ctxBob = await browser.newContext();
+  const bob = await ctxBob.newPage();
+  await signInAsTestUser(bob, { name: 'BobM', email: 'bobm@example.com' });
+  await bob.request.post('/api/teams/join', { data: { code: codeB } });
+
+  const res = await bob.request.get('/api/me/mentions');
+  const body = await res.json();
+  const comments = (body.data as any[]).map((t) => t.comment);
+  expect(comments).not.toContain('alpha-scoped but mentions bravo');
+
+  await ctxBob.close();
+});
