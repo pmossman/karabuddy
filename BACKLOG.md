@@ -13,6 +13,15 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B73] In-game mention-narrowing for the extension tag form
+
+- **Why:** B71 made web-viewer comments mention-narrowable via the shared `lib/commentScope.js`, and made in-game tags **broadcast** to the bubble's armed teams. The remaining parity gap: in the in-game tag form, narrowing a single comment to a subset of the armed teams (the `@alice @bob` live rule) isn't wired yet — in-game comments can only broadcast.
+- **Acceptance:**
+  - The extension consumes the SHARED `lib/commentScope.js` (per Parker: one file, copied verbatim into `extension/` at package time) so in-game scope derivation matches the web exactly. Resolve the ESM-vs-content-script wrinkle: `commentScope.js` uses ESM `export`, but extension content scripts aren't modules — either load it as a module, attach to the `NS` namespace, or a dual-mode shim. Add a package/zip copy step + a parity check (the vitest unit project already globs `extension/**/*.test.js`).
+  - In-game tag form computes per-tag `teamSlugs = scopeFromMentions({armedTeams: shareTeamSlugs, mentionedUserIds, memberTeams})` and sends them embedded on each payload tag (the upload route already honours per-tag `teamSlugs`).
+  - A scope readout in the in-game form mirroring the web chip (collapsed "Visible to: …").
+- **Refs:** `lib/commentScope.js` (+ `.d.ts`), `extension/replays/05-footer.js` (in-game tag form + `shareTeamSlugs` + mention-data), `extension/replays/03-recorder.js` (`addTag`), `app/api/replays/route.ts` (per-tag `teamSlugs` already honoured). Split out of B71.
+
 ### [B72] Safe extension-rollout CI/CD (contract tests + preview DB isolation + release workflow)
 
 - **Why:** The extension auto-updates on the Chrome Web Store's unpredictable schedule and can't be force-updated, so prod must support every extension version in the wild (old + new) at all times. Today this is enforced by hand (we caught a `whoami` skew manually). We want CI to enforce it, plus isolate preview DBs from prod.
@@ -82,27 +91,14 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 
 ## In Progress
 
-### [B71] Per-team comment scoping (fix cross-team tag leak)
-_claimed: 2026-05-29 by claude_
-
-- **Why:** Tags/comments are global to a replay, but a replay can surface to multiple teams (member-tagged or explicitly shared). So a comment written for one team leaks into every other team that can see the replay (observed on the new home feed: identical comments under two different teams). Comments need a per-team audience, set by the share selector rather than inline `@team:` text (which would expose teams to each other).
-- **Model (locked with Parker):**
-  - A tag carries a **team scope = a subset of the teams the replay is shared with**. Empty subset = **personal/private** (author only). Invariant: **audience ⊆ replay shares** — a comment can never reach a team that can't see the replay.
-  - **Default scope = all armed teams** (the bubble's `shareTeamSlugs` in-game; the replay's `replay_team_shares` on the web viewer).
-  - **Mention-driven narrowing:** scope is a live function of the comment's mention set — **0 mentions → all armed teams; ≥1 mention → union of the mentioned people's teams (∩ armed)**. Recomputed on every mention add/remove; union semantics (`@alice @bob` → both their teams). Chip is a live readout, always visible when 2+ teams armed.
-  - **Manual override:** chip stays clickable to narrow to a team without mentioning anyone; last action wins (editing a mention recomputes, clicking the chip pins custom); resets to default next comment.
-  - **`@individual` autocomplete** offers only members of armed teams' union; disabled when personal. (Guarantees mentions can't point outside shares.)
-  - **No cross-team exposure:** a comment scoped to {A,B} appears in A's and B's feeds but the scope list is never rendered, so neither team learns the other exists.
-- **Acceptance:**
-  - New `tag_team_scope(tag_id, team_slug)` join table (mirrors `replay_team_shares`); migration 0010.
-  - Backfill script: replay shared with exactly ONE team → scope its tags to that team; 0 or 2+ shares → personal. Unit-tested.
-  - Scope enforced at ALL tag-read sites: `/api/teams/[slug]/discussion`, replay viewer sidebar (`TagSidebar` + `r/[slug]/page.tsx`), `/api/me/mentions`, and `lib/teamSurface` signal-(a) (becomes "has a tag scoped to this team").
-  - Write paths record scope: upload route stamps payload tags from the extension's armed `shareTeamSlugs` (extension sends it with the upload); web `/api/replays/[slug]/tags` accepts validated `teamSlugs` (author must be a member of each; each must be a replay share).
-  - Web viewer comment form: live scope chip (progressive — only shown with 2+ armed teams) + mention-driven recompute + manual override + personal.
-  - E2E leak-regression: a comment scoped to A does NOT appear in B's feed/viewer even when the replay is visible to B; personal comment invisible to all teams, visible to author in viewer.
-- **Refs:** `lib/teamSurface.ts`, `lib/schema.ts` (tags, replayTeamShares), `app/api/teams/[slug]/discussion/route.ts`, `app/api/replays/[slug]/tags/route.ts`, `app/api/replays/route.ts` (payload-tag lift), `app/api/me/mentions/route.ts`, `app/(app)/r/[slug]/TagSidebar.tsx` + `page.tsx`, `app/(app)/r/[slug]/MentionInput.tsx`, extension `replays/05-footer.js` (share selector + `shareTeamSlugs`) + `replays/03-recorder.js` (addTag) + `background.js` (upload). Origin: B70 home feed surfaced the leak.
+_empty_
 
 ## Done
+
+### [B71] Per-team comment scoping (fix cross-team tag leak)
+_completed: 2026-05-30 by claude_
+Closed the leak where a comment written for one team appeared in every other team that could see the replay. A tag now carries a **team scope** (`tag_team_scope` join table, migration 0010) — a subset of the replay's shares; empty = personal. Single shared rule in `lib/tagScope.resolveTagScope` (audience ⊆ shares ∩ author memberships; default = all shares). **Surfacing rewritten**: a replay reaches a team only via explicit share, not "tagged by a member" (the root leak). Enforced at every read site: discussion feed (inner-join scope), replay viewer (moved to a scoped `GET /tags` client-fetch authed by session/X-Install-Token), mentions inbox (EXISTS gate), `lib/teamSurface` signal-(a). Write paths: web `POST /tags` accepts `teamSlugs`; upload applies the extension's armed `shareTeamSlugs` as shares then scopes lifted tags. Shared `lib/commentScope.js` (mentions→scope rule, 12 unit tests) consumed by the web chip and (later) the extension. Web comment form gained a progressive scope chip (collapsed readout → expand to per-team checkboxes + personal). Backfill script for pre-existing tags (1-share → that team, else personal). Extension upload now sends armed teams so in-game tags broadcast to them. ~8 commits; 100 E2E + 12+ unit + 7 api green. **Deferred → B73** (per-tag mention-narrowing in the in-game form). **Ship checklist:** run `tsx scripts/backfill-tag-scope.ts` against prod once after deploy; the extension `shareTeamSlugs`-on-upload change needs a CWS release for live users (until then their in-game tags default to personal until re-shared).
+
 
 ### [B70] Home page redesign around the teams experience
 _completed: 2026-05-29 by claude_
