@@ -36,12 +36,11 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 - **Why:** `.env.local` points at the **production** Neon DB (`ep-bitter-lab-aqep2weh/neondb`), so local dev runs against prod data — risky (a local `db:migrate`, a stray write, or testing destructive flows hits prod; surfaced when B71's 0010 had to be applied to prod just to unblock localhost). Local should have its own DB, ideally seedable from a prod snapshot so local data is realistic.
 - **Acceptance:**
-  - Local dev points at a **separate** database (a Neon branch off prod, or a local Postgres via `docker-compose.test.yml`'s pattern), configured in `.env.local` — never prod.
-  - A script to **snapshot prod → local**: e.g. `scripts/pull-prod-snapshot.ts` (or a documented `pg_dump | pg_restore` / Neon branch-create) that loads a recent prod copy into the local DB, with PII/scale caveats noted. Blob payloads can stay pointed at prod URLs (read-only) or be skipped.
-  - Local migrations run against the local DB (`db:migrate`), decoupled from prod.
-  - Doc in README/CLAUDE.md on the local setup.
+  - ✅ A script to **snapshot prod → local**: `scripts/pull-prod-snapshot.sh` (`npm run db:pull-snapshot`) — `pg_dump` SOURCE → `pg_restore --clean` TARGET, with guards (both URLs required + must differ; destructive on target only; confirm prompt). Blob payloads stay on prod URLs (load read-only from local). PII caveat documented.
+  - ✅ Doc: `docs/local-dev-db.md` (Neon-branch click-path + snapshot workflow) + `.env.local.example` updated with the separate-DB + snapshot vars.
+  - ⏳ **Manual (your dashboard):** create the separate DB (Neon branch off prod), point `.env.local` at it, `npm run db:migrate`, then `npm run db:pull-snapshot`. Tooling is ready; this is the one step that needs the Neon console.
 - **Relation:** sibling to **B72** (preview DB isolation via Neon branching) — same root cause (one shared DB), different surface (local dev vs Vercel previews). Could share the Neon-branching mechanism.
-- **Refs:** `.env.local`, `drizzle.config.ts`, `scripts/maybe-migrate.js`, `docker-compose.test.yml` (existing local-Postgres pattern for tests). Surfaced in chat 2026-05-30 when localhost 500'd on a missing `tag_team_scope`.
+- **Refs:** `scripts/pull-prod-snapshot.sh`, `docs/local-dev-db.md`, `.env.local.example`, `drizzle.config.ts`, `scripts/maybe-migrate.js`. Surfaced in chat 2026-05-30 when localhost 500'd on a missing `tag_team_scope`; tooling shipped same day.
 
 ### [B63] Mini frame preview in discussion rows (with hover-to-zoom)
 

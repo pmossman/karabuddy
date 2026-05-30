@@ -78,6 +78,8 @@ the existing context-invalidated toast.
   preview deploy gets an isolated DB branch (today previews share prod).
 - **Staging:** a `staging` branch → `staging.karabuddy.app` + its own Neon
   branch for a durable pre-CWS validation target.
-- **Local DB:** point `.env.local` at a separate DB (B74).
+- **Local DB:** point `.env.local` at a separate DB, not prod — see
+  [docs/local-dev-db.md](./local-dev-db.md) (Neon-branch click-path +
+  `npm run db:pull-snapshot`). B74.
 - **CWS auto-submit (optional):** store Chrome Web Store API creds as repo
   secrets to let the release workflow submit, not just build.
