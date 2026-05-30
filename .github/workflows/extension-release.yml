@@ -1,0 +1,47 @@
+name: extension-release
+
+# Cut an extension release from a version tag. Validates the manifest
+# version matches the tag, runs the extension unit tests (incl. the
+# commentScope parity check), builds the CWS-ready zip, and attaches it to
+# a GitHub Release. Submitting to the Chrome Web Store stays manual (or add
+# CWS API creds as secrets later — see docs/extension-rollout.md).
+
+on:
+  push:
+    tags: ['ext-v*']
+
+permissions:
+  contents: write # create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Validate manifest version matches the tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#ext-v}"
+          MANIFEST_VERSION="$(node -p "require('./extension/manifest.json').version")"
+          echo "tag=$GITHUB_REF_NAME  tag_version=$TAG_VERSION  manifest=$MANIFEST_VERSION"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies version $TAG_VERSION but extension/manifest.json is $MANIFEST_VERSION — bump the manifest or retag."
+            exit 1
+          fi
+
+      # Extension JS unit tests, incl. commentScope.parity (guards the
+      # byte-for-byte shared-file copy in extension/replays/00-comment-scope.js).
+      - run: npm run test:unit
+
+      # Syncs shared files then zips → dist/karabuddy-extension-<version>.zip
+      - run: npm run package:extension
+
+      - name: Create GitHub Release with the zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/karabuddy-extension-*.zip --generate-notes --title "$GITHUB_REF_NAME"
