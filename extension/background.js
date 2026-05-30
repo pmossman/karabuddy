@@ -230,24 +230,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     sendResponse({ ok: false, error: err.message });
                 }
             } else if (msg.type === 'getWhoami') {
-                // B69: "who am I as karabuddy sees me" for the floating
-                // bubble's signed-in indicator. Same install-token-header
-                // path as getTeamsMentionData (SameSite cookies are
-                // unreliable on extension SW fetches).
                 try {
                     const endpoint = await getKarabuddyEndpoint();
                     const installToken = await getKarabuddyInstallToken();
-                    const res = await fetch(`${endpoint}/api/me/whoami`, {
+                    const url = `${endpoint}/api/me/whoami`;
+                    SWLOG('getWhoami fetch', url, 'token', installToken.slice(0, 12) + '…');
+                    const res = await fetch(url, {
                         credentials: 'include',
                         headers: { 'X-Install-Token': installToken },
                     });
+                    SWLOG('getWhoami response', res.status);
                     if (res.status === 401) {
                         sendResponse({ ok: false, error: 'not signed in', status: 401 });
                         return;
                     }
                     const body = await res.json();
+                    SWLOG('getWhoami body', body);
                     sendResponse({ ok: !!body.ok, data: body, status: res.status });
                 } catch (err) {
+                    SWLOG('getWhoami threw', err && err.message || err);
                     sendResponse({ ok: false, error: err.message });
                 }
             } else if (msg.type === 'applyTeamShares') {
