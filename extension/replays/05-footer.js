@@ -139,9 +139,9 @@
         if (whoamiInflight) return whoamiInflight;
         whoamiInflight = (async () => {
             try {
-                console.info('[karabuddy:karabast] bubble: fetching whoami via SW');
+                NS.dlog('[karabuddy:karabast] bubble: fetching whoami via SW');
                 const result = await B().getWhoami?.();
-                console.info('[karabuddy:karabast] bubble: whoami result', result);
+                NS.dlog('[karabuddy:karabast] bubble: whoami result', result);
                 // companionRequest already unwraps to `data` from the
                 // SW response, so `result` IS the API body. Don't
                 // double-unwrap.
@@ -154,7 +154,7 @@
                 whoamiLoadedAt = Date.now();
                 return whoamiCache;
             } catch (err) {
-                console.warn('[karabuddy:karabast] bubble: whoami failed', err);
+                NS.dwarn('[karabuddy:karabast] bubble: whoami failed', err);
                 return null;
             } finally {
                 whoamiInflight = null;

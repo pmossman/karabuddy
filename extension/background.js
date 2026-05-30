@@ -1,7 +1,20 @@
 // Service worker for the KaraBuddy MV3 extension.
 
-const SWLOG = (...args) => console.info('[karabuddy:sw]', ...args);
-SWLOG('service worker booted');
+// Debug logging — off in shipped builds. Flip on at runtime via
+//   chrome.storage.local.set({karabuddyDebug: true})
+// Reads cached + updates on storage changes so toggling takes effect
+// without an extension reload.
+let DEBUG_FLAG = false;
+chrome.storage.local.get('karabuddyDebug').then(({ karabuddyDebug }) => {
+    DEBUG_FLAG = karabuddyDebug === true || karabuddyDebug === '1';
+}).catch(() => {});
+chrome.storage.onChanged.addListener((changes) => {
+    if ('karabuddyDebug' in changes) {
+        const v = changes.karabuddyDebug.newValue;
+        DEBUG_FLAG = v === true || v === '1';
+    }
+});
+const SWLOG = (...args) => { if (DEBUG_FLAG) console.info('[karabuddy:sw]', ...args); };
 //
 // Scope after the solo-testing removal: receive replay payloads from the
 // MAIN-world recorder via the companion bridge, persist locally to IndexedDB,

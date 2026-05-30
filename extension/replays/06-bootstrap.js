@@ -77,5 +77,5 @@
         mountAndWatch();
     }
 
-    console.info('[karabuddy:karabast] content scripts loaded on', window.location.href);
+    NS.dlog('[karabuddy:karabast] content scripts loaded on', window.location.href);
 })();

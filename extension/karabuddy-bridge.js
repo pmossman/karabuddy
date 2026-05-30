@@ -11,7 +11,14 @@
 
 (() => {
     const PROTOCOL_VERSION = 1;
-    const LOG = (...args) => console.info('[karabuddy:bridge]', ...args);
+    // Debug logging — off in shipped builds. Toggle via the page-side
+    // localStorage flag so a dev can flip it without touching extension
+    // storage: `localStorage.karabuddyDebug = '1'` then reload.
+    const DEBUG = (() => {
+        try { return localStorage.getItem('karabuddyDebug') === '1'; }
+        catch { return false; }
+    })();
+    const LOG = (...args) => { if (DEBUG) console.info('[karabuddy:bridge]', ...args); };
     LOG('loaded on', window.location.href);
 
     // Persist the page's origin as the SW endpoint. The bridge runs on
