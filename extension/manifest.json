@@ -31,6 +31,7 @@
         {
             "matches": ["https://karabast.net/*"],
             "js": [
+                "replays/00-comment-scope.js",
                 "replays/01-namespace.js",
                 "replays/02-decoder.js",
                 "replays/03-recorder.js",

@@ -515,7 +515,12 @@
     // `mentions` is an optional { userIds: string[], teamSlugs: string[] }
     // structure captured by the footer's autocomplete popover (B55c).
     // Stored on the tag and shipped with the upload payload.
-    const addTag = (comment = '', mentions = null) => {
+    // `teamSlugs` (B73) is the comment's audience — a subset of the bubble's
+    // armed teams, computed by the footer via the shared scopeFromMentions
+    // rule. Stored on the tag and shipped with the upload payload, where the
+    // server's scopeLiftedTags honours it (clamped to shares ∩ memberships).
+    // Omitted → server defaults the tag to all of the replay's shares.
+    const addTag = (comment = '', mentions = null, teamSlugs = null) => {
         const d = D();
         // Pass localPlayerId so the decoder picks the LOCAL player's
         // username instead of "first non-anonymous in iteration order"
@@ -528,13 +533,15 @@
                 teamSlugs: Array.isArray(mentions.teamSlugs) ? mentions.teamSlugs.filter((x) => typeof x === 'string') : [],
             }
             : null;
+        const scope = Array.isArray(teamSlugs) ? teamSlugs.filter((x) => typeof x === 'string') : null;
         const tag = {
             id: d.makeTagId(),
             frameIndex,
             author,
             comment: String(comment || ''),
             createdAt: Date.now(),
-            ...(m && (m.userIds.length || m.teamSlugs.length) ? { mentions: m } : {})
+            ...(m && (m.userIds.length || m.teamSlugs.length) ? { mentions: m } : {}),
+            ...(scope ? { teamSlugs: scope } : {})
         };
         tags.push(tag);
         schedulePersist();

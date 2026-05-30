@@ -1023,6 +1023,40 @@
             } else if (kind === 'team') {
                 if (!formMentions.teamSlugs.includes(id)) formMentions.teamSlugs.push(id);
             }
+            // B73: a new @-mention may narrow the audience — refresh the chip.
+            refreshScopeReadout();
+        };
+
+        // B73: the comment's team audience, via the SHARED scopeFromMentions
+        // rule (00-comment-scope.js — same file the web app imports). Default
+        // = all armed teams; @-mentioning people narrows to the union of
+        // their teams (∩ armed). Returns null when nothing is armed (server
+        // defaults to the replay's shares, which is also empty → personal).
+        const computeTagScope = () => {
+            const armed = getShareTeamSlugs();
+            if (armed.length === 0) return null;
+            const memberTeams = {};
+            for (const m of (mentionDataCache && mentionDataCache.members) || []) {
+                memberTeams[m.userId] = m.teamSlugs || [];
+            }
+            return scopeFromMentions({ armedTeams: armed, mentionedUserIds: formMentions.userIds, memberTeams });
+        };
+
+        // B73: live "Visible to: …" readout mirroring the web scope chip.
+        // Only meaningful with 2+ armed teams (otherwise nothing to narrow).
+        const scopeReadout = document.createElement('div');
+        scopeReadout.setAttribute('style', [
+            'font: 600 10px -apple-system, BlinkMacSystemFont, sans-serif',
+            'color: #6c7588',
+            'align-self: flex-start',
+        ].join(';'));
+        const refreshScopeReadout = () => {
+            const armed = getShareTeamSlugs();
+            if (armed.length < 2) { scopeReadout.style.display = 'none'; return; }
+            scopeReadout.style.display = 'block';
+            const teamNames = {};
+            for (const t of (mentionDataCache && mentionDataCache.teams) || []) teamNames[t.slug] = t.name;
+            scopeReadout.textContent = 'Visible to: ' + scopeLabel(computeTagScope() || [], armed, teamNames);
         };
 
         // Autocomplete popover element (built lazily on first @-detect).
@@ -1175,8 +1209,10 @@
             input.value = '';
             formMentions = { userIds: [], teamSlugs: [] };
             // Kick off mention data fetch in parallel with form open —
-            // it'll be cached by the time the user types `@`.
-            loadMentionData();
+            // it'll be cached by the time the user types `@`. B73: refresh
+            // the scope readout once team names are available too.
+            refreshScopeReadout();
+            loadMentionData().then(refreshScopeReadout);
             setTimeout(() => input.focus(), 0);
         };
         const closeForm = () => {
@@ -1220,7 +1256,7 @@
             }
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
-                R().addTag(input.value.trim(), formMentions);
+                R().addTag(input.value.trim(), formMentions, computeTagScope());
                 closeForm();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
@@ -1271,7 +1307,7 @@
         saveBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
         saveBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            R().addTag(input.value.trim(), formMentions);
+            R().addTag(input.value.trim(), formMentions, computeTagScope());
             closeForm();
         });
 
@@ -1279,6 +1315,7 @@
         btnRow.appendChild(saveBtn);
         textareaWrap.appendChild(input);
         form.appendChild(textareaWrap);
+        form.appendChild(scopeReadout); // B73: "Visible to: …" between textarea and buttons
         form.appendChild(btnRow);
 
         wrap.appendChild(addBtn);
