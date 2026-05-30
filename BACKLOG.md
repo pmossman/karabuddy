@@ -74,6 +74,10 @@ _empty_
 
 ## Done
 
+### [B70] Home page redesign around the teams experience
+_completed: 2026-05-29 by claude_
+Rebuilt `app/(app)/page.tsx` around teams as the core value. Signed-in members now lead with per-team **activity sections** (`HomeTeamActivity.tsx`, one card per team, top-3 discussion rows + "View team →" link into the full team page — reuses the existing `/api/teams/[slug]/discussion` endpoint, no server query duplication). Below that, everyone signed-in sees their **most recent recorded replays** (6 newest, rendered with the shared `ReplayCard`, "View all →" → `/replays?tab=mine`). Signed-in users with no team get a "Start a team" CTA instead of activity sections. Signed-out visitors lead with their own anonymous recent replays via the existing `MineAnonymous` flow (`HomeAnonymousReplays.tsx`). Removed the `/claim` pitch section (linking is fully automated since B54/B69) and dropped the hero brand mark (the persistent header already renders it — fixes the double-logo). 4 new E2E tests in `home.spec.ts`; full suite 93 green.
+
 ### [B69b] AutoClaim: move /api/me/claim into the content script
 _completed: 2026-05-29 by claude_
 Realised the bridge content script already runs on karabuddy.app and content-script fetches to same-origin URLs inherit the page's cookies — there was no need for the React-side AutoClaim component to do the fetch via postMessage choreography. Bridge now hits `/api/me/claim` directly on every karabuddy.app page load (idempotent), removing every React-mount + postMessage + cookie-timing race that the old AutoClaim was working around. AutoClaim shrank to ~30 lines — its only remaining job is listening for the new `karabuddy:claimResult` event from the bridge and rendering the "Linked N replays" toast on first claim (per-(token, count) sessionStorage dedup). Fixes the user-reported "I'm signed in on karabuddy.app but karabast bubble still doesn't see me" — the bridge's direct fetch fires on every page load regardless of whether the React app has hydrated.
