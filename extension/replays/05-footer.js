@@ -142,8 +142,11 @@
                 console.info('[karabuddy:karabast] bubble: fetching whoami via SW');
                 const result = await B().getWhoami?.();
                 console.info('[karabuddy:karabast] bubble: whoami result', result);
-                if (result && result.ok && result.data?.ok && result.data.user) {
-                    whoamiCache = result.data.user;
+                // companionRequest already unwraps to `data` from the
+                // SW response, so `result` IS the API body. Don't
+                // double-unwrap.
+                if (result && result.ok && result.user) {
+                    whoamiCache = result.user;
                     whoamiLoadedAt = Date.now();
                     return whoamiCache;
                 }
@@ -825,8 +828,8 @@
         }
         try {
             const result = await B().getTeamsMentionData?.();
-            if (result && result.ok && result.data) {
-                mentionDataCache = { teams: result.data.teams || [], members: result.data.members || [] };
+            if (result && result.ok) {
+                mentionDataCache = { teams: result.teams || [], members: result.members || [] };
                 mentionDataLoadedAt = Date.now();
                 return mentionDataCache;
             }
