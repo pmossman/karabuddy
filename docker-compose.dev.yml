@@ -9,7 +9,9 @@
 #   npm run db:pull-snapshot                           # load prod data
 services:
   dev-db:
-    image: postgres:16-alpine
+    # Match prod's Postgres major (Neon is PG17) so pg_dump/pg_restore in
+    # db:pull-snapshot can read a prod dump (pg_dump refuses a newer server).
+    image: postgres:17-alpine
     container_name: karabuddy-dev-db
     ports:
       - '5434:5432'

@@ -27,7 +27,7 @@ swaps the Neon HTTP driver for node-postgres against any plain Postgres.
 1. Launch **Docker Desktop** (so the `docker` CLI + daemon are available).
 2. `npm run db:dev:up` — start the local Postgres.
 3. `npm run db:pull-snapshot` — dump prod (read-only) and restore it into
-   the local DB. (Runs `pg_dump | pg_restore` *inside* the postgres:16
+   the local DB. (Runs `pg_dump | pg_restore` *inside* the postgres:17
    container, so you need no host Postgres tools. `-- --yes` skips the
    prompt.) This also brings the schema, so a separate `db:migrate` is a
    no-op — though `npm run db:migrate` is the command if you ever start from
