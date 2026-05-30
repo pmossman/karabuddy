@@ -7,6 +7,7 @@ import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { auth } from '@/auth';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
+import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
 
@@ -15,7 +16,10 @@ export function OPTIONS(req: Request) {
 }
 
 // POST /api/replays/:slug/tags
-// Body: { installToken, authorName, frameIndex, comment? }
+// Body: { installToken, authorName, frameIndex, comment?, teamSlugs? }
+// B71: teamSlugs is the comment's audience (subset of the replay's
+// shares). Omit → defaults to all of the author's shared teams; [] →
+// personal. resolveTagScope clamps it to (shares ∩ author memberships).
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ slug: string }> }
@@ -56,7 +60,15 @@ export async function POST(
       comment,
       mentions: mentions.userIds.length || mentions.teamSlugs.length ? mentions : null,
     });
-    return NextResponse.json({ ok: true, id }, { headers });
+    // B71: persist the comment's team audience. `teamSlugs` undefined →
+    // default scope (all of the author's shared teams); an array → that
+    // explicit set, clamped to (shares ∩ memberships).
+    const requested = Array.isArray(body.teamSlugs)
+      ? body.teamSlugs.filter((s: unknown) => typeof s === 'string')
+      : undefined;
+    const scope = await resolveTagScope({ replaySlug: slug, authorUserId: userId, requested });
+    await writeTagScope(id, scope);
+    return NextResponse.json({ ok: true, id, scope }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] POST /api/replays/:slug/tags failed:', err);
     return NextResponse.json({ ok: false, error: err?.message || 'internal error' }, { status: 500, headers });

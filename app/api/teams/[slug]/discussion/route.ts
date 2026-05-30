@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, tags, users } from '@/lib/schema';
+import { replays, tags, tagTeamScope, users } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 
@@ -35,9 +35,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 
   const db = getDb();
 
-  // All tags on the surfaced slugs, with author user JOIN'd in for
-  // image+name. LEFT JOIN because tags can be authored anonymously
-  // (authorToken, no userId).
+  // All tags on the surfaced slugs that are SCOPED to THIS team, with
+  // author user JOIN'd in for image+name. LEFT JOIN users because tags
+  // can be authored anonymously (authorToken, no userId). The INNER JOIN
+  // on tag_team_scope is the B71 privacy gate: a comment scoped to a
+  // different team (or personal) never appears in this team's feed, even
+  // when the underlying replay is visible to this team.
   const tagRows = await db
     .select({
       id: tags.id,
@@ -53,6 +56,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
       authorUserName: users.name,
     })
     .from(tags)
+    .innerJoin(tagTeamScope, and(eq(tagTeamScope.tagId, tags.id), eq(tagTeamScope.teamSlug, slug)))
     .leftJoin(users, eq(users.id, tags.userId))
     .where(inArray(tags.replaySlug, surfaceSlugs))
     .orderBy(desc(tags.createdAt));

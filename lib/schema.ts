@@ -298,3 +298,33 @@ export const replayTeamShares = pgTable(
 export type ReplayTeamShare = typeof replayTeamShares.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
+
+// ----- B71: per-tag team scope (comment audience)
+//
+// A tag/comment is visible to the set of teams listed here. Empty set
+// (no rows for a tag) = personal — only the author sees it. Invariant
+// enforced at write time: this set is always a SUBSET of the teams the
+// replay is shared with (replay_team_shares), so a comment can never
+// reach a team that can't see the underlying replay.
+//
+// Mirrors replay_team_shares' shape (join table, composite PK, both-way
+// indexes). Tags scoped to no team simply have zero rows here, which is
+// why every tag-read site must LEFT/anti-join rather than assume a row.
+export const tagTeamScope = pgTable(
+  'tag_team_scope',
+  {
+    tagId: text('tag_id')
+      .notNull()
+      .references(() => tags.id, { onDelete: 'cascade' }),
+    teamSlug: text('team_slug')
+      .notNull()
+      .references(() => teams.slug, { onDelete: 'cascade' }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.tagId, t.teamSlug] }),
+    teamIdx: index('tag_team_scope_team_idx').on(t.teamSlug),
+    tagIdx: index('tag_team_scope_tag_idx').on(t.tagId),
+  })
+);
+
+export type TagTeamScope = typeof tagTeamScope.$inferSelect;

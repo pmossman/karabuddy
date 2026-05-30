@@ -1,8 +1,14 @@
 // Team replay surfacing rule, in one place.
 //
 // A replay surfaces to a team via either signal:
-//   (a) Any tag on the replay was authored by a team member  — implicit
-//   (b) The replay was explicitly shared with the team       — explicit
+//   (a) The replay has a tag SCOPED to the team (tag_team_scope) — implicit
+//   (b) The replay was explicitly shared with the team           — explicit
+//
+// B71 changed signal (a): it used to be "any tag authored by a team
+// member", which leaked one team's discussion into every OTHER team the
+// author belonged to (a replay tagged by a two-team member surfaced to
+// both). Now a tag only surfaces a replay to the team(s) in its scope —
+// personal tags (empty scope) surface to no team.
 //
 // Both `/api/teams/[slug]/replays` and `/api/teams/[slug]/discussion`
 // list replays via this rule. `/api/me/labels` walks it across every
@@ -11,7 +17,7 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDb } from './db';
-import { replayTeamShares, tags, teamMembers } from './schema';
+import { replayTeamShares, tags, tagTeamScope, teamMembers } from './schema';
 
 // Membership-gate helper. Returns the membership row or null. Callers
 // decide whether null is 401/403/etc — this stays pure DB.
@@ -37,21 +43,14 @@ export async function surfacedReplaySlugs(teamSlugs: string[]): Promise<string[]
   if (teamSlugs.length === 0) return [];
   const db = getDb();
 
-  // All members across the given teams — signal (a) needs their userIds
-  // to look up tag authorship.
-  const memberRows = await db
-    .select({ userId: teamMembers.userId })
-    .from(teamMembers)
-    .where(inArray(teamMembers.teamSlug, teamSlugs));
-  const memberIds = Array.from(new Set(memberRows.map((m) => m.userId)));
-
-  // Signal (a): tagged-by-member.
-  const taggedSlugs = memberIds.length > 0
-    ? await db
-        .selectDistinct({ slug: tags.replaySlug })
-        .from(tags)
-        .where(inArray(tags.userId, memberIds))
-    : [];
+  // Signal (a): the replay has a tag scoped to one of the team(s).
+  // tag_team_scope holds (tagId, teamSlug); join back to tags for the
+  // replay slug. Personal tags (no scope rows) never match here.
+  const taggedSlugs = await db
+    .selectDistinct({ slug: tags.replaySlug })
+    .from(tagTeamScope)
+    .innerJoin(tags, eq(tags.id, tagTeamScope.tagId))
+    .where(inArray(tagTeamScope.teamSlug, teamSlugs));
 
   // Signal (b): explicit shares with the team(s).
   const sharedSlugs = await db

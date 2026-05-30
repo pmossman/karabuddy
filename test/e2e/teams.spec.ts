@@ -49,7 +49,7 @@ test('invite + accept: second user joins as member', async ({ page, browser }) =
   await ctx2.close();
 });
 
-test('team replay surfaces when a team member tags it', async ({ page, browser, request }) => {
+test('team replay surfaces when shared — not merely when a member tags it (B71)', async ({ page, browser, request }) => {
   // Setup: owner creates team, uploads replay, claims it.
   await signInAsTestUser(page, { name: 'OwnerA', email: 'owner-ts-a@example.com' });
   const { slug: teamSlug } = await createTeam(page, 'Team Surface');
@@ -68,20 +68,29 @@ test('team replay surfaces when a team member tags it', async ({ page, browser, 
   const joinRes = await pageB.request.post('/api/teams/join', { data: { code } });
   expect(joinRes.ok()).toBe(true);
 
-  // Initially Replays tab is empty (no tags by team members yet).
+  // Initially Replays tab is empty.
   await pageB.goto(`/teams/${teamSlug}?tab=replays`);
   await expect(pageB.getByText(/No team replays yet/)).toBeVisible();
 
-  // B tags the replay → surfaces in team view.
-  // (Tag write doesn't require session auth; install token is enough.)
+  // B71: tagging an UNSHARED replay no longer surfaces it — the comment is
+  // personal (scope defaults to the replay's shares, of which there are
+  // none). This is the leak fix: a member's tag must not drag the replay
+  // into the team.
   const tagRes = await pageB.request.post(`/api/replays/${replaySlug}/tags`, {
     data: { installToken: 'kbx_b', authorName: 'TeammateB', frameIndex: 0, comment: 'interesting play' },
   });
   expect(tagRes.ok()).toBe(true);
+  await pageB.reload();
+  await expect(pageB.getByText(/No team replays yet/)).toBeVisible();
+
+  // Explicitly sharing the replay with the team is what surfaces it.
+  const shareRes = await page.request.post(`/api/replays/${replaySlug}/team-shares`, {
+    data: { teamSlug },
+    headers: { 'X-Install-Token': installToken },
+  });
+  expect(shareRes.ok()).toBe(true);
 
   await pageB.reload();
-  // The tagged replay now surfaces in the Replays inventory (and would
-  // also appear in Discussion, but we're explicitly on the Replays tab).
   await expect(pageB.getByText(/OwnerA.*vs.*Opp|Opp.*vs.*OwnerA/).first()).toBeVisible({ timeout: 5000 });
 
   await ctxB.close();
