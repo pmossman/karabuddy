@@ -85,6 +85,150 @@
     let mode = null; // 'idle' | 'recording' when expanded
     let outsideMousedownHandler = null;
 
+    // B67: persistent "share this match's replay with team(s)" selection.
+    // Lives in chrome.storage.local so it survives reloads + applies to
+    // every subsequent match until the user toggles it back off.
+    //   karabuddyShareTeamSlugs:    string[]  active selection
+    //   karabuddyLastShareTeamSlugs string[]  last non-empty selection;
+    //                                          used to restore on toggle
+    let shareTeamSlugs = [];
+    let lastShareTeamSlugs = [];
+    const SHARE_STORAGE_KEY = 'karabuddyShareTeamSlugs';
+    const SHARE_LAST_STORAGE_KEY = 'karabuddyLastShareTeamSlugs';
+
+    const loadShareState = () => {
+        try {
+            chrome.storage.local.get([SHARE_STORAGE_KEY, SHARE_LAST_STORAGE_KEY], (res) => {
+                if (Array.isArray(res?.[SHARE_STORAGE_KEY])) shareTeamSlugs = res[SHARE_STORAGE_KEY];
+                if (Array.isArray(res?.[SHARE_LAST_STORAGE_KEY])) lastShareTeamSlugs = res[SHARE_LAST_STORAGE_KEY];
+                refreshFooter();
+            });
+        } catch {}
+    };
+
+    const persistShareState = () => {
+        try {
+            const payload = { [SHARE_STORAGE_KEY]: shareTeamSlugs };
+            // Only update lastShareTeamSlugs when we have a non-empty
+            // selection so toggling OFF doesn't wipe the restore target.
+            if (shareTeamSlugs.length > 0) {
+                lastShareTeamSlugs = [...shareTeamSlugs];
+                payload[SHARE_LAST_STORAGE_KEY] = lastShareTeamSlugs;
+            }
+            chrome.storage.local.set(payload);
+        } catch {}
+    };
+
+    // Public-ish accessor — the recorder reads this after every successful
+    // upload to know which teams to apply shares for.
+    const getShareTeamSlugs = () => [...shareTeamSlugs];
+
+    // Click on the collapsed header's share indicator. Pure toggle:
+    //   - currently shared  → go private (saves to lastShareTeamSlugs)
+    //   - currently private + remembered teams → restore them
+    //   - currently private + no memory      → expand the panel so the
+    //     user can pick teams (avoids a silent no-op when they have no
+    //     persistent state yet).
+    const handleShareToggleClick = () => {
+        if (shareTeamSlugs.length > 0) {
+            shareTeamSlugs = [];
+            persistShareState();
+            refreshFooter();
+            T()?.show?.('Replay sharing off', { kind: 'info' });
+            return;
+        }
+        if (lastShareTeamSlugs.length > 0) {
+            shareTeamSlugs = [...lastShareTeamSlugs];
+            persistShareState();
+            refreshFooter();
+            T()?.show?.(`Sharing with ${shareTeamSlugs.length} team${shareTeamSlugs.length === 1 ? '' : 's'}`, { kind: 'success' });
+            return;
+        }
+        // No memory yet — open the panel so the user can pick teams.
+        if (!expanded) expand();
+    };
+
+    // Re-render the expanded panel's share section. Called after toggles
+    // so the checklist reflects current state without rebuilding the
+    // whole panel.
+    const refreshSharePanel = async () => {
+        const section = document.getElementById('karabast-replays-panel-share-section');
+        if (!section) return;
+        const list = document.getElementById('karabast-replays-panel-share-list');
+        if (!list) return;
+        list.innerHTML = '';
+        const data = await loadMentionData();
+        const teams = data?.teams || [];
+        if (teams.length === 0) {
+            const empty = document.createElement('div');
+            empty.setAttribute('style', 'font-size: 11px; color: #6c7588; font-style: italic; padding: 4px 0;');
+            empty.textContent = data
+                ? "You're not in any teams yet. Join a team on karabuddy.app to share."
+                : 'Sign in on karabuddy.app to see your teams.';
+            list.appendChild(empty);
+            return;
+        }
+        for (const team of teams) {
+            const row = document.createElement('label');
+            row.setAttribute('style', [
+                'display: flex',
+                'align-items: center',
+                'gap: 8px',
+                'padding: 5px 7px',
+                'border-radius: 4px',
+                'background: rgba(255, 255, 255, 0.025)',
+                'cursor: pointer'
+            ].join(';'));
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = shareTeamSlugs.includes(team.slug);
+            checkbox.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    if (!shareTeamSlugs.includes(team.slug)) shareTeamSlugs.push(team.slug);
+                } else {
+                    shareTeamSlugs = shareTeamSlugs.filter((s) => s !== team.slug);
+                }
+                persistShareState();
+                refreshFooter(); // header indicator
+            });
+            const name = document.createElement('span');
+            name.setAttribute('style', 'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif; color: #d6d6d6;');
+            name.textContent = team.name;
+            row.appendChild(checkbox);
+            row.appendChild(name);
+            list.appendChild(row);
+        }
+    };
+
+    // Build the share section. Used by both idle and recording bodies.
+    const buildShareSection = () => {
+        const section = document.createElement('div');
+        section.id = 'karabast-replays-panel-share-section';
+        section.setAttribute('style', 'display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid #2e333c;');
+
+        const label = document.createElement('div');
+        label.setAttribute('style', 'font: 600 10px -apple-system, BlinkMacSystemFont, sans-serif; color: #6c7588; letter-spacing: 0.08em; text-transform: uppercase;');
+        label.textContent = 'Share with teams';
+        section.appendChild(label);
+
+        const hint = document.createElement('div');
+        hint.setAttribute('style', 'font-size: 11px; color: #6c7588; line-height: 1.4;');
+        hint.textContent = 'Replays from this match (and future matches) will surface in checked teams. Stays on until you toggle off.';
+        section.appendChild(hint);
+
+        const list = document.createElement('div');
+        list.id = 'karabast-replays-panel-share-list';
+        list.setAttribute('style', 'display: flex; flex-direction: column; gap: 4px;');
+        section.appendChild(list);
+
+        // Kick off async render; the section element returns synchronously
+        // so the panel layout doesn't jank.
+        requestAnimationFrame(() => { refreshSharePanel(); });
+
+        return section;
+    };
+
     // ----- Build the launcher (single root element with header + body) -----
     const buildLauncher = () => {
         const root = document.createElement('div');
@@ -187,6 +331,44 @@
         recWrap.appendChild(recDot);
         recWrap.appendChild(recCount);
 
+        // B67: team-share indicator — green dot when this match's replay
+        // will be auto-shared with one or more teams. Clickable: toggles
+        // OFF if currently sharing; if currently private, restores the
+        // last non-empty selection (or expands the panel to pick teams
+        // if there's no prior selection to restore).
+        const shareWrap = document.createElement('button');
+        shareWrap.id = 'karabast-replays-launcher-share';
+        shareWrap.type = 'button';
+        shareWrap.title = 'Toggle team sharing';
+        shareWrap.setAttribute('style', [
+            'display: none',
+            'align-items: center',
+            'gap: 4px',
+            'padding: 0 5px',
+            'border-left: 1px solid rgba(255,255,255,0.12)',
+            'background: transparent',
+            'border-top: 0',
+            'border-right: 0',
+            'border-bottom: 0',
+            'color: inherit',
+            'cursor: pointer',
+            'flex: 0 0 auto',
+            'height: 100%'
+        ].join(';'));
+        const shareDot = document.createElement('span');
+        shareDot.setAttribute('style', 'display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6bd968; box-shadow: 0 0 5px #6bd968;');
+        const shareLabel = document.createElement('span');
+        shareLabel.id = 'karabast-replays-launcher-share-label';
+        shareLabel.setAttribute('style', 'font: 600 9px -apple-system, BlinkMacSystemFont, sans-serif; color: #c8eecf; letter-spacing: 0.04em;');
+        shareLabel.textContent = 'SHARED';
+        shareWrap.appendChild(shareDot);
+        shareWrap.appendChild(shareLabel);
+        shareWrap.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        shareWrap.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleShareToggleClick();
+        });
+
         // Spacer pushes × to the right when expanded.
         const spacer = document.createElement('span');
         spacer.setAttribute('style', 'flex: 1 1 auto;');
@@ -221,6 +403,7 @@
 
         header.appendChild(mono);
         header.appendChild(recWrap);
+        header.appendChild(shareWrap);
         header.appendChild(spacer);
         header.appendChild(closeBtn);
 
@@ -408,6 +591,8 @@
         }));
         els.push(linksWrap);
 
+        els.push(buildShareSection());
+
         return els;
     };
 
@@ -447,6 +632,8 @@
         recentSection.appendChild(recentLabel);
         recentSection.appendChild(recentList);
         els.push(recentSection);
+
+        els.push(buildShareSection());
 
         const openLink = document.createElement('a');
         openLink.id = 'karabast-replays-panel-open-link';
@@ -935,6 +1122,7 @@
         if (!document.body) return;
         if (document.getElementById(LAUNCHER_ID)) return;
         document.body.appendChild(buildLauncher());
+        loadShareState();
         refreshFooter();
     };
 
@@ -946,6 +1134,12 @@
         // REC indicator in the header reveals only while capturing.
         const recBlock = document.getElementById('karabast-replays-launcher-rec');
         if (recBlock) recBlock.style.display = active ? 'flex' : 'none';
+
+        // B67: share indicator in the header reveals only when sharing
+        // is currently ON (≥1 team selected). Stays visible whether or
+        // not the user is recording — sharing is a persistent setting.
+        const shareBlock = document.getElementById('karabast-replays-launcher-share');
+        if (shareBlock) shareBlock.style.display = shareTeamSlugs.length > 0 ? 'inline-flex' : 'none';
 
         // If the recording state flipped while expanded, the body content
         // (idle links vs recording controls) is now stale. Collapse so the
@@ -987,6 +1181,9 @@
         refreshFooter,
         refreshOverlay: refreshFooter,
         updateOverlay: refreshFooter,
-        isPanelOpen: () => expanded
+        isPanelOpen: () => expanded,
+        // B67: recorder calls this after every successful upload to
+        // know which teams to fan out share rows for.
+        getShareTeamSlugs
     };
 })();

@@ -92,6 +92,13 @@
         // that as "no autocomplete available, text-only mode."
         getTeamsMentionData: () =>
             companionRequest({ type: 'getTeamsMentionData' }, 8000)
+                .catch(() => null),
+        // B67: after a replay is uploaded, apply the user's persistent
+        // "share with these teams" selection. Idempotent — safe to call
+        // on every snapshot+final upload. Returns { ok, applied, errors[] }
+        // or null on bridge failure.
+        applyTeamShares: (slug, teamSlugs) =>
+            companionRequest({ type: 'applyTeamShares', slug, teamSlugs }, 10000)
                 .catch(() => null)
     };
 })();

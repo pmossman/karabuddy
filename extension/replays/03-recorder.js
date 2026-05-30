@@ -352,7 +352,19 @@
             // link surfaces during the match, not just after game-end.
             currentKarabuddyUrl = result.url;
             F()?.refreshOverlay?.();
+            // B67: fan out team-share rows on every snapshot too — the
+            // user can flip sharing on mid-match and the next periodic
+            // upsert will propagate. Idempotent on the server (PK dedupe).
+            applyTeamSharesIfConfigured(result.slug);
         });
+    };
+
+    // B67: invoke the SW-routed team-shares POST batch when the user has
+    // a non-empty share selection. Best-effort — failures don't bubble.
+    const applyTeamSharesIfConfigured = (slug) => {
+        const slugs = F()?.getShareTeamSlugs?.() || [];
+        if (slugs.length === 0) return;
+        B().applyTeamShares?.(slug, slugs);
     };
 
     const startPeriodicUploads = () => {
@@ -460,6 +472,8 @@
                 currentKarabuddyUrl = result.url;
                 F()?.refreshOverlay?.();
                 T()?.show?.('Replay uploaded', { kind: 'success', tooltip: result.url });
+                // B67: apply the user's persistent team-share selection.
+                applyTeamSharesIfConfigured(result.slug);
                 B().saveReplay({
                     gameId: gameIdLocal,
                     savedAt: Date.now(),

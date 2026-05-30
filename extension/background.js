@@ -46,6 +46,42 @@ const uploadReplayToKarabuddy = async (payloadText) => {
     return await res.json();
 };
 
+// Post owner-only team-share rows for an already-uploaded replay.
+// One row per team slug. Server dedupes by PK so calling twice with the
+// same set is a no-op; safe to invoke from both periodic + final upload
+// paths. Returns { ok, applied, errors[] }.
+const applyTeamSharesToReplay = async ({ slug, teamSlugs }) => {
+    if (!slug || !Array.isArray(teamSlugs) || teamSlugs.length === 0) {
+        return { ok: true, applied: 0, errors: [] };
+    }
+    const endpoint = await getKarabuddyEndpoint();
+    const installToken = await getKarabuddyInstallToken();
+    const errors = [];
+    let applied = 0;
+    for (const teamSlug of teamSlugs) {
+        try {
+            const res = await fetch(`${endpoint}/api/replays/${slug}/team-shares`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Install-Token': installToken,
+                },
+                body: JSON.stringify({ teamSlug })
+            });
+            if (res.ok) {
+                applied++;
+            } else {
+                const body = await res.json().catch(() => ({}));
+                errors.push({ teamSlug, error: body.error || `HTTP ${res.status}` });
+            }
+        } catch (err) {
+            errors.push({ teamSlug, error: String(err && err.message || err) });
+        }
+    }
+    return { ok: errors.length === 0, applied, errors };
+};
+
 // ----- IndexedDB: local replay store -----
 const IDB_NAME = 'karabast-replays';
 const IDB_STORE = 'replays';
@@ -179,6 +215,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'openReplaysPage') {
                 await openReplaysPage({ tab: msg.tab });
                 sendResponse({ ok: true });
+            } else if (msg.type === 'applyTeamShares') {
+                // B67: route N share POSTs through the SW so the request
+                // origin is karabuddy.app (no page-world CORS) and the
+                // install token is sourced from extension storage instead
+                // of being readable from the karabast page.
+                try {
+                    const result = await applyTeamSharesToReplay({ slug: msg.slug, teamSlugs: msg.teamSlugs });
+                    sendResponse({ ok: result.ok, data: result });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
             } else if (msg.type === 'getTeamsMentionData') {
                 // B55c: proxy fetch of karabuddy.app's mention data API.
                 // Caller is the page-world recorder/footer; can't fetch
