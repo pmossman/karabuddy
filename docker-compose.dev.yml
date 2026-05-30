@@ -1,0 +1,29 @@
+# B74: local DEV Postgres — isolates local development from prod. Unlike the
+# ephemeral test DB (docker-compose.test.yml, port 5433, wiped each run),
+# this has a PERSISTENT volume and lives on port 5434 so both can run at
+# once and dev data survives restarts. Seed it from prod with
+# `npm run db:pull-snapshot`; the app talks to it via KARABUDDY_DB_DRIVER=pg.
+#
+#   docker compose -f docker-compose.dev.yml up -d     # start
+#   npm run db:migrate                                 # schema (no-op after a snapshot)
+#   npm run db:pull-snapshot                           # load prod data
+services:
+  dev-db:
+    image: postgres:16-alpine
+    container_name: karabuddy-dev-db
+    ports:
+      - '5434:5432'
+    environment:
+      POSTGRES_USER: karabuddy_dev
+      POSTGRES_PASSWORD: karabuddy_dev
+      POSTGRES_DB: karabuddy_dev
+    volumes:
+      - karabuddy-dev-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U karabuddy_dev']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  karabuddy-dev-pgdata:

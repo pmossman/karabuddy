@@ -35,12 +35,15 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 ### [B74] Local dev DB isolation + prod-snapshot-to-local
 
 - **Why:** `.env.local` points at the **production** Neon DB (`ep-bitter-lab-aqep2weh/neondb`), so local dev runs against prod data — risky (a local `db:migrate`, a stray write, or testing destructive flows hits prod; surfaced when B71's 0010 had to be applied to prod just to unblock localhost). Local should have its own DB, ideally seedable from a prod snapshot so local data is realistic.
+- **Approach (chosen):** local **Docker Postgres** (no Neon branch / no dashboard) via the app's existing `KARABUDDY_DB_DRIVER=pg` path, seeded from a prod snapshot. Local overrides live in `.env.development.local` (higher precedence than the Vercel-pulled `.env.local`, untouched by `vercel env pull`).
 - **Acceptance:**
-  - ✅ A script to **snapshot prod → local**: `scripts/pull-prod-snapshot.sh` (`npm run db:pull-snapshot`) — `pg_dump` SOURCE → `pg_restore --clean` TARGET, with guards (both URLs required + must differ; destructive on target only; confirm prompt). Blob payloads stay on prod URLs (load read-only from local). PII caveat documented.
-  - ✅ Doc: `docs/local-dev-db.md` (Neon-branch click-path + snapshot workflow) + `.env.local.example` updated with the separate-DB + snapshot vars.
-  - ⏳ **Manual (your dashboard):** create the separate DB (Neon branch off prod), point `.env.local` at it, `npm run db:migrate`, then `npm run db:pull-snapshot`. Tooling is ready; this is the one step that needs the Neon console.
-- **Relation:** sibling to **B72** (preview DB isolation via Neon branching) — same root cause (one shared DB), different surface (local dev vs Vercel previews). Could share the Neon-branching mechanism.
-- **Refs:** `scripts/pull-prod-snapshot.sh`, `docs/local-dev-db.md`, `.env.local.example`, `drizzle.config.ts`, `scripts/maybe-migrate.js`. Surfaced in chat 2026-05-30 when localhost 500'd on a missing `tag_team_scope`; tooling shipped same day.
+  - ✅ `docker-compose.dev.yml` — persistent Postgres on port 5434 (test DB is 5433/ephemeral; no clash). `npm run db:dev:up` / `db:dev:down`.
+  - ✅ `.env.development.local` (gitignored) sets `KARABUDDY_DB_DRIVER=pg` + local `POSTGRES_URL`(_NON_POOLING); `drizzle.config.ts` loads it first so `db:migrate` targets local too.
+  - ✅ `scripts/pull-prod-snapshot.sh` (`npm run db:pull-snapshot`) — runs `pg_dump | pg_restore` INSIDE the dev-db container (no host pg tools), source = prod from `.env.local`, target hardwired to the local container (can't run backwards onto prod; refuses a local-looking source). Blob payloads stay on prod URLs.
+  - ✅ Doc: `docs/local-dev-db.md` (Docker setup + snapshot workflow + PII/direction notes); `.env.local.example` clarified.
+  - ⏳ **Run sequence (you, ~2 min):** launch Docker Desktop → `npm run db:dev:up` → `npm run db:pull-snapshot` → restart `npm run dev`. Verified locally only up to the point Docker is running (CLI wasn't in PATH yet during build).
+- **Relation:** sibling to **B72** (preview DB isolation) — same root cause (every Vercel env shares one Neon DB), different surface (local vs Vercel previews).
+- **Refs:** `docker-compose.dev.yml`, `.env.development.local`, `scripts/pull-prod-snapshot.sh`, `drizzle.config.ts`, `lib/db.ts` (`KARABUDDY_DB_DRIVER=pg`), `docs/local-dev-db.md`. Surfaced + tooling shipped 2026-05-30.
 
 ### [B63] Mini frame preview in discussion rows (with hover-to-zoom)
 
