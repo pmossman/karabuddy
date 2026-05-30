@@ -59,12 +59,36 @@
         });
     };
 
+    // B72: ask the server whether this version is ok / should nag / is
+    // blocked, and surface nag+block through the same persistent toast as
+    // the "updated, refresh" notice. Best-effort: a null/failed check is
+    // treated as ok (never brick on a transient error). The toast registry
+    // collapses by key, so it won't stack on re-checks.
+    const checkExtensionStatus = () => {
+        if (!NS.bridge || !NS.bridge.getExtensionStatus) return;
+        NS.bridge.getExtensionStatus().then((status) => {
+            if (!status || !status.status) return;
+            if (status.status === 'nag') {
+                NS.toast?.show?.(
+                    status.message || 'A new version of KaraBuddy is available — reload to update.',
+                    { kind: 'warning', persistent: true, key: 'ext-status-nag' }
+                );
+            } else if (status.status === 'block') {
+                NS.toast?.show?.(
+                    status.message || 'This KaraBuddy version is out of date — please update to keep recording.',
+                    { kind: 'error', persistent: true, key: 'ext-status-block' }
+                );
+            }
+        }).catch(() => {});
+    };
+
     const mountAndWatch = () => {
         installKeyHandlers();
         installContextInvalidatedHandler();
         Decoder.installHiddenCardStyles();
         Footer.installFooterStyles();
         Footer.installFooter();
+        checkExtensionStatus();
         const observer = new MutationObserver(() => {
             Footer.installFooter();
         });

@@ -322,6 +322,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 } catch (err) {
                     sendResponse({ ok: false, error: err.message });
                 }
+            } else if (msg.type === 'getExtensionStatus') {
+                // B72: graduated kill-switch. Ask the server whether this
+                // version is ok/nag/block. CORS-open + no auth needed.
+                try {
+                    const endpoint = await getKarabuddyEndpoint();
+                    const version = chrome.runtime.getManifest().version;
+                    const res = await fetch(`${endpoint}/api/extension/status?v=${encodeURIComponent(version)}`);
+                    const body = await res.json();
+                    sendResponse({ ok: !!body.ok, data: body });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
             } else {
                 sendResponse({ ok: false, error: `Unknown message type: ${msg.type}` });
             }

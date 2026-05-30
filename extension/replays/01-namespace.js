@@ -93,6 +93,12 @@
         getTeamsMentionData: () =>
             companionRequest({ type: 'getTeamsMentionData' }, 8000)
                 .catch(() => null),
+        // B72: ask the server whether this extension version is ok / should
+        // nag / is blocked. Returns null on failure — treat as ok, never
+        // brick on a transient network error.
+        getExtensionStatus: () =>
+            companionRequest({ type: 'getExtensionStatus' }, 8000)
+                .catch(() => null),
         // B67: after a replay is uploaded, apply the user's persistent
         // "share with these teams" selection. Idempotent — safe to call
         // on every snapshot+final upload. Returns { ok, applied, errors[] }
