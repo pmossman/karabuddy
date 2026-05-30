@@ -24,18 +24,48 @@
         return token;
     };
 
-    // B68: PROACTIVE announcement. On every karabuddy.app page load,
-    // post the install token immediately so AutoClaim doesn't have to
-    // poll-with-timeout to discover it. The explicit request flow below
-    // stays — handles the page-loads-before-bridge race the other way.
+    // B69b: do the link DIRECTLY from this content script instead of
+    // relying on the React-side AutoClaim component to pick up a
+    // postMessage and fetch. A content-script fetch to the same origin
+    // sends the page's cookies (same-origin, no SameSite quirks), so we
+    // can hit /api/me/claim straight from here. Removes the timing race
+    // between bridge-mount, AutoClaim-mount, and session-cookie-set.
+    //
+    // Still postMessage the token + claim result so AutoClaim can show
+    // the success toast — that's its remaining responsibility.
     (async () => {
         try {
             const token = await getOrMintToken();
+
+            // Announce the token first (Settings page + bubble both read
+            // this to detect "which install is this browser").
             window.postMessage({
                 type: 'karabuddy:availableInstallToken',
                 token,
                 protocol: PROTOCOL_VERSION
             }, window.location.origin);
+
+            // Directly claim. Idempotent — server's onConflictDoUpdate
+            // means re-firing every page load is harmless. 401 means
+            // the user isn't signed in yet; retry on next page load.
+            const res = await fetch('/api/me/claim', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ token }),
+            });
+            if (res.ok) {
+                const body = await res.json().catch(() => null);
+                if (body && body.ok) {
+                    window.postMessage({
+                        type: 'karabuddy:claimResult',
+                        token,
+                        claimedReplays: body.claimedReplays || 0,
+                        claimedTags: body.claimedTags || 0,
+                        protocol: PROTOCOL_VERSION,
+                    }, window.location.origin);
+                }
+            }
         } catch {}
     })();
 
