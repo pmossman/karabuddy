@@ -215,6 +215,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'openReplaysPage') {
                 await openReplaysPage({ tab: msg.tab });
                 sendResponse({ ok: true });
+            } else if (msg.type === 'getEndpoint') {
+                // B69: tell the page-world bubble where karabuddy.app
+                // lives so it can open a sign-in popup at the right URL
+                // (dev override comes from chrome.storage.local).
+                try {
+                    const endpoint = await getKarabuddyEndpoint();
+                    sendResponse({ ok: true, endpoint });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'getWhoami') {
+                // B69: "who am I as karabuddy sees me" for the floating
+                // bubble's signed-in indicator. Same install-token-header
+                // path as getTeamsMentionData (SameSite cookies are
+                // unreliable on extension SW fetches).
+                try {
+                    const endpoint = await getKarabuddyEndpoint();
+                    const installToken = await getKarabuddyInstallToken();
+                    const res = await fetch(`${endpoint}/api/me/whoami`, {
+                        credentials: 'include',
+                        headers: { 'X-Install-Token': installToken },
+                    });
+                    if (res.status === 401) {
+                        sendResponse({ ok: false, error: 'not signed in', status: 401 });
+                        return;
+                    }
+                    const body = await res.json();
+                    sendResponse({ ok: !!body.ok, data: body, status: res.status });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
             } else if (msg.type === 'applyTeamShares') {
                 // B67: route N share POSTs through the SW so the request
                 // origin is karabuddy.app (no page-world CORS) and the
@@ -264,4 +295,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Toolbar icon click → open the user's karabuddy replays tab.
 chrome.action.onClicked.addListener(() => {
     openReplaysPage().catch((err) => console.error('[karabuddy] openReplaysPage failed:', err));
+});
+
+// B69: on a fresh install, open karabuddy.app in a new tab so the
+// AutoClaim path fires the moment the user signs in (or immediately if
+// they already have a karabuddy session in this browser). Without this,
+// the install token sits unlinked until the user happens to navigate to
+// karabuddy.app themselves — confusing for users who installed the
+// extension first.
+//
+// We deliberately do NOT open on `reason === 'update'`: the install
+// token persists across updates (chrome.storage.local survives them),
+// so the link, once made, stays. Opening a tab on every update would
+// be noisy.
+//
+// We also only open if no karabuddy.app tab is already open — avoids
+// double-popping a tab the user already has.
+chrome.runtime.onInstalled.addListener(async (details) => {
+    if (details.reason !== 'install') return;
+    try {
+        const endpoint = await getKarabuddyEndpoint();
+        const existing = await chrome.tabs.query({ url: `${endpoint}/*` });
+        if (existing.length > 0) return;
+        await chrome.tabs.create({ url: endpoint });
+    } catch (err) {
+        console.warn('[karabuddy] onInstalled tab open failed:', err);
+    }
 });

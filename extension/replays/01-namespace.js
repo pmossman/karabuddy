@@ -99,6 +99,16 @@
         // or null on bridge failure.
         applyTeamShares: (slug, teamSlugs) =>
             companionRequest({ type: 'applyTeamShares', slug, teamSlugs }, 10000)
+                .catch(() => null),
+        // B69: minimal "who am I" lookup for the bubble's signed-in
+        // indicator. Returns null on failure / not-signed-in.
+        getWhoami: () =>
+            companionRequest({ type: 'getWhoami' }, 5000)
+                .catch(() => null),
+        // B69: karabuddy endpoint URL (handles dev override). Used to
+        // build the sign-in popup URL.
+        getEndpoint: () =>
+            companionRequest({ type: 'getEndpoint' }, 3000)
                 .catch(() => null)
     };
 })();

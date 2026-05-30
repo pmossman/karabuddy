@@ -123,6 +123,130 @@
     // upload to know which teams to apply shares for.
     const getShareTeamSlugs = () => [...shareTeamSlugs];
 
+    // B69: cached signed-in account info. Loaded lazily on first expand
+    // via the bridge → SW → /api/me/whoami path (install-token header
+    // auth, so SameSite cookie quirks don't bite). 5-min TTL — fresh
+    // enough to catch karabastUsername changes, stale enough not to
+    // hammer the API.
+    let whoamiCache = null;
+    let whoamiLoadedAt = 0;
+    let whoamiInflight = null;
+    const WHOAMI_TTL_MS = 5 * 60 * 1000;
+    const loadWhoami = async (force = false) => {
+        if (!force && whoamiCache && Date.now() - whoamiLoadedAt < WHOAMI_TTL_MS) {
+            return whoamiCache;
+        }
+        if (whoamiInflight) return whoamiInflight;
+        whoamiInflight = (async () => {
+            try {
+                const result = await B().getWhoami?.();
+                if (result && result.ok && result.data?.ok && result.data.user) {
+                    whoamiCache = result.data.user;
+                    whoamiLoadedAt = Date.now();
+                    return whoamiCache;
+                }
+                whoamiCache = { displayName: null, signedOut: true };
+                whoamiLoadedAt = Date.now();
+                return whoamiCache;
+            } catch {
+                return null;
+            } finally {
+                whoamiInflight = null;
+            }
+        })();
+        return whoamiInflight;
+    };
+
+    // B69: open karabuddy sign-in in a popup window. Doesn't interrupt
+    // the karabast match — the popup lives in its own window, the user
+    // signs in (Discord/Google), karabuddy.app's ExtensionSigninReturn
+    // component detects the `fromExtension=1` callback and closes the
+    // popup. We poll popup.closed too in case the user closes manually.
+    const openSigninPopup = async () => {
+        const endpointResult = await B().getEndpoint?.();
+        const endpoint = endpointResult?.endpoint || 'https://karabuddy.app';
+        const callbackUrl = encodeURIComponent('/?fromExtension=1');
+        const url = `${endpoint}/signin?callbackUrl=${callbackUrl}`;
+        // 600x750 fits both Discord + Google's OAuth pages comfortably.
+        const popup = window.open(url, 'karabuddy-signin', 'popup,width=600,height=750');
+        if (!popup) {
+            // Popup blocked — fall back to opening in a regular tab.
+            window.open(url, '_blank');
+            return;
+        }
+        // Two-track close detection so we always notice + refresh:
+        //   1. postMessage from the karabuddy "you can close now" page
+        //   2. polled popup.closed (handles manual close + cases where
+        //      postMessage doesn't fire e.g. due to cross-origin blockers)
+        const onSignedInMessage = (e) => {
+            const data = e.data;
+            if (!data || data.type !== 'karabuddy:signedIn') return;
+            try { popup.close(); } catch {}
+        };
+        window.addEventListener('message', onSignedInMessage);
+        const poll = setInterval(() => {
+            if (!popup.closed) return;
+            clearInterval(poll);
+            window.removeEventListener('message', onSignedInMessage);
+            // Bust the cache + repaint.
+            whoamiCache = null;
+            refreshWhoamiBlock();
+        }, 400);
+    };
+
+    const refreshWhoamiBlock = async () => {
+        const block = document.getElementById('karabast-replays-panel-whoami');
+        if (!block) return;
+        block.replaceChildren();
+        block.style.color = '#6c7588';
+        block.style.fontStyle = 'normal';
+        const data = await loadWhoami();
+        if (!block.isConnected) return; // panel closed mid-fetch
+        if (!data || data.signedOut) {
+            const note = document.createElement('div');
+            note.setAttribute('style', 'font-style: italic; margin-bottom: 6px;');
+            note.textContent = 'Not signed in to karabuddy.';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = 'Sign in on karabuddy →';
+            btn.setAttribute('style', [
+                'background: rgba(74, 124, 255, 0.18)',
+                'color: #d6e7ff',
+                'border: 1px solid #4a7cff',
+                'border-radius: 6px',
+                'padding: 7px 10px',
+                'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif',
+                'cursor: pointer',
+                'width: 100%',
+                'text-align: center'
+            ].join(';'));
+            btn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openSigninPopup();
+            });
+            block.appendChild(note);
+            block.appendChild(btn);
+            return;
+        }
+        block.style.color = '#a0c4ff';
+        block.textContent = `Signed in as ${data.displayName || 'unknown'}`;
+    };
+
+    const buildWhoamiBlock = () => {
+        const el = document.createElement('div');
+        el.id = 'karabast-replays-panel-whoami';
+        el.setAttribute('style', [
+            'font: 600 11px -apple-system, BlinkMacSystemFont, sans-serif',
+            'color: #6c7588',
+            'padding-top: 10px',
+            'border-top: 1px solid #2e333c'
+        ].join(';'));
+        el.textContent = 'Loading account…';
+        requestAnimationFrame(() => { refreshWhoamiBlock(); });
+        return el;
+    };
+
     // Click on the collapsed header's share indicator. Pure toggle:
     //   - currently shared  → go private (saves to lastShareTeamSlugs)
     //   - currently private + remembered teams → restore them
@@ -592,6 +716,7 @@
         els.push(linksWrap);
 
         els.push(buildShareSection());
+        els.push(buildWhoamiBlock());
 
         return els;
     };
@@ -634,6 +759,7 @@
         els.push(recentSection);
 
         els.push(buildShareSection());
+        els.push(buildWhoamiBlock());
 
         const openLink = document.createElement('a');
         openLink.id = 'karabast-replays-panel-open-link';

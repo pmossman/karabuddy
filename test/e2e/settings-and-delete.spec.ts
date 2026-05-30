@@ -56,6 +56,30 @@ test('unknown replay slug returns 404 page (no crash)', async ({ page }) => {
   expect(res?.status()).toBe(404);
 });
 
+test('settings: Linked extensions section lists claimed tokens + supports revoke', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'LinkUser', email: 'link@example.com' });
+  // Claim a synthetic install token so the user has a row to see.
+  const fakeToken = 'kbx_test_' + Math.random().toString(36).slice(2, 10);
+  const claimRes = await page.request.post('/api/me/claim', { data: { token: fakeToken } });
+  expect(claimRes.ok()).toBe(true);
+
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { name: /Linked extensions/i })).toBeVisible();
+
+  const list = page.getByTestId('linked-extensions-list');
+  await expect(list).toBeVisible();
+  // Should contain a row that mentions the token's leading chars.
+  const row = page.getByTestId('linked-extension-row').first();
+  await expect(row).toBeVisible();
+  await expect(row).toContainText(fakeToken.slice(0, 12));
+
+  // Revoke (auto-accept the confirm dialog).
+  page.once('dialog', (d) => d.accept());
+  await row.getByRole('button', { name: /Revoke/i }).click();
+  // After revoke the row is gone.
+  await expect(page.getByTestId('linked-extension-row')).toHaveCount(0);
+});
+
 test('non-owner cannot mutate someone else replay (403)', async ({ page, request }) => {
   // Anonymous upload — only the install token holder can mutate.
   const { slug } = await uploadReplay(request, {

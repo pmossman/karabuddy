@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { users } from '@/lib/schema';
 import { SettingsForm } from './SettingsForm';
+import { LinkedExtensions } from './LinkedExtensions';
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -24,6 +25,17 @@ export default async function SettingsPage() {
           Existing anonymous matches get claimed too.
         </p>
         <SettingsForm initial={user?.karabastUsername || ''} />
+      </section>
+
+      <section style={{ marginTop: 24, padding: 20, background: 'rgba(17,20,26,0.6)', border: '1px solid #2e333c', borderRadius: 8 }}>
+        <h2 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 600 }}>Linked extensions</h2>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: '#a0a8b8', lineHeight: 1.5 }}>
+          Every browser where you&apos;ve installed the karabuddy extension AND visited
+          karabuddy.app while signed in shows up here. Replays uploaded from a linked
+          install attribute to your account automatically. Revoke any link you don&apos;t
+          recognize.
+        </p>
+        <LinkedExtensions />
       </section>
     </main>
   );

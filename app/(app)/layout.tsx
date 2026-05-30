@@ -1,6 +1,8 @@
+import { Suspense } from 'react';
 import { Header } from '@/app/_components/Header';
 import { Footer } from '@/app/_components/Footer';
 import { AutoClaim } from '@/app/_components/AutoClaim';
+import { ExtensionSigninReturn } from '@/app/_components/ExtensionSigninReturn';
 
 // Wraps every "regular" page (homepage, /replays, /settings, /signin,
 // /claim, /privacy) with the persistent header + footer. The replay
@@ -17,6 +19,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           Suppresses re-runs in the same tab via sessionStorage; idempotent
           server-side, so cross-tab re-fires are harmless. */}
       <AutoClaim />
+      {/* B69: when the extension's "Sign in" popup brought the user here
+          via `?fromExtension=1`, notify the opener and close the window
+          once the session is established. Wrapped in Suspense because
+          useSearchParams needs it during the App Router build. */}
+      <Suspense fallback={null}>
+        <ExtensionSigninReturn />
+      </Suspense>
     </div>
   );
 }
