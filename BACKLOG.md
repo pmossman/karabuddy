@@ -13,6 +13,18 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B72] Safe extension-rollout CI/CD (contract tests + preview DB isolation + release workflow)
+
+- **Why:** The extension auto-updates on the Chrome Web Store's unpredictable schedule and can't be force-updated, so prod must support every extension version in the wild (old + new) at all times. Today this is enforced by hand (we caught a `whoami` skew manually). We want CI to enforce it, plus isolate preview DBs from prod.
+- **The invariant:** server changes are additive-only w.r.t. the published extension (new optional fields / new endpoints; never remove or repurpose what a shipped ext sends), and the server deploys BEFORE the new ext publishes.
+- **Acceptance:**
+  - **Extension↔server contract tests** (highest leverage): freeze each shipped extension version's request shapes as fixtures under `test/contract/`; a CI job replays them against the current server and asserts success. Seed with 0.5.0. This catches "server change breaks old ext" pre-merge.
+  - **Preview DB isolation:** previews currently share the prod DB (see `scripts/maybe-migrate.js` comment). Enable Neon database branching via the Neon–Vercel integration so each preview deploy gets an isolated copy-on-write branch. (Dashboard auth required — document the click-path.)
+  - **Optional staging:** `staging` branch → `staging.karabuddy.app` + its own stable Neon branch, for validating new-ext ↔ new-server before CWS submit (extension already supports `chrome.storage.local.karabuddyEndpoint` override).
+  - **Extension release workflow:** on a `ext-vX.Y.Z` tag → validate manifest, run extension JS unit tests, build the zip, attach to a GitHub Release. Optional CWS auto-submit via the Chrome Web Store API (needs secrets).
+  - **Rollout runbook** (`docs/extension-rollout.md`) encoding the safe order: preview-test → CI compat gate → deploy server → submit ext → CWS approves.
+- **Refs:** existing `.github/workflows/test.yml`, `scripts/maybe-migrate.js`, `extension/background.js` (`getKarabuddyEndpoint`). Designed in chat 2026-05-30.
+
 ### [B63] Mini frame preview in discussion rows (with hover-to-zoom)
 
 - **Why:** Discussion rows show participants and the latest comment but not WHAT the discussion is actually about visually. A small game-board preview rendered from the gamestate at the latest-tag's frame would let teammates scan the feed at a glance and recognize "oh, I remember that moment". Hover to enlarge gives a quick deep-dive without leaving the team page.
