@@ -11,6 +11,8 @@
 
 (() => {
     const PROTOCOL_VERSION = 1;
+    const LOG = (...args) => console.info('[karabuddy:bridge]', ...args);
+    LOG('loaded on', window.location.href);
 
     // Get-or-mint the install token. Same as background.js's
     // getKarabuddyInstallToken but inlined here so the bridge can run
@@ -36,6 +38,7 @@
     (async () => {
         try {
             const token = await getOrMintToken();
+            LOG('install token', token.slice(0, 12) + '…');
 
             // Announce the token first (Settings page + bubble both read
             // this to detect "which install is this browser").
@@ -48,14 +51,17 @@
             // Directly claim. Idempotent — server's onConflictDoUpdate
             // means re-firing every page load is harmless. 401 means
             // the user isn't signed in yet; retry on next page load.
+            LOG('POST /api/me/claim');
             const res = await fetch('/api/me/claim', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({ token }),
             });
+            LOG('claim response status', res.status);
             if (res.ok) {
                 const body = await res.json().catch(() => null);
+                LOG('claim body', body);
                 if (body && body.ok) {
                     window.postMessage({
                         type: 'karabuddy:claimResult',
@@ -65,8 +71,14 @@
                         protocol: PROTOCOL_VERSION,
                     }, window.location.origin);
                 }
+            } else if (res.status === 401) {
+                LOG('claim 401 — user not signed in (yet). will retry on next page load.');
+            } else {
+                LOG('claim non-ok status', res.status, await res.text().catch(() => ''));
             }
-        } catch {}
+        } catch (err) {
+            LOG('claim failed:', err && err.message || err);
+        }
     })();
 
     window.addEventListener('message', async (e) => {

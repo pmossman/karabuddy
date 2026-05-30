@@ -1,4 +1,7 @@
 // Service worker for the KaraBuddy MV3 extension.
+
+const SWLOG = (...args) => console.info('[karabuddy:sw]', ...args);
+SWLOG('service worker booted');
 //
 // Scope after the solo-testing removal: receive replay payloads from the
 // MAIN-world recorder via the companion bridge, persist locally to IndexedDB,
@@ -188,6 +191,7 @@ const openReplaysPage = async ({ tab = 'mine' } = {}) => {
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    SWLOG('msg', msg && msg.type, 'from', sender && (sender.tab && sender.tab.url || sender.url || 'unknown'));
     (async () => {
         try {
             if (msg.type === 'uploadReplay') {

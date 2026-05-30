@@ -139,7 +139,9 @@
         if (whoamiInflight) return whoamiInflight;
         whoamiInflight = (async () => {
             try {
+                console.info('[karabuddy:karabast] bubble: fetching whoami via SW');
                 const result = await B().getWhoami?.();
+                console.info('[karabuddy:karabast] bubble: whoami result', result);
                 if (result && result.ok && result.data?.ok && result.data.user) {
                     whoamiCache = result.data.user;
                     whoamiLoadedAt = Date.now();
@@ -148,7 +150,8 @@
                 whoamiCache = { displayName: null, signedOut: true };
                 whoamiLoadedAt = Date.now();
                 return whoamiCache;
-            } catch {
+            } catch (err) {
+                console.warn('[karabuddy:karabast] bubble: whoami failed', err);
                 return null;
             } finally {
                 whoamiInflight = null;
