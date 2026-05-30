@@ -13,15 +13,6 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
-### [B73] In-game mention-narrowing for the extension tag form
-
-- **Why:** B71 made web-viewer comments mention-narrowable via the shared `lib/commentScope.js`, and made in-game tags **broadcast** to the bubble's armed teams. The remaining parity gap: in the in-game tag form, narrowing a single comment to a subset of the armed teams (the `@alice @bob` live rule) isn't wired yet — in-game comments can only broadcast.
-- **Acceptance:**
-  - The extension consumes the SHARED `lib/commentScope.js` (per Parker: one file, copied verbatim into `extension/` at package time) so in-game scope derivation matches the web exactly. Resolve the ESM-vs-content-script wrinkle: `commentScope.js` uses ESM `export`, but extension content scripts aren't modules — either load it as a module, attach to the `NS` namespace, or a dual-mode shim. Add a package/zip copy step + a parity check (the vitest unit project already globs `extension/**/*.test.js`).
-  - In-game tag form computes per-tag `teamSlugs = scopeFromMentions({armedTeams: shareTeamSlugs, mentionedUserIds, memberTeams})` and sends them embedded on each payload tag (the upload route already honours per-tag `teamSlugs`).
-  - A scope readout in the in-game form mirroring the web chip (collapsed "Visible to: …").
-- **Refs:** `lib/commentScope.js` (+ `.d.ts`), `extension/replays/05-footer.js` (in-game tag form + `shareTeamSlugs` + mention-data), `extension/replays/03-recorder.js` (`addTag`), `app/api/replays/route.ts` (per-tag `teamSlugs` already honoured). Split out of B71.
-
 ### [B72] Safe extension-rollout CI/CD (contract tests + preview DB isolation + release workflow)
 
 - **Why:** The extension auto-updates on the Chrome Web Store's unpredictable schedule and can't be force-updated, so prod must support every extension version in the wild (old + new) at all times. Today this is enforced by hand (we caught a `whoami` skew manually). We want CI to enforce it, plus isolate preview DBs from prod.
@@ -101,6 +92,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 _empty_
 
 ## Done
+
+### [B73] In-game mention-narrowing for the extension tag form
+_completed: 2026-05-30 by claude_
+Brought the extension's in-game tag form to parity with the web scope chip: a comment can be narrowed to a subset of the armed teams by @-mentioning people, via the SAME `scopeFromMentions` rule. Resolved the ESM-vs-content-script wrinkle by making `lib/commentScope.js` dual-mode — top-level `function` declarations + a guarded CJS `module.exports` (project is CommonJS; `.d.ts` supplies types for the app). The extension loads a byte-for-byte copy at `extension/replays/00-comment-scope.js` as a classic MAIN-world content script before `05-footer.js`, so the functions are just in scope. `npm run sync:extension-shared` (wired into `package:extension`) regenerates the copy; a parity unit test asserts it stays identical. `03-recorder.addTag` takes `teamSlugs` (stored on the tag, shipped in the payload, honoured by the server's `scopeLiftedTags`); `05-footer` computes the scope + shows a live "Visible to: …" readout. App build + 100 E2E + 28 unit + 7 api green. In-game UI needs a load-unpacked eyeball.
 
 ### [B71] Per-team comment scoping (fix cross-team tag leak)
 _completed: 2026-05-30 by claude_
