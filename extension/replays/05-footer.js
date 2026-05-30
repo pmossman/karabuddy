@@ -299,36 +299,121 @@
             return;
         }
         for (const team of teams) {
-            const row = document.createElement('label');
-            row.setAttribute('style', [
-                'display: flex',
-                'align-items: center',
-                'gap: 8px',
-                'padding: 5px 7px',
-                'border-radius: 4px',
-                'background: rgba(255, 255, 255, 0.025)',
-                'cursor: pointer'
-            ].join(';'));
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = shareTeamSlugs.includes(team.slug);
-            checkbox.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-            checkbox.addEventListener('change', () => {
-                if (checkbox.checked) {
-                    if (!shareTeamSlugs.includes(team.slug)) shareTeamSlugs.push(team.slug);
-                } else {
-                    shareTeamSlugs = shareTeamSlugs.filter((s) => s !== team.slug);
-                }
-                persistShareState();
-                refreshFooter(); // header indicator
-            });
-            const name = document.createElement('span');
-            name.setAttribute('style', 'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif; color: #d6d6d6;');
-            name.textContent = team.name;
-            row.appendChild(checkbox);
-            row.appendChild(name);
-            list.appendChild(row);
+            list.appendChild(buildShareRow(team));
         }
+    };
+
+    // Tactical-panel row: status LED + monospace team name + ARMED /
+    // STANDBY label. Click anywhere on the row toggles. Replaces the
+    // native checkbox so the bubble reads as a cockpit control rather
+    // than a settings form.
+    const buildShareRow = (team) => {
+        const armed = shareTeamSlugs.includes(team.slug);
+        const accent = armed ? '#4dd2ff' : '#3a4150';
+        const row = document.createElement('div');
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('aria-pressed', armed ? 'true' : 'false');
+        row.setAttribute('style', [
+            'display: flex',
+            'align-items: center',
+            'gap: 9px',
+            'padding: 6px 9px',
+            'background: ' + (armed ? 'rgba(77, 210, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)'),
+            'border-left: 2px solid ' + accent,
+            'cursor: pointer',
+            'transition: background 120ms ease, border-color 120ms ease'
+        ].join(';'));
+        row.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        row.addEventListener('mouseenter', () => {
+            if (!shareTeamSlugs.includes(team.slug)) {
+                row.style.background = 'rgba(77, 210, 255, 0.04)';
+            }
+        });
+        row.addEventListener('mouseleave', () => {
+            const stillArmed = shareTeamSlugs.includes(team.slug);
+            row.style.background = stillArmed
+                ? 'rgba(77, 210, 255, 0.08)'
+                : 'rgba(255, 255, 255, 0.02)';
+        });
+        const toggle = () => {
+            if (shareTeamSlugs.includes(team.slug)) {
+                shareTeamSlugs = shareTeamSlugs.filter((s) => s !== team.slug);
+            } else {
+                shareTeamSlugs.push(team.slug);
+            }
+            persistShareState();
+            refreshFooter();
+            refreshSharePanel();
+        };
+        row.addEventListener('click', toggle);
+        row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggle();
+            }
+        });
+
+        // LED indicator. Ring + center dot; dot lit only when armed,
+        // with a soft glow shadow on the ring to sell the "live signal"
+        // read.
+        const led = document.createElement('span');
+        led.setAttribute('style', [
+            'display: inline-flex',
+            'align-items: center',
+            'justify-content: center',
+            'width: 12px',
+            'height: 12px',
+            'border-radius: 50%',
+            'border: 1.5px solid ' + accent,
+            'background: rgba(0, 0, 0, 0.45)',
+            'box-shadow: ' + (armed ? '0 0 6px rgba(77, 210, 255, 0.7), inset 0 0 4px rgba(77, 210, 255, 0.45)' : 'inset 0 0 2px rgba(0,0,0,0.6)'),
+            'flex: 0 0 auto',
+            'transition: box-shadow 120ms ease, border-color 120ms ease'
+        ].join(';'));
+        if (armed) {
+            const dot = document.createElement('span');
+            dot.setAttribute('style', [
+                'display: block',
+                'width: 5px',
+                'height: 5px',
+                'border-radius: 50%',
+                'background: #4dd2ff',
+                'box-shadow: 0 0 4px #4dd2ff'
+            ].join(';'));
+            led.appendChild(dot);
+        }
+
+        // Team name in tactical-display monospace.
+        const name = document.createElement('span');
+        name.setAttribute('style', [
+            'flex: 1 1 auto',
+            'min-width: 0',
+            'overflow: hidden',
+            'text-overflow: ellipsis',
+            'white-space: nowrap',
+            'font: 600 12px "SF Mono", Menlo, Consolas, monospace',
+            'color: ' + (armed ? '#d6f0ff' : '#a8b0bd'),
+            'letter-spacing: 0.02em'
+        ].join(';'));
+        name.textContent = team.name;
+
+        // Status label, far right. Tiny + uppercase + tracked, like a
+        // panel readout.
+        const status = document.createElement('span');
+        status.setAttribute('style', [
+            'font: 700 9px "SF Mono", Menlo, Consolas, monospace',
+            'color: ' + (armed ? '#4dd2ff' : '#5a6170'),
+            'letter-spacing: 0.18em',
+            'text-transform: uppercase',
+            'flex: 0 0 auto'
+        ].join(';'));
+        status.textContent = armed ? 'Armed' : 'Standby';
+
+        row.appendChild(led);
+        row.appendChild(name);
+        row.appendChild(status);
+        return row;
     };
 
     // Build the share section. Used by both idle and recording bodies.
