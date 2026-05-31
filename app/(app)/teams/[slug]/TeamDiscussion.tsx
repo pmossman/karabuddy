@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { cardImageUrl } from '@/lib/cardImage';
 import { MentionedComment } from '@/app/(app)/r/[slug]/MentionInput';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B61: Discussion feed for /teams/[slug]. Sits above the inventory.
 // Surfaces replays with active tag activity; rows are stable click
@@ -101,9 +102,11 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
         flexDirection: 'column',
         gap: 10,
         padding: 14,
-        background: 'rgba(17, 20, 26, 0.6)',
-        border: '1px solid #2e333c',
-        borderRadius: 8,
+        background: tokens.surface.panel,
+        border: `1px solid ${tokens.surface.panelBorder}`,
+        borderLeft: `2px solid ${tokens.led.on}`,
+        borderRadius: tokens.radius.md,
+        boxShadow: tokens.surface.panelShadow,
         textDecoration: 'none',
         color: '#e6e6e6',
       }}
