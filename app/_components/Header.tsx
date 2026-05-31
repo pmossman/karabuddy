@@ -45,12 +45,13 @@ export async function Header() {
         >
           <span
             style={{
-              // HUD monospace — unified with "BUDDY" so the wordmark reads as
-              // one cockpit label rather than sans + mono mismatched.
-              fontFamily: tokens.led.mono,
-              fontWeight: 700,
-              fontSize: 17,
-              letterSpacing: '0.14em',
+              // KARA stays Barlow — deliberately matches the "KARABAST"
+              // wordmark so the connection to karabast.net is clear. Only
+              // "BUDDY" carries the HUD treatment.
+              fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+              fontWeight: 400,
+              fontSize: 22,
+              letterSpacing: 0,
               textTransform: 'uppercase',
               color: '#e6e6e6',
             }}
