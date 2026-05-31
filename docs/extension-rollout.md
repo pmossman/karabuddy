@@ -22,24 +22,32 @@ compatible — make it additive instead.
 ## Safe sequence
 
 1. **Develop** server + extension changes together on a branch.
-2. **Preview-test the new combo.** Push the branch → Vercel preview deploy.
-   Point a dev-unpacked extension at it:
-   `chrome.storage.local.set({ karabuddyEndpoint: '<preview-url>' })`, then
-   reload a karabast.net tab. Verify new-ext ↔ new-server.
-3. **CI compat gate.** CI runs the contract tests (old-ext ↔ new-server) +
-   the migration-journal guard + the full suite. Green before merge.
-4. **Deploy the server first.** Merge to `main` → Vercel builds; the
-   `prebuild` (`scripts/maybe-migrate.js`) validates the migration journal
-   then applies pending migrations. Prod now speaks BOTH protocols.
-5. **Then publish the extension.** Tag `ext-vX.Y.Z` (see below) → upload the
-   zip to the CWS dashboard → submit for review. The review window is now
+2. **Test the new combo locally.** Run local dev (Docker DB, see
+   [local-dev-db.md](./local-dev-db.md)) and point a dev-unpacked extension at
+   it: `chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })`,
+   reload a karabast.net tab, verify new-ext ↔ new-server. (Vercel preview
+   deploys aren't used for this — they're SSO-protected and the bypass is
+   Pro-only; the gated pipeline does the deployed-build verification instead.)
+3. **CI compat gate.** Open a PR → `test.yml` runs the contract tests
+   (old-ext ↔ new-server) + the migration-journal guard + the full suite.
+   Green before merge.
+4. **Deploy the server first (gated).** Merge to `main` → `deploy.yml` re-runs
+   the suite, migrates the isolated `ci-preview` Neon branch, builds the real
+   prod bundle and smokes it against `ci-preview`, then `vercel deploy --prod`.
+   The prod build's `prebuild` (`scripts/maybe-migrate.js`) validates the
+   journal then applies pending migrations to prod. Vercel's own main
+   auto-deploy is off (`vercel.json`). Prod now speaks BOTH protocols.
+5. **Then publish the extension.** The push auto-cuts a GitHub Release
+   (`extension-release.yml`); promote it to users via the manual
+   `extension-submit-cws` workflow (see below). The review window is now
    safe: prod already supports the new ext and still supports the old one.
 6. **CWS approves** → users auto-update → nothing breaks.
 
 ## Cutting an extension release (automatic)
 
 Releases are cut automatically by the `extension-release` workflow whenever
-extension code lands on `main` (`extension/**` or `lib/commentScope.js`). It
+extension code lands on `main` (`extension/**`, `lib/commentScope.js`, or
+`scripts/package-extension.sh`). It
 runs the extension unit tests (incl. the `commentScope` parity check), builds
 `dist/karabuddy-extension-X.Y.Z.zip`, and publishes a **GitHub Release**.
 
@@ -97,30 +105,37 @@ to keep replaying every still-live version against the current server.
 
 ## Migrations
 
-- Local dev must run `npm run db:migrate` to apply pending migrations (prod
-  auto-applies via `maybe-migrate`; tests use pglite). **Note:** local
-  currently points at the prod DB — see B74.
+- Local dev applies migrations with `npm run db:migrate` against the local
+  Docker DB (B74); prod auto-applies via `maybe-migrate` on the gated build;
+  CI/tests use pglite or the `ci-preview` branch. Confirm `db:migrate` reports
+  `localhost:5434` before running it — `.env.local` is prod.
 - Keep journal `when` timestamps strictly increasing; a non-monotonic entry
   is silently skipped by drizzle's migrator. The journal guard
   (`scripts/validate-migration-journal.js`, run in CI + the prod build)
   fails loudly if this is violated.
 
-## Emergency kill-switch (planned, B72)
+## Graduated kill-switch (live, B72)
 
-`GET /api/extension/status` → `ok | nag | block`. Default `ok`/`nag`
-(update banner, keeps working). Reserve `block` for a genuinely dangerous
-version, disable only the broken interaction, and keep buffering recordings
-locally — a stopped recording is a permanently lost game. Renders through
-the existing context-invalidated toast.
+`GET /api/extension/status?v=<v>` → `{ status, minSupportedVersion,
+latestVersion, message, capabilities }` (`lib/extensionPolicy.ts`,
+env-overridable via `KARABUDDY_EXT_LATEST` / `_MIN_SUPPORTED` /
+`_NAG_MESSAGE` / `_BLOCK_MESSAGE`). The extension pings it on load
+(`06-bootstrap.js`) and renders through the existing toast surface. Tiers:
+`ok` (silent) / `nag` (update-available banner, keeps working — the everyday
+"you're behind" signal) / `block` (break-glass only; even then, disable just
+the broken interaction and keep buffering recordings locally — a stopped
+recording is a permanently lost game). Default posture is `ok`/`nag`; raise
+`KARABUDDY_EXT_MIN_SUPPORTED` only to break-glass. Keep `KARABUDDY_EXT_LATEST`
+tracking the CWS-published version.
 
-## Auth-gated setup (one-time, needs the Vercel/Neon dashboard) — B72/B74
+## Remaining auth-gated setup (optional, needs the Vercel/CWS dashboard)
 
-- **Preview DB isolation:** enable the Neon–Vercel integration so each
-  preview deploy gets an isolated DB branch (today previews share prod).
-- **Staging:** a `staging` branch → `staging.karabuddy.app` + its own Neon
-  branch for a durable pre-CWS validation target.
-- **Local DB:** point `.env.local` at a separate DB, not prod — see
-  [docs/local-dev-db.md](./local-dev-db.md) (Neon-branch click-path +
-  `npm run db:pull-snapshot`). B74.
-- **CWS auto-submit (optional):** store Chrome Web Store API creds as repo
-  secrets to let the release workflow submit, not just build.
+- **CWS auto-submit:** store the four `CWS_*` API creds as repo secrets to let
+  the `extension-submit-cws` workflow submit (today it needs them; without
+  them, submit by hand). See the creds section above.
+
+Dropped from the original plan: per-preview Vercel DB branching (we don't gate
+on Vercel previews — the gated pipeline smokes against the `ci-preview` branch
+instead, and a Pro plan would be needed for SSO-bypassed previews) and a
+separate `staging` env (obviated by the gated pipeline). Local DB isolation is
+done via Docker, not a Neon branch — see [local-dev-db.md](./local-dev-db.md).

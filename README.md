@@ -30,7 +30,7 @@ The extension is the only thing that can run on karabast.net itself (intercept t
 
 ## Layout
 
-- `app/` — Next.js routes (`/r/[slug]`, `/replays`, `/claim`, `/settings`, `/install`) + API at `app/api/`
+- `app/` — Next.js routes (`/r/[slug]`, `/replays`, `/teams`, `/mentions`, `/settings`, `/claim`, `/install`) + API at `app/api/`
 - `lib/` — shared backend (db client, schema, replay decoder)
 - `drizzle/` — generated migrations
 - `extension/` — Chrome MV3 extension (excluded from the Next.js build via `.vercelignore` + `tsconfig.json`)
@@ -38,11 +38,19 @@ The extension is the only thing that can run on karabast.net itself (intercept t
 
 ## Dev setup
 
+`.env.local` (from `vercel env pull`) carries the **production** Neon connection — local dev runs against a local Docker Postgres instead, never prod:
+
 ```sh
 npm install
-vercel env pull .env.local    # pulls Neon, Vercel Blob, Auth.js secrets
+vercel env pull .env.local    # prod Neon + Blob + Auth secrets — used as the snapshot SOURCE only
+# create .env.development.local (gitignored, higher precedence): KARABUDDY_DB_DRIVER=pg + a
+# localhost:5434 POSTGRES_URL / POSTGRES_URL_NON_POOLING
+npm run db:dev:up             # Docker Postgres on :5434
+npm run db:pull-snapshot      # seed it from a read-only prod dump
 npm run dev                   # http://localhost:3000
 ```
+
+See [docs/local-dev-db.md](./docs/local-dev-db.md) for the full local-DB rationale and workflow.
 
 For the extension to upload to your local server instead of prod, set the override in DevTools on any karabast.net tab:
 
@@ -54,31 +62,34 @@ Then load `./extension/` unpacked at `chrome://extensions` (Developer mode on). 
 
 ## Tests
 
-Three layers, each runnable independently:
+Layers, each runnable independently:
 
 ```sh
 # Unit — pure logic, no infra. Fast (~1s).
 npm run test:unit
 
-# API integration — real Postgres via Docker. Tests route handlers
-# directly against a real DB.
-npm run test:db:up     # one-time: start the Docker Postgres
+# API integration — route handlers against a DB. Default driver is pglite
+# (in-process Postgres) — NO Docker needed.
 npm run test:api
+# For a real-Postgres run instead: start Docker (:5433), then test:api:pg
+npm run test:db:up
+npm run test:api:pg
 
-# E2E — Playwright drives a real browser against the dev server.
+# E2E — Playwright drives a real browser. Builds with pglite + in-memory Blob.
 npm run test:e2e:install   # one-time: install Chromium
-npm run test:e2e           # boots dev server + runs E2E
+npm run test:e2e
 
-# Everything
+# Everything (unit + api + e2e)
 npm test
 ```
 
 Test scaffolding:
-- `lib/*.test.ts` + `extension/**/*.test.js` — unit tests
-- `test/api/*.test.ts` — API integration tests (vi.mock of `@/auth` per test; real Drizzle + Postgres)
+- `lib/*.test.ts` + `test/unit/*.test.ts` + `extension/**/*.test.js` — unit tests (incl. the commentScope parity + migration-journal guards)
+- `test/api/*.test.ts` — API integration tests (vi.mock of `@/auth` per test; real Drizzle, pglite by default)
 - `test/e2e/*.spec.ts` — Playwright E2E (test sign-in via `/api/test/sign-in`, in-memory Vercel Blob)
+- `test/smoke/*.spec.ts` — smoke against a real prod build (`playwright.smoke.config.ts`); CI-only, the deploy gate
 
-The Docker Postgres lives on port 5433 (avoids clashing with system Postgres). CI runs the same suite via `.github/workflows/test.yml` — Postgres as a service container, no Docker compose needed there.
+The Docker test Postgres lives on port 5433 (the local **dev** DB is a separate container on 5434). CI runs the full suite on PRs via `.github/workflows/test.yml` (Postgres service container); pushes to `main` are gated by `deploy.yml`, which runs the same suite before deploying.
 
 ## Status
 

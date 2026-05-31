@@ -106,6 +106,32 @@
         applyTeamShares: (slug, teamSlugs) =>
             companionRequest({ type: 'applyTeamShares', slug, teamSlugs }, 10000)
                 .catch(() => null),
+        // B75: per-user extension settings (default share teams + the
+        // min-actions upload threshold), synced via the server so they
+        // persist across games AND devices. Returns null on failure /
+        // not-signed-in — callers fall back to local storage / defaults.
+        getUserSettings: () =>
+            companionRequest({ type: 'getUserSettings' }, 6000)
+                .catch(() => null),
+        setUserSettings: (patch) =>
+            companionRequest({ type: 'setUserSettings', patch }, 6000)
+                .catch(() => null),
+        // B76: chrome.storage.local routed through the SW. MAIN-world content
+        // scripts (the bubble) can't touch chrome.storage directly, so this is
+        // the offline-capable local cache for share state, launcher position,
+        // etc. storageGet → { ok, data } | null; storageSet → { ok } | null.
+        storageGet: (keys) =>
+            companionRequest({ type: 'storageGet', keys }, 5000)
+                .catch(() => null),
+        // B80: content-free karabast-drift beacon. `issues` are codes from the
+        // shared knownIssueCodes() enum only; the SW attaches the version and
+        // gates on the opt-out flag. Best-effort — null on failure.
+        reportHealth: (issues) =>
+            companionRequest({ type: 'reportHealth', issues }, 5000)
+                .catch(() => null),
+        storageSet: (items) =>
+            companionRequest({ type: 'storageSet', items }, 5000)
+                .catch(() => null),
         // B69: minimal "who am I" lookup for the bubble's signed-in
         // indicator. Returns null on failure / not-signed-in.
         getWhoami: () =>

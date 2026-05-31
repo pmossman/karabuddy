@@ -322,6 +322,85 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 } catch (err) {
                     sendResponse({ ok: false, error: err.message });
                 }
+            } else if (msg.type === 'getUserSettings') {
+                // B75: read the user's synced extension settings (default
+                // share teams + min-actions upload threshold). Same auth as
+                // getTeamsMentionData (session cookie OR install-token header).
+                try {
+                    const endpoint = await getKarabuddyEndpoint();
+                    const installToken = await getKarabuddyInstallToken();
+                    const res = await fetch(`${endpoint}/api/me/settings`, {
+                        credentials: 'include',
+                        headers: { 'X-Install-Token': installToken },
+                    });
+                    if (res.status === 401) {
+                        sendResponse({ ok: false, error: 'not signed in', status: 401 });
+                        return;
+                    }
+                    const body = await res.json();
+                    sendResponse({ ok: !!body.ok, data: body, status: res.status });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'setUserSettings') {
+                // B75: PATCH the user's synced extension settings.
+                try {
+                    const endpoint = await getKarabuddyEndpoint();
+                    const installToken = await getKarabuddyInstallToken();
+                    const res = await fetch(`${endpoint}/api/me/settings`, {
+                        method: 'PATCH',
+                        credentials: 'include',
+                        headers: { 'X-Install-Token': installToken, 'Content-Type': 'application/json' },
+                        body: JSON.stringify(msg.patch || {}),
+                    });
+                    if (res.status === 401) {
+                        sendResponse({ ok: false, error: 'not signed in', status: 401 });
+                        return;
+                    }
+                    const body = await res.json();
+                    sendResponse({ ok: !!body.ok, data: body, status: res.status });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'reportHealth') {
+                // B80: content-free karabast-drift beacon. The SW attaches the
+                // authoritative ext version and honours the opt-out flag, so
+                // the page world never has to. No install token / auth — the
+                // payload carries only predefined structural-check codes.
+                try {
+                    const optOut = await chrome.storage.local.get('karabuddyHealthOptOut');
+                    if (optOut && optOut.karabuddyHealthOptOut) {
+                        sendResponse({ ok: true, skipped: true });
+                        return;
+                    }
+                    const endpoint = await getKarabuddyEndpoint();
+                    const version = chrome.runtime.getManifest().version;
+                    const issues = Array.isArray(msg.issues) ? msg.issues : [];
+                    const res = await fetch(`${endpoint}/api/extension/health`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ version, issues }),
+                    });
+                    sendResponse({ ok: res.ok });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'storageGet') {
+                // B76: chrome.storage.local read on behalf of the MAIN-world
+                // bubble (which has no direct chrome.storage access).
+                try {
+                    const data = await chrome.storage.local.get(msg.keys || null);
+                    sendResponse({ ok: true, data });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'storageSet') {
+                try {
+                    await chrome.storage.local.set(msg.items || {});
+                    sendResponse({ ok: true });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
             } else if (msg.type === 'getExtensionStatus') {
                 // B72: graduated kill-switch. Ask the server whether this
                 // version is ok/nag/block. CORS-open + no auth needed.

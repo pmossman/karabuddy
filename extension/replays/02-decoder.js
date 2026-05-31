@@ -98,6 +98,60 @@
         }
     };
 
+    // B33: detect which player id is the recorder's POV (the LOCAL player).
+    // Karabast server-side-masks each client's view — the local player's hand
+    // has cards with visible data (id/setId), the opponent's are stubs. The
+    // unique player with a visible hand is "you". Zero or two visible hands
+    // (empty early game / spectator-style full data) → null, retry next frame.
+    // Pure; lives here so it's unit-testable (B79). The recorder calls it.
+    const detectLocalPlayerId = (players) => {
+        if (!players || typeof players !== 'object') return null;
+        const withVisibleHand = [];
+        for (const [pid, p] of Object.entries(players)) {
+            const hand = p?.cardPiles?.hand;
+            if (!Array.isArray(hand)) continue;
+            if (hand.some((c) => c && (c.id || c.setId))) withVisibleHand.push(pid);
+        }
+        return withVisibleHand.length === 1 ? withVisibleHand[0] : null;
+    };
+
+    // B75: walk a recording's gamestate events and tally actions per player
+    // (an "action" = a transition to being the action-phase active player).
+    // Returns { actionCount, distinctActivePlayers, minPlayerActions } where
+    // minPlayerActions is the MIN across players who acted (0 if <2 acted) —
+    // the recorder's "each player took >= N actions" upload gate. Parameterized
+    // over `events` (the recorder passes its `recording` array) so it's pure +
+    // unit-testable (B79).
+    const analyzeRecording = (events) => {
+        let lastFull = null;
+        let lastActive = null;
+        let actionCount = 0;
+        const activePlayers = new Set();
+        const perPlayer = {};
+        for (const e of events || []) {
+            if (e.event !== 'gamestate') continue;
+            const arg = e.args?.[0];
+            if (!arg) continue;
+            if (arg.full) lastFull = structuredClone(arg.full);
+            else if (arg.patch && lastFull) applyPatch(lastFull, arg.patch);
+            const players = lastFull?.players;
+            if (!players) continue;
+            let active = null;
+            for (const pid of Object.keys(players)) {
+                if (players[pid]?.isActionPhaseActivePlayer) { active = pid; break; }
+            }
+            if (active && active !== lastActive) {
+                actionCount++;
+                lastActive = active;
+                activePlayers.add(active);
+                perPlayer[active] = (perPlayer[active] || 0) + 1;
+            }
+        }
+        const minPlayerActions =
+            activePlayers.size >= 2 ? Math.min(...Object.values(perPlayer)) : 0;
+        return { actionCount, distinctActivePlayers: activePlayers.size, minPlayerActions };
+    };
+
     const parseEngineIoFrame = (data) => {
         if (typeof data !== 'string' || data.length === 0) return null;
         if (data[0] !== '4') return null;
@@ -435,6 +489,8 @@
         normalizeGamestate,
         makePatch,
         applyPatch,
+        detectLocalPlayerId,
+        analyzeRecording,
         parseEngineIoFrame,
         looksLikeGameEnd,
         sanitizeFilenamePart,
