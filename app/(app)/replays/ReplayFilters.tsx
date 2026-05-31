@@ -37,9 +37,22 @@ interface Row {
   // B59-followup: the recorder POV's playerId — the owner's player in
   // this replay. Combined with `winners` it answers "did I win?".
   ownerPlayerId?: string | null;
+  // B89: teams this replay is shared with. Empty/absent = unlisted
+  // (link-accessible but not surfaced to any team). Drives the Shared /
+  // Unlisted tabs + the per-card share badge.
+  sharedTeams?: { slug: string; name: string }[];
 }
 
 type ResultFilter = '' | 'wins' | 'losses';
+
+// B89: Shared vs Unlisted are mutually exclusive states (a replay either has
+// team shares or it doesn't); the tabs make that split explicit so "who can
+// see this?" is never ambiguous.
+type ShareTab = 'all' | 'shared' | 'unlisted';
+const SHARE_TABS: readonly ShareTab[] = ['all', 'shared', 'unlisted'] as const;
+const parseTab = (raw: string | null): ShareTab =>
+  SHARE_TABS.includes(raw as ShareTab) ? (raw as ShareTab) : 'all';
+const isShared = (r: Row): boolean => (r.sharedTeams?.length ?? 0) > 0;
 
 type ViewMode = 'table' | 'grid' | 'by-leader' | 'timeline';
 const VIEW_MODES: readonly ViewMode[] = ['table', 'grid', 'by-leader', 'timeline'] as const;
@@ -60,10 +73,16 @@ export function ReplayFilters({
   rows,
   canManage,
   emptyState,
+  showShareTabs = false,
 }: {
   rows: Row[];
   canManage: boolean;
   emptyState: React.ReactNode;
+  // B89: Shared/Unlisted tabs + per-card share badges only make sense on the
+  // personal library (where a replay may or may not be team-shared). Off on
+  // the team grid (everything there is shared with that team) and the
+  // anonymous library (no account → no shares).
+  showShareTabs?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -80,12 +99,16 @@ export function ReplayFilters({
     return v === 'wins' || v === 'losses' ? v : '';
   });
   const [view, setView] = useState<ViewMode>(() => parseView(searchParams.get('view')));
+  // URL key is `share` (not `tab`) to avoid colliding with the team page's
+  // own `?tab=` navigation — ReplayFilters is reused there.
+  const [tab, setTab] = useState<ShareTab>(() => (showShareTabs ? parseTab(searchParams.get('share')) : 'all'));
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     const setOrDelete = (key: string, val: string) => {
       if (val) params.set(key, val); else params.delete(key);
     };
+    if (showShareTabs) setOrDelete('share', tab === 'all' ? '' : tab);
     setOrDelete('leader', leader);
     setOrDelete('opp', opp);
     setOrDelete('since', since);
@@ -98,7 +121,7 @@ export function ReplayFilters({
     if (next !== searchParams.toString()) {
       router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
     }
-  }, [leader, opp, since, format, mode, label, result, view, pathname, router, searchParams]);
+  }, [showShareTabs, tab, leader, opp, since, format, mode, label, result, view, pathname, router, searchParams]);
 
   const allLeaders = useMemo(() => {
     const set = new Set<string>();
@@ -135,8 +158,18 @@ export function ReplayFilters({
     return Array.from(set).sort();
   }, [rows]);
 
+  // Tab counts are over the full row set (independent of the in-tab filters),
+  // so each tab advertises its true size.
+  const tabCounts = useMemo(() => {
+    let shared = 0;
+    for (const r of rows) if (isShared(r)) shared++;
+    return { all: rows.length, shared, unlisted: rows.length - shared };
+  }, [rows]);
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
+      if (tab === 'shared' && !isShared(r)) return false;
+      if (tab === 'unlisted' && isShared(r)) return false;
       const players = Array.isArray(r.players) ? r.players : [];
       if (leader) {
         const matches = players.some((p: any) => p?.leader?.name === leader);
@@ -169,7 +202,7 @@ export function ReplayFilters({
       }
       return true;
     });
-  }, [rows, leader, opp, since, format, mode, label, result]);
+  }, [rows, tab, leader, opp, since, format, mode, label, result]);
 
   const clearAll = () => {
     setLeader(''); setOpp(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
@@ -186,6 +219,8 @@ export function ReplayFilters({
 
   return (
     <>
+      {showShareTabs && <ShareTabs tab={tab} setTab={setTab} counts={tabCounts} />}
+
       <FilterControls
         leader={leader} setLeader={setLeader}
         leaders={allLeaders}
@@ -229,7 +264,9 @@ export function ReplayFilters({
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ marginTop: 16 }}>{activeChips.length > 0 ? <NoMatchesEmpty /> : emptyState}</div>
+        <div style={{ marginTop: 16 }}>
+          {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
+        </div>
       ) : view === 'table' ? (
         <TableView rows={filtered} />
       ) : view === 'by-leader' ? (
@@ -447,8 +484,38 @@ function ReplayCellLink({ replay }: { replay: Row }) {
         <ResultBadge playerId={p1?.id} winners={replay.winners} />
         <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
+        <TableShareChip sharedTeams={replay.sharedTeams} />
       </div>
     </Link>
+  );
+}
+
+// Compact share indicator for the table's Replay cell — a single chip
+// ("Shared" with team count, or "Unlisted"). The grid/card view uses the
+// richer per-team ShareBadge; the table stays dense.
+function TableShareChip({ sharedTeams }: { sharedTeams?: { slug: string; name: string }[] }) {
+  if (sharedTeams === undefined) return null;
+  const n = sharedTeams.length;
+  const shared = n > 0;
+  return (
+    <span
+      data-testid="table-share-chip"
+      title={shared ? `Shared with ${sharedTeams!.map((t) => t.name).join(', ')}` : 'Unlisted — link-accessible, not shared with a team'}
+      style={{
+        marginLeft: 6,
+        fontSize: 9,
+        fontWeight: 700,
+        padding: '0 6px',
+        borderRadius: 999,
+        letterSpacing: '0.03em',
+        textTransform: 'uppercase',
+        background: shared ? 'rgba(107, 217, 104, 0.1)' : 'rgba(108, 117, 136, 0.1)',
+        border: `1px solid ${shared ? 'rgba(107, 217, 104, 0.35)' : '#2e333c'}`,
+        color: shared ? '#7fd97f' : '#8a93a6',
+      }}
+    >
+      {shared ? (n > 1 ? `Shared · ${n}` : 'Shared') : 'Unlisted'}
+    </span>
   );
 }
 
@@ -548,6 +615,66 @@ const labelChipStyle: React.CSSProperties = {
   padding: '1px 6px',
   borderRadius: 999,
 };
+
+function ShareTabs({
+  tab,
+  setTab,
+  counts,
+}: {
+  tab: ShareTab;
+  setTab: (t: ShareTab) => void;
+  counts: { all: number; shared: number; unlisted: number };
+}) {
+  const item = (t: ShareTab, label: string, count: number) => {
+    const active = tab === t;
+    return (
+      <button
+        key={t}
+        type="button"
+        data-testid={`replays-tab-${t}`}
+        onClick={() => setTab(t)}
+        aria-pressed={active}
+        style={{
+          background: 'transparent',
+          color: active ? '#e6e6e6' : '#6c7588',
+          border: 0,
+          borderBottom: `2px solid ${active ? '#4a7cff' : 'transparent'}`,
+          padding: '6px 4px',
+          marginBottom: -1,
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        {label}
+        <span style={{ fontSize: 11, fontWeight: 600, color: active ? '#a0c4ff' : '#4a4e56' }}>{count}</span>
+      </button>
+    );
+  };
+  return (
+    <div role="tablist" style={{ display: 'flex', gap: 18, borderBottom: '1px solid #2e333c', marginTop: 4 }}>
+      {item('all', 'All', counts.all)}
+      {item('shared', 'Shared', counts.shared)}
+      {item('unlisted', 'Unlisted', counts.unlisted)}
+    </div>
+  );
+}
+
+function TabEmpty({ tab }: { tab: ShareTab }) {
+  const msg =
+    tab === 'shared'
+      ? 'No replays shared with a team yet. Open a replay and use Share → Share with team.'
+      : 'No unlisted replays — every replay you have is shared with at least one team.';
+  return (
+    <div style={{ padding: 24, border: '1px dashed #2e333c', borderRadius: 8, textAlign: 'center', color: '#a0a8b8', fontSize: 13 }}>
+      {msg}
+    </div>
+  );
+}
 
 function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode) => void }) {
   const item = (v: ViewMode, label: string) => (

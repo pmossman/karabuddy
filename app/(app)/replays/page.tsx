@@ -1,7 +1,7 @@
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users } from '@/lib/schema';
+import { replays, users, replayTeamShares, teams } from '@/lib/schema';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
@@ -17,6 +17,10 @@ export default async function ReplaysIndex() {
   const userId: string | null = (session?.user as any)?.id || null;
 
   let rows: { replay: typeof replays.$inferSelect; ownerName: string | null }[] = [];
+  // B89: per-replay team shares, so the Shared/Unlisted tabs + card badge can
+  // tell at a glance who a replay is surfaced to. A non-shared replay is
+  // "unlisted" (link-accessible), never "private" — keep the label honest.
+  const sharesBySlug = new Map<string, { slug: string; name: string }[]>();
   if (userId) {
     const db = getDb();
     rows = await db
@@ -26,6 +30,20 @@ export default async function ReplaysIndex() {
       .where(eq(replays.userId, userId))
       .orderBy(desc(replays.createdAt))
       .limit(100);
+
+    const slugs = rows.map((r) => r.replay.slug);
+    if (slugs.length > 0) {
+      const shareRows = await db
+        .select({ replaySlug: replayTeamShares.replaySlug, teamSlug: teams.slug, teamName: teams.name })
+        .from(replayTeamShares)
+        .innerJoin(teams, eq(teams.slug, replayTeamShares.teamSlug))
+        .where(inArray(replayTeamShares.replaySlug, slugs));
+      for (const s of shareRows) {
+        const arr = sharesBySlug.get(s.replaySlug) ?? [];
+        arr.push({ slug: s.teamSlug, name: s.teamName });
+        sharesBySlug.set(s.replaySlug, arr);
+      }
+    }
   }
 
   return (
@@ -37,14 +55,15 @@ export default async function ReplaysIndex() {
         // MineEmpty (install pitch) if there's no extension.
         <MineAnonymous />
       ) : (
-        <ReplayFilters rows={rows.map(serializeRow)} canManage emptyState={<MineEmpty />} />
+        <ReplayFilters rows={rows.map((r) => serializeRow(r, sharesBySlug.get(r.replay.slug) ?? []))} canManage showShareTabs emptyState={<MineEmpty />} />
       )}
     </main>
   );
 }
 
-function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string | null }) {
+function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string | null }, sharedTeams: { slug: string; name: string }[]) {
   return {
+    sharedTeams,
     slug: r.slug,
     gameId: r.gameId,
     userId: r.userId,

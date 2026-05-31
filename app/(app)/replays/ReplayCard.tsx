@@ -25,6 +25,8 @@ interface ReplayRow {
   // B53: user-set display name + labels. Both null when never edited.
   displayName?: string | null;
   labels?: string[] | null;
+  // B89: teams this replay is shared with. Empty/absent = unlisted.
+  sharedTeams?: { slug: string; name: string }[];
 }
 
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
@@ -107,6 +109,7 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
             ))}
           </div>
         )}
+        <ShareBadge sharedTeams={replay.sharedTeams} />
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
           {matchChips(replay.match).map((label) => (
@@ -152,6 +155,63 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// B89: at-a-glance "who can see this" badge. Shared → one chip per team;
+// unlisted → a muted lock chip (link-accessible, not surfaced to any team).
+function ShareBadge({ sharedTeams }: { sharedTeams?: { slug: string; name: string }[] }) {
+  // Only the personal library passes share data; elsewhere (team grid,
+  // anonymous library) it's undefined → render nothing so we never mislabel.
+  if (sharedTeams === undefined) return null;
+  const shared = sharedTeams.length > 0;
+  if (shared) {
+    return (
+      <div data-testid="share-badge" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+        {sharedTeams.map((t) => (
+          <span
+            key={t.slug}
+            style={{
+              background: 'rgba(107, 217, 104, 0.1)',
+              border: '1px solid rgba(107, 217, 104, 0.35)',
+              color: '#7fd97f',
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '1px 8px',
+              borderRadius: 999,
+              letterSpacing: '0.02em',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <span aria-hidden>👥</span>{t.name}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div data-testid="share-badge">
+      <span
+        style={{
+          background: 'rgba(108, 117, 136, 0.1)',
+          border: '1px solid #2e333c',
+          color: '#8a93a6',
+          fontSize: 10,
+          fontWeight: 700,
+          padding: '1px 8px',
+          borderRadius: 999,
+          letterSpacing: '0.03em',
+          textTransform: 'uppercase',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        <span aria-hidden>🔒</span>Unlisted
+      </span>
     </div>
   );
 }

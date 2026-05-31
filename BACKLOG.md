@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B89] "Your replays": Shared / Unlisted tabs + per-card share status
+_completed: 2026-05-31 by claude_
+The library gave no at-a-glance signal of who a replay was visible to. Added explicit **All / Shared / Unlisted** tabs (with counts) to `/replays`, plus a per-card share badge (team chips when shared, a muted "🔒 Unlisted" otherwise) and a compact chip in the table view. "Unlisted" (not "Private") is the honest label — every replay stays link-accessible. Tabs/badges are opt-in (`showShareTabs`) so the team grid + anonymous library are unaffected; the URL key is `?share=` to avoid colliding with the team page's `?tab=`. Regression E2E `replays-share-tabs.spec.ts`.
+
 ### [B88] Fix: comment scope chip ignored in-session share changes
 _completed: 2026-05-31 by claude_
 Un-sharing a replay via the viewer's Share popover left the "Visible to:" tag scope chip still claiming the comment would reach the (now-removed) teams. The server clamps on submit (`resolveTagScope`: no shares ⇒ personal), so the stored tag was already correct — the bug was a misleading preview. Root cause: `ShareWithTeam` kept its toggle in local state while `armedTeams` (drives the chip + default audience) was a page-load snapshot from `GET /tags`, never refreshed. Fix: `ShareWithTeam` reports the live shared subset up via `onArmedTeamsChange` → `ReplayViewer.setArmedTeams`, so the chip tracks reality. Regression E2E `scope-chip-live-shares.spec.ts` (red→green).
