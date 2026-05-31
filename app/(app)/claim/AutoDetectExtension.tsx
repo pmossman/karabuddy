@@ -91,4 +91,4 @@ const secondary: React.CSSProperties = {
 };
 
 const muted: React.CSSProperties = { fontSize: 13, color: '#a0a8b8', lineHeight: 1.55, margin: '0 0 16px' };
-const link: React.CSSProperties = { color: '#5a8cff', textDecoration: 'none' };
+const link: React.CSSProperties = { color: '#5db4ff', textDecoration: 'none' };

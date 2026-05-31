@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B96] HUD rollout (1/n) — console-panel corners + home page reskin
+_completed: 2026-05-31 by claude_
+Began spreading the design system to the broader app. `Panel` gained the **console-panel HUD treatment** — four faint cyan corner-bracket ticks (targeting-reticle cue) via a `hud` prop (default on), so every panelized surface (settings + onward) reads as a readout. `TacticalHeading` gained an optional right-aligned `action` slot (for "View all →"). Reskinned the **home page**: section headers → TacticalHeading, the team CTA → accent Panel + glow button, the empty state → Panel, team-activity cards → the gradient panel surface. BUDDY logo finalized on **Orbitron** (swappable `--font-logo`); KARA stays Barlow (KARABAST link). Also swept the missed `#5a8cff` → link blue. typecheck + full e2e 107. Next: teams pages, viewer sidebar, glowing dividers.
+
 ### [B95] "Spaceship HUD" pass — blueprint-grid backdrop + unified HUD wordmark
 _completed: 2026-05-31 by claude_
 The logo felt half-converted (KARA in humanist Barlow vs BUDDY in HUD mono) and floated over a flat-black void. Two moves toward the cockpit/HUD feel: (1) **unified the wordmark** — both KARA + BUDDY in the HUD monospace (`tokens.led.mono`), uppercase + 0.14em tracking, BUDDY keeps the cyan→azure gradient; (2) **faint blueprint-grid backdrop** on chrome pages (globals.css) — a 32px ~3% cyan grid + soft top-anchored glow over a deeper `#0b0e13`, reading as a console surface (the gameboard's starfield still overrides inside the viewer). Proposed-but-not-yet-built HUD levers (Parker to steer): console-panel corner brackets + glowing hairline borders on `Panel`, tactical headers everywhere, glowing cyan dividers.

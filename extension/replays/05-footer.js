@@ -551,7 +551,7 @@
         monoMain.setAttribute('style', 'font: 400 10px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; letter-spacing: 0; text-transform: uppercase;');
         monoMain.textContent = 'KARA';
         const monoSub = document.createElement('span');
-        monoSub.setAttribute('style', 'font: italic 700 8px Georgia, "Times New Roman", serif; color: #5a8cff; letter-spacing: -0.01em; margin-left: 4px; margin-top: -1px;');
+        monoSub.setAttribute('style', 'font: italic 700 8px Georgia, "Times New Roman", serif; color: #5db4ff; letter-spacing: -0.01em; margin-left: 4px; margin-top: -1px;');
         monoSub.textContent = 'buddy';
         mono.appendChild(monoMain);
         mono.appendChild(monoSub);

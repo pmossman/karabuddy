@@ -162,7 +162,7 @@ export default function InstallPage() {
   );
 }
 
-const linkStyle: React.CSSProperties = { color: '#5a8cff', textDecoration: 'none' };
+const linkStyle: React.CSSProperties = { color: '#5db4ff', textDecoration: 'none' };
 const code: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: '0.9em',
