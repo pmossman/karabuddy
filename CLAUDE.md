@@ -75,7 +75,9 @@ npm test              # unit + api + e2e
 - `test:api` runs on **pglite** by default (zero-install in-process Postgres). For a real-Postgres run use `npm run test:db:up` (Docker on :5433) + `npm run test:api:pg`.
 - `test:e2e` builds into `.next-test` with `KARABUDDY_DB_DRIVER=pglite` + `KARABUDDY_BLOB_MODE=memory`; sign-in via `/api/test/sign-in`.
 - **Smoke** (`test/smoke/`, `playwright.smoke.config.ts`) runs against a real **prod build**, not the test server — CI-only in practice (it's the deploy gate). It boots `next start` against the isolated `ci-preview` Neon branch; you generally don't run it locally.
-- Contract tests (`test/e2e/contract-extension-0.5.0.spec.ts`) replay the shipped extension's frozen wire shape against the current server — they fail if a server change isn't backward-compatible with the published extension.
+- Contract tests, **both directions**:
+  - **Backward** (`test/e2e/contract-extension-0.5.0.spec.ts`): replays the shipped 0.5.0 frozen wire shape against the current server — fails if a server change breaks an already-published extension.
+  - **Forward** (`extension/replays/recorder.test.js` → "forward contract"): drives the REAL recorder, then feeds its payload to the REAL server decoder (`decodeReplay`/`extractWinners`) and asserts it still extracts frames/POV/match/winner/tags — fails if a recorder wire change drifts from what the server understands, **before** the extension is ever submitted to CWS.
 - **Testing the buildless extension (B79):** the MAIN-world content scripts (`extension/replays/*.js`) are plain IIFEs that attach to `window.__KaraBuddy`. To unit-test one, add a `// @vitest-environment jsdom` test under `extension/**/*.test.js`, `eval` the file into the jsdom window, then read `window.__KaraBuddy.replays.<X>` — see `bridge.test.js`, `share-store.test.js`, `decoder.test.js`. The SW bridge contract: `companionRequest` resolves to the SW reply's `.data`, so consumers read fields directly (a `.data` re-unwrap is the B77 bug — guarded by those tests). Note `03-recorder.js` installs a `window.WebSocket` proxy at load, so it can't be eval'd under jsdom as-is.
 
 CI: `test.yml` runs the full suite on **PRs** (Postgres service container). Pushes to `main` are gated by `deploy.yml` (same suite), so `main` isn't double-tested.
@@ -126,7 +128,7 @@ karabast can change its gamestate format without notice and silently break recor
 
 ## Backlog
 
-[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B97**; the next new task is **B98**. (B81 Discord foundation is in `## Backlog`, in progress.) The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
+[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B98**; the next new task is **B99**. (B81 Discord foundation is in `## Backlog`, in progress.) The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
 
 ## Related repos
 

@@ -2,6 +2,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+// B98 forward contract: the server's decoder, imported here so we can assert it
+// understands the payload the CURRENT recorder produces. The frozen-0.5.0 e2e
+// guards the reverse (server accepts OLD published shapes); this guards forward.
+import { decodeReplay, extractWinners } from '@/lib/replayDecoder';
 
 // B80: end-to-end harness for the REAL recorder. The recorder's only entry
 // point is a window.WebSocket proxy (it intercepts karabast's socket); this
@@ -153,5 +157,37 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
     expect(uploads[0].tags).toHaveLength(1);
     expect(uploads[0].tags[0].comment).toBe('great line here');
     expect(uploads[0].tags[0].author).toBe('Alice'); // local player, not iteration order
+  });
+});
+
+// FORWARD CONTRACT (B98): a breaking recorder wire change must fail CI before
+// the extension is ever submitted to CWS. We drive the REAL recorder, then feed
+// its exact output to the REAL server decoder (lib/replayDecoder) and assert it
+// still extracts everything the app relies on. If the recorder's payload shape
+// drifts from what the server understands, this goes red here — no longer
+// relying on remembering the two-sided-compat rule at submit time.
+describe('forward contract: server decodes the current recorder payload', () => {
+  it('decodeReplay extracts frames / POV / match / winner / tags from real recorder output', async () => {
+    const { R, uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    ws.recv(sio('lobbystate', { gameFormat: 'premier', cardPool: 'unlimited', winHistory: { gamesToWinMode: 'bestOfThree' }, lobbyName: 'L' }));
+    ws.recv(sio('gamestate', gs('g1', 'p1')));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gs('g1', i % 2 === 0 ? 'p2' : 'p1')));
+    R.addTag('forward contract tag');
+    ws.recv(sio('gamestate', gs('g1', 'p2', { gameOver: true, winners: ['Alice'] })));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(uploads).toHaveLength(1);
+
+    // The server consumes the parsed payload object the recorder uploads.
+    const decoded = decodeReplay(uploads[0]);
+    expect(decoded.meta.version).toBe(2);
+    expect(decoded.meta.localPlayerId).toBe('p1'); // POV detection survives the round-trip
+    expect(decoded.frames.length).toBeGreaterThan(0); // events were recognized as gamestate frames
+    expect(decoded.meta.match?.gameFormat).toBe('premier'); // lobby meta decoded
+    expect(decoded.tags.map((t) => t.comment)).toContain('forward contract tag');
+
+    // Winner-by-username ('Alice') still resolves to a playerId the server understands.
+    const finalState = decoded.frames[decoded.frames.length - 1].state;
+    expect(extractWinners(finalState)).toContain('p1');
   });
 });

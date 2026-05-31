@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B98] Forward extension↔server contract test
+_completed: 2026-05-31 by claude_
+Closed the gap Parker flagged: the auto-release is artifact-only (manual CWS gate), but nothing in CI verified that a *new* extension version is wire-compatible with the *current* server — the frozen-0.5.0 contract only guards the reverse. Added a forward contract in `extension/replays/recorder.test.js`: drives the REAL recorder via the fake-socket harness, then feeds its exact payload to the REAL server decoder (`decodeReplay`/`extractWinners`) and asserts it extracts frames/POV/match/winner/tags. A breaking recorder wire change now fails CI (unit project, runs on PRs + in the extension-release job's `test:unit`) before the extension could ever be submitted. unit 125 green. Noted the known churn footgun (any extension/** change auto-cuts a release) as deliberately left per Parker; offered a `!extension/**/*.test.js` trigger exclusion if wanted.
+
 ### [B97] Replay browser: collapsible filters + fix LastPass icon
 _completed: 2026-05-31 by claude_
 The replay browser's filter grid (Leader/Opponent/Date/Format/Mode/Result/Label) was always-expanded and cluttered. Put it behind a **"Filters" toggle** (with an active-count badge) — collapsed by default, active filters still show as removable chips in the toolbar; auto-opens on deep-links that carry filter params. Fixed the **LastPass icon** on the Opponent field: changed it to `type="search"` (password managers don't attach to search inputs — and it's semantically a filter field), kept the `data-lpignore`/`data-1p-ignore` attrs. Updated 8 e2e tests to open the panel before interacting; full suite 107 green. Verified the decluttered toolbar in-browser.
