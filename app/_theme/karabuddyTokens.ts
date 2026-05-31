@@ -37,6 +37,24 @@ export const tokens = {
     danger: '#ff6b6b',
     warn: '#e0c64a',
   },
+  // LED toggle aesthetic — mirrors the extension's "cockpit" share controls
+  // (extension/replays/05-footer.js buildShareRow). A glowing cyan ring + dot
+  // signals "live". Kept byte-aligned with the extension so the two UIs read
+  // as one product; when the extension consumes shared tokens (later phase)
+  // these become the single source.
+  led: {
+    on: '#4dd2ff', // active ring/dot/status — cyan "live signal"
+    off: '#3a4150', // inert ring + accent bar
+    textOn: '#d6f0ff',
+    textOff: '#a8b0bd',
+    ringGlow: '0 0 6px rgba(77, 210, 255, 0.7), inset 0 0 4px rgba(77, 210, 255, 0.45)',
+    ringInert: 'inset 0 0 2px rgba(0,0,0,0.6)',
+    dotGlow: '0 0 4px #4dd2ff',
+    rowOn: 'rgba(77, 210, 255, 0.08)',
+    rowHover: 'rgba(77, 210, 255, 0.04)',
+    rowOff: 'rgba(255, 255, 255, 0.02)',
+    mono: '"SF Mono", Menlo, Consolas, monospace',
+  },
   radius: {
     sm: 4,
     md: 6,

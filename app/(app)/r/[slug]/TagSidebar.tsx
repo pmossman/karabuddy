@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Checkbox, FormControlLabel, Radio } from '@mui/material';
+import { LedToggle } from '@/app/_components/LedToggle';
 import { useSession } from 'next-auth/react';
 import type { Frame, MatchMeta, DecksByUserId } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
@@ -1405,19 +1405,11 @@ function ScopeChip({
           {armedTeams.map((t) => {
             const checked = effectiveScope.includes(t.slug);
             return (
-              <FormControlLabel
-                key={t.slug}
-                control={<Checkbox checked={checked} onChange={() => onToggleTeam(t.slug)} />}
-                label={t.name}
-              />
+              <LedToggle key={t.slug} checked={checked} onChange={() => onToggleTeam(t.slug)} label={t.name} />
             );
           })}
           <div style={{ borderTop: '1px solid #2e333c', paddingTop: 4, marginTop: 2 }}>
-            <FormControlLabel
-              control={<Radio checked={isPersonal} onChange={onPersonal} />}
-              label="Just me (personal)"
-              sx={{ '& .MuiFormControlLabel-label': { color: isPersonal ? '#e6e6e6' : '#a0a8b8' } }}
-            />
+            <LedToggle checked={isPersonal} onChange={() => onPersonal()} label="Just me (personal)" />
           </div>
         </div>
       )}

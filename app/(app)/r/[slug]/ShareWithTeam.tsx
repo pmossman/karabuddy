@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FormControlLabel, Switch } from '@mui/material';
+import { LedToggle } from '@/app/_components/LedToggle';
 
 // B55b: replay-owner UI for sharing a replay explicitly with one or more
 // of their teams. Lives inside the existing Share popover in TagSidebar.
@@ -138,11 +138,13 @@ export function ShareWithTeam({
           const isShared = shares.has(t.slug);
           const isPending = pending.has(t.slug);
           return (
-            <FormControlLabel
+            <LedToggle
               key={t.slug}
-              control={<Switch checked={isShared} onChange={() => toggle(t.slug)} disabled={isPending} />}
+              checked={isShared}
+              onChange={() => toggle(t.slug)}
               label={t.name}
-              sx={{ opacity: isPending ? 0.6 : 1 }}
+              statusOn="Sharing"
+              disabled={isPending}
             />
           );
         })}

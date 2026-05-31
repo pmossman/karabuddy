@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B92] LedToggle — bring the extension's LED control to the web
+_completed: 2026-05-31 by claude_
+Parker's design target: the extension's "cockpit" LED toggle (glowing cyan ring + dot, accent bar, monospace label, "SHARING" readout) — across both UIs, not generic MUI checkboxes. Built `app/_components/LedToggle.tsx`, a faithful React port of `extension/replays/05-footer.js buildShareRow`, drawing from new `led` tokens. Swapped it into every chrome toggle: ShareWithTeam (with "Sharing" status), ScopeChip (team rows + "Just me"), and the settings/team notification toggles — replacing the MUI Switch/Checkbox/Radio from B90. `role="checkbox"` for a11y + tests. Refines [ADR 0006](docs/adr/0006-design-system.md): bespoke LED for signature controls, themed MUI for the rest. typecheck + unit 124 (guard green) + full e2e 107. Next: sync `led` tokens into the extension; migrate chrome buttons to themed MUI w/ glow.
+
 ### [B91] Fix: step-mode toggle hydration mismatch (pre-existing)
 _completed: 2026-05-31 by claude_
 The viewer's Action/Frame step-mode toggle read `localStorage` inside its `useState` initializer, so SSR rendered the default (`action`) while the client hydrated to the saved value (`frame`) → a dev hydration-mismatch warning on the toggle's `aria-pressed`/styling (benign in prod; React reconciles to the client value). Predates the design-system work (surfaced while checking it locally). Fixed with the file's existing sidebar-width pattern: default on SSR, hydrate from localStorage in a mount effect, and skip the persist effect's mount pass so it doesn't clobber the stored value.

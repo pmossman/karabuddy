@@ -21,12 +21,21 @@ shared **design tokens**.
 
 - **Tokens** (`app/_theme/karabuddyTokens.ts`) are the single source for the
   neon-dark palette / radii / spacing / font. Reach for a token before a raw hex.
-- **Web = themed MUI.** `app/_theme/karabuddyTheme.ts` builds a MUI theme from
-  the tokens (palette + typography + component styling for Checkbox, Radio,
-  Switch, Button, inputs). It's applied by `<KaraBuddyThemeProvider>` wrapping
-  the `(app)` layout — **no `CssBaseline`** (globals.css + the gameboard theme
-  already own the body/background; a second baseline would fight both). The
-  gameboard's own theme nests inside and wins for its subtree.
+- **Signature controls = bespoke LED, matching the extension.** The target
+  aesthetic is the extension's "cockpit" LED toggle (glowing cyan ring + dot,
+  left accent bar, monospace label, "SHARING" readout — `extension/replays/05-footer.js`).
+  `app/_components/LedToggle.tsx` is a faithful React port, drawing from the
+  `led` tokens, used for on/off + multi-select toggles (share-with-team, comment
+  scope, settings) instead of MUI checkboxes/switches. It's `role="checkbox"`
+  for a11y + tests. This is what makes the web and extension read as one product.
+- **Everything else = themed MUI.** `app/_theme/karabuddyTheme.ts` builds a MUI
+  theme from the tokens (palette + typography + Button/inputs) for the mundane
+  controls. Applied by `<KaraBuddyThemeProvider>` wrapping the `(app)` layout —
+  **no `CssBaseline`** (globals.css + the gameboard theme already own the
+  body/background). The gameboard's own theme nests inside and wins for its
+  subtree; conversely the chrome theme is **re-asserted over the viewer sidebar**
+  (`ReplayViewer` wraps `TagSidebar` in `<KaraBuddyThemeProvider>`) because the
+  sidebar otherwise sits under the gameboard theme.
 - **Enforcement is a CI guard, not discipline.** `test/unit/no-native-form-controls.test.ts`
   greps `app/**/*.tsx` and fails on any native `type=checkbox|radio`. It runs in
   `test:unit` (part of the deploy gate) — same idiom as the migration guards.
@@ -38,14 +47,16 @@ shared **design tokens**.
 
 ## Consequences
 
-- Converting a control = use `@mui/material`'s `<Checkbox>/<Radio>/<Switch>`
-  (+ `<FormControlLabel>`); the guard enforces it for checkbox/radio.
-- This PR is the **foundation + proof-of-concept**: tokens, theme, provider,
-  the guard, and the five native offenders converted (NotificationsForm,
-  TeamNotificationPrefs, ShareWithTeam, ScopeChip ×2). Remaining phases:
-  migrate the rest of the chrome's hand-rolled controls (buttons, inputs,
-  selects) to themed MUI; widen the guard to selects/inputs; build the
-  extension primitives module; a final spacing/type/motion polish.
+- A toggle = `<LedToggle>`; other controls = themed MUI. The guard enforces "no
+  native checkbox/radio" regardless.
+- This PR is the **foundation + proof-of-concept**: tokens (incl. the `led`
+  palette), the MUI theme + provider, the `LedToggle` primitive, the guard, and
+  the toggle offenders converted to LED (NotificationsForm, TeamNotificationPrefs,
+  ShareWithTeam, ScopeChip team + personal). Remaining phases: migrate the
+  chrome's hand-rolled **buttons** to themed MUI (with the extension's glow
+  treatment) + inputs/selects; sync the `led` tokens into the extension so it
+  consumes the shared source (rather than its current literals); a final
+  spacing/type/motion polish.
 - The guard currently covers **checkbox/radio only** — selects and text inputs
   are a larger migration, deliberately not yet guarded (noted so the scope
   isn't mistaken for complete).
