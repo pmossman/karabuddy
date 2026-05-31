@@ -102,6 +102,12 @@ export function ReplayFilters({
   // URL key is `share` (not `tab`) to avoid colliding with the team page's
   // own `?tab=` navigation — ReplayFilters is reused there.
   const [tab, setTab] = useState<ShareTab>(() => (showShareTabs ? parseTab(searchParams.get('share')) : 'all'));
+  // Filters live behind a toggle so the toolbar stays uncluttered; active
+  // filters still show as removable chips when collapsed. Auto-open if the URL
+  // arrives with filters applied (deep-link) so they're immediately visible.
+  const [filtersOpen, setFiltersOpen] = useState(() =>
+    ['leader', 'opp', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -221,47 +227,49 @@ export function ReplayFilters({
     <>
       {showShareTabs && <ShareTabs tab={tab} setTab={setTab} counts={tabCounts} />}
 
-      <FilterControls
-        leader={leader} setLeader={setLeader}
-        leaders={allLeaders}
-        opp={opp} setOpp={setOpp}
-        usernames={allUsernames}
-        since={since} setSince={setSince}
-        format={format} setFormat={setFormat}
-        mode={mode} setMode={setMode}
-        label={label} setLabel={setLabel}
-        labels={allLabels}
-        result={result} setResult={setResult}
-      />
-
-      {activeChips.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
+      {/* Toolbar: collapsible Filters toggle + active-filter chips on the left,
+          result count + view switcher on the right. Filters panel is hidden by
+          default to keep the browser uncluttered. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <FiltersToggle open={filtersOpen} count={activeChips.length} onClick={() => setFiltersOpen((v) => !v)} />
           {activeChips.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={c.onClear}
-              style={chipButtonStyle}
-            >
+            <button key={c.key} type="button" onClick={c.onClear} style={chipButtonStyle}>
               {c.label} <span style={{ color: '#6c7588', marginLeft: 4 }}>×</span>
             </button>
           ))}
-          <button
-            type="button"
-            onClick={clearAll}
-            style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}
-          >
-            Clear all
-          </button>
+          {activeChips.length > 0 && (
+            <button
+              type="button"
+              onClick={clearAll}
+              style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}
+            >
+              Clear all
+            </button>
+          )}
         </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-        <div style={{ fontSize: 11, color: '#6c7588' }}>
-          Showing {filtered.length} of {rows.length}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ fontSize: 11, color: '#6c7588', whiteSpace: 'nowrap' }}>
+            Showing {filtered.length} of {rows.length}
+          </span>
+          <ViewSwitcher view={view} setView={setView} />
         </div>
-        <ViewSwitcher view={view} setView={setView} />
       </div>
+
+      {filtersOpen && (
+        <FilterControls
+          leader={leader} setLeader={setLeader}
+          leaders={allLeaders}
+          opp={opp} setOpp={setOpp}
+          usernames={allUsernames}
+          since={since} setSince={setSince}
+          format={format} setFormat={setFormat}
+          mode={mode} setMode={setMode}
+          label={label} setLabel={setLabel}
+          labels={allLabels}
+          result={result} setResult={setResult}
+        />
+      )}
 
       {filtered.length === 0 ? (
         <div style={{ marginTop: 16 }}>
@@ -676,6 +684,42 @@ function TabEmpty({ tab }: { tab: ShareTab }) {
   );
 }
 
+function FiltersToggle({ open, count, onClick }: { open: boolean; count: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Filters"
+      aria-expanded={open}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 7,
+        background: open ? 'rgba(77, 157, 255, 0.12)' : 'transparent',
+        color: open ? '#e6e6e6' : '#a0a8b8',
+        border: '1px solid ' + (open ? 'rgba(77, 157, 255, 0.5)' : '#2e333c'),
+        padding: '5px 12px',
+        fontSize: 12,
+        fontWeight: 600,
+        borderRadius: 6,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+      </svg>
+      Filters
+      {count > 0 && (
+        <span style={{ background: '#4dd2ff', color: '#0a0c10', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '0 6px', lineHeight: '15px', minWidth: 15, textAlign: 'center' }}>
+          {count}
+        </span>
+      )}
+      <span style={{ fontSize: 9 }}>{open ? '▴' : '▾'}</span>
+    </button>
+  );
+}
+
 function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode) => void }) {
   const item = (v: ViewMode, label: string) => (
     <button
@@ -754,14 +798,19 @@ function FilterControls({
           autofill icons — without them, password managers latch onto any
           text input that looks remotely username-y.
         */}
+        {/* type="search" (not text): password managers don't attach their
+            autofill icon to search fields — fixes LastPass latching onto this
+            field — and it's semantically a filter/search input anyway. The
+            data-* attrs stay as belt-and-suspenders for 1Password/LastPass. */}
         <input
-          type="text"
+          type="search"
           value={opp}
           onChange={(e) => setOpp(e.target.value)}
           placeholder="contains…"
           list={oppListId}
           autoComplete="off"
           data-lpignore="true"
+          data-1p-ignore="true"
           data-form-type="other"
           style={inputStyle}
         />

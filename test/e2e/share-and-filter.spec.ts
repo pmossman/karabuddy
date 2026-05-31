@@ -52,6 +52,7 @@ test('replay filters narrow the grid by label', async ({ page, request }) => {
   await expect(cardB).toHaveCount(1);
 
   // Filter by label → only the tournament-labeled card remains.
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   await page.getByLabel('Label').selectOption('tournament');
   await expect(cardA).toHaveCount(1);
   await expect(cardB).toHaveCount(0);

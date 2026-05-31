@@ -19,6 +19,7 @@ test('filter selection writes to URL search params', async ({ page, request }) =
   });
 
   await page.goto('/replays?tab=mine');
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   await page.getByLabel('Label').selectOption('tournament');
 
   // URL should now carry the label param (keeping tab=mine).
@@ -65,6 +66,7 @@ test('filter URL survives reload', async ({ page, request }) => {
   });
 
   await page.goto('/replays?tab=mine');
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   await page.getByLabel('Label').selectOption('favorite');
   // router.replace is async — wait for the URL to reflect the selection
   // before reloading, otherwise the reload races the URL update.
@@ -115,10 +117,13 @@ test('view switcher: clicking a view tab updates the URL', async ({ page, reques
 
 // -- Opponent input: LastPass autofill suppression + datalist combobox --
 
-test('opponent input is marked LastPass-ignore + autoComplete off', async ({ page }) => {
+test('opponent input is a search field + marked password-manager-ignore', async ({ page }) => {
   await signInAsTestUser(page, { name: 'LPx', email: 'lpx@example.com' });
   await page.goto('/replays?tab=mine');
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   const opp = page.getByLabel('Opponent (username)');
+  // type=search is the real fix — password managers don't attach to search fields.
+  await expect(opp).toHaveAttribute('type', 'search');
   await expect(opp).toHaveAttribute('data-lpignore', 'true');
   await expect(opp).toHaveAttribute('autocomplete', 'off');
   await expect(opp).toHaveAttribute('data-form-type', 'other');
@@ -131,6 +136,7 @@ test('opponent input is a combobox of seen opponent usernames', async ({ page, r
     await claimInstallToken(page, r.installToken);
   }
   await page.goto('/replays?tab=mine');
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   const opp = page.getByLabel('Opponent (username)');
   const listId = await opp.getAttribute('list');
   expect(listId).toBeTruthy();
@@ -240,6 +246,7 @@ test('team page renders the same filter controls', async ({ page, request }) => 
   });
 
   await page.goto(`/teams/${teamSlug}?tab=replays`);
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   // The Leader filter control should render on the team page too.
   await expect(page.getByLabel('Leader')).toBeVisible();
 });
@@ -262,6 +269,7 @@ test('team page filter selection writes to URL', async ({ page, request }) => {
   });
 
   await page.goto(`/teams/${teamSlug}?tab=replays`);
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   await page.getByLabel('Label').selectOption('scrim');
   await expect.poll(() => new URL(page.url()).searchParams.get('label')).toBe('scrim');
 });

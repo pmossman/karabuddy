@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B97] Replay browser: collapsible filters + fix LastPass icon
+_completed: 2026-05-31 by claude_
+The replay browser's filter grid (Leader/Opponent/Date/Format/Mode/Result/Label) was always-expanded and cluttered. Put it behind a **"Filters" toggle** (with an active-count badge) — collapsed by default, active filters still show as removable chips in the toolbar; auto-opens on deep-links that carry filter params. Fixed the **LastPass icon** on the Opponent field: changed it to `type="search"` (password managers don't attach to search inputs — and it's semantically a filter field), kept the `data-lpignore`/`data-1p-ignore` attrs. Updated 8 e2e tests to open the panel before interacting; full suite 107 green. Verified the decluttered toolbar in-browser.
+
 ### [B96] HUD rollout (1/n) — console-panel corners + home page reskin
 _completed: 2026-05-31 by claude_
 Began spreading the design system to the broader app. `Panel` gained the **console-panel HUD treatment** — four faint cyan corner-bracket ticks (targeting-reticle cue) via a `hud` prop (default on), so every panelized surface (settings + onward) reads as a readout. `TacticalHeading` gained an optional right-aligned `action` slot (for "View all →"). Reskinned the **home page**: section headers → TacticalHeading, the team CTA → accent Panel + glow button, the empty state → Panel, team-activity cards → the gradient panel surface. BUDDY logo finalized on **Orbitron** (swappable `--font-logo`); KARA stays Barlow (KARABAST link). Also swept the missed `#5a8cff` → link blue. typecheck + full e2e 107. Next: teams pages, viewer sidebar, glowing dividers.

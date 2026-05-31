@@ -119,6 +119,7 @@ test('result filter: Wins shows only replays the owner won', async ({ page, requ
   await expect(page.getByRole('link', { name: /WinFilter vs OppWin/ })).toHaveCount(1);
   await expect(page.getByRole('link', { name: /WinFilter vs OppLoss/ })).toHaveCount(1);
 
+  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
   await page.getByLabel('Result').selectOption('wins');
   await expect.poll(() => new URL(page.url()).searchParams.get('result')).toBe('wins');
   await expect(page.getByRole('link', { name: /WinFilter vs OppWin/ })).toHaveCount(1);
