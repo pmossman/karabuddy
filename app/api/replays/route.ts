@@ -276,7 +276,6 @@ export async function POST(req: Request) {
       // /replays?tab=mine knows which player was "me" without a per-
       // row karabast-username lookup.
       ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
-      visibility: 'unlisted',
     });
 
     // Lift tags embedded in the payload into the tags table so the viewer
@@ -316,19 +315,17 @@ export async function POST(req: Request) {
   }
 }
 
-// GET /api/replays?owner=<installToken> — list replays. With no owner param,
-// returns recent public replays; with owner, returns that token's library
-// (regardless of whether the install has been claimed by an account — the
-// token itself is the auth signal for view-only access, B54).
+// GET /api/replays?owner=<installToken> — an install's library (the token is
+// the view-only auth signal, B54). B85: no public list — without an owner there's
+// nothing to return (replays are link-accessible + team-shared, never browsable).
 export async function GET(req: Request) {
   const headers = corsHeaders(req.headers.get('origin'));
   try {
     const url = new URL(req.url);
     const owner = url.searchParams.get('owner');
+    if (!owner) return NextResponse.json({ ok: true, data: [] }, { headers });
     const db = getDb();
-    const rows = owner
-      ? await db.select().from(replays).where(eq(replays.ownerToken, owner)).orderBy(desc(replays.createdAt)).limit(100)
-      : await db.select().from(replays).where(eq(replays.visibility, 'public')).orderBy(desc(replays.createdAt)).limit(50);
+    const rows = await db.select().from(replays).where(eq(replays.ownerToken, owner)).orderBy(desc(replays.createdAt)).limit(100);
     return NextResponse.json({ ok: true, data: rows }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] GET /api/replays failed:', err);

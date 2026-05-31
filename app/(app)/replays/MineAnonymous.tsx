@@ -100,7 +100,6 @@ export function MineAnonymous() {
           players: r.players,
           durationMs: r.durationMs,
           actionCount: r.actionCount,
-          visibility: r.visibility,
           createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
           match: r.match ?? null,
           displayName: r.displayName ?? null,

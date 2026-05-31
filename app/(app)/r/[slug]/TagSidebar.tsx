@@ -23,11 +23,10 @@ interface ReplayRow {
   players: any;
   durationMs: number;
   actionCount: number;
-  // Ownership + share fields. userId/ownerToken drive both B6 (share /
-  // visibility toggle) and B7 (replay-owner can delete other people's tags).
+  // Ownership fields. userId/ownerToken drive both sharing (B6) and B7
+  // (replay-owner can delete other people's tags).
   userId: string | null;
   ownerToken: string;
-  visibility: string;
   // B53: optional user-set display name + labels. Both null on replays
   // never edited.
   displayName?: string | null;
@@ -163,9 +162,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // each submit. `scopeExpanded` toggles the chip's checkbox panel.
   const [scopeOverride, setScopeOverride] = useState<string[] | null>(null);
   const [scopeExpanded, setScopeExpanded] = useState(false);
-  const [visibility, setVisibility] = useState(replay.visibility);
   const [copied, setCopied] = useState(false);
-  const [visBusy, setVisBusy] = useState(false);
   // B12: sidebar width starts at the default during SSR/first paint, then
   // hydrates from localStorage in an effect to avoid hydration mismatch.
   // B66b: sidebarWidth state moved up to ReplayViewer; props are passed
@@ -265,33 +262,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
-  };
-
-  const toggleVisibility = async () => {
-    if (visBusy) return;
-    const next = visibility === 'public' ? 'unlisted' : 'public';
-    // Optimistic — revert on failure.
-    const prev = visibility;
-    setVisibility(next);
-    setVisBusy(true);
-    try {
-      const res = await fetch(`/api/replays/${replay.slug}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
-        body: JSON.stringify({ visibility: next }),
-      });
-      const body = await res.json();
-      if (!body.ok) {
-        setVisibility(prev);
-        alert(`Failed to update visibility: ${body.error || 'unknown'}`);
-      }
-    } catch (err) {
-      setVisibility(prev);
-      const msg = err instanceof Error ? err.message : 'network error';
-      alert(`Failed to update visibility: ${msg}`);
-    } finally {
-      setVisBusy(false);
-    }
   };
 
   const playersArr = (replay.players as any[]) || [];
@@ -805,21 +775,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
               <FooterBtn onClick={copyLink}>
                 {copied ? 'Copied!' : 'Copy link'}
               </FooterBtn>
-              {isOwner && (
-                <VisibilityPill
-                  visibility={visibility}
-                  busy={visBusy}
-                  onClick={toggleVisibility}
-                />
-              )}
             </div>
-            {isOwner && (
-              <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-                {visibility === 'public'
-                  ? 'Listed publicly on /replays.'
-                  : 'Anyone with the link can view.'}
-              </div>
-            )}
+            <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
+              Anyone with the link can view. Share with a team below to surface it in their replays.
+            </div>
             {isOwner && (
               <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
                 <ShareWithTeam replaySlug={replay.slug} installToken={installToken} />
@@ -1704,53 +1663,6 @@ function TagRowView({
         </div>
       )}
     </div>
-  );
-}
-
-function VisibilityPill({
-  visibility,
-  busy,
-  onClick,
-}: {
-  visibility: string;
-  busy: boolean;
-  onClick: () => void;
-}) {
-  const isPublic = visibility === 'public';
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={busy}
-      title={isPublic ? 'Click to make unlisted' : 'Click to make public'}
-      style={{
-        background: 'transparent',
-        border: `1px solid ${isPublic ? '#3a6a3a' : '#4a4e56'}`,
-        color: isPublic ? '#6bd968' : '#a0a8b8',
-        padding: '4px 10px',
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 600,
-        cursor: busy ? 'not-allowed' : 'pointer',
-        fontFamily: 'inherit',
-        opacity: busy ? 0.6 : 1,
-        textTransform: 'lowercase',
-        letterSpacing: '0.04em',
-      }}
-    >
-      <span
-        style={{
-          display: 'inline-block',
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: isPublic ? '#6bd968' : '#6c7588',
-          marginRight: 6,
-          verticalAlign: 'middle',
-        }}
-      />
-      {visibility}
-    </button>
   );
 }
 

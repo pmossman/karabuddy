@@ -154,7 +154,8 @@ export const replays = pgTable(
     // these tag the whole replay. Stored as text[]; client trims, dedupes,
     // and caps server-side.
     labels: jsonb('labels'),
-    visibility: text('visibility').notNull().default('unlisted'), // 'unlisted' | 'public'
+    // B85: the "public" concept was removed — replays are link-accessible
+    // (anyone with /r/<slug>) and surface to teams via shares. No public list.
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

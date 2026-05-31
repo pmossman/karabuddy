@@ -93,6 +93,14 @@ _empty_
 
 ## Done
 
+### [B85] Remove "public" replays entirely
+_completed: 2026-05-31 by claude_
+Teams + link-sharing cover sharing; a public firehose is a different product, so the "public" concept is gone.
+- **Dropped `replays.visibility`** (migration 0015) and every reference.
+- Removed: the public browse tab (`/replays?tab=public`), the **Browse** header nav link, the public listing in `GET /api/replays` (no `owner` → returns `[]`), the viewer Share-popover visibility toggle (`VisibilityPill` + `toggleVisibility`), and the `ReplayCard` "Make public" toggle.
+- `/replays` is now simply **"Your replays"** (your library when signed in, `MineAnonymous` otherwise). Replays remain **link-accessible** (`/r/<slug>`) and **team-shareable**; there is no public list.
+- Privacy page updated (visibility section + metadata). typecheck + unit 118 + api 72 + e2e green; removed the public/visibility E2E tests and retargeted 1 API test to `displayName`.
+
 ### [B84] Account-centric — drop karabast username; account-based intra-team detection
 _completed: 2026-05-31 by claude_
 **Principle (now a memory):** the extension's install-token → karabuddy-account link is the *only* bridge between karabast and karabuddy. karabast username/login is **never required** — a user can have multiple karabast handles, a different one each session, or none (anonymous), and still use every team feature with a linked karabuddy account.

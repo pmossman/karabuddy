@@ -72,9 +72,6 @@ export async function PATCH(
     }
     const body = await req.json().catch(() => ({}));
     const update: Record<string, unknown> = {};
-    if (typeof body.visibility === 'string' && ['unlisted', 'public'].includes(body.visibility)) {
-      update.visibility = body.visibility;
-    }
     if (body.displayName !== undefined) {
       // B53: explicit null/empty string clears the override and the
       // viewer falls back to the auto-matchup text.

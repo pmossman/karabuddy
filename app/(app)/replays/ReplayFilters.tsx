@@ -25,7 +25,6 @@ interface Row {
   players: any;
   durationMs: number;
   actionCount: number;
-  visibility: string;
   createdAt: string;
   match?: any;
   displayName?: string | null;

@@ -1,28 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { signInAsTestUser, createTeam, uploadReplay, claimInstallToken } from './helpers';
 
-// Replay visibility + team-share + filter UI.
-
-test('owner toggles replay public → it appears in public list', async ({ page, request }) => {
-  await signInAsTestUser(page, { name: 'Pubber', email: 'pubber@example.com' });
-  const { slug, installToken } = await uploadReplay(request, {
-    local: { username: 'Pubber' },
-    opponent: { username: 'Opp' },
-  });
-
-  // Default visibility = unlisted, NOT in public list.
-  await page.goto('/replays?tab=public');
-  await expect(page.getByText(/Pubber.*vs.*Opp|Opp.*vs.*Pubber/)).not.toBeVisible({ timeout: 1000 });
-
-  // Flip to public.
-  await page.request.patch(`/api/replays/${slug}`, {
-    data: { visibility: 'public' },
-    headers: { 'X-Install-Token': installToken },
-  });
-
-  await page.goto('/replays?tab=public');
-  await expect(page.getByText(/Pubber.*vs.*Opp|Opp.*vs.*Pubber/)).toBeVisible({ timeout: 5000 });
-});
+// Team-share + filter UI. (B85 removed public replays — no public list.)
 
 test('explicit team-share surfaces a replay in the team grid', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'ShareOwner', email: 'so@example.com' });

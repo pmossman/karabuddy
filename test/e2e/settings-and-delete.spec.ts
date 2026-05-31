@@ -65,7 +65,7 @@ test('non-owner cannot mutate someone else replay (403)', async ({ page, request
   // Different signed-in user without the token → must be forbidden.
   await signInAsTestUser(page, { name: 'Interloper', email: 'inter@example.com' });
   const patchRes = await page.request.patch(`/api/replays/${slug}`, {
-    data: { visibility: 'public' },
+    data: { displayName: 'Interloper rename attempt' },
   });
   expect(patchRes.status()).toBe(403);
 });

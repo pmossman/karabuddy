@@ -1,0 +1,1 @@
+ALTER TABLE "replays" DROP COLUMN "visibility";

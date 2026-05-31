@@ -78,12 +78,12 @@ describe('DELETE /tags/:id — author OR replay owner', () => {
 });
 
 describe('PATCH /replays/:slug — owner only', () => {
-  it('owner can set visibility; non-owner is forbidden', async () => {
+  it('owner can rename (displayName); non-owner is forbidden', async () => {
     await seedReplay('p1', 'kbx_owner');
-    expect((await patchReplay(req('kbx_stranger', { visibility: 'public' }), slugParams('p1'))).status).toBe(403);
-    expect((await patchReplay(req('kbx_owner', { visibility: 'public' }), slugParams('p1'))).status).toBe(200);
+    expect((await patchReplay(req('kbx_stranger', { displayName: 'Theirs' }), slugParams('p1'))).status).toBe(403);
+    expect((await patchReplay(req('kbx_owner', { displayName: 'My Game' }), slugParams('p1'))).status).toBe(200);
     const [row] = await getDb().select().from(replays).where(eq(replays.slug, 'p1'));
-    expect(row.visibility).toBe('public');
+    expect(row.displayName).toBe('My Game');
   });
   it('cleans labels — trims, dedupes case-insensitively, caps at 20', async () => {
     await seedReplay('p2', 'kbx_owner');
