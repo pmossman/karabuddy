@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { LedToggle } from '@/app/_components/LedToggle';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B81: per-team Discord DM preferences (member-only). Two toggles, both default
 // ON; the global switch on /settings overrides these. PATCHes
@@ -38,7 +39,7 @@ export function TeamNotificationPrefs({ slug }: { slug: string }) {
   );
 
   return (
-    <section style={{ marginTop: 24, padding: 16, background: 'rgba(17,20,26,0.5)', border: '1px solid #2e333c', borderRadius: 8 }}>
+    <section style={{ marginTop: 24, padding: 16, background: tokens.surface.panel, border: `1px solid ${tokens.surface.panelBorder}`, boxShadow: tokens.surface.panelShadow, borderRadius: tokens.radius.md }}>
       <h3 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600 }}>Discord notifications for this team</h3>
       <p style={{ margin: '0 0 12px', fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
         How you want to be pinged for activity in this team. Your global switch on <a href="/settings" style={{ color: '#5db4ff' }}>Settings</a> overrides these.

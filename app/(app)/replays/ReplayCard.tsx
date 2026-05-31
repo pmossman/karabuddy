@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 interface ReplayRow {
   slug: string;
@@ -53,9 +54,10 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
   return (
     <div
       style={{
-        background: 'rgba(17,20,26,0.6)',
-        border: '1px solid #2e333c',
-        borderRadius: 10,
+        background: tokens.surface.panel,
+        border: `1px solid ${tokens.surface.panelBorder}`,
+        borderRadius: tokens.radius.lg,
+        boxShadow: tokens.surface.panelShadow,
         padding: 14,
         display: 'flex',
         flexDirection: 'column',

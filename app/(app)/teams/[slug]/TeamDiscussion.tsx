@@ -104,7 +104,6 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
         padding: 14,
         background: tokens.surface.panel,
         border: `1px solid ${tokens.surface.panelBorder}`,
-        borderLeft: `2px solid ${tokens.led.on}`,
         borderRadius: tokens.radius.md,
         boxShadow: tokens.surface.panelShadow,
         textDecoration: 'none',
