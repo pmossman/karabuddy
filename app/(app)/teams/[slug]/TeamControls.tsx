@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B55a: owner + member controls for a team — generate invite, copy link,
 // leave team, rename (owners). All inline on the team page header.
@@ -126,7 +127,7 @@ export function TeamControls({
               flex: 1,
               background: '#11141a',
               color: '#e6e6e6',
-              border: '1px solid #4a7cff',
+              border: '1px solid #4d9dff',
               borderRadius: 4,
               padding: '6px 10px',
               fontSize: 13,
@@ -156,8 +157,8 @@ export function TeamControls({
       )}
 
       {inviteUrl && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 12, background: 'rgba(74, 124, 255, 0.08)', border: '1px solid rgba(74, 124, 255, 0.3)', borderRadius: 6 }}>
-          <div style={{ fontSize: 11, color: '#a0c4ff', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 12, background: 'rgba(77, 157, 255, 0.08)', border: '1px solid rgba(77, 157, 255, 0.3)', borderRadius: 6 }}>
+          <div style={{ fontSize: 11, color: '#a7d2ff', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Invite link
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -200,6 +201,6 @@ const btnBase: React.CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
 };
-const btnPrimary: React.CSSProperties = { ...btnBase, background: '#4a7cff', color: 'white' };
+const btnPrimary: React.CSSProperties = { ...btnBase, background: tokens.button.bg, color: tokens.color.accent, border: `1px solid ${tokens.color.primary}`, boxShadow: tokens.button.glow };
 const btnGhost: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#a0a8b8', border: '1px solid #4a4e56' };
 const btnDanger: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#ff7a7a', border: '1px solid rgba(255, 122, 122, 0.4)' };

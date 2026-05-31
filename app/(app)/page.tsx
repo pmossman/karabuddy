@@ -7,6 +7,9 @@ import { orderPlayersOwnerFirst } from '@/lib/players';
 import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
 import { HomeTeamActivity } from './HomeTeamActivity';
 import { HomeAnonymousReplays } from './HomeAnonymousReplays';
+import { Panel } from '@/app/_components/Panel';
+import { TacticalHeading } from '@/app/_components/TacticalHeading';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,9 +33,9 @@ export default async function Home() {
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>Your replays</h1>
           <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5 }}>
             Games you’ve recorded with the extension.{' '}
-            <Link href="/signin" style={{ color: '#5a8cff' }}>Sign in</Link> to save them to an
+            <Link href="/signin" style={{ color: '#5db4ff' }}>Sign in</Link> to save them to an
             account and unlock teams, or{' '}
-            <Link href="/install" style={{ color: '#5a8cff' }}>install the extension</Link> to start
+            <Link href="/install" style={{ color: '#5db4ff' }}>install the extension</Link> to start
             recording.
           </p>
         </div>
@@ -128,76 +131,70 @@ function Main({ children }: { children: React.ReactNode }) {
   );
 }
 
+const actionLinkStyle: React.CSSProperties = {
+  // Reset the heading's inherited mono/uppercase/tracking for the link.
+  fontFamily: 'var(--font-barlow), sans-serif',
+  textTransform: 'none',
+  letterSpacing: 0,
+  fontSize: 12,
+  fontWeight: 600,
+  color: '#5db4ff',
+  textDecoration: 'none',
+};
+
 function SectionHeader({ title, action }: { title: string; action?: { href: string; label: string } }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
-      <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#e6e6e6' }}>{title}</h2>
-      {action && (
-        <Link href={action.href} style={{ fontSize: 12, fontWeight: 600, color: '#5a8cff', textDecoration: 'none' }}>
-          {action.label}
-        </Link>
-      )}
-    </div>
+    <TacticalHeading
+      action={action ? <Link href={action.href} style={actionLinkStyle}>{action.label}</Link> : undefined}
+    >
+      {title}
+    </TacticalHeading>
   );
 }
 
 function TeamCta() {
   return (
-    <div
-      data-testid="home-team-cta"
-      style={{
-        padding: 20,
-        background: 'rgba(74, 124, 255, 0.06)',
-        border: '1px solid rgba(74, 124, 255, 0.25)',
-        borderRadius: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
-    >
-      <div style={{ fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>Start a team</div>
-      <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, maxWidth: 560 }}>
-        Teams are where karabuddy comes alive — tag each other’s replays, discuss key turns, and
-        review matchups together for deck-tuning or tournament prep. Create one, or open an invite
-        link a teammate sent you.
-      </p>
-      <div>
-        <Link
-          href="/teams"
-          style={{
-            display: 'inline-block',
-            padding: '9px 16px',
-            background: '#4a7cff',
-            color: 'white',
-            borderRadius: 6,
-            fontSize: 13,
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          Create or join a team →
-        </Link>
+    <Panel accent style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div data-testid="home-team-cta" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>Start a team</div>
+        <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, maxWidth: 560 }}>
+          Teams are where karabuddy comes alive — tag each other’s replays, discuss key turns, and
+          review matchups together for deck-tuning or tournament prep. Create one, or open an invite
+          link a teammate sent you.
+        </p>
+        <div>
+          <Link
+            href="/teams"
+            style={{
+              display: 'inline-block',
+              padding: '9px 16px',
+              background: tokens.button.bg,
+              color: tokens.color.accent,
+              border: `1px solid ${tokens.color.primary}`,
+              boxShadow: tokens.button.glow,
+              borderRadius: tokens.radius.sm,
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Create or join a team →
+          </Link>
+        </div>
       </div>
-    </div>
+    </Panel>
   );
 }
 
 function RecentEmpty() {
   return (
-    <div
-      style={{
-        padding: 24,
-        border: '1px dashed #2e333c',
-        borderRadius: 10,
-        color: '#a0a8b8',
-        fontSize: 13,
-        lineHeight: 1.5,
-      }}
-    >
-      No replays yet. Record one with the karabuddy Chrome extension on{' '}
-      <a href="https://karabast.net" style={{ color: '#5a8cff' }}>karabast.net</a> — they upload
-      here automatically.{' '}
-      <Link href="/install" style={{ color: '#5a8cff' }}>Install the extension →</Link>
-    </div>
+    <Panel hud={false} style={{ border: '1px dashed #2e333c', background: 'transparent', boxShadow: 'none' }}>
+      <span style={{ color: '#a0a8b8', fontSize: 13, lineHeight: 1.5 }}>
+        No replays yet. Record one with the karabuddy Chrome extension on{' '}
+        <a href="https://karabast.net" style={{ color: '#5db4ff' }}>karabast.net</a> — they upload
+        here automatically.{' '}
+        <Link href="/install" style={{ color: '#5db4ff' }}>Install the extension →</Link>
+      </span>
+    </Panel>
   );
 }

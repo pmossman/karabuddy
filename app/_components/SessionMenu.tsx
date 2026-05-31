@@ -25,7 +25,7 @@ export function SessionMenu({ compact = false }: { compact?: boolean }) {
 
   if (!session?.user) {
     return (
-      <a href="/signin" style={{ fontSize: 12, color: '#5da9ff', textDecoration: 'none', padding: '4px 10px', border: '1px solid #4a4e56', borderRadius: 6, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      <a href="/signin" style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none', padding: '4px 10px', border: '1px solid #4a4e56', borderRadius: 6, fontWeight: 600, whiteSpace: 'nowrap' }}>
         Sign in
       </a>
     );
@@ -44,7 +44,7 @@ export function SessionMenu({ compact = false }: { compact?: boolean }) {
         aria-haspopup="menu"
         aria-expanded={open}
         title={label}
-        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: '50%', background: u.image ? 'transparent' : '#2e333c', border: open ? '2px solid #5a8cff' : '2px solid transparent', padding: 0, cursor: 'pointer', overflow: 'hidden' }}
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: '50%', background: u.image ? 'transparent' : '#2e333c', border: open ? '2px solid #5db4ff' : '2px solid transparent', padding: 0, cursor: 'pointer', overflow: 'hidden' }}
       >
         {u.image
           ? <img src={u.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />

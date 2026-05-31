@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { MentionedComment } from '@/app/(app)/r/[slug]/MentionInput';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 interface MentionRow {
   id: string;
@@ -70,15 +71,17 @@ export function MentionsList() {
             flexDirection: 'column',
             gap: 6,
             padding: 14,
-            background: 'rgba(17, 20, 26, 0.6)',
-            border: '1px solid #2e333c',
-            borderRadius: 8,
+            background: tokens.surface.panel,
+            border: `1px solid ${tokens.surface.panelBorder}`,
+            borderLeft: `2px solid ${tokens.led.on}`,
+            borderRadius: tokens.radius.md,
+            boxShadow: tokens.surface.panelShadow,
             color: '#e6e6e6',
             textDecoration: 'none',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#5da9ff', fontWeight: 600 }}>{r.authorName}</span>
+            <span style={{ fontSize: 12, color: '#5db4ff', fontWeight: 600 }}>{r.authorName}</span>
             <span style={{ fontSize: 11, color: '#6c7588' }}>{formatRelative(r.createdAt)} · frame {r.frameIndex + 1}</span>
           </div>
           <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.4, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>

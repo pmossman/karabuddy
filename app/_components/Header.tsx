@@ -44,6 +44,9 @@ export async function Header() {
         >
           <span
             style={{
+              // KARA stays Barlow — deliberately matches the "KARABAST"
+              // wordmark so the connection to karabast.net is clear. Only
+              // "BUDDY" carries the HUD treatment.
               fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
               fontWeight: 400,
               fontSize: 22,
@@ -56,12 +59,20 @@ export async function Header() {
           </span>
           <span
             style={{
-              fontFamily: 'Georgia, "Times New Roman", serif',
-              fontStyle: 'italic',
-              fontWeight: 600,
-              fontSize: 19,
-              letterSpacing: '-0.01em',
-              color: '#5a8cff',
+              // Squared "space-HUD" display face (Orbitron) — angular and
+              // geometric, the Star-Wars-esque readout look.
+              fontFamily: 'var(--font-logo), var(--font-barlow), sans-serif',
+              fontWeight: 700,
+              fontSize: 15,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              // Electric cyan→azure gradient — ties the mark to the two accents
+              // (signal cyan + primary blue) the rest of the UI uses.
+              background: 'linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              color: 'transparent',
+              WebkitTextFillColor: 'transparent',
             }}
           >
             buddy

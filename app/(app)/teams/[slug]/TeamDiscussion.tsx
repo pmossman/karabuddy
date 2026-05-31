@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { cardImageUrl } from '@/lib/cardImage';
 import { MentionedComment } from '@/app/(app)/r/[slug]/MentionInput';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B61: Discussion feed for /teams/[slug]. Sits above the inventory.
 // Surfaces replays with active tag activity; rows are stable click
@@ -101,9 +102,10 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
         flexDirection: 'column',
         gap: 10,
         padding: 14,
-        background: 'rgba(17, 20, 26, 0.6)',
-        border: '1px solid #2e333c',
-        borderRadius: 8,
+        background: tokens.surface.panel,
+        border: `1px solid ${tokens.surface.panelBorder}`,
+        borderRadius: tokens.radius.md,
+        boxShadow: tokens.surface.panelShadow,
         textDecoration: 'none',
         color: '#e6e6e6',
       }}
@@ -115,7 +117,7 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
           <PlayerThumbs player={p2} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#a0c4ff' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#a7d2ff' }}>
             {matchupText(item)}
           </div>
         </div>
@@ -124,8 +126,8 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
 
       <div style={{
         padding: '10px 12px',
-        background: 'rgba(74, 124, 255, 0.06)',
-        borderLeft: '3px solid rgba(74, 124, 255, 0.45)',
+        background: 'rgba(77, 157, 255, 0.06)',
+        borderLeft: '3px solid rgba(77, 157, 255, 0.45)',
         borderRadius: 4,
         display: 'flex',
         flexDirection: 'column',
@@ -169,7 +171,7 @@ function ParticipantBubbles({ participants }: { participants: Participant[] }) {
             justifyContent: 'center',
             fontSize: 11,
             fontWeight: 700,
-            color: '#a0c4ff',
+            color: '#a7d2ff',
             overflow: 'hidden',
           }}
         >

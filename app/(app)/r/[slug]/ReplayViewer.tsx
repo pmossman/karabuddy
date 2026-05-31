@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ThemeContextProvider } from '@/app/_contexts/Theme.context';
+import { KaraBuddyThemeProvider } from '@/app/_components/KaraBuddyThemeProvider';
 import { CosmeticsProvider } from '@/app/_contexts/CosmeticsContext';
 import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
@@ -216,15 +217,23 @@ function ViewerShell({ replay, initialTags }: Props) {
     // on every meaningful frame change, not on its own URL writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
-  const [mode, setMode] = useState<StepMode>(() => {
-    if (typeof window === 'undefined') return 'action';
+  // Start at the server-safe default so SSR and the first client render agree;
+  // hydrate the persisted choice in an effect after mount (mirrors the
+  // sidebar-width pattern below). Reading localStorage in the useState
+  // initializer caused a hydration mismatch on the step-mode toggle's
+  // aria-pressed/styling when the saved mode differed from the default.
+  const [mode, setMode] = useState<StepMode>('action');
+  useEffect(() => {
     try {
       const v = window.localStorage.getItem('karabuddy:stepMode');
-      return v === 'frame' ? 'frame' : 'action';
-    } catch { return 'action'; }
-  });
-
+      if (v === 'frame' || v === 'action') setMode(v);
+    } catch {}
+  }, []);
+  // Persist on change — but skip the mount pass so we don't clobber the stored
+  // value before the hydrate effect above has read it.
+  const stepModePersistReady = useRef(false);
   useEffect(() => {
+    if (!stepModePersistReady.current) { stepModePersistReady.current = true; return; }
     try { window.localStorage.setItem('karabuddy:stepMode', mode); } catch {}
   }, [mode]);
 
@@ -385,6 +394,11 @@ function ViewerShell({ replay, initialTags }: Props) {
           </div>
         )}
       </div>
+      {/* The viewer is wrapped in the gameboard's ThemeContextProvider (for
+          the board); re-assert the KaraBuddy theme over the sidebar so its
+          MUI controls match the chrome instead of the gameboard's default
+          MUI theme. TagSidebar uses no gameboard contexts, only the theme. */}
+      <KaraBuddyThemeProvider>
       <TagSidebar
         replay={replay}
         frames={frames}
@@ -413,7 +427,9 @@ function ViewerShell({ replay, initialTags }: Props) {
         decks={replay.decks ?? decoded?.meta.decks ?? null}
         localPlayerId={decoded?.meta.localPlayerId ?? null}
         armedTeams={armedTeams}
+        onArmedTeamsChange={setArmedTeams}
       />
+      </KaraBuddyThemeProvider>
       <FrameNavOverlay
         drawerOpen={drawerOpen}
         leftPanelOpen={mobileLandscape && drawerOpen}

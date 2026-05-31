@@ -55,7 +55,7 @@ export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isL
           {deck.username || 'Unknown player'}
         </span>
         {isLocal && (
-          <span style={{ fontSize: 10, color: '#5da9ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+          <span style={{ fontSize: 10, color: '#5db4ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
             You
           </span>
         )}
@@ -76,7 +76,7 @@ export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isL
         {fullPageHref && (
           <Link
             href={fullPageHref}
-            style={{ marginLeft: 'auto', fontSize: 11, color: '#5da9ff', textDecoration: 'none', fontWeight: 600 }}
+            style={{ marginLeft: 'auto', fontSize: 11, color: '#5db4ff', textDecoration: 'none', fontWeight: 600 }}
           >
             View full page →
           </Link>

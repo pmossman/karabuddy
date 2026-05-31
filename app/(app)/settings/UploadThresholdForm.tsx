@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button, TextField } from '@mui/material';
 
 // B75: per-user minimum-actions-per-player threshold for the extension's
 // auto-uploads. PATCHes /api/me/settings; the extension reads it on record
@@ -27,41 +28,17 @@ export function UploadThresholdForm({ initial }: { initial: number }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-      <input
+      <TextField
         type="number"
-        min={1}
-        max={50}
+        size="small"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        style={{
-          width: 90,
-          background: '#11141a',
-          border: '1px solid #2e333c',
-          borderRadius: 6,
-          color: '#e6e6e6',
-          padding: '10px 12px',
-          font: '14px inherit',
-          outline: 'none',
-        }}
+        slotProps={{ htmlInput: { min: 1, max: 50 } }}
+        sx={{ width: 100 }}
       />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={status.kind === 'saving'}
-        style={{
-          background: '#4a7cff',
-          color: 'white',
-          border: 0,
-          borderRadius: 6,
-          padding: '8px 16px',
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: status.kind === 'saving' ? 'not-allowed' : 'pointer',
-          fontFamily: 'inherit',
-        }}
-      >
+      <Button variant="contained" onClick={submit} disabled={status.kind === 'saving'}>
         {status.kind === 'saving' ? 'Saving…' : 'Save'}
-      </button>
+      </Button>
       {status.kind === 'ok' && <span style={{ fontSize: 12, color: '#6bd968' }}>{status.text}</span>}
       {status.kind === 'error' && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{status.text}</span>}
     </div>

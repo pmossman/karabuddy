@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
+import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ShareBadge } from './ShareBadge';
 
 interface ReplayRow {
   slug: string;
@@ -25,6 +27,8 @@ interface ReplayRow {
   // B53: user-set display name + labels. Both null when never edited.
   displayName?: string | null;
   labels?: string[] | null;
+  // B89: teams this replay is shared with. Empty/absent = unlisted.
+  sharedTeams?: { slug: string; name: string }[];
 }
 
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
@@ -51,9 +55,10 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
   return (
     <div
       style={{
-        background: 'rgba(17,20,26,0.6)',
-        border: '1px solid #2e333c',
-        borderRadius: 10,
+        background: tokens.surface.panel,
+        border: `1px solid ${tokens.surface.panelBorder}`,
+        borderRadius: tokens.radius.lg,
+        boxShadow: tokens.surface.panelShadow,
         padding: 14,
         display: 'flex',
         flexDirection: 'column',
@@ -95,7 +100,7 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
                 style={{
                   background: 'rgba(160, 196, 255, 0.08)',
                   border: '1px solid rgba(160, 196, 255, 0.2)',
-                  color: '#a0c4ff',
+                  color: '#a7d2ff',
                   fontSize: 10,
                   fontWeight: 600,
                   padding: '1px 6px',
@@ -107,15 +112,16 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
             ))}
           </div>
         )}
+        <ShareBadge sharedTeams={replay.sharedTeams} />
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
           {matchChips(replay.match).map((label) => (
             <span
               key={label}
               style={{
-                background: 'rgba(74, 124, 255, 0.12)',
-                border: '1px solid rgba(74, 124, 255, 0.3)',
-                color: '#a0c4ff',
+                background: 'rgba(77, 157, 255, 0.12)',
+                border: '1px solid rgba(77, 157, 255, 0.3)',
+                color: '#a7d2ff',
                 borderRadius: 999,
                 padding: '1px 8px',
                 fontSize: 10,

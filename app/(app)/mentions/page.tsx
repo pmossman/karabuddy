@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { auth } from '@/auth';
 import { MentionsList } from './MentionsList';
+import { glowButtonStyle } from '@/app/_components/glowButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ export default async function MentionsPage() {
           <p style={{ margin: 0, color: '#a0a8b8', fontSize: 13 }}>Sign in to see your mentions.</p>
           <Link
             href="/signin?callbackUrl=/mentions"
-            style={{ display: 'inline-block', marginTop: 16, padding: '10px 16px', background: '#4a7cff', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
+            style={{ ...glowButtonStyle, marginTop: 16 }}
           >
             Sign in
           </Link>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { glowButtonStyle } from '@/app/_components/glowButton';
 
 export function ClaimForm({
   prefilledToken,
@@ -62,16 +63,10 @@ export function ClaimForm({
         onClick={submit}
         disabled={status.kind === 'pending' || !token.trim()}
         style={{
-          background: '#4a7cff',
-          color: 'white',
-          border: 0,
-          borderRadius: 6,
+          ...glowButtonStyle,
           padding: '10px 18px',
-          fontSize: 13,
-          fontWeight: 600,
           cursor: status.kind === 'pending' || !token.trim() ? 'not-allowed' : 'pointer',
           opacity: status.kind === 'pending' || !token.trim() ? 0.5 : 1,
-          fontFamily: 'inherit',
         }}
       >
         {status.kind === 'pending' ? 'Linking…' : confirmLabel}

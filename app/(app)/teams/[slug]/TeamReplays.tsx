@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ReplayFilters } from '@/app/(app)/replays/ReplayFilters';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B55b: client-fetched team replays grid.
 // B52-followup: now wrapped in ReplayFilters so the team page gets the
@@ -72,7 +73,7 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
   return (
     <>
       {internalCount > 0 && (
-        <div style={{ display: 'inline-flex', gap: 4, marginBottom: 12, background: 'rgba(17,20,26,0.6)', border: '1px solid #2e333c', borderRadius: 8, padding: 3 }}>
+        <div style={{ display: 'inline-flex', gap: 4, marginBottom: 12, background: tokens.surface.panel, border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.md, padding: 3 }}>
           {([['All', false], [`Internal (${internalCount})`, true]] as const).map(([label, val]) => (
             <button
               key={label}
@@ -80,7 +81,7 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
               onClick={() => setInternalOnly(val)}
               title={val ? 'Matches played between teammates' : undefined}
               style={{
-                background: internalOnly === val ? '#4a7cff' : 'transparent',
+                background: internalOnly === val ? '#4d9dff' : 'transparent',
                 color: internalOnly === val ? '#fff' : '#a0a8b8',
                 border: 0, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
               }}

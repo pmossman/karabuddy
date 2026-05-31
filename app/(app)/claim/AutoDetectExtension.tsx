@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
+import { glowButtonStyle } from '@/app/_components/glowButton';
 
 // On mount: probe the karabuddy extension via postMessage. If it answers
 // with a token, push the user to /claim?token=… so the confirm-page-with-
@@ -67,17 +68,7 @@ export function AutoDetectExtension() {
   );
 }
 
-const primary: React.CSSProperties = {
-  background: '#4a7cff',
-  color: 'white',
-  border: 0,
-  borderRadius: 6,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
+const primary: React.CSSProperties = { ...glowButtonStyle, padding: '8px 14px' };
 const secondary: React.CSSProperties = {
   background: 'transparent',
   color: '#a0a8b8',
@@ -91,4 +82,4 @@ const secondary: React.CSSProperties = {
 };
 
 const muted: React.CSSProperties = { fontSize: 13, color: '#a0a8b8', lineHeight: 1.55, margin: '0 0 16px' };
-const link: React.CSSProperties = { color: '#5a8cff', textDecoration: 'none' };
+const link: React.CSSProperties = { color: '#5db4ff', textDecoration: 'none' };

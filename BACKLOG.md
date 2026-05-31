@@ -93,6 +93,51 @@ _empty_
 
 ## Done
 
+### [B97] Replay browser: collapsible filters + fix LastPass icon
+_completed: 2026-05-31 by claude_
+The replay browser's filter grid (Leader/Opponent/Date/Format/Mode/Result/Label) was always-expanded and cluttered. Put it behind a **"Filters" toggle** (with an active-count badge) — collapsed by default, active filters still show as removable chips in the toolbar; auto-opens on deep-links that carry filter params. Fixed the **LastPass icon** on the Opponent field: changed it to `type="search"` (password managers don't attach to search inputs — and it's semantically a filter field), kept the `data-lpignore`/`data-1p-ignore` attrs. Updated 8 e2e tests to open the panel before interacting; full suite 107 green. Verified the decluttered toolbar in-browser.
+
+### [B96] HUD rollout (1/n) — console-panel corners + home page reskin
+_completed: 2026-05-31 by claude_
+Began spreading the design system to the broader app. `Panel` gained the **console-panel HUD treatment** — four faint cyan corner-bracket ticks (targeting-reticle cue) via a `hud` prop (default on), so every panelized surface (settings + onward) reads as a readout. `TacticalHeading` gained an optional right-aligned `action` slot (for "View all →"). Reskinned the **home page**: section headers → TacticalHeading, the team CTA → accent Panel + glow button, the empty state → Panel, team-activity cards → the gradient panel surface. BUDDY logo finalized on **Orbitron** (swappable `--font-logo`); KARA stays Barlow (KARABAST link). Also swept the missed `#5a8cff` → link blue. typecheck + full e2e 107. Next: teams pages, viewer sidebar, glowing dividers.
+
+### [B95] "Spaceship HUD" pass — blueprint-grid backdrop + unified HUD wordmark
+_completed: 2026-05-31 by claude_
+The logo felt half-converted (KARA in humanist Barlow vs BUDDY in HUD mono) and floated over a flat-black void. Two moves toward the cockpit/HUD feel: (1) **unified the wordmark** — both KARA + BUDDY in the HUD monospace (`tokens.led.mono`), uppercase + 0.14em tracking, BUDDY keeps the cyan→azure gradient; (2) **faint blueprint-grid backdrop** on chrome pages (globals.css) — a 32px ~3% cyan grid + soft top-anchored glow over a deeper `#0b0e13`, reading as a console surface (the gameboard's starfield still overrides inside the viewer). Proposed-but-not-yet-built HUD levers (Parker to steer): console-panel corner brackets + glowing hairline borders on `Panel`, tactical headers everywhere, glowing cyan dividers.
+
+### [B94] Consolidate the brand palette — two cohesive accents, refreshed logo
+_completed: 2026-05-31 by claude_
+Three competing blues had drifted: the liked cyan `#4dd2ff` (LED) vs muddier `#4a7cff`/`#5da9ff` (logo + links), all hardcoded ~80× across 40 files with no single source. Defined a two-accent system in tokens — **primary `#4d9dff`** (brighter azure, "do this": actions/links/nav/logo) + **`#4dd2ff`** (cyan, "live": LED/active) — bright siblings that read as one palette. Swept the old hexes (+ their rgba glow forms) to the new values across **app and extension** so the two products share one palette. Refreshed the logo "buddy" to a cyan→azure gradient tying both accents. Documented the accent roles in tokens + [ADR 0006](docs/adr/0006-design-system.md). typecheck + unit 124 (parity green) + e2e (1 known-flaky retry). First pass on the exact hue — now a one-place token tweak.
+
+### [B93] "Tactical dark" reskin — Settings PoC (surfaces, headings, glow buttons)
+_completed: 2026-05-31 by claude_
+Parker's read (looking at full-page screenshots): the LED toggles aren't too loud — the rest of the app is too flat. Reskin up to the extension's look. PoC on Settings (most barren page) to react to the direction before rolling out. New reusable pieces: `Panel` (top-lit gradient surface + depth shadow + optional cyan accent bar), `TacticalHeading` (monospace letter-spaced caps + glowing cyan signal dot, mirroring the extension's "SHARE WITH TEAMS"), and a glow primary `MuiButton` (dark gradient + glowing blue border, the extension's "My replays →" look). Added `surface`/`button` tokens. Applied to Settings: cards → Panel, titles → TacticalHeading, nav rail active → cyan signal accent, UploadThreshold → themed MUI TextField + glow Button. Type split established: tactical mono for chrome/headers/status, Barlow for content. typecheck + full e2e 107. Next (pending Parker's read): roll Panel/heading/button across home + teams + viewer; define the two-accent rule (blue=action, cyan=live) in a short doc.
+
+### [B92] LedToggle — bring the extension's LED control to the web
+_completed: 2026-05-31 by claude_
+Parker's design target: the extension's "cockpit" LED toggle (glowing cyan ring + dot, accent bar, monospace label, "SHARING" readout) — across both UIs, not generic MUI checkboxes. Built `app/_components/LedToggle.tsx`, a faithful React port of `extension/replays/05-footer.js buildShareRow`, drawing from new `led` tokens. Swapped it into every chrome toggle: ShareWithTeam (with "Sharing" status), ScopeChip (team rows + "Just me"), and the settings/team notification toggles — replacing the MUI Switch/Checkbox/Radio from B90. `role="checkbox"` for a11y + tests. Refines [ADR 0006](docs/adr/0006-design-system.md): bespoke LED for signature controls, themed MUI for the rest. typecheck + unit 124 (guard green) + full e2e 107. Next: sync `led` tokens into the extension; migrate chrome buttons to themed MUI w/ glow.
+
+### [B91] Fix: step-mode toggle hydration mismatch (pre-existing)
+_completed: 2026-05-31 by claude_
+The viewer's Action/Frame step-mode toggle read `localStorage` inside its `useState` initializer, so SSR rendered the default (`action`) while the client hydrated to the saved value (`frame`) → a dev hydration-mismatch warning on the toggle's `aria-pressed`/styling (benign in prod; React reconciles to the client value). Predates the design-system work (surfaced while checking it locally). Fixed with the file's existing sidebar-width pattern: default on SSR, hydrate from localStorage in a mount effect, and skip the persist effect's mount pass so it doesn't clobber the stored value.
+
+### [B90] Design-system foundation — tokens + themed MUI + enforcement (PoC)
+_completed: 2026-05-31 by claude_
+First phase of the consistency/branding pass ([ADR 0006](docs/adr/0006-design-system.md); strategy "themed MUI + tokens" chosen with Parker). The chrome had no MUI ThemeProvider (only the lifted gameboard did), so it was all hand-rolled inline styles + a mix of native/styled controls.
+- **Tokens** `app/_theme/karabuddyTokens.ts` (neon-dark palette/radii/spacing/font, single source).
+- **Theme** `app/_theme/karabuddyTheme.ts` (MUI theme from tokens) applied via `<KaraBuddyThemeProvider>` around the `(app)` layout — no CssBaseline (globals.css + gameboard own the base; gameboard theme nests + wins for its subtree).
+- **Converted the 5 native offenders** to themed MUI: NotificationsForm + TeamNotificationPrefs + ShareWithTeam (Switch), ScopeChip (Checkbox + Radio).
+- **Enforcement** `test/unit/no-native-form-controls.test.ts` — CI guard failing on any native `type=checkbox|radio` (grep idiom, runs in the deploy gate). "Can't introduce an unstyled checkbox" is now real.
+- typecheck + unit 124 + full e2e 107 green. **Remaining phases:** migrate the rest of the chrome (buttons/inputs/selects) to MUI; widen the guard; extension plain-JS primitives from the same tokens; polish pass.
+
+### [B89] "Your replays": Shared / Unlisted tabs + per-card share status
+_completed: 2026-05-31 by claude_
+The library gave no at-a-glance signal of who a replay was visible to. Added explicit **All / Shared / Unlisted** tabs (with counts) to `/replays`, plus a per-card share badge (team chips when shared, a muted "🔒 Unlisted" otherwise) and a compact chip in the table view. "Unlisted" (not "Private") is the honest label — every replay stays link-accessible. Tabs/badges are opt-in (`showShareTabs`) so the team grid + anonymous library are unaffected; the URL key is `?share=` to avoid colliding with the team page's `?tab=`. Regression E2E `replays-share-tabs.spec.ts`.
+
+### [B88] Fix: comment scope chip ignored in-session share changes
+_completed: 2026-05-31 by claude_
+Un-sharing a replay via the viewer's Share popover left the "Visible to:" tag scope chip still claiming the comment would reach the (now-removed) teams. The server clamps on submit (`resolveTagScope`: no shares ⇒ personal), so the stored tag was already correct — the bug was a misleading preview. Root cause: `ShareWithTeam` kept its toggle in local state while `armedTeams` (drives the chip + default audience) was a page-load snapshot from `GET /tags`, never refreshed. Fix: `ShareWithTeam` reports the live shared subset up via `onArmedTeamsChange` → `ReplayViewer.setArmedTeams`, so the chip tracks reality. Regression E2E `scope-chip-live-shares.spec.ts` (red→green).
+
 ### [B87] Bump CI off Node 20 (GitHub Actions deprecation)
 _completed: 2026-05-31 by claude_
 Node 20 actions are deprecated (forced to Node 24 on 2026-06-16) and Node 20 LTS is EOL. Bumped across all four workflows: `actions/checkout@v4→v5`, `actions/setup-node@v4→v5`, `actions/upload-artifact@v4→v5`, and the build/test `node-version` `'20'→'24'` (matches Vercel's prod default, closing the CI-vs-prod parity gap). No `engines` pin existed; left unpinned (Vercel + CI both on 24).

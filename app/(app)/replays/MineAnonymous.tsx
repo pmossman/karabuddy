@@ -73,11 +73,11 @@ export function MineAnonymous() {
         style={{
           marginTop: 18,
           padding: '10px 14px',
-          background: 'rgba(74, 124, 255, 0.08)',
-          border: '1px solid rgba(74, 124, 255, 0.25)',
+          background: 'rgba(77, 157, 255, 0.08)',
+          border: '1px solid rgba(77, 157, 255, 0.25)',
           borderRadius: 8,
           fontSize: 12,
-          color: '#a0c4ff',
+          color: '#a7d2ff',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -86,7 +86,7 @@ export function MineAnonymous() {
       >
         <span>
           Viewing as an unclaimed extension install.{' '}
-          <Link href="/signin?callbackUrl=/replays" style={{ color: '#5da9ff', textDecoration: 'underline' }}>
+          <Link href="/signin?callbackUrl=/replays" style={{ color: '#5db4ff', textDecoration: 'underline' }}>
             Sign in
           </Link>{' '}
           to attribute these to an account (they&apos;ll auto-link).

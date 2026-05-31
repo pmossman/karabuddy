@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B69: list the user's linked extension installs + show which row
 // matches THIS browser. Lets users see what's linked and revoke
@@ -110,16 +111,17 @@ export function LinkedExtensions() {
               alignItems: 'center',
               gap: 12,
               padding: '10px 14px',
-              background: 'rgba(17,20,26,0.6)',
-              border: '1px solid ' + (isThis ? 'rgba(74, 124, 255, 0.4)' : '#2e333c'),
-              borderRadius: 6,
+              background: tokens.surface.panel,
+              border: '1px solid ' + (isThis ? tokens.led.on : tokens.surface.panelBorder),
+              boxShadow: isThis ? `${tokens.surface.panelShadow}, 0 0 10px rgba(77, 210, 255, 0.12)` : tokens.surface.panelShadow,
+              borderRadius: tokens.radius.md,
             }}
           >
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#d6d6d6' }} title={ext.token}>{short}</span>
                 {isThis && (
-                  <span style={{ fontSize: 10, color: '#5da9ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                  <span style={{ fontSize: 10, color: '#5db4ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
                     This browser
                   </span>
                 )}

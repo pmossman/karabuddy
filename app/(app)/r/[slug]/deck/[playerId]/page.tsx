@@ -108,7 +108,7 @@ function BackLink({ slug }: { slug: string }) {
     <div style={{ marginBottom: 12 }}>
       <Link
         href={`/r/${slug}`}
-        style={{ color: '#5da9ff', fontSize: 13, textDecoration: 'none' }}
+        style={{ color: '#5db4ff', fontSize: 13, textDecoration: 'none' }}
       >
         ← View replay
       </Link>
@@ -203,9 +203,9 @@ const mainStyle: React.CSSProperties = {
 };
 const h1Style: React.CSSProperties = { margin: 0, fontSize: 26, fontWeight: 600 };
 const chipStyle: React.CSSProperties = {
-  background: 'rgba(74, 124, 255, 0.12)',
-  border: '1px solid rgba(74, 124, 255, 0.3)',
-  color: '#a0c4ff',
+  background: 'rgba(77, 157, 255, 0.12)',
+  border: '1px solid rgba(77, 157, 255, 0.3)',
+  color: '#a7d2ff',
   borderRadius: 999,
   padding: '2px 10px',
   fontSize: 11,

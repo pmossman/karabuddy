@@ -28,7 +28,7 @@
     const ANIM_MS = 150;
 
     const COLORS = {
-        info:    { dot: '#5da9ff', border: 'rgba(74, 124, 255, 0.55)' },
+        info:    { dot: '#5db4ff', border: 'rgba(77, 157, 255, 0.55)' },
         success: { dot: '#4ade80', border: 'rgba(74, 222, 128, 0.55)' },
         error:   { dot: '#ff6b6b', border: 'rgba(255, 107, 107, 0.55)' },
         warning: { dot: '#ffb454', border: 'rgba(255, 180, 84, 0.55)' }

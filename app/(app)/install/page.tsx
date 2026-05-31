@@ -162,13 +162,13 @@ export default function InstallPage() {
   );
 }
 
-const linkStyle: React.CSSProperties = { color: '#5a8cff', textDecoration: 'none' };
+const linkStyle: React.CSSProperties = { color: '#5db4ff', textDecoration: 'none' };
 const code: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: '0.9em',
   padding: '1px 5px',
-  background: 'rgba(74, 124, 255, 0.1)',
-  border: '1px solid rgba(74, 124, 255, 0.2)',
+  background: 'rgba(77, 157, 255, 0.1)',
+  border: '1px solid rgba(77, 157, 255, 0.2)',
   borderRadius: 4,
   color: '#c4d4ff',
 };

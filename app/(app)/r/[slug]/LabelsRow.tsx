@@ -120,7 +120,7 @@ export function LabelsRow({
           style={{
             background: 'rgba(160, 196, 255, 0.10)',
             border: '1px solid rgba(160, 196, 255, 0.3)',
-            color: '#a0c4ff',
+            color: '#a7d2ff',
             borderRadius: 999,
             padding: '2px 4px 2px 10px',
             fontSize: 11,
@@ -185,7 +185,7 @@ export function LabelsRow({
             style={{
               background: '#11141a',
               color: '#e6e6e6',
-              border: '1px solid rgba(74, 124, 255, 0.5)',
+              border: '1px solid rgba(77, 157, 255, 0.5)',
               borderRadius: 999,
               padding: '2px 8px',
               fontSize: 11,

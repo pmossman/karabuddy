@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { MentionedComment } from '@/app/(app)/r/[slug]/MentionInput';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B70: per-team activity sections for the home page. One section per
 // team the signed-in user belongs to, each a compact preview of that
@@ -68,9 +69,10 @@ function TeamActivitySection({ team }: { team: TeamRef }) {
     <section
       data-testid="home-team-section"
       style={{
-        background: 'rgba(17, 20, 26, 0.6)',
-        border: '1px solid #2e333c',
-        borderRadius: 10,
+        background: tokens.surface.panel,
+        border: `1px solid ${tokens.surface.panelBorder}`,
+        borderRadius: tokens.radius.lg,
+        boxShadow: tokens.surface.panelShadow,
         overflow: 'hidden',
       }}
     >
@@ -91,7 +93,7 @@ function TeamActivitySection({ team }: { team: TeamRef }) {
         </Link>
         <Link
           href={`/teams/${team.slug}`}
-          style={{ fontSize: 12, fontWeight: 600, color: '#5a8cff', textDecoration: 'none' }}
+          style={{ fontSize: 12, fontWeight: 600, color: '#5db4ff', textDecoration: 'none' }}
         >
           View team →
         </Link>
@@ -126,14 +128,14 @@ function ActivityRow({ item }: { item: DiscussionItem }) {
         flexDirection: 'column',
         gap: 3,
         padding: '10px 12px',
-        background: 'rgba(74, 124, 255, 0.05)',
-        borderLeft: '3px solid rgba(74, 124, 255, 0.4)',
+        background: 'rgba(77, 157, 255, 0.05)',
+        borderLeft: '3px solid rgba(77, 157, 255, 0.4)',
         borderRadius: 4,
         textDecoration: 'none',
         color: '#e6e6e6',
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#a0c4ff' }}>{matchupText(item)}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#a7d2ff' }}>{matchupText(item)}</div>
       <div style={{ fontSize: 13, color: '#e6e6e6', lineHeight: 1.4 }}>
         <MentionedComment text={item.latestTag.comment || '(no comment)'} />
       </div>

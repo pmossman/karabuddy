@@ -7,6 +7,7 @@ import { ReplayCard } from './ReplayCard';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
+import { ShareBadge } from './ShareBadge';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
 // + by-leader / timeline views + reuse on /teams/[slug]. This pass:
@@ -37,9 +38,22 @@ interface Row {
   // B59-followup: the recorder POV's playerId — the owner's player in
   // this replay. Combined with `winners` it answers "did I win?".
   ownerPlayerId?: string | null;
+  // B89: teams this replay is shared with. Empty/absent = unlisted
+  // (link-accessible but not surfaced to any team). Drives the Shared /
+  // Unlisted tabs + the per-card share badge.
+  sharedTeams?: { slug: string; name: string }[];
 }
 
 type ResultFilter = '' | 'wins' | 'losses';
+
+// B89: Shared vs Unlisted are mutually exclusive states (a replay either has
+// team shares or it doesn't); the tabs make that split explicit so "who can
+// see this?" is never ambiguous.
+type ShareTab = 'all' | 'shared' | 'unlisted';
+const SHARE_TABS: readonly ShareTab[] = ['all', 'shared', 'unlisted'] as const;
+const parseTab = (raw: string | null): ShareTab =>
+  SHARE_TABS.includes(raw as ShareTab) ? (raw as ShareTab) : 'all';
+const isShared = (r: Row): boolean => (r.sharedTeams?.length ?? 0) > 0;
 
 type ViewMode = 'table' | 'grid' | 'by-leader' | 'timeline';
 const VIEW_MODES: readonly ViewMode[] = ['table', 'grid', 'by-leader', 'timeline'] as const;
@@ -60,10 +74,16 @@ export function ReplayFilters({
   rows,
   canManage,
   emptyState,
+  showShareTabs = false,
 }: {
   rows: Row[];
   canManage: boolean;
   emptyState: React.ReactNode;
+  // B89: Shared/Unlisted tabs + per-card share badges only make sense on the
+  // personal library (where a replay may or may not be team-shared). Off on
+  // the team grid (everything there is shared with that team) and the
+  // anonymous library (no account → no shares).
+  showShareTabs?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -80,12 +100,22 @@ export function ReplayFilters({
     return v === 'wins' || v === 'losses' ? v : '';
   });
   const [view, setView] = useState<ViewMode>(() => parseView(searchParams.get('view')));
+  // URL key is `share` (not `tab`) to avoid colliding with the team page's
+  // own `?tab=` navigation — ReplayFilters is reused there.
+  const [tab, setTab] = useState<ShareTab>(() => (showShareTabs ? parseTab(searchParams.get('share')) : 'all'));
+  // Filters live behind a toggle so the toolbar stays uncluttered; active
+  // filters still show as removable chips when collapsed. Auto-open if the URL
+  // arrives with filters applied (deep-link) so they're immediately visible.
+  const [filtersOpen, setFiltersOpen] = useState(() =>
+    ['leader', 'opp', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     const setOrDelete = (key: string, val: string) => {
       if (val) params.set(key, val); else params.delete(key);
     };
+    if (showShareTabs) setOrDelete('share', tab === 'all' ? '' : tab);
     setOrDelete('leader', leader);
     setOrDelete('opp', opp);
     setOrDelete('since', since);
@@ -98,7 +128,7 @@ export function ReplayFilters({
     if (next !== searchParams.toString()) {
       router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
     }
-  }, [leader, opp, since, format, mode, label, result, view, pathname, router, searchParams]);
+  }, [showShareTabs, tab, leader, opp, since, format, mode, label, result, view, pathname, router, searchParams]);
 
   const allLeaders = useMemo(() => {
     const set = new Set<string>();
@@ -135,8 +165,18 @@ export function ReplayFilters({
     return Array.from(set).sort();
   }, [rows]);
 
+  // Tab counts are over the full row set (independent of the in-tab filters),
+  // so each tab advertises its true size.
+  const tabCounts = useMemo(() => {
+    let shared = 0;
+    for (const r of rows) if (isShared(r)) shared++;
+    return { all: rows.length, shared, unlisted: rows.length - shared };
+  }, [rows]);
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
+      if (tab === 'shared' && !isShared(r)) return false;
+      if (tab === 'unlisted' && isShared(r)) return false;
       const players = Array.isArray(r.players) ? r.players : [];
       if (leader) {
         const matches = players.some((p: any) => p?.leader?.name === leader);
@@ -169,7 +209,7 @@ export function ReplayFilters({
       }
       return true;
     });
-  }, [rows, leader, opp, since, format, mode, label, result]);
+  }, [rows, tab, leader, opp, since, format, mode, label, result]);
 
   const clearAll = () => {
     setLeader(''); setOpp(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
@@ -186,52 +226,58 @@ export function ReplayFilters({
 
   return (
     <>
-      <FilterControls
-        leader={leader} setLeader={setLeader}
-        leaders={allLeaders}
-        opp={opp} setOpp={setOpp}
-        usernames={allUsernames}
-        since={since} setSince={setSince}
-        format={format} setFormat={setFormat}
-        mode={mode} setMode={setMode}
-        label={label} setLabel={setLabel}
-        labels={allLabels}
-        result={result} setResult={setResult}
-      />
+      {showShareTabs && <ShareTabs tab={tab} setTab={setTab} counts={tabCounts} />}
 
-      {activeChips.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
+      {/* Toolbar: collapsible Filters toggle + active-filter chips on the left,
+          result count + view switcher on the right. Filters panel is hidden by
+          default to keep the browser uncluttered. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <FiltersToggle open={filtersOpen} count={activeChips.length} onClick={() => setFiltersOpen((v) => !v)} />
           {activeChips.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={c.onClear}
-              style={chipButtonStyle}
-            >
+            <button key={c.key} type="button" onClick={c.onClear} style={chipButtonStyle}>
               {c.label} <span style={{ color: '#6c7588', marginLeft: 4 }}>×</span>
             </button>
           ))}
-          <button
-            type="button"
-            onClick={clearAll}
-            style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}
-          >
-            Clear all
-          </button>
+          {activeChips.length > 0 && (
+            <button
+              type="button"
+              onClick={clearAll}
+              style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}
+            >
+              Clear all
+            </button>
+          )}
         </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-        <div style={{ fontSize: 11, color: '#6c7588' }}>
-          Showing {filtered.length} of {rows.length}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ fontSize: 11, color: '#6c7588', whiteSpace: 'nowrap' }}>
+            Showing {filtered.length} of {rows.length}
+          </span>
+          <ViewSwitcher view={view} setView={setView} />
         </div>
-        <ViewSwitcher view={view} setView={setView} />
       </div>
 
+      {filtersOpen && (
+        <FilterControls
+          leader={leader} setLeader={setLeader}
+          leaders={allLeaders}
+          opp={opp} setOpp={setOpp}
+          usernames={allUsernames}
+          since={since} setSince={setSince}
+          format={format} setFormat={setFormat}
+          mode={mode} setMode={setMode}
+          label={label} setLabel={setLabel}
+          labels={allLabels}
+          result={result} setResult={setResult}
+        />
+      )}
+
       {filtered.length === 0 ? (
-        <div style={{ marginTop: 16 }}>{activeChips.length > 0 ? <NoMatchesEmpty /> : emptyState}</div>
+        <div style={{ marginTop: 16 }}>
+          {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
+        </div>
       ) : view === 'table' ? (
-        <TableView rows={filtered} />
+        <TableView rows={filtered} showShareColumn={tab !== 'unlisted'} />
       ) : view === 'by-leader' ? (
         <ByLeaderGroups rows={filtered} canManage={canManage} />
       ) : view === 'timeline' ? (
@@ -315,7 +361,13 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
 
 // -- Table view --------------------------------------------------------------
 
-type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member';
+type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member' | 'shared';
+
+// Sort/scan key for the "Shared with" column: joined team names (so teams
+// group together), empty for unlisted (sorts to one end).
+function sharedText(r: Row): string {
+  return (r.sharedTeams || []).map((t) => t.name).join(', ').toLowerCase();
+}
 
 function matchupText(r: Row): string {
   if (r.displayName) return r.displayName;
@@ -356,7 +408,7 @@ function formatDateShort(iso: string) {
   return d.toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
 }
 
-function TableView({ rows }: { rows: Row[] }) {
+function TableView({ rows, showShareColumn = true }: { rows: Row[]; showShareColumn?: boolean }) {
   // Default: newest first (matches the grid's pre-existing order).
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -371,6 +423,7 @@ function TableView({ rows }: { rows: Row[] }) {
         case 'mode': return (r.match?.gamesToWinMode || '').toLowerCase();
         case 'length': return r.durationMs || 0;
         case 'member': return (r.ownerName || '').toLowerCase();
+        case 'shared': return sharedText(r);
       }
     };
     return [...rows].sort((a, b) => {
@@ -379,6 +432,11 @@ function TableView({ rows }: { rows: Row[] }) {
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [rows, sortKey, sortDir]);
+
+  // Show the "Shared with" column only when share data is present (the personal
+  // library passes it; the reused team grid doesn't → no empty column there) AND
+  // the caller wants it (hidden on the Unlisted tab, where it'd be all "UNLISTED").
+  const showShared = showShareColumn && rows.some((r) => r.sharedTeams !== undefined);
 
   const onHeaderClick = (k: SortKey) => {
     if (sortKey === k) {
@@ -397,6 +455,7 @@ function TableView({ rows }: { rows: Row[] }) {
           <tr style={{ background: 'rgba(17,20,26,0.6)' }}>
             <SortHeader k="date" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Date</SortHeader>
             <SortHeader k="replay" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Replay</SortHeader>
+            {showShared && <SortHeader k="shared" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Shared with</SortHeader>}
             <SortHeader k="member" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Member</SortHeader>
             <SortHeader k="format" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Format</SortHeader>
             <PlainHeader>Labels</PlainHeader>
@@ -410,6 +469,11 @@ function TableView({ rows }: { rows: Row[] }) {
               <td style={cellStyle} data-testid="replay-cell">
                 <ReplayCellLink replay={r} />
               </td>
+              {showShared && (
+                <td style={cellStyle} data-testid="shared-cell">
+                  <ShareBadge sharedTeams={r.sharedTeams} />
+                </td>
+              )}
               <td style={cellStyle} data-testid="member-cell">{r.ownerName || '—'}</td>
               <td style={cellStyle}>{formatChipText(r.match) || '—'}</td>
               <td style={cellStyle}>
@@ -445,7 +509,7 @@ function ReplayCellLink({ replay }: { replay: Row }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <ResultBadge playerId={p1?.id} winners={replay.winners} />
-        <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{matchupText(replay)}</span>
+        <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
       </div>
     </Link>
@@ -542,12 +606,108 @@ const cellStyle: React.CSSProperties = { padding: '8px 10px', verticalAlign: 'mi
 const labelChipStyle: React.CSSProperties = {
   background: 'rgba(160, 196, 255, 0.08)',
   border: '1px solid rgba(160, 196, 255, 0.2)',
-  color: '#a0c4ff',
+  color: '#a7d2ff',
   fontSize: 10,
   fontWeight: 600,
   padding: '1px 6px',
   borderRadius: 999,
 };
+
+function ShareTabs({
+  tab,
+  setTab,
+  counts,
+}: {
+  tab: ShareTab;
+  setTab: (t: ShareTab) => void;
+  counts: { all: number; shared: number; unlisted: number };
+}) {
+  const item = (t: ShareTab, label: string, count: number) => {
+    const active = tab === t;
+    return (
+      <button
+        key={t}
+        type="button"
+        data-testid={`replays-tab-${t}`}
+        onClick={() => setTab(t)}
+        aria-pressed={active}
+        style={{
+          background: 'transparent',
+          color: active ? '#e6e6e6' : '#6c7588',
+          border: 0,
+          borderBottom: `2px solid ${active ? '#4d9dff' : 'transparent'}`,
+          padding: '6px 4px',
+          marginBottom: -1,
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        {label}
+        <span style={{ fontSize: 11, fontWeight: 600, color: active ? '#a7d2ff' : '#4a4e56' }}>{count}</span>
+      </button>
+    );
+  };
+  return (
+    <div role="tablist" style={{ display: 'flex', gap: 18, borderBottom: '1px solid #2e333c', marginTop: 4 }}>
+      {item('all', 'All', counts.all)}
+      {item('shared', 'Shared', counts.shared)}
+      {item('unlisted', 'Unlisted', counts.unlisted)}
+    </div>
+  );
+}
+
+function TabEmpty({ tab }: { tab: ShareTab }) {
+  const msg =
+    tab === 'shared'
+      ? 'No replays shared with a team yet. Open a replay and use Share → Share with team.'
+      : 'No unlisted replays — every replay you have is shared with at least one team.';
+  return (
+    <div style={{ padding: 24, border: '1px dashed #2e333c', borderRadius: 8, textAlign: 'center', color: '#a0a8b8', fontSize: 13 }}>
+      {msg}
+    </div>
+  );
+}
+
+function FiltersToggle({ open, count, onClick }: { open: boolean; count: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Filters"
+      aria-expanded={open}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 7,
+        background: open ? 'rgba(77, 157, 255, 0.12)' : 'transparent',
+        color: open ? '#e6e6e6' : '#a0a8b8',
+        border: '1px solid ' + (open ? 'rgba(77, 157, 255, 0.5)' : '#2e333c'),
+        padding: '5px 12px',
+        fontSize: 12,
+        fontWeight: 600,
+        borderRadius: 6,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+      </svg>
+      Filters
+      {count > 0 && (
+        <span style={{ background: '#4dd2ff', color: '#0a0c10', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '0 6px', lineHeight: '15px', minWidth: 15, textAlign: 'center' }}>
+          {count}
+        </span>
+      )}
+      <span style={{ fontSize: 9 }}>{open ? '▴' : '▾'}</span>
+    </button>
+  );
+}
 
 function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode) => void }) {
   const item = (v: ViewMode, label: string) => (
@@ -557,9 +717,9 @@ function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode
       onClick={() => setView(v)}
       aria-pressed={view === v}
       style={{
-        background: view === v ? 'rgba(74, 124, 255, 0.18)' : 'transparent',
+        background: view === v ? 'rgba(77, 157, 255, 0.18)' : 'transparent',
         color: view === v ? '#e6e6e6' : '#a0a8b8',
-        border: '1px solid ' + (view === v ? 'rgba(74, 124, 255, 0.5)' : '#2e333c'),
+        border: '1px solid ' + (view === v ? 'rgba(77, 157, 255, 0.5)' : '#2e333c'),
         padding: '4px 10px',
         fontSize: 11,
         fontWeight: 600,
@@ -627,14 +787,19 @@ function FilterControls({
           autofill icons — without them, password managers latch onto any
           text input that looks remotely username-y.
         */}
+        {/* type="search" (not text): password managers don't attach their
+            autofill icon to search fields — fixes LastPass latching onto this
+            field — and it's semantically a filter/search input anyway. The
+            data-* attrs stay as belt-and-suspenders for 1Password/LastPass. */}
         <input
-          type="text"
+          type="search"
           value={opp}
           onChange={(e) => setOpp(e.target.value)}
           placeholder="contains…"
           list={oppListId}
           autoComplete="off"
           data-lpignore="true"
+          data-1p-ignore="true"
           data-form-type="other"
           style={inputStyle}
         />
@@ -709,9 +874,9 @@ const inputStyle: React.CSSProperties = {
 };
 const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' };
 const chipButtonStyle: React.CSSProperties = {
-  background: 'rgba(74, 124, 255, 0.18)',
-  border: '1px solid rgba(74, 124, 255, 0.5)',
-  color: '#a0c4ff',
+  background: 'rgba(77, 157, 255, 0.18)',
+  border: '1px solid rgba(77, 157, 255, 0.5)',
+  color: '#a7d2ff',
   padding: '3px 10px',
   borderRadius: 999,
   fontSize: 11,

@@ -270,7 +270,7 @@ export function MentionInput({
             right: 0,
             marginTop: 4,
             background: 'rgba(17, 20, 26, 0.98)',
-            border: '1px solid rgba(74, 124, 255, 0.4)',
+            border: '1px solid rgba(77, 157, 255, 0.4)',
             borderRadius: 6,
             padding: 4,
             zIndex: 50,
@@ -294,7 +294,7 @@ export function MentionInput({
                 gap: 8,
                 width: '100%',
                 padding: '6px 8px',
-                background: i === popover.activeIndex ? 'rgba(74, 124, 255, 0.18)' : 'transparent',
+                background: i === popover.activeIndex ? 'rgba(77, 157, 255, 0.18)' : 'transparent',
                 border: 0,
                 borderRadius: 4,
                 color: '#e6e6e6',
@@ -312,7 +312,7 @@ export function MentionInput({
                   ) : (
                     <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#2e333c' }} />
                   )}
-                  <span style={{ color: '#5da9ff', fontWeight: 600 }}>@{s.handle}</span>
+                  <span style={{ color: '#5db4ff', fontWeight: 600 }}>@{s.handle}</span>
                   {s.displayName !== s.handle && (
                     <span style={{ color: '#6c7588', fontSize: 11 }}>{s.displayName}</span>
                   )}
@@ -374,13 +374,13 @@ export function MentionedComment({ text }: { text: string }) {
           key={key++}
           data-testid={isTeam ? 'team-mention-pill' : 'user-mention-pill'}
           style={{
-            color: isTeam ? '#6bd968' : '#5da9ff',
+            color: isTeam ? '#6bd968' : '#5db4ff',
             fontWeight: 600,
-            background: isTeam ? 'rgba(107, 217, 104, 0.10)' : 'rgba(74, 124, 255, 0.10)',
+            background: isTeam ? 'rgba(107, 217, 104, 0.10)' : 'rgba(77, 157, 255, 0.10)',
             padding: '0 6px',
             borderRadius: 999,
             fontSize: 11,
-            border: isTeam ? '1px solid rgba(107, 217, 104, 0.3)' : '1px solid rgba(74, 124, 255, 0.3)',
+            border: isTeam ? '1px solid rgba(107, 217, 104, 0.3)' : '1px solid rgba(77, 157, 255, 0.3)',
           }}
         >
           {isTeam ? `@${display}` : display}

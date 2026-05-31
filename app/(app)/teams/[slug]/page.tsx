@@ -8,6 +8,7 @@ import { TeamControls } from './TeamControls';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,7 +66,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         <p style={{ margin: '0 0 24px', fontSize: 13, color: '#a0a8b8' }}>
           You&apos;re not a member of this team. Ask an owner for an invite link.
         </p>
-        <Link href="/teams" style={{ color: '#5da9ff', fontSize: 13 }}>← All teams</Link>
+        <Link href="/teams" style={{ color: '#5db4ff', fontSize: 13 }}>← All teams</Link>
       </main>
     );
   }
@@ -158,9 +159,10 @@ function TabBar({ slug, active }: { slug: string; active: Tab }) {
               fontWeight: 600,
               color: isActive ? '#e6e6e6' : '#a0a8b8',
               textDecoration: 'none',
-              borderBottom: isActive ? '2px solid #4a7cff' : '2px solid transparent',
+              borderBottom: `2px solid ${isActive ? tokens.led.on : 'transparent'}`,
               marginBottom: -1,
-              background: isActive ? 'rgba(74, 124, 255, 0.06)' : 'transparent',
+              background: isActive ? tokens.led.rowOn : 'transparent',
+              boxShadow: isActive ? '0 0 10px rgba(77, 210, 255, 0.1)' : 'none',
               borderRadius: '4px 4px 0 0',
             }}
           >
@@ -183,9 +185,10 @@ function MembersList({ members, viewerUserId }: { members: any[]; viewerUserId: 
             alignItems: 'center',
             gap: 10,
             padding: '8px 12px',
-            background: 'rgba(17, 20, 26, 0.6)',
-            border: '1px solid #2e333c',
-            borderRadius: 6,
+            background: tokens.surface.panel,
+            border: `1px solid ${tokens.surface.panelBorder}`,
+            borderRadius: tokens.radius.md,
+            boxShadow: tokens.surface.panelShadow,
           }}
         >
           {m.image ? (
@@ -200,7 +203,7 @@ function MembersList({ members, viewerUserId }: { members: any[]; viewerUserId: 
             </span>
           </div>
           {m.role === 'owner' && (
-            <span style={{ fontSize: 10, color: '#5da9ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+            <span style={{ fontSize: 10, color: '#5db4ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
               Owner
             </span>
           )}
