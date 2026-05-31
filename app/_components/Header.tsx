@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { auth } from '@/auth';
 import { SessionMenu } from '@/app/_components/SessionMenu';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // Persistent header — KARA/buddy mark always links home, nav exposes
 // signed-in entry points, SessionMenu is the always-on avatar/sign-out.
@@ -56,13 +57,14 @@ export async function Header() {
           </span>
           <span
             style={{
-              fontFamily: 'var(--font-logo), var(--font-barlow), sans-serif',
-              fontStyle: 'italic',
+              // Same monospace "cockpit HUD" face as the tactical headings /
+              // LED labels — ties the brand mark to the instrument-panel theme.
+              fontFamily: tokens.led.mono,
               fontWeight: 700,
-              fontSize: 19,
-              letterSpacing: '0.01em',
-              // Electric cyan→azure gradient — ties the brand mark to the two
-              // accents (signal cyan + primary blue) the rest of the UI uses.
+              fontSize: 18,
+              letterSpacing: '0.02em',
+              // Electric cyan→azure gradient — ties the mark to the two accents
+              // (signal cyan + primary blue) the rest of the UI uses.
               background: 'linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%)',
               WebkitBackgroundClip: 'text',
               backgroundClip: 'text',
