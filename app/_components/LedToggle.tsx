@@ -34,7 +34,6 @@ export function LedToggle({
 }) {
   const [hover, setHover] = useState(false);
   const ledRadius = shape === 'radio' ? '50%' : 3;
-  const dotRadius = shape === 'radio' ? '50%' : 1;
   const role = shape === 'radio' ? 'radio' : 'checkbox';
   const accent = checked ? tokens.led.on : tokens.led.off;
   const isRow = variant === 'row';
@@ -65,9 +64,15 @@ export function LedToggle({
         transition: 'box-shadow 120ms ease, border-color 120ms ease',
       }}
     >
-      {checked && (
-        <span style={{ display: 'block', width: 5, height: 5, borderRadius: dotRadius, background: tokens.led.on, boxShadow: dotGlowOn }} />
-      )}
+      {checked && (shape === 'radio' ? (
+        // Radio: filled center dot (dot-in-circle = "selected").
+        <span style={{ display: 'block', width: 5, height: 5, borderRadius: '50%', background: tokens.led.on, boxShadow: dotGlowOn }} />
+      ) : (
+        // Checkbox: a checkmark = "on" (a square-in-square reads as indeterminate).
+        <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.4 6.4 L4.8 8.8 L9.6 3.2" stroke={tokens.led.on} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ))}
     </span>
   );
 
