@@ -56,11 +56,11 @@ export async function Header() {
           </span>
           <span
             style={{
-              fontFamily: 'Georgia, "Times New Roman", serif',
+              fontFamily: 'var(--font-logo), var(--font-barlow), sans-serif',
               fontStyle: 'italic',
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: 19,
-              letterSpacing: '-0.01em',
+              letterSpacing: '0.01em',
               // Electric cyan→azure gradient — ties the brand mark to the two
               // accents (signal cyan + primary blue) the rest of the UI uses.
               background: 'linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%)',
