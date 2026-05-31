@@ -34,6 +34,10 @@ export const karabuddyTheme = createTheme({
         root: {
           color: tokens.color.textMuted,
           padding: 4,
+          // Pin the icon in px: the lifted gameboard's CssBaseline sets a
+          // responsive html font-size (17–18px wide), and MUI icons are
+          // rem-based — without this they balloon in the viewer sidebar.
+          '& .MuiSvgIcon-root': { fontSize: 17 },
           '&.Mui-checked': { color: tokens.color.primary },
           '&.Mui-disabled': { color: tokens.color.textFaint },
         },
@@ -45,6 +49,7 @@ export const karabuddyTheme = createTheme({
         root: {
           color: tokens.color.textMuted,
           padding: 4,
+          '& .MuiSvgIcon-root': { fontSize: 17 },
           '&.Mui-checked': { color: tokens.color.primary },
         },
       },
@@ -66,7 +71,10 @@ export const karabuddyTheme = createTheme({
     MuiFormControlLabel: {
       styleOverrides: {
         root: { marginLeft: -4, gap: 6 },
-        label: { fontSize: 13, color: tokens.color.text },
+        // Compound selector (`&.MuiTypography-root`) raises specificity above
+        // the Typography body1 variant so the px size wins over the gameboard's
+        // rem inflation; otherwise the label renders at the inflated 1rem.
+        label: { '&.MuiTypography-root': { fontSize: 13, lineHeight: 1.3, color: tokens.color.text } },
       },
     },
     MuiButton: {
