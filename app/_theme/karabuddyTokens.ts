@@ -50,6 +50,10 @@ export const tokens = {
     ringGlow: '0 0 6px rgba(77, 210, 255, 0.7), inset 0 0 4px rgba(77, 210, 255, 0.45)',
     ringInert: 'inset 0 0 2px rgba(0,0,0,0.6)',
     dotGlow: '0 0 4px #4dd2ff',
+    // Softer glows for the calm `inline` variant (settings/forms) — still reads
+    // as an LED, but no bright bloom in a quiet context.
+    ringGlowSoft: '0 0 2px rgba(77, 210, 255, 0.3)',
+    dotGlowSoft: 'none',
     rowOn: 'rgba(77, 210, 255, 0.08)',
     rowHover: 'rgba(77, 210, 255, 0.04)',
     rowOff: 'rgba(255, 255, 255, 0.02)',

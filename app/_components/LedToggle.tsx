@@ -38,6 +38,10 @@ export function LedToggle({
   const role = shape === 'radio' ? 'radio' : 'checkbox';
   const accent = checked ? tokens.led.on : tokens.led.off;
   const isRow = variant === 'row';
+  // The full glow is a "live signal" in the dense row; soften it in the calm
+  // inline (settings) context so it doesn't bloom.
+  const ringGlowOn = isRow ? tokens.led.ringGlow : tokens.led.ringGlowSoft;
+  const dotGlowOn = isRow ? tokens.led.dotGlow : tokens.led.dotGlowSoft;
   const rowBackground = checked
     ? tokens.led.rowOn
     : hover && !disabled
@@ -56,13 +60,13 @@ export function LedToggle({
         borderRadius: ledRadius,
         border: `1.5px solid ${accent}`,
         background: 'rgba(0, 0, 0, 0.45)',
-        boxShadow: checked ? tokens.led.ringGlow : tokens.led.ringInert,
+        boxShadow: checked ? ringGlowOn : tokens.led.ringInert,
         flex: '0 0 auto',
         transition: 'box-shadow 120ms ease, border-color 120ms ease',
       }}
     >
       {checked && (
-        <span style={{ display: 'block', width: 5, height: 5, borderRadius: dotRadius, background: tokens.led.on, boxShadow: tokens.led.dotGlow }} />
+        <span style={{ display: 'block', width: 5, height: 5, borderRadius: dotRadius, background: tokens.led.on, boxShadow: dotGlowOn }} />
       )}
     </span>
   );
