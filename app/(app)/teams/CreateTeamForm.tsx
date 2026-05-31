@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { TacticalHeading } from '@/app/_components/TacticalHeading';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 export function CreateTeamForm() {
   const router = useRouter();
@@ -37,9 +39,7 @@ export function CreateTeamForm() {
 
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        Create a team
-      </div>
+      <TacticalHeading>Create a team</TacticalHeading>
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="text"
@@ -64,11 +64,12 @@ export function CreateTeamForm() {
           type="submit"
           disabled={busy || !name.trim()}
           style={{
-            background: '#4d9dff',
-            color: 'white',
-            border: 0,
-            borderRadius: 6,
-            padding: '0 16px',
+            background: tokens.button.bg,
+            color: tokens.color.accent,
+            border: `1px solid ${tokens.color.primary}`,
+            boxShadow: tokens.button.glow,
+            borderRadius: tokens.radius.sm,
+            padding: '0 18px',
             fontSize: 13,
             fontWeight: 600,
             cursor: busy || !name.trim() ? 'not-allowed' : 'pointer',

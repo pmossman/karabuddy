@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B55a: owner + member controls for a team — generate invite, copy link,
 // leave team, rename (owners). All inline on the team page header.
@@ -200,6 +201,6 @@ const btnBase: React.CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
 };
-const btnPrimary: React.CSSProperties = { ...btnBase, background: '#4d9dff', color: 'white' };
+const btnPrimary: React.CSSProperties = { ...btnBase, background: tokens.button.bg, color: tokens.color.accent, border: `1px solid ${tokens.color.primary}`, boxShadow: tokens.button.glow };
 const btnGhost: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#a0a8b8', border: '1px solid #4a4e56' };
 const btnDanger: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#ff7a7a', border: '1px solid rgba(255, 122, 122, 0.4)' };

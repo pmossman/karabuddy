@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B81: owner-only "magic" Discord connect for a team. Not connected → one
 // button that opens Discord's bot-invite (server picker) and bounces back here.
@@ -103,7 +104,7 @@ export function TeamDiscordConnect({
           <option value="">{channels.length ? 'Select a channel…' : 'Loading channels…'}</option>
           {channels.map((c) => <option key={c.id} value={c.id}>#{c.name}</option>)}
         </select>
-        <button type="button" onClick={saveChannel} disabled={!picked || picked === channelId} style={{ background: '#4d9dff', color: '#fff', border: 0, borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: !picked || picked === channelId ? 0.6 : 1 }}>Save</button>
+        <button type="button" onClick={saveChannel} disabled={!picked || picked === channelId} style={{ background: tokens.button.bg, color: tokens.color.accent, border: `1px solid ${tokens.color.primary}`, boxShadow: tokens.button.glow, borderRadius: tokens.radius.sm, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: !picked || picked === channelId ? 0.6 : 1 }}>Save</button>
         {channelId && <button type="button" onClick={sendTest} style={{ background: 'transparent', color: '#a7d2ff', border: '1px solid #4d9dff', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Send test</button>}
         <button type="button" onClick={disconnect} style={{ background: 'transparent', color: '#a0a8b8', border: '1px solid #4a4e56', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Disconnect</button>
       </div>

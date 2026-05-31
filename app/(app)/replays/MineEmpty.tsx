@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
+import { glowButtonStyle } from '@/app/_components/glowButton';
 
 // Empty state for /replays?tab=mine when a signed-in user has zero replays
 // attributed to their account. Probes the bridge to see if the KaraBuddy
@@ -59,15 +60,7 @@ export function MineEmpty() {
           </div>
           <Link
             href={`/claim?token=${encodeURIComponent(token)}`}
-            style={{
-              background: '#4d9dff',
-              color: 'white',
-              padding: '10px 18px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
+            style={{ ...glowButtonStyle, padding: '10px 18px' }}
           >
             Link this extension →
           </Link>
@@ -82,15 +75,7 @@ export function MineEmpty() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
             <Link
               href="/install"
-              style={{
-                background: '#4d9dff',
-                color: 'white',
-                padding: '10px 18px',
-                borderRadius: 6,
-                fontSize: 13,
-                fontWeight: 600,
-                textDecoration: 'none',
-              }}
+              style={{ ...glowButtonStyle, padding: '10px 18px' }}
             >
               Install walkthrough
             </Link>
