@@ -361,7 +361,13 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
 
 // -- Table view --------------------------------------------------------------
 
-type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member';
+type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member' | 'shared';
+
+// Sort/scan key for the "Shared with" column: joined team names (so teams
+// group together), empty for unlisted (sorts to one end).
+function sharedText(r: Row): string {
+  return (r.sharedTeams || []).map((t) => t.name).join(', ').toLowerCase();
+}
 
 function matchupText(r: Row): string {
   if (r.displayName) return r.displayName;
@@ -417,6 +423,7 @@ function TableView({ rows }: { rows: Row[] }) {
         case 'mode': return (r.match?.gamesToWinMode || '').toLowerCase();
         case 'length': return r.durationMs || 0;
         case 'member': return (r.ownerName || '').toLowerCase();
+        case 'shared': return sharedText(r);
       }
     };
     return [...rows].sort((a, b) => {
@@ -425,6 +432,10 @@ function TableView({ rows }: { rows: Row[] }) {
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [rows, sortKey, sortDir]);
+
+  // Show the "Shared with" column only when share data is present (the personal
+  // library passes it; the reused team grid doesn't → no empty column there).
+  const showShared = rows.some((r) => r.sharedTeams !== undefined);
 
   const onHeaderClick = (k: SortKey) => {
     if (sortKey === k) {
@@ -443,6 +454,7 @@ function TableView({ rows }: { rows: Row[] }) {
           <tr style={{ background: 'rgba(17,20,26,0.6)' }}>
             <SortHeader k="date" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Date</SortHeader>
             <SortHeader k="replay" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Replay</SortHeader>
+            {showShared && <SortHeader k="shared" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Shared with</SortHeader>}
             <SortHeader k="member" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Member</SortHeader>
             <SortHeader k="format" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Format</SortHeader>
             <PlainHeader>Labels</PlainHeader>
@@ -456,6 +468,11 @@ function TableView({ rows }: { rows: Row[] }) {
               <td style={cellStyle} data-testid="replay-cell">
                 <ReplayCellLink replay={r} />
               </td>
+              {showShared && (
+                <td style={cellStyle} data-testid="shared-cell">
+                  <ShareBadge sharedTeams={r.sharedTeams} />
+                </td>
+              )}
               <td style={cellStyle} data-testid="member-cell">{r.ownerName || '—'}</td>
               <td style={cellStyle}>{formatChipText(r.match) || '—'}</td>
               <td style={cellStyle}>
@@ -494,9 +511,6 @@ function ReplayCellLink({ replay }: { replay: Row }) {
         <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
       </div>
-      {/* Team-name pills (or Unlisted) right under the matchup — same badge as
-          the grid card, so the table shows exactly who a replay is shared with. */}
-      <ShareBadge sharedTeams={replay.sharedTeams} />
     </Link>
   );
 }
