@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { put } from '@/lib/blob';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, replayTeamShares, tags, teamMembers } from '@/lib/schema';
+import { replays, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
@@ -38,6 +38,14 @@ async function applyUploadShares(slug: string, userId: string | null, shareTeamS
     .insert(replayTeamShares)
     .values(memberRows.map((m) => ({ replaySlug: slug, teamSlug: m.teamSlug, sharedBy: userId })))
     .onConflictDoNothing();
+}
+
+// B84: register the uploader's karabuddy account as a participant (recorder)
+// of this replay. Idempotent. When two teammates both record the same match,
+// both get rows → account-based intra-team detection, no karabast usernames.
+async function recordParticipant(slug: string, userId: string | null): Promise<void> {
+  if (!userId) return;
+  await getDb().insert(replayParticipants).values({ replaySlug: slug, userId }).onConflictDoNothing();
 }
 
 // B71: scope each lifted payload tag. Default (no per-tag teamSlugs) →
@@ -110,8 +118,7 @@ export async function POST(req: Request) {
       : [];
 
     const db = getDb();
-    const recordedUsername = players.find((p: any) => p?.username)?.username || null;
-    const userId = await resolveUserId({ installToken, recordedUsername });
+    const userId = await resolveUserId({ installToken });
 
     // B59: reconstruct the FINAL gamestate by applying all gamestate
     // patches in order, then extract winners from it. The recorder
@@ -152,6 +159,9 @@ export async function POST(req: Request) {
             enriched = true;
           }
         }
+        // B84: the 2nd teammate is now a recorded participant (account-based
+        // intra-team detection + the match shows in their library too).
+        await recordParticipant(replay.slug, userId);
         return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched }, { headers });
       }
 
@@ -234,6 +244,7 @@ export async function POST(req: Request) {
       // B71: apply the bubble's armed shares, then scope the lifted tags.
       await applyUploadShares(replay.slug, userId, shareTeamSlugs);
       await scopeLiftedTags(replay.slug, userId, payloadTagsExisting);
+      await recordParticipant(replay.slug, userId);
 
       return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, snapshot: true }, { headers });
     }
@@ -296,6 +307,7 @@ export async function POST(req: Request) {
     // (default → the just-applied shares; per-tag teamSlugs narrows).
     await applyUploadShares(slug, userId, shareTeamSlugs);
     await scopeLiftedTags(slug, userId, payloadTags);
+    await recordParticipant(slug, userId);
 
     return NextResponse.json({ ok: true, slug, url: `/r/${slug}` }, { headers });
   } catch (err: any) {

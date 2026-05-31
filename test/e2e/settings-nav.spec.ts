@@ -22,8 +22,8 @@ test('settings rail navigates between the four sections', async ({ page }) => {
   await page.goto('/settings');
   const rail = page.getByTestId('settings-nav');
 
-  // Account is the default section.
-  await expect(page.getByPlaceholder(/ReprintConfiscate/i)).toBeVisible();
+  // Account is the default section (B84: just the Discord card — no karabast username).
+  await expect(page.getByRole('heading', { name: 'Discord', exact: true })).toBeVisible();
 
   await rail.getByRole('link', { name: 'Notifications' }).click();
   await expect(page.getByRole('heading', { name: /Discord notifications/i })).toBeVisible();

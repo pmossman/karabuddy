@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, teamMembers } from '@/lib/schema';
+import { replays, users, teamMembers, replayParticipants } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 
@@ -30,18 +30,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   }
 
   const db = getDb();
-  // B82: the team's members' karabast usernames → a replay is "internal"
-  // (teammate-vs-teammate) when 2+ of its players map to members. Best-effort:
-  // only members who've set their karabast username count.
-  const memberUsernames = new Set(
-    (await db
-      .select({ u: users.karabastUsername })
-      .from(teamMembers)
-      .innerJoin(users, eq(users.id, teamMembers.userId))
-      .where(eq(teamMembers.teamSlug, slug)))
-      .map((r) => r.u)
-      .filter((u): u is string => !!u),
-  );
+  // B84: account-based intra-team detection. A replay is "internal"
+  // (teammate-vs-teammate) when 2+ of its RECORDERS (replay_participants, by
+  // karabuddy account) are members of this team — no karabast usernames.
+  const memberIds = (await db
+    .select({ id: teamMembers.userId })
+    .from(teamMembers)
+    .where(eq(teamMembers.teamSlug, slug))).map((r) => r.id);
+  const partRows = memberIds.length > 0
+    ? await db
+        .select({ replaySlug: replayParticipants.replaySlug, userId: replayParticipants.userId })
+        .from(replayParticipants)
+        .where(and(inArray(replayParticipants.replaySlug, surfaceSlugs), inArray(replayParticipants.userId, memberIds)))
+    : [];
+  const teammatesByReplay = new Map<string, Set<string>>();
+  for (const p of partRows) {
+    let s = teammatesByReplay.get(p.replaySlug);
+    if (!s) { s = new Set(); teammatesByReplay.set(p.replaySlug, s); }
+    s.add(p.userId);
+  }
+
   const rows = await db
     .select({ replay: replays, ownerName: users.name })
     .from(replays)
@@ -55,8 +63,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   // are reordered owner-first (B59-followup).
   const flat = rows.map(({ replay, ownerName }) => {
     const players = orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId) as any[];
-    const teammates = (Array.isArray(players) ? players : []).filter((p) => p?.username && memberUsernames.has(p.username)).length;
-    return { ...replay, players, ownerName, internal: teammates >= 2 };
+    return { ...replay, players, ownerName, internal: (teammatesByReplay.get(replay.slug)?.size ?? 0) >= 2 };
   });
   return NextResponse.json({ ok: true, data: flat });
 }

@@ -78,7 +78,6 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
       role: teamMembers.role,
       joinedAt: teamMembers.joinedAt,
       name: users.name,
-      karabastUsername: users.karabastUsername,
       image: users.image,
     })
     .from(teamMembers)
@@ -197,11 +196,8 @@ function MembersList({ members, viewerUserId }: { members: any[]; viewerUserId: 
           )}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>
-              {m.karabastUsername || m.name || 'Unnamed'}
+              {m.name || 'Unnamed'}
             </span>
-            {m.karabastUsername && m.name && m.name !== m.karabastUsername && (
-              <span style={{ fontSize: 11, color: '#6c7588' }}>{m.name}</span>
-            )}
           </div>
           {m.role === 'owner' && (
             <span style={{ fontSize: 10, color: '#5da9ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>

@@ -55,7 +55,6 @@ export async function GET(req: Request) {
       userId: teamMembers.userId,
       teamSlug: teamMembers.teamSlug,
       name: users.name,
-      karabastUsername: users.karabastUsername,
       image: users.image,
     })
     .from(teamMembers)
@@ -71,8 +70,8 @@ export async function GET(req: Request) {
     teamSlugs: string[];
   }>();
   for (const r of memberRows) {
-    const handle = (r.karabastUsername || r.name || r.userId.slice(0, 6)).trim();
-    const displayName = (r.name || r.karabastUsername || handle).trim();
+    const handle = (r.name || r.userId.slice(0, 6)).trim();
+    const displayName = (r.name || handle).trim();
     const existing = byUser.get(r.userId);
     if (existing) {
       existing.teamSlugs.push(r.teamSlug);

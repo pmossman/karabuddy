@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { auth, signIn } from '@/auth';
 import { getDb } from '@/lib/db';
 import { users, accounts, teams, teamMembers } from '@/lib/schema';
-import { SettingsForm } from './SettingsForm';
 import { UploadThresholdForm } from './UploadThresholdForm';
 import { NotificationsForm } from './NotificationsForm';
 import { TeamNotificationPrefs } from '../teams/[slug]/TeamNotificationPrefs';
@@ -62,14 +61,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 24 }}>
           {section === 'account' && (
             <>
-              <section style={card}>
-                <h2 style={h2}>karabast.net username</h2>
-                <p style={desc}>
-                  Your username on karabast.net. When set, replays uploaded via the extension under this username
-                  (or tagged under this name) are auto-attributed to you, and existing anonymous matches get claimed.
-                </p>
-                <SettingsForm initial={user?.karabastUsername || ''} />
-              </section>
               <section style={card}>
                 <h2 style={h2}>Discord</h2>
                 <p style={desc}>Used for sign-in and @-mention notifications.</p>

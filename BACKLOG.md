@@ -93,6 +93,14 @@ _empty_
 
 ## Done
 
+### [B84] Account-centric — drop karabast username; account-based intra-team detection
+_completed: 2026-05-31 by claude_
+**Principle (now a memory):** the extension's install-token → karabuddy-account link is the *only* bridge between karabast and karabuddy. karabast username/login is **never required** — a user can have multiple karabast handles, a different one each session, or none (anonymous), and still use every team feature with a linked karabuddy account.
+- **Dropped `users.karabastUsername` entirely** (migration 0014) + the manual Settings field + `/api/me/karabast-username` + `SettingsForm`. Attribution everywhere (tags, replays, whoami, mention handles, team member list, viewer "tagging as") now uses the **karabuddy account name**. Removed `resolveUserId`'s username-match path.
+- **`replay_participants` table** (replaySlug → karabuddy userId): each linked uploader is recorded as a participant; when two teammates both record the same match, **both** are participants (recorded on the new-row, upsert, AND dedupe paths). Migration backfills existing replays' owners.
+- **Intra-team detection rebuilt account-based** (replaces B82's username matching): `internal` = ≥2 of a replay's participant *accounts* are teammates. Robust to anonymous/multiple karabast handles. (Needs both teammates to have recorded — the normal case.) Side benefit: both recorders "own" the match.
+- Settings → Account is now just the Discord connect. 3 new api tests (participant recording + internal true/false); typecheck + unit 118 + api 72 + e2e green; updated 1 settings E2E.
+
 ### [B83] Profile/settings overhaul — avatar dropdown + Slack-style sectioned settings
 _completed: 2026-05-31 by claude_
 - **Avatar dropdown:** `SessionMenu` is now a click-to-open avatar menu ("signed in as", **Settings**, **Sign out**) like modern webapps. Removed the always-visible header "Sign out" button and the "Settings" nav link (both moved into the menu); avatar fallback shows initials. Header nav keeps Browse / My replays / Teams / Mentions.
@@ -104,7 +112,7 @@ _completed: 2026-05-31 by claude_
 _completed: 2026-05-31 by claude_
 When two team members play each other and both record, the match now reviews with **complete information**, and teams can filter to their internal games.
 - **Deck-merge enrichment:** the upload dedupe path (different owner, same `gameId`) no longer discards the second teammate's recording — it merges their deck snapshot into the canonical replay (`mergeDecks` in `replayDecoder`, per-playerId, prefers the full list), so the otherwise-masked opponent's full deck is now known. Idempotent; first uploader's POV/frames stay canonical. 3 unit tests.
-- **Intra-team detection + filter:** `GET /api/teams/[slug]/replays` flags each replay `internal` when ≥2 of its players map to team members (`players[].username` → `users.karabastUsername`). `TeamReplays` gains an **All / Internal (N)** toggle. Best-effort — counts members who've set their karabast username.
+- **Intra-team detection + filter:** `GET /api/teams/[slug]/replays` flags each replay `internal`; `TeamReplays` gains an **All / Internal (N)** toggle. (Detection mechanism was reworked in **B84** to be account-based — see below.)
 - Kept ONE canonical replay per match (not dual per-player rows — avoids duplicate browsing entries; the deck-merge delivers the value).
 - **Deferred (small follow-up):** per-row "vs teammate" badge in the mixed view (needs threading `internal` through the shared `ReplayFilters`/`ReplayCard`/table renderers).
 

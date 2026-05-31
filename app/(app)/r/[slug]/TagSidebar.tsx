@@ -190,12 +190,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // anon-XXX handle (the localStorage default), not the user's account
   // display name. Override authorName once the session resolves so the
   // "Tagging as X" label + persisted authorName both reflect the user's
-  // identity. karabastUsername is the most accurate handle (matches what
-  // shows on karabast.net); fall back to the OAuth display name.
+  // account identity. B84: account name (no karabast username).
   useEffect(() => {
     const su = session?.user as any;
-    const preferred: string | undefined = su?.karabastUsername || su?.name;
-    if (preferred) setAuthorName(preferred);
+    if (su?.name) setAuthorName(su.name);
   }, [session]);
 
   // B12: install global mousemove/mouseup listeners while a drag is in

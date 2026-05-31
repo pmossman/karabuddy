@@ -1,38 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { signInAsTestUser, uploadReplay } from './helpers';
 
-// Settings page (karabast-username) + replay deletion + 404 paths.
-
-test('settings: set karabast username → backfills matching anonymous replays', async ({ page, request }) => {
-  // Upload anonymous replays where the local player username matches the
-  // value we'll set — these must auto-claim when the user saves it.
-  await uploadReplay(request, {
-    local: { username: 'BackfillMe' },
-    opponent: { username: 'X' },
-  });
-  await uploadReplay(request, {
-    local: { username: 'BackfillMe' },
-    opponent: { username: 'Y' },
-  });
-
-  await signInAsTestUser(page, { name: 'BackfillTester', email: 'bf@example.com' });
-
-  await page.goto('/settings');
-  await expect(page.getByPlaceholder(/ReprintConfiscate/i)).toBeVisible();
-  await page.getByPlaceholder(/ReprintConfiscate/i).fill('BackfillMe');
-  // Scope to the username section's Save — the page has multiple Save buttons
-  // (B75 added an upload-threshold form).
-  await page
-    .locator('section', { has: page.getByPlaceholder(/ReprintConfiscate/i) })
-    .getByRole('button', { name: 'Save' })
-    .click();
-  await expect(page.getByText(/Claimed 2 replay/)).toBeVisible({ timeout: 5000 });
-
-  // Confirm the user now owns those replays via /replays?tab=mine.
-  await page.goto('/replays?tab=mine');
-  await expect(page.getByRole('link', { name: /BackfillMe vs X/ })).toBeVisible({ timeout: 5000 });
-  await expect(page.getByRole('link', { name: /BackfillMe vs Y/ })).toBeVisible();
-});
+// Settings page + replay deletion + 404 paths. (B84 removed the karabast-
+// username feature — attribution is account-based now.)
 
 test('owner can delete their replay (and viewer 404s after)', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'Deleter' });

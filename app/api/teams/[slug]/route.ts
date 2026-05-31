@@ -37,7 +37,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
       name: users.name,
       email: users.email,
       image: users.image,
-      karabastUsername: users.karabastUsername,
     })
     .from(teamMembers)
     .innerJoin(users, eq(users.id, teamMembers.userId))
