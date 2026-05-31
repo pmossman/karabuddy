@@ -7,6 +7,7 @@ import { ReplayCard } from './ReplayCard';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
+import { ShareBadge } from './ShareBadge';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
 // + by-leader / timeline views + reuse on /teams/[slug]. This pass:
@@ -492,38 +493,11 @@ function ReplayCellLink({ replay }: { replay: Row }) {
         <ResultBadge playerId={p1?.id} winners={replay.winners} />
         <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
-        <TableShareChip sharedTeams={replay.sharedTeams} />
       </div>
+      {/* Team-name pills (or Unlisted) right under the matchup — same badge as
+          the grid card, so the table shows exactly who a replay is shared with. */}
+      <ShareBadge sharedTeams={replay.sharedTeams} />
     </Link>
-  );
-}
-
-// Compact share indicator for the table's Replay cell — a single chip
-// ("Shared" with team count, or "Unlisted"). The grid/card view uses the
-// richer per-team ShareBadge; the table stays dense.
-function TableShareChip({ sharedTeams }: { sharedTeams?: { slug: string; name: string }[] }) {
-  if (sharedTeams === undefined) return null;
-  const n = sharedTeams.length;
-  const shared = n > 0;
-  return (
-    <span
-      data-testid="table-share-chip"
-      title={shared ? `Shared with ${sharedTeams!.map((t) => t.name).join(', ')}` : 'Unlisted — link-accessible, not shared with a team'}
-      style={{
-        marginLeft: 6,
-        fontSize: 9,
-        fontWeight: 700,
-        padding: '0 6px',
-        borderRadius: 999,
-        letterSpacing: '0.03em',
-        textTransform: 'uppercase',
-        background: shared ? 'rgba(107, 217, 104, 0.1)' : 'rgba(108, 117, 136, 0.1)',
-        border: `1px solid ${shared ? 'rgba(107, 217, 104, 0.35)' : '#2e333c'}`,
-        color: shared ? '#7fd97f' : '#8a93a6',
-      }}
-    >
-      {shared ? (n > 1 ? `Shared · ${n}` : 'Shared') : 'Unlisted'}
-    </span>
   );
 }
 
