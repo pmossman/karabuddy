@@ -68,7 +68,7 @@ test('settings: Linked extensions section lists claimed tokens + supports revoke
   const claimRes = await page.request.post('/api/me/claim', { data: { token: fakeToken } });
   expect(claimRes.ok()).toBe(true);
 
-  await page.goto('/settings');
+  await page.goto('/settings?section=extension'); // B83: Linked extensions lives under the Extension section
   await expect(page.getByRole('heading', { name: /Linked extensions/i })).toBeVisible();
 
   const list = page.getByTestId('linked-extensions-list');

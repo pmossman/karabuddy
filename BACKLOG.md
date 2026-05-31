@@ -93,6 +93,13 @@ _empty_
 
 ## Done
 
+### [B83] Profile/settings overhaul — avatar dropdown + Slack-style sectioned settings
+_completed: 2026-05-31 by claude_
+- **Avatar dropdown:** `SessionMenu` is now a click-to-open avatar menu ("signed in as", **Settings**, **Sign out**) like modern webapps. Removed the always-visible header "Sign out" button and the "Settings" nav link (both moved into the menu); avatar fallback shows initials. Header nav keeps Browse / My replays / Teams / Mentions.
+- **Slack-style settings:** `/settings` is now a left rail of sections (`?section=`) + content pane instead of one long scroll: **Account** (karabast username + Discord connect/connected), **Notifications** (global DM master switch), **Teams** (per-team DM prefs for each team you're in + a "Manage team →" link), **Extension** (upload-actions threshold + linked extensions). Responsive (rail wraps on mobile).
+- **Moved per-team settings in:** `TeamNotificationPrefs` now lives under Settings → Teams (removed from the team page's Settings tab, which keeps team admin: rename/invite/leave + Discord bot-connect).
+- 2 new E2E (avatar menu open + Settings/Sign-out present + old nav link gone; rail navigates all four sections); updated the Linked-Extensions test for the new `?section=extension` route. typecheck + full e2e green.
+
 ### [B82] Teammate-vs-teammate matches — deck-merge enrichment + intra-team filter
 _completed: 2026-05-31 by claude_
 When two team members play each other and both record, the match now reviews with **complete information**, and teams can filter to their internal games.

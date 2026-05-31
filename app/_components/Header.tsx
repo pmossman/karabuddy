@@ -72,7 +72,7 @@ export async function Header() {
           {signedIn && <NavLink href="/replays?tab=mine">My replays</NavLink>}
           {signedIn && <NavLink href="/teams">Teams</NavLink>}
           {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
-          {signedIn && <NavLink href="/settings">Settings</NavLink>}
+          {/* Settings + Sign out now live in the avatar menu (SessionMenu). */}
           <SessionMenu compact />
         </nav>
       </div>

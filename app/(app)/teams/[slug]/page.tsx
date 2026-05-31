@@ -5,7 +5,6 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
-import { TeamNotificationPrefs } from './TeamNotificationPrefs';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
@@ -120,7 +119,6 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
               viewerRole={me.role}
               memberCount={members.length}
             />
-            <TeamNotificationPrefs slug={slug} />
             {me.role === 'owner' && (
               <TeamDiscordConnect
                 slug={slug}
