@@ -121,10 +121,11 @@ karabast can change its gamestate format without notice and silently break recor
 - **Local ≠ prod DB.** Never `db:migrate` without confirming the target is `localhost:5434` — `.env.local` is prod. The backfill/migration scripts target whatever the env points at; for a deliberate prod run pass prod creds explicitly (`KARABUDDY_DB_DRIVER=pg POSTGRES_URL="<prod>" npx tsx scripts/...`).
 - **Env precedence** `.env.development.local` > `.env.local`.
 - **Backward compat is two-sided.** A shipped extension can't be force-updated, so server changes must stay additive w.r.t. the published wire shape (contract tests enforce it), and the server deploys before a new extension publishes.
+- **Migrations must be expand/contract** ([ADR 0005](./docs/adr/0005-safe-deploys-expand-contract.md)). Prod migrates during the build prebuild while the *previous* deployment is still live, so co-deployed migrations must be **additive** (new nullable/defaulted columns, new tables/indexes). Destructive DDL — `DROP COLUMN`/`DROP TABLE`/`RENAME`/`ALTER … TYPE`/`SET NOT NULL` — must ship as a **separate, later** deploy after the referencing code is gone. `scripts/validate-migration-safety.js` blocks non-additive DDL in CI (`test/unit/migration-safety.test.ts`) and the prod prebuild unless the `.sql` carries a `-- safe-migration: <why>` annotation. So removing a column = two deploys.
 
 ## Backlog
 
-[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B85**; the next new task is **B86**. (B81 Discord foundation is in `## Backlog`, in progress.) The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
+[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B86**; the next new task is **B87**. (B81 Discord foundation is in `## Backlog`, in progress.) The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
 
 ## Related repos
 

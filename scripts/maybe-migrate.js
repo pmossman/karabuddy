@@ -25,11 +25,26 @@ if (!process.env.POSTGRES_URL) {
 // `when` would be SILENTLY SKIPPED (no error, table just never created →
 // runtime 500s). Fail the build loudly instead. (CI's unit test catches
 // this at PR time too; this is the last line of defense at deploy.)
+const repoRoot = require('path').join(__dirname, '..');
 const { validateMigrationJournal } = require('./validate-migration-journal');
-const journalErrors = validateMigrationJournal(require('path').join(__dirname, '..'));
+const journalErrors = validateMigrationJournal(repoRoot);
 if (journalErrors.length > 0) {
   console.error('[maybe-migrate] migration journal is invalid — aborting before migrate:');
   for (const e of journalErrors) console.error('  • ' + e);
+  process.exit(1);
+}
+
+// Expand/contract safety: refuse to apply non-additive DDL (drop/rename/retype/
+// SET NOT NULL) that isn't explicitly acknowledged as a deliberate contract-phase
+// migration. Prod migrates during this prebuild while the PREVIOUS deployment is
+// still live, so an un-acknowledged destructive change can 500 the running app
+// during the migrate-then-promote window. (CI's unit test catches it at PR time;
+// this is the last line of defense at deploy.)
+const { validateMigrationSafety } = require('./validate-migration-safety');
+const safetyErrors = validateMigrationSafety(repoRoot);
+if (safetyErrors.length > 0) {
+  console.error('[maybe-migrate] unsafe (non-additive) migration — aborting before migrate:');
+  for (const e of safetyErrors) console.error('  • ' + e);
   process.exit(1);
 }
 
