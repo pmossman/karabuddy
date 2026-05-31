@@ -55,6 +55,20 @@ export const tokens = {
     rowOff: 'rgba(255, 255, 255, 0.02)',
     mono: '"SF Mono", Menlo, Consolas, monospace',
   },
+  // "Tactical dark" surfaces + glows (B93 reskin) — raised panels get a faint
+  // top-lit gradient + depth shadow; the primary button is the extension's
+  // dark-gradient + glowing-blue-border look ("My replays →").
+  surface: {
+    panel: 'linear-gradient(155deg, rgba(42, 54, 74, 0.32) 0%, rgba(17, 20, 26, 0.55) 68%)',
+    panelShadow: '0 2px 14px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.03)',
+    panelBorder: '#2b323d',
+  },
+  button: {
+    bg: 'linear-gradient(150deg, #243044 0%, #1a1d23 100%)',
+    bgHover: 'linear-gradient(150deg, #2a3850 0%, #1e222a 100%)',
+    glow: '0 0 10px rgba(74, 124, 255, 0.22), inset 0 0 8px rgba(74, 124, 255, 0.08)',
+    glowHover: '0 0 15px rgba(74, 124, 255, 0.45), inset 0 0 10px rgba(74, 124, 255, 0.14)',
+  },
   radius: {
     sm: 4,
     md: 6,

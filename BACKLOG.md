@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B93] "Tactical dark" reskin — Settings PoC (surfaces, headings, glow buttons)
+_completed: 2026-05-31 by claude_
+Parker's read (looking at full-page screenshots): the LED toggles aren't too loud — the rest of the app is too flat. Reskin up to the extension's look. PoC on Settings (most barren page) to react to the direction before rolling out. New reusable pieces: `Panel` (top-lit gradient surface + depth shadow + optional cyan accent bar), `TacticalHeading` (monospace letter-spaced caps + glowing cyan signal dot, mirroring the extension's "SHARE WITH TEAMS"), and a glow primary `MuiButton` (dark gradient + glowing blue border, the extension's "My replays →" look). Added `surface`/`button` tokens. Applied to Settings: cards → Panel, titles → TacticalHeading, nav rail active → cyan signal accent, UploadThreshold → themed MUI TextField + glow Button. Type split established: tactical mono for chrome/headers/status, Barlow for content. typecheck + full e2e 107. Next (pending Parker's read): roll Panel/heading/button across home + teams + viewer; define the two-accent rule (blue=action, cyan=live) in a short doc.
+
 ### [B92] LedToggle — bring the extension's LED control to the web
 _completed: 2026-05-31 by claude_
 Parker's design target: the extension's "cockpit" LED toggle (glowing cyan ring + dot, accent bar, monospace label, "SHARING" readout) — across both UIs, not generic MUI checkboxes. Built `app/_components/LedToggle.tsx`, a faithful React port of `extension/replays/05-footer.js buildShareRow`, drawing from new `led` tokens. Swapped it into every chrome toggle: ShareWithTeam (with "Sharing" status), ScopeChip (team rows + "Just me"), and the settings/team notification toggles — replacing the MUI Switch/Checkbox/Radio from B90. `role="checkbox"` for a11y + tests. Refines [ADR 0006](docs/adr/0006-design-system.md): bespoke LED for signature controls, themed MUI for the rest. typecheck + unit 124 (guard green) + full e2e 107. Next: sync `led` tokens into the extension; migrate chrome buttons to themed MUI w/ glow.

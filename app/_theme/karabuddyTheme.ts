@@ -85,9 +85,18 @@ export const karabuddyTheme = createTheme({
           fontWeight: 600,
           borderRadius: tokens.radius.sm,
         },
+        // Primary = the extension's "My replays →" look: dark gradient body,
+        // glowing blue border, light-blue label.
         containedPrimary: {
-          backgroundColor: tokens.color.primary,
-          '&:hover': { backgroundColor: tokens.color.primaryHover },
+          background: tokens.button.bg,
+          color: tokens.color.accent,
+          border: `1px solid ${tokens.color.primary}`,
+          boxShadow: tokens.button.glow,
+          '&:hover': {
+            background: tokens.button.bgHover,
+            borderColor: tokens.color.primaryHover,
+            boxShadow: tokens.button.glowHover,
+          },
         },
       },
     },
