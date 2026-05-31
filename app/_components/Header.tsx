@@ -61,8 +61,9 @@ export async function Header() {
               // LED labels — ties the brand mark to the instrument-panel theme.
               fontFamily: tokens.led.mono,
               fontWeight: 700,
-              fontSize: 18,
-              letterSpacing: '0.02em',
+              fontSize: 17,
+              textTransform: 'uppercase',
+              letterSpacing: '0.14em',
               // Electric cyan→azure gradient — ties the mark to the two accents
               // (signal cyan + primary blue) the rest of the UI uses.
               background: 'linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%)',
