@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LedToggle } from '@/app/_components/LedToggle';
+import { tokens } from '@/app/_theme/karabuddyTokens';
 import { useSession } from 'next-auth/react';
 import type { Frame, MatchMeta, DecksByUserId } from '@/lib/replayDecoder';
 import { cardImageUrl } from '@/lib/cardImage';
@@ -1450,11 +1451,14 @@ function FooterBtn({
     base.color = '#a0a8b8';
   } else if (variant === 'outline') {
     base.background = 'transparent';
-    base.border = '1px solid #4d9dff';
-    base.color = '#5db4ff';
+    base.border = `1px solid ${tokens.color.primary}`;
+    base.color = tokens.color.accentBright;
   } else {
-    base.background = '#4d9dff';
-    base.color = 'white';
+    // Primary = the glow button (dark gradient + glowing blue border).
+    base.background = tokens.button.bg;
+    base.color = tokens.color.accent;
+    base.border = `1px solid ${tokens.color.primary}`;
+    base.boxShadow = tokens.button.glow;
   }
   if (alignSelf) base.alignSelf = 'flex-start';
   if (fullWidth) { base.width = '100%'; base.padding = '8px 10px'; }
