@@ -10,10 +10,18 @@ body {
     color: #e6e6e6;
     font-family: var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif;
     min-height: 100vh;
-    /* MUI CssBaseline applies a karabast starfield bg on body via the lifted
-       theme (url(/default-background.webp)). Keep a dark fallback for slow
-       loads but don't override the theme's image. */
-    background-color: #11141a;
+    /* B95: "spaceship HUD" backdrop on chrome pages — a faint blueprint grid
+       (32px, ~3% cyan) plus a soft top-anchored glow, over a slightly deeper
+       black. Reads as a console/HUD surface instead of a flat void. The lifted
+       gameboard's MUI CssBaseline overrides body bg with its starfield inside
+       the viewer, so this only affects the chrome (and they're both "spacey"). */
+    background-color: #0b0e13;
+    background-image:
+        radial-gradient(ellipse 90% 55% at 50% -8%, rgba(77, 157, 255, 0.07), transparent 70%),
+        linear-gradient(rgba(122, 170, 255, 0.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(122, 170, 255, 0.028) 1px, transparent 1px);
+    background-size: 100% 100%, 32px 32px, 32px 32px;
+    background-attachment: fixed;
     /* Prevent horizontal scroll bleed from the lifted forceteki gameboard
        which occasionally renders absolute-positioned elements that escape
        the viewport on narrow widths (esp iPhone Pro Max landscape ~932px). */

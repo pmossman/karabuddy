@@ -45,10 +45,12 @@ export async function Header() {
         >
           <span
             style={{
-              fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
-              fontWeight: 400,
-              fontSize: 22,
-              letterSpacing: 0,
+              // HUD monospace — unified with "BUDDY" so the wordmark reads as
+              // one cockpit label rather than sans + mono mismatched.
+              fontFamily: tokens.led.mono,
+              fontWeight: 700,
+              fontSize: 17,
+              letterSpacing: '0.14em',
               textTransform: 'uppercase',
               color: '#e6e6e6',
             }}

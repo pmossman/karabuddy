@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B95] "Spaceship HUD" pass — blueprint-grid backdrop + unified HUD wordmark
+_completed: 2026-05-31 by claude_
+The logo felt half-converted (KARA in humanist Barlow vs BUDDY in HUD mono) and floated over a flat-black void. Two moves toward the cockpit/HUD feel: (1) **unified the wordmark** — both KARA + BUDDY in the HUD monospace (`tokens.led.mono`), uppercase + 0.14em tracking, BUDDY keeps the cyan→azure gradient; (2) **faint blueprint-grid backdrop** on chrome pages (globals.css) — a 32px ~3% cyan grid + soft top-anchored glow over a deeper `#0b0e13`, reading as a console surface (the gameboard's starfield still overrides inside the viewer). Proposed-but-not-yet-built HUD levers (Parker to steer): console-panel corner brackets + glowing hairline borders on `Panel`, tactical headers everywhere, glowing cyan dividers.
+
 ### [B94] Consolidate the brand palette — two cohesive accents, refreshed logo
 _completed: 2026-05-31 by claude_
 Three competing blues had drifted: the liked cyan `#4dd2ff` (LED) vs muddier `#4a7cff`/`#5da9ff` (logo + links), all hardcoded ~80× across 40 files with no single source. Defined a two-accent system in tokens — **primary `#4d9dff`** (brighter azure, "do this": actions/links/nav/logo) + **`#4dd2ff`** (cyan, "live": LED/active) — bright siblings that read as one palette. Swept the old hexes (+ their rgba glow forms) to the new values across **app and extension** so the two products share one palette. Refreshed the logo "buddy" to a cyan→azure gradient tying both accents. Documented the accent roles in tokens + [ADR 0006](docs/adr/0006-design-system.md). typecheck + unit 124 (parity green) + e2e (1 known-flaky retry). First pass on the exact hue — now a one-place token tweak.
