@@ -93,6 +93,14 @@ _empty_
 
 ## Done
 
+### [B86] Enforce safe deploys (expand/contract migration guard)
+_completed: 2026-05-31 by claude_
+B85 dropped two columns in the same deploy that removed their references; prod migrates during the build prebuild while the previous deployment is still live, so that's a ~1–2 min window of 500s. Made the unsafe path hard instead of relying on discipline.
+- **`scripts/validate-migration-safety.js`**: flags non-additive DDL (`DROP COLUMN`/`DROP TABLE`/`RENAME`/`ALTER … TYPE`/`SET NOT NULL`) and fails unless the `.sql` carries a `-- safe-migration: <why>` annotation (deliberate contract-phase ack).
+- Runs in **CI** (`test/unit/migration-safety.test.ts`) and the **prod prebuild** (`maybe-migrate.js`), same dual-guard pattern as the journal validator.
+- Annotated the already-shipped `0014`/`0015` (predate the guard).
+- [ADR 0005](docs/adr/0005-safe-deploys-expand-contract.md) + CLAUDE.md Gotcha. Net rule: **removing a column/table is two deploys** (stop referencing → then drop).
+
 ### [B85] Remove "public" replays entirely
 _completed: 2026-05-31 by claude_
 Teams + link-sharing cover sharing; a public firehose is a different product, so the "public" concept is gone.

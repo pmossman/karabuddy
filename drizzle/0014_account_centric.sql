@@ -1,3 +1,6 @@
+-- safe-migration: contract — shipped before the expand/contract guard existed (B85).
+-- The DROP COLUMN below co-deployed with the code that stopped reading
+-- users.karabast_username; future drops must ship as a separate contract deploy.
 CREATE TABLE "replay_participants" (
 	"replay_slug" text NOT NULL,
 	"user_id" text NOT NULL,

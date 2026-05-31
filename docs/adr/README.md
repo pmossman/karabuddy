@@ -7,3 +7,4 @@ otherwise get re-litigated. One file per decision, numbered. Terse on purpose.
 - [0002 — Gated production deploys (no push-to-deploy)](./0002-gated-deploys.md)
 - [0003 — Local dev DB isolation via Docker Postgres](./0003-local-db-isolation.md)
 - [0004 — Graduated extension kill-switch](./0004-extension-kill-switch.md)
+- [0005 — Safe deploys: expand/contract, enforced](./0005-safe-deploys-expand-contract.md)
