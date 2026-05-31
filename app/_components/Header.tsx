@@ -61,7 +61,13 @@ export async function Header() {
               fontWeight: 600,
               fontSize: 19,
               letterSpacing: '-0.01em',
-              color: '#5a8cff',
+              // Electric cyan→azure gradient — ties the brand mark to the two
+              // accents (signal cyan + primary blue) the rest of the UI uses.
+              background: 'linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              color: 'transparent',
+              WebkitTextFillColor: 'transparent',
             }}
           >
             buddy

@@ -62,7 +62,7 @@ export function ClaimForm({
         onClick={submit}
         disabled={status.kind === 'pending' || !token.trim()}
         style={{
-          background: '#4a7cff',
+          background: '#4d9dff',
           color: 'white',
           border: 0,
           borderRadius: 6,

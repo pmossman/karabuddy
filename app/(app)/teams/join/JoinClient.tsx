@@ -47,7 +47,7 @@ export function JoinClient({ code }: { code: string }) {
         <>
           <h1 style={{ margin: '0 0 12px', fontSize: 22, fontWeight: 600 }}>Couldn&apos;t join</h1>
           <p style={{ margin: '0 0 16px', fontSize: 13, color: '#ff7a7a' }}>{error}</p>
-          <Link href="/teams" style={{ color: '#5da9ff', fontSize: 13 }}>← All teams</Link>
+          <Link href="/teams" style={{ color: '#5db4ff', fontSize: 13 }}>← All teams</Link>
         </>
       )}
     </main>

@@ -647,9 +647,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
               zIndex: 90,
               width: 38,
               height: 38,
-              background: drawerOpen ? 'rgba(74, 124, 255, 0.32)' : 'rgba(36, 48, 68, 0.85)',
+              background: drawerOpen ? 'rgba(77, 157, 255, 0.32)' : 'rgba(36, 48, 68, 0.85)',
               color: '#d6e7ff',
-              border: '1px solid rgba(74, 124, 255, 0.4)',
+              border: '1px solid rgba(77, 157, 255, 0.4)',
               borderRadius: '50%',
               padding: 0,
               fontSize: 16,
@@ -714,9 +714,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
               <span
                 key={`m-${label}`}
                 style={{
-                  background: 'rgba(74, 124, 255, 0.12)',
-                  border: '1px solid rgba(74, 124, 255, 0.3)',
-                  color: '#a0c4ff',
+                  background: 'rgba(77, 157, 255, 0.12)',
+                  border: '1px solid rgba(77, 157, 255, 0.3)',
+                  color: '#a7d2ff',
                   borderRadius: 999,
                   padding: '1px 8px',
                   fontSize: 10,
@@ -847,7 +847,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           + Tag this frame
         </FooterBtn>
         {formOpen && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: 'rgba(74, 124, 255, 0.08)', border: '1px solid rgba(74, 124, 255, 0.3)', borderRadius: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: 'rgba(77, 157, 255, 0.08)', border: '1px solid rgba(77, 157, 255, 0.3)', borderRadius: 6 }}>
             <div style={{ fontSize: 11, color: '#a0a8b8', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: tagColor(authorName, playerUsernames) }} />
               <span>Tagging as {authorName}</span>
@@ -964,7 +964,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
               padding: '8px 12px',
               fontSize: 12,
               fontWeight: 600,
-              color: '#a0c4ff',
+              color: '#a7d2ff',
               cursor: 'pointer',
               fontFamily: 'inherit',
               width: '100%',
@@ -1022,9 +1022,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             cursor: 'ew-resize',
             userSelect: 'none',
             background: resizeHandleActive
-              ? 'rgba(74, 124, 255, 0.45)'
+              ? 'rgba(77, 157, 255, 0.45)'
               : resizeHandleHover
-              ? 'rgba(74, 124, 255, 0.18)'
+              ? 'rgba(77, 157, 255, 0.18)'
               : 'transparent',
             transition: 'background 120ms ease',
             zIndex: 10,
@@ -1050,7 +1050,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 // Player names inside messages are color-coded: first player in the frame-0
 // players map is blue, second is red. Matches setConnectedPlayer in
 // ReplayViewer (which picks the first player as the viewer perspective).
-const PLAYER_COLOR_USER = '#5da9ff';
+const PLAYER_COLOR_USER = '#5db4ff';
 const PLAYER_COLOR_OPPONENT = '#ff6b6b';
 
 function FrameLog({
@@ -1298,10 +1298,10 @@ function IconBtn({
         width: 26,
         height: 26,
         padding: 0,
-        background: active ? 'rgba(74, 124, 255, 0.18)' : 'transparent',
-        border: `1px solid ${active ? '#4a7cff' : '#3a3e46'}`,
+        background: active ? 'rgba(77, 157, 255, 0.18)' : 'transparent',
+        border: `1px solid ${active ? '#4d9dff' : '#3a3e46'}`,
         borderRadius: 4,
-        color: active ? '#5da9ff' : '#a0a8b8',
+        color: active ? '#5db4ff' : '#a0a8b8',
         cursor: 'pointer',
         flex: '0 0 auto',
       }}
@@ -1342,7 +1342,7 @@ function ModeSegmented({ mode, setMode, title }: { mode: StepMode; setMode: (m: 
     cursor: 'pointer',
     lineHeight: '22px',
   };
-  const sel: React.CSSProperties = { background: '#4a7cff', color: 'white' };
+  const sel: React.CSSProperties = { background: '#4d9dff', color: 'white' };
   return (
     <div title={title} style={{ display: 'inline-flex', alignSelf: 'flex-start', border: '1px solid #4a4e56', borderRadius: 4, overflow: 'hidden', height: 22 }}>
       <button type="button" style={{ ...seg, ...(mode === 'action' ? sel : {}) }} onClick={() => setMode('action')}>Action</button>
@@ -1385,9 +1385,9 @@ function ScopeChip({
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
-          background: 'rgba(74, 124, 255, 0.08)',
-          border: '1px solid rgba(74, 124, 255, 0.3)',
-          color: '#a0c4ff',
+          background: 'rgba(77, 157, 255, 0.08)',
+          border: '1px solid rgba(77, 157, 255, 0.3)',
+          color: '#a7d2ff',
           borderRadius: 999,
           padding: '3px 10px',
           fontSize: 11,
@@ -1450,10 +1450,10 @@ function FooterBtn({
     base.color = '#a0a8b8';
   } else if (variant === 'outline') {
     base.background = 'transparent';
-    base.border = '1px solid #4a7cff';
-    base.color = '#5da9ff';
+    base.border = '1px solid #4d9dff';
+    base.color = '#5db4ff';
   } else {
-    base.background = '#4a7cff';
+    base.background = '#4d9dff';
     base.color = 'white';
   }
   if (alignSelf) base.alignSelf = 'flex-start';
@@ -1546,7 +1546,7 @@ function TagRowView({
         gap: 8,
         padding: '6px 8px',
         borderRadius: 4,
-        background: isCurrent ? 'rgba(74, 124, 255, 0.12)' : 'rgba(255,255,255,0.025)',
+        background: isCurrent ? 'rgba(77, 157, 255, 0.12)' : 'rgba(255,255,255,0.025)',
         borderLeft: `3px solid ${color}`,
         opacity: isCurrent ? 1 : 0.45,
         cursor: editing ? 'text' : 'pointer',
@@ -1581,7 +1581,7 @@ function TagRowView({
                 boxSizing: 'border-box',
                 background: '#11141a',
                 color: '#e6e6e6',
-                border: '1px solid #4a7cff',
+                border: '1px solid #4d9dff',
                 borderRadius: 4,
                 padding: '4px 6px',
                 font: '12px var(--font-barlow), -apple-system, sans-serif',

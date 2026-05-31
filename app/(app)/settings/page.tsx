@@ -98,8 +98,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <TacticalHeading>Discord notifications</TacticalHeading>
               <p style={desc}>
                 Get a Discord DM (or a ping in your team&apos;s channel) when someone @-mentions you on a replay.
-                This master switch overrides per-team settings (under <Link href="/settings?section=teams" style={{ color: '#5da9ff' }}>Teams</Link>);
-                the <Link href="/mentions" style={{ color: '#5da9ff' }}>Mentions inbox</Link> always works regardless.
+                This master switch overrides per-team settings (under <Link href="/settings?section=teams" style={{ color: '#5db4ff' }}>Teams</Link>);
+                the <Link href="/mentions" style={{ color: '#5db4ff' }}>Mentions inbox</Link> always works regardless.
               </p>
               <NotificationsForm initialDisabled={!!user?.notificationsDisabled} />
             </Panel>
@@ -111,14 +111,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <p style={desc}>Your per-team DM preferences. Rename, invites, and Discord for a team live on the team&apos;s own page.</p>
               {myTeams.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8' }}>
-                  You&apos;re not in any teams yet. <Link href="/teams" style={{ color: '#5da9ff' }}>Teams →</Link>
+                  You&apos;re not in any teams yet. <Link href="/teams" style={{ color: '#5db4ff' }}>Teams →</Link>
                 </p>
               ) : (
                 myTeams.map((t) => (
                   <div key={t.slug} style={{ borderTop: '1px solid #2e333c', paddingTop: 14, marginTop: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                       <strong style={{ fontSize: 14 }}>{t.name}</strong>
-                      <Link href={`/teams/${t.slug}?tab=settings`} style={{ fontSize: 12, color: '#5da9ff' }}>Manage team →</Link>
+                      <Link href={`/teams/${t.slug}?tab=settings`} style={{ fontSize: 12, color: '#5db4ff' }}>Manage team →</Link>
                     </div>
                     <TeamNotificationPrefs slug={t.slug} />
                   </div>

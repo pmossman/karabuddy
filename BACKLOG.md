@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B94] Consolidate the brand palette — two cohesive accents, refreshed logo
+_completed: 2026-05-31 by claude_
+Three competing blues had drifted: the liked cyan `#4dd2ff` (LED) vs muddier `#4a7cff`/`#5da9ff` (logo + links), all hardcoded ~80× across 40 files with no single source. Defined a two-accent system in tokens — **primary `#4d9dff`** (brighter azure, "do this": actions/links/nav/logo) + **`#4dd2ff`** (cyan, "live": LED/active) — bright siblings that read as one palette. Swept the old hexes (+ their rgba glow forms) to the new values across **app and extension** so the two products share one palette. Refreshed the logo "buddy" to a cyan→azure gradient tying both accents. Documented the accent roles in tokens + [ADR 0006](docs/adr/0006-design-system.md). typecheck + unit 124 (parity green) + e2e (1 known-flaky retry). First pass on the exact hue — now a one-place token tweak.
+
 ### [B93] "Tactical dark" reskin — Settings PoC (surfaces, headings, glow buttons)
 _completed: 2026-05-31 by claude_
 Parker's read (looking at full-page screenshots): the LED toggles aren't too loud — the rest of the app is too flat. Reskin up to the extension's look. PoC on Settings (most barren page) to react to the direction before rolling out. New reusable pieces: `Panel` (top-lit gradient surface + depth shadow + optional cyan accent bar), `TacticalHeading` (monospace letter-spaced caps + glowing cyan signal dot, mirroring the extension's "SHARE WITH TEAMS"), and a glow primary `MuiButton` (dark gradient + glowing blue border, the extension's "My replays →" look). Added `surface`/`button` tokens. Applied to Settings: cards → Panel, titles → TacticalHeading, nav rail active → cyan signal accent, UploadThreshold → themed MUI TextField + glow Button. Type split established: tactical mono for chrome/headers/status, Barlow for content. typecheck + full e2e 107. Next (pending Parker's read): roll Panel/heading/button across home + teams + viewer; define the two-accent rule (blue=action, cyan=live) in a short doc.

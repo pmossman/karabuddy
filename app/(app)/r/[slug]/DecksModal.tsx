@@ -142,9 +142,9 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
                   aria-selected={isActive}
                   onClick={() => { userPickedRef.current = true; setActiveId(pid); }}
                   style={{
-                    background: isActive ? 'rgba(74, 124, 255, 0.15)' : 'transparent',
+                    background: isActive ? 'rgba(77, 157, 255, 0.15)' : 'transparent',
                     color: isActive ? '#e6e6e6' : '#a0a8b8',
-                    border: '1px solid ' + (isActive ? 'rgba(74, 124, 255, 0.45)' : '#2e333c'),
+                    border: '1px solid ' + (isActive ? 'rgba(77, 157, 255, 0.45)' : '#2e333c'),
                     borderRadius: 4,
                     padding: '6px 12px',
                     fontSize: 13,
@@ -163,7 +163,7 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
             {activeId && (
               <Link
                 href={`/r/${replaySlug}/deck/${activeId}`}
-                style={{ fontSize: 12, color: '#5da9ff', textDecoration: 'none', fontWeight: 600 }}
+                style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none', fontWeight: 600 }}
               >
                 View full page →
               </Link>

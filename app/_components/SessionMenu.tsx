@@ -25,7 +25,7 @@ export function SessionMenu({ compact = false }: { compact?: boolean }) {
 
   if (!session?.user) {
     return (
-      <a href="/signin" style={{ fontSize: 12, color: '#5da9ff', textDecoration: 'none', padding: '4px 10px', border: '1px solid #4a4e56', borderRadius: 6, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      <a href="/signin" style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none', padding: '4px 10px', border: '1px solid #4a4e56', borderRadius: 6, fontWeight: 600, whiteSpace: 'nowrap' }}>
         Sign in
       </a>
     );

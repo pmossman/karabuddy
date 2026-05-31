@@ -126,14 +126,14 @@ function ActivityRow({ item }: { item: DiscussionItem }) {
         flexDirection: 'column',
         gap: 3,
         padding: '10px 12px',
-        background: 'rgba(74, 124, 255, 0.05)',
-        borderLeft: '3px solid rgba(74, 124, 255, 0.4)',
+        background: 'rgba(77, 157, 255, 0.05)',
+        borderLeft: '3px solid rgba(77, 157, 255, 0.4)',
         borderRadius: 4,
         textDecoration: 'none',
         color: '#e6e6e6',
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#a0c4ff' }}>{matchupText(item)}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#a7d2ff' }}>{matchupText(item)}</div>
       <div style={{ fontSize: 13, color: '#e6e6e6', lineHeight: 1.4 }}>
         <MentionedComment text={item.latestTag.comment || '(no comment)'} />
       </div>

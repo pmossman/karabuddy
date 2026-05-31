@@ -115,7 +115,7 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
           <PlayerThumbs player={p2} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#a0c4ff' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#a7d2ff' }}>
             {matchupText(item)}
           </div>
         </div>
@@ -124,8 +124,8 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
 
       <div style={{
         padding: '10px 12px',
-        background: 'rgba(74, 124, 255, 0.06)',
-        borderLeft: '3px solid rgba(74, 124, 255, 0.45)',
+        background: 'rgba(77, 157, 255, 0.06)',
+        borderLeft: '3px solid rgba(77, 157, 255, 0.45)',
         borderRadius: 4,
         display: 'flex',
         flexDirection: 'column',
@@ -169,7 +169,7 @@ function ParticipantBubbles({ participants }: { participants: Participant[] }) {
             justifyContent: 'center',
             fontSize: 11,
             fontWeight: 700,
-            color: '#a0c4ff',
+            color: '#a7d2ff',
             overflow: 'hidden',
           }}
         >

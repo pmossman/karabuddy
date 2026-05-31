@@ -117,7 +117,7 @@ export function EditableTitle({
           minWidth: 0,
           background: '#11141a',
           color: '#e6e6e6',
-          border: '1px solid rgba(74, 124, 255, 0.5)',
+          border: '1px solid rgba(77, 157, 255, 0.5)',
           borderRadius: 4,
           padding: '4px 8px',
           fontSize: 14,

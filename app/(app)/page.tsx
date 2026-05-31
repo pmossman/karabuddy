@@ -147,8 +147,8 @@ function TeamCta() {
       data-testid="home-team-cta"
       style={{
         padding: 20,
-        background: 'rgba(74, 124, 255, 0.06)',
-        border: '1px solid rgba(74, 124, 255, 0.25)',
+        background: 'rgba(77, 157, 255, 0.06)',
+        border: '1px solid rgba(77, 157, 255, 0.25)',
         borderRadius: 10,
         display: 'flex',
         flexDirection: 'column',
@@ -167,7 +167,7 @@ function TeamCta() {
           style={{
             display: 'inline-block',
             padding: '9px 16px',
-            background: '#4a7cff',
+            background: '#4d9dff',
             color: 'white',
             borderRadius: 6,
             fontSize: 13,

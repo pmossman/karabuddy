@@ -248,9 +248,9 @@
             btn.type = 'button';
             btn.textContent = 'Sign in on karabuddy →';
             btn.setAttribute('style', [
-                'background: rgba(74, 124, 255, 0.18)',
+                'background: rgba(77, 157, 255, 0.18)',
                 'color: #d6e7ff',
-                'border: 1px solid #4a7cff',
+                'border: 1px solid #4d9dff',
                 'border-radius: 6px',
                 'padding: 7px 10px',
                 'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif',
@@ -267,7 +267,7 @@
             block.appendChild(btn);
             return;
         }
-        block.style.color = '#a0c4ff';
+        block.style.color = '#a7d2ff';
         block.textContent = `Signed in as ${data.displayName || 'unknown'}`;
     };
 
@@ -489,7 +489,7 @@
             'min-height: ' + LAUNCHER_MIN_HEIGHT + 'px',
             'border-radius: 10px',
             'background: linear-gradient(140deg, #243044 0%, #1a1d23 100%)',
-            'border: 1px solid rgba(74, 124, 255, 0.5)',
+            'border: 1px solid rgba(77, 157, 255, 0.5)',
             'box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0,0,0,0.3)',
             'color: #e6e6e6',
             'font: 12px -apple-system, BlinkMacSystemFont, sans-serif',
@@ -533,7 +533,7 @@
             root.style.borderColor = 'rgba(90, 140, 255, 0.85)';
         });
         header.addEventListener('mouseleave', () => {
-            root.style.borderColor = 'rgba(74, 124, 255, 0.5)';
+            root.style.borderColor = 'rgba(77, 157, 255, 0.5)';
         });
 
         // KARA/buddy stacked lockup.
@@ -924,7 +924,7 @@
         openLink.setAttribute('style', [
             'display: none',
             'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif',
-            'color: #5da9ff',
+            'color: #5db4ff',
             'text-decoration: none',
             'padding: 6px 0 0',
             'border-top: 1px solid #2e333c'
@@ -942,7 +942,7 @@
         btn.type = 'button';
         btn.textContent = text;
         const base = variant === 'primary'
-            ? ['background: rgba(74, 124, 255, 0.18)', 'color: #d6e7ff', 'border: 1px solid #4a7cff']
+            ? ['background: rgba(77, 157, 255, 0.18)', 'color: #d6e7ff', 'border: 1px solid #4d9dff']
             : ['background: transparent', 'color: #d6e7ff', 'border: 1px solid #2e333c'];
         btn.setAttribute('style', base.concat([
             'border-radius: 6px',
@@ -1032,9 +1032,9 @@
         addBtn.type = 'button';
         addBtn.textContent = '+ Tag this moment';
         addBtn.setAttribute('style', [
-            'background: rgba(74, 124, 255, 0.18)',
+            'background: rgba(77, 157, 255, 0.18)',
             'color: #d6e7ff',
-            'border: 1px solid #4a7cff',
+            'border: 1px solid #4d9dff',
             'border-radius: 6px',
             'padding: 10px 14px',
             'font: 600 13px -apple-system, BlinkMacSystemFont, sans-serif',
@@ -1048,8 +1048,8 @@
             'flex-direction: column',
             'gap: 6px',
             'padding: 8px',
-            'background: rgba(74, 124, 255, 0.08)',
-            'border: 1px solid rgba(74, 124, 255, 0.3)',
+            'background: rgba(77, 157, 255, 0.08)',
+            'border: 1px solid rgba(77, 157, 255, 0.3)',
             'border-radius: 6px'
         ].join(';'));
 
@@ -1145,9 +1145,9 @@
             'align-items: center',
             'gap: 6px',
             'align-self: flex-start',
-            'background: rgba(74, 124, 255, 0.08)',
-            'border: 1px solid rgba(74, 124, 255, 0.3)',
-            'color: #a0c4ff',
+            'background: rgba(77, 157, 255, 0.08)',
+            'border: 1px solid rgba(77, 157, 255, 0.3)',
+            'color: #a7d2ff',
             'border-radius: 999px',
             'padding: 3px 10px',
             'font: 600 11px -apple-system, BlinkMacSystemFont, sans-serif',
@@ -1309,7 +1309,7 @@
                     'right: 0',
                     'margin-top: 4px',
                     'background: rgba(17, 20, 26, 0.98)',
-                    'border: 1px solid rgba(74, 124, 255, 0.4)',
+                    'border: 1px solid rgba(77, 157, 255, 0.4)',
                     'border-radius: 6px',
                     'padding: 4px',
                     'z-index: 50',
@@ -1332,7 +1332,7 @@
                     'gap: 8px',
                     'width: 100%',
                     'padding: 6px 8px',
-                    'background: ' + (isActive ? 'rgba(74, 124, 255, 0.18)' : 'transparent'),
+                    'background: ' + (isActive ? 'rgba(77, 157, 255, 0.18)' : 'transparent'),
                     'border: 0',
                     'border-radius: 4px',
                     'color: #e6e6e6',
@@ -1342,7 +1342,7 @@
                 ].join(';'));
                 if (s.kind === 'user') {
                     const handle = document.createElement('span');
-                    handle.setAttribute('style', 'color: #5da9ff; font-weight: 600;');
+                    handle.setAttribute('style', 'color: #5db4ff; font-weight: 600;');
                     handle.textContent = '@' + s.handle;
                     btn.appendChild(handle);
                     if (s.displayName && s.displayName !== s.handle) {
@@ -1524,7 +1524,7 @@
         saveBtn.type = 'button';
         saveBtn.textContent = 'Save tag';
         saveBtn.setAttribute('style', [
-            'background: #4a7cff',
+            'background: #4d9dff',
             'color: #fff',
             'border: 0',
             'border-radius: 4px',

@@ -80,7 +80,7 @@ export default async function ClaimPage({ searchParams }: PageProps) {
 
 const h2: React.CSSProperties = { margin: '0 0 12px', fontSize: 20, fontWeight: 600 };
 const muted: React.CSSProperties = { fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, margin: '0 0 16px' };
-const primaryLink: React.CSSProperties = { display: 'inline-block', marginTop: 8, padding: '10px 16px', background: '#4a7cff', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' };
+const primaryLink: React.CSSProperties = { display: 'inline-block', marginTop: 8, padding: '10px 16px', background: '#4d9dff', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' };
 
 function Frame({ children }: { children: React.ReactNode }) {
   return (

@@ -60,7 +60,7 @@ export function MineEmpty() {
           <Link
             href={`/claim?token=${encodeURIComponent(token)}`}
             style={{
-              background: '#4a7cff',
+              background: '#4d9dff',
               color: 'white',
               padding: '10px 18px',
               borderRadius: 6,
@@ -83,7 +83,7 @@ export function MineEmpty() {
             <Link
               href="/install"
               style={{
-                background: '#4a7cff',
+                background: '#4d9dff',
                 color: 'white',
                 padding: '10px 18px',
                 borderRadius: 6,

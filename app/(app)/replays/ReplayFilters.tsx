@@ -482,7 +482,7 @@ function ReplayCellLink({ replay }: { replay: Row }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <ResultBadge playerId={p1?.id} winners={replay.winners} />
-        <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{matchupText(replay)}</span>
+        <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
         <TableShareChip sharedTeams={replay.sharedTeams} />
       </div>
@@ -609,7 +609,7 @@ const cellStyle: React.CSSProperties = { padding: '8px 10px', verticalAlign: 'mi
 const labelChipStyle: React.CSSProperties = {
   background: 'rgba(160, 196, 255, 0.08)',
   border: '1px solid rgba(160, 196, 255, 0.2)',
-  color: '#a0c4ff',
+  color: '#a7d2ff',
   fontSize: 10,
   fontWeight: 600,
   padding: '1px 6px',
@@ -638,7 +638,7 @@ function ShareTabs({
           background: 'transparent',
           color: active ? '#e6e6e6' : '#6c7588',
           border: 0,
-          borderBottom: `2px solid ${active ? '#4a7cff' : 'transparent'}`,
+          borderBottom: `2px solid ${active ? '#4d9dff' : 'transparent'}`,
           padding: '6px 4px',
           marginBottom: -1,
           fontSize: 13,
@@ -651,7 +651,7 @@ function ShareTabs({
         }}
       >
         {label}
-        <span style={{ fontSize: 11, fontWeight: 600, color: active ? '#a0c4ff' : '#4a4e56' }}>{count}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: active ? '#a7d2ff' : '#4a4e56' }}>{count}</span>
       </button>
     );
   };
@@ -684,9 +684,9 @@ function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode
       onClick={() => setView(v)}
       aria-pressed={view === v}
       style={{
-        background: view === v ? 'rgba(74, 124, 255, 0.18)' : 'transparent',
+        background: view === v ? 'rgba(77, 157, 255, 0.18)' : 'transparent',
         color: view === v ? '#e6e6e6' : '#a0a8b8',
-        border: '1px solid ' + (view === v ? 'rgba(74, 124, 255, 0.5)' : '#2e333c'),
+        border: '1px solid ' + (view === v ? 'rgba(77, 157, 255, 0.5)' : '#2e333c'),
         padding: '4px 10px',
         fontSize: 11,
         fontWeight: 600,
@@ -836,9 +836,9 @@ const inputStyle: React.CSSProperties = {
 };
 const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' };
 const chipButtonStyle: React.CSSProperties = {
-  background: 'rgba(74, 124, 255, 0.18)',
-  border: '1px solid rgba(74, 124, 255, 0.5)',
-  color: '#a0c4ff',
+  background: 'rgba(77, 157, 255, 0.18)',
+  border: '1px solid rgba(77, 157, 255, 0.5)',
+  color: '#a7d2ff',
   padding: '3px 10px',
   borderRadius: 999,
   fontSize: 11,

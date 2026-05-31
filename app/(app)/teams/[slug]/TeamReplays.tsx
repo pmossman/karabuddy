@@ -80,7 +80,7 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
               onClick={() => setInternalOnly(val)}
               title={val ? 'Matches played between teammates' : undefined}
               style={{
-                background: internalOnly === val ? '#4a7cff' : 'transparent',
+                background: internalOnly === val ? '#4d9dff' : 'transparent',
                 color: internalOnly === val ? '#fff' : '#a0a8b8',
                 border: 0, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
               }}

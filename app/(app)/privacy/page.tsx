@@ -41,7 +41,7 @@ const list: React.CSSProperties = {
   lineHeight: 1.6,
   color: '#c4c8d2',
 };
-const linkStyle: React.CSSProperties = { color: '#5da9ff', textDecoration: 'none' };
+const linkStyle: React.CSSProperties = { color: '#5db4ff', textDecoration: 'none' };
 
 export default function PrivacyPage() {
   return (

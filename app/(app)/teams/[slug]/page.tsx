@@ -65,7 +65,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         <p style={{ margin: '0 0 24px', fontSize: 13, color: '#a0a8b8' }}>
           You&apos;re not a member of this team. Ask an owner for an invite link.
         </p>
-        <Link href="/teams" style={{ color: '#5da9ff', fontSize: 13 }}>← All teams</Link>
+        <Link href="/teams" style={{ color: '#5db4ff', fontSize: 13 }}>← All teams</Link>
       </main>
     );
   }
@@ -158,9 +158,9 @@ function TabBar({ slug, active }: { slug: string; active: Tab }) {
               fontWeight: 600,
               color: isActive ? '#e6e6e6' : '#a0a8b8',
               textDecoration: 'none',
-              borderBottom: isActive ? '2px solid #4a7cff' : '2px solid transparent',
+              borderBottom: isActive ? '2px solid #4d9dff' : '2px solid transparent',
               marginBottom: -1,
-              background: isActive ? 'rgba(74, 124, 255, 0.06)' : 'transparent',
+              background: isActive ? 'rgba(77, 157, 255, 0.06)' : 'transparent',
               borderRadius: '4px 4px 0 0',
             }}
           >
@@ -200,7 +200,7 @@ function MembersList({ members, viewerUserId }: { members: any[]; viewerUserId: 
             </span>
           </div>
           {m.role === 'owner' && (
-            <span style={{ fontSize: 10, color: '#5da9ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+            <span style={{ fontSize: 10, color: '#5db4ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
               Owner
             </span>
           )}

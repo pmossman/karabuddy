@@ -18,12 +18,18 @@ export const tokens = {
     borderStrong: '#3a3e46',
     borderStronger: '#4a4e56',
 
-    // Brand / interactive.
-    primary: '#4a7cff', // primary action, active accents
-    primaryHover: '#5d8bff',
-    primarySoft: 'rgba(74, 124, 255, 0.18)', // active chip / hover fill
-    accent: '#a0c4ff', // links, chip text on dark
-    accentBright: '#5da9ff', // inline links
+    // Brand / interactive — TWO intentional accents in one electric family:
+    //   • primary (#4d9dff azure)  = actions, links, nav, the logo. The "do this".
+    //   • led.on  (#4dd2ff cyan)   = live/active signal — LED toggles, active
+    //                                states, recording. The "this is on/live".
+    // Both are bright siblings (adjacent hue) so they read as one palette. The
+    // old muddy #4a7cff/#5da9ff were consolidated here (B94); reach for these,
+    // never a raw hex, so the palette stays cohesive everywhere.
+    primary: '#4d9dff', // primary action, active accents
+    primaryHover: '#6fb0ff',
+    primarySoft: 'rgba(77, 157, 255, 0.18)', // active chip / hover fill
+    accent: '#a7d2ff', // links, chip text on dark
+    accentBright: '#5db4ff', // inline links
 
     // Text (brightest → faintest).
     text: '#e6e6e6',
@@ -70,8 +76,8 @@ export const tokens = {
   button: {
     bg: 'linear-gradient(150deg, #243044 0%, #1a1d23 100%)',
     bgHover: 'linear-gradient(150deg, #2a3850 0%, #1e222a 100%)',
-    glow: '0 0 10px rgba(74, 124, 255, 0.22), inset 0 0 8px rgba(74, 124, 255, 0.08)',
-    glowHover: '0 0 15px rgba(74, 124, 255, 0.45), inset 0 0 10px rgba(74, 124, 255, 0.14)',
+    glow: '0 0 10px rgba(77, 157, 255, 0.22), inset 0 0 8px rgba(77, 157, 255, 0.08)',
+    glowHover: '0 0 15px rgba(77, 157, 255, 0.45), inset 0 0 10px rgba(77, 157, 255, 0.14)',
   },
   radius: {
     sm: 4,

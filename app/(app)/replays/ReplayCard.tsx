@@ -97,7 +97,7 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
                 style={{
                   background: 'rgba(160, 196, 255, 0.08)',
                   border: '1px solid rgba(160, 196, 255, 0.2)',
-                  color: '#a0c4ff',
+                  color: '#a7d2ff',
                   fontSize: 10,
                   fontWeight: 600,
                   padding: '1px 6px',
@@ -116,9 +116,9 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
             <span
               key={label}
               style={{
-                background: 'rgba(74, 124, 255, 0.12)',
-                border: '1px solid rgba(74, 124, 255, 0.3)',
-                color: '#a0c4ff',
+                background: 'rgba(77, 157, 255, 0.12)',
+                border: '1px solid rgba(77, 157, 255, 0.3)',
+                color: '#a7d2ff',
                 borderRadius: 999,
                 padding: '1px 8px',
                 fontSize: 10,

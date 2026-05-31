@@ -64,7 +64,7 @@ export function CreateTeamForm() {
           type="submit"
           disabled={busy || !name.trim()}
           style={{
-            background: '#4a7cff',
+            background: '#4d9dff',
             color: 'white',
             border: 0,
             borderRadius: 6,

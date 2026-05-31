@@ -78,7 +78,7 @@ export function MentionsList() {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#5da9ff', fontWeight: 600 }}>{r.authorName}</span>
+            <span style={{ fontSize: 12, color: '#5db4ff', fontWeight: 600 }}>{r.authorName}</span>
             <span style={{ fontSize: 11, color: '#6c7588' }}>{formatRelative(r.createdAt)} · frame {r.frameIndex + 1}</span>
           </div>
           <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.4, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>

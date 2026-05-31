@@ -77,7 +77,7 @@ async function TeamsList({ userId }: { userId: string }) {
               }}
             >
               <span style={{ fontSize: 14, fontWeight: 600 }}>{t.name}</span>
-              <span style={{ fontSize: 11, color: t.role === 'owner' ? '#5da9ff' : '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+              <span style={{ fontSize: 11, color: t.role === 'owner' ? '#5db4ff' : '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
                 {t.role}
               </span>
             </Link>
@@ -89,10 +89,10 @@ async function TeamsList({ userId }: { userId: string }) {
         <CreateTeamForm />
       </section>
 
-      <section style={{ marginTop: 24, padding: 16, background: 'rgba(74, 124, 255, 0.06)', border: '1px solid rgba(74, 124, 255, 0.2)', borderRadius: 8 }}>
-        <div style={{ fontSize: 12, color: '#a0c4ff', lineHeight: 1.5 }}>
+      <section style={{ marginTop: 24, padding: 16, background: 'rgba(77, 157, 255, 0.06)', border: '1px solid rgba(77, 157, 255, 0.2)', borderRadius: 8 }}>
+        <div style={{ fontSize: 12, color: '#a7d2ff', lineHeight: 1.5 }}>
           Joining an existing team? Open the invite link your team owner sent —
-          it&apos;ll look like <code style={{ color: '#5da9ff' }}>karabuddy.app/teams/join?code=…</code>
+          it&apos;ll look like <code style={{ color: '#5db4ff' }}>karabuddy.app/teams/join?code=…</code>
         </div>
       </section>
     </>
@@ -105,7 +105,7 @@ function SignInPrompt() {
       <p style={{ margin: 0, color: '#a0a8b8', fontSize: 13 }}>Sign in to create or join a team.</p>
       <Link
         href="/signin?callbackUrl=/teams"
-        style={{ display: 'inline-block', marginTop: 16, padding: '10px 16px', background: '#4a7cff', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
+        style={{ display: 'inline-block', marginTop: 16, padding: '10px 16px', background: '#4d9dff', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
       >
         Sign in
       </Link>

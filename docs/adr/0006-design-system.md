@@ -21,6 +21,12 @@ shared **design tokens**.
 
 - **Tokens** (`app/_theme/karabuddyTokens.ts`) are the single source for the
   neon-dark palette / radii / spacing / font. Reach for a token before a raw hex.
+- **Two intentional accents** (one electric family, adjacent hue): **primary
+  `#4d9dff`** (azure) for actions/links/nav/logo — "do this"; **`#4dd2ff`**
+  (cyan) for live/active signal — LED toggles, active states, recording — "this
+  is on/live". The earlier muddy `#4a7cff`/`#5da9ff` were consolidated to these
+  (B94, swept across app **and** extension so the two products share one
+  palette). The logo "buddy" is a cyan→azure gradient tying both together.
 - **Signature controls = bespoke LED, matching the extension.** The target
   aesthetic is the extension's "cockpit" LED toggle (glowing cyan ring + dot,
   left accent bar, monospace label, "SHARING" readout — `extension/replays/05-footer.js`).

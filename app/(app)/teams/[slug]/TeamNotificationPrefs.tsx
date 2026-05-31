@@ -41,7 +41,7 @@ export function TeamNotificationPrefs({ slug }: { slug: string }) {
     <section style={{ marginTop: 24, padding: 16, background: 'rgba(17,20,26,0.5)', border: '1px solid #2e333c', borderRadius: 8 }}>
       <h3 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600 }}>Discord notifications for this team</h3>
       <p style={{ margin: '0 0 12px', fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
-        How you want to be pinged for activity in this team. Your global switch on <a href="/settings" style={{ color: '#5da9ff' }}>Settings</a> overrides these.
+        How you want to be pinged for activity in this team. Your global switch on <a href="/settings" style={{ color: '#5db4ff' }}>Settings</a> overrides these.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {row('DM me when I’m directly @-mentioned on a replay shared with this team', 'dmOnDirectMention')}

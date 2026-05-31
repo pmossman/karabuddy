@@ -124,7 +124,7 @@ export function ShareWithTeam({
     return (
       <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
         You&apos;re not in any teams yet. Create or join one at{' '}
-        <a href="/teams" style={{ color: '#5da9ff' }}>/teams</a>.
+        <a href="/teams" style={{ color: '#5db4ff' }}>/teams</a>.
       </div>
     );
   }

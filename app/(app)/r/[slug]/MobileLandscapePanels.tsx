@@ -83,7 +83,7 @@ export function StepModeOverlay({
         alignItems: 'center',
         gap: 6,
         background: 'rgba(17, 20, 26, 0.85)',
-        border: '1px solid rgba(74, 124, 255, 0.4)',
+        border: '1px solid rgba(77, 157, 255, 0.4)',
         borderRadius: 6,
         padding: '4px 8px',
         backdropFilter: 'blur(6px)',
@@ -116,8 +116,8 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
       onClick={onClick}
       aria-pressed={active}
       style={{
-        background: active ? 'rgba(74, 124, 255, 0.4)' : 'transparent',
-        color: active ? '#fff' : '#a0c4ff',
+        background: active ? 'rgba(77, 157, 255, 0.4)' : 'transparent',
+        color: active ? '#fff' : '#a7d2ff',
         border: 0,
         padding: '4px 10px',
         fontSize: 11,
@@ -265,7 +265,7 @@ export function MatchupPanel({
               padding: '8px 12px',
               fontSize: 12,
               fontWeight: 600,
-              color: '#a0c4ff',
+              color: '#a7d2ff',
               cursor: 'pointer',
               fontFamily: 'inherit',
               textAlign: 'left',
@@ -342,9 +342,9 @@ const thumbImgStyle: React.CSSProperties = {
 const thumbBoxStyle: React.CSSProperties = { ...thumbImgStyle, border: '1px solid #2e333c' };
 
 const chipStyle: React.CSSProperties = {
-  background: 'rgba(74, 124, 255, 0.12)',
-  border: '1px solid rgba(74, 124, 255, 0.3)',
-  color: '#a0c4ff',
+  background: 'rgba(77, 157, 255, 0.12)',
+  border: '1px solid rgba(77, 157, 255, 0.3)',
+  color: '#a7d2ff',
   borderRadius: 999,
   padding: '1px 8px',
   fontSize: 10,

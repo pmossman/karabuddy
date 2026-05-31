@@ -111,7 +111,7 @@ export function LinkedExtensions() {
               gap: 12,
               padding: '10px 14px',
               background: 'rgba(17,20,26,0.6)',
-              border: '1px solid ' + (isThis ? 'rgba(74, 124, 255, 0.4)' : '#2e333c'),
+              border: '1px solid ' + (isThis ? 'rgba(77, 157, 255, 0.4)' : '#2e333c'),
               borderRadius: 6,
             }}
           >
@@ -119,7 +119,7 @@ export function LinkedExtensions() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#d6d6d6' }} title={ext.token}>{short}</span>
                 {isThis && (
-                  <span style={{ fontSize: 10, color: '#5da9ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                  <span style={{ fontSize: 10, color: '#5db4ff', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
                     This browser
                   </span>
                 )}
