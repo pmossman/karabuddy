@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4 # for docs ref only; cheap
+      - uses: actions/checkout@v5 # for docs ref only; cheap
 
       - name: Resolve the release tag + download its zip
         id: dl
@@ -66,9 +66,9 @@ jobs:
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Upload to the Chrome Web Store${{ inputs.publish && ' + submit for review' || ' (draft)' }}
         env:

@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B87] Bump CI off Node 20 (GitHub Actions deprecation)
+_completed: 2026-05-31 by claude_
+Node 20 actions are deprecated (forced to Node 24 on 2026-06-16) and Node 20 LTS is EOL. Bumped across all four workflows: `actions/checkout@v4→v5`, `actions/setup-node@v4→v5`, `actions/upload-artifact@v4→v5`, and the build/test `node-version` `'20'→'24'` (matches Vercel's prod default, closing the CI-vs-prod parity gap). No `engines` pin existed; left unpinned (Vercel + CI both on 24).
+
 ### [B86] Enforce safe deploys (expand/contract migration guard)
 _completed: 2026-05-31 by claude_
 B85 dropped two columns in the same deploy that removed their references; prod migrates during the build prebuild while the previous deployment is still live, so that's a ~1–2 min window of 500s. Made the unsafe path hard instead of relying on discipline.
