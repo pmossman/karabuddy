@@ -16,9 +16,14 @@ import { useEffect, useState } from 'react';
 export function ShareWithTeam({
   replaySlug,
   installToken,
+  onArmedTeamsChange,
 }: {
   replaySlug: string;
   installToken: string;
+  // Reports the LIVE shared subset (teams this replay is shared with, of the
+  // owner's teams) so the comment scope chip tracks in-session share changes
+  // instead of the page-load snapshot. Called on load + after every toggle.
+  onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
 }) {
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error' | 'unauth'>('loading');
   const [shares, setShares] = useState<Set<string>>(new Set());
@@ -54,6 +59,18 @@ export function ShareWithTeam({
     })();
     return () => { cancelled = true; };
   }, [replaySlug, installToken]);
+
+  // Keep the parent's `armedTeams` in sync with the live shared set — on the
+  // initial load and after each optimistic toggle (incl. a failed-toggle
+  // revert, which mutates `shares`). Only fires once data has loaded so we
+  // don't clobber the parent's GET /tags snapshot with an empty set mid-fetch.
+  // `onArmedTeamsChange` is the parent's stable setState, so [shares, teams,
+  // state] are the only triggers — no render loop.
+  useEffect(() => {
+    if (state !== 'ready' && state !== 'empty') return;
+    onArmedTeamsChange?.(teams.filter((t) => shares.has(t.slug)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shares, teams, state]);
 
   const toggle = async (teamSlug: string) => {
     if (pending.has(teamSlug)) return;

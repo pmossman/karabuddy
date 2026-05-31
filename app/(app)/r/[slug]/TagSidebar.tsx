@@ -101,6 +101,9 @@ interface Props {
   // in that this replay is shared with (audience ⊆ shares). Drives the
   // scope chip; empty / single → no chip (nothing to narrow).
   armedTeams: { slug: string; name: string }[];
+  // Lets ShareWithTeam push live share changes back up to `armedTeams` so the
+  // scope chip stays truthful when the owner re-shares mid-session.
+  onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
 }
 
 // B42 chip labels live in lib/matchMetadata.ts — single source of truth
@@ -135,7 +138,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -781,7 +784,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             </div>
             {isOwner && (
               <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
-                <ShareWithTeam replaySlug={replay.slug} installToken={installToken} />
+                <ShareWithTeam replaySlug={replay.slug} installToken={installToken} onArmedTeamsChange={onArmedTeamsChange} />
               </div>
             )}
             {/* B66b: EditReplayMeta moved out of this popover into the

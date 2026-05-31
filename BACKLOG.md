@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B88] Fix: comment scope chip ignored in-session share changes
+_completed: 2026-05-31 by claude_
+Un-sharing a replay via the viewer's Share popover left the "Visible to:" tag scope chip still claiming the comment would reach the (now-removed) teams. The server clamps on submit (`resolveTagScope`: no shares ⇒ personal), so the stored tag was already correct — the bug was a misleading preview. Root cause: `ShareWithTeam` kept its toggle in local state while `armedTeams` (drives the chip + default audience) was a page-load snapshot from `GET /tags`, never refreshed. Fix: `ShareWithTeam` reports the live shared subset up via `onArmedTeamsChange` → `ReplayViewer.setArmedTeams`, so the chip tracks reality. Regression E2E `scope-chip-live-shares.spec.ts` (red→green).
+
 ### [B87] Bump CI off Node 20 (GitHub Actions deprecation)
 _completed: 2026-05-31 by claude_
 Node 20 actions are deprecated (forced to Node 24 on 2026-06-16) and Node 20 LTS is EOL. Bumped across all four workflows: `actions/checkout@v4→v5`, `actions/setup-node@v4→v5`, `actions/upload-artifact@v4→v5`, and the build/test `node-version` `'20'→'24'` (matches Vercel's prod default, closing the CI-vs-prod parity gap). No `engines` pin existed; left unpinned (Vercel + CI both on 24).

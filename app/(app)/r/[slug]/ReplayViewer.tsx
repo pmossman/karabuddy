@@ -413,6 +413,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         decks={replay.decks ?? decoded?.meta.decks ?? null}
         localPlayerId={decoded?.meta.localPlayerId ?? null}
         armedTeams={armedTeams}
+        onArmedTeamsChange={setArmedTeams}
       />
       <FrameNavOverlay
         drawerOpen={drawerOpen}
