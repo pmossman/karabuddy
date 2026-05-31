@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B91] Fix: step-mode toggle hydration mismatch (pre-existing)
+_completed: 2026-05-31 by claude_
+The viewer's Action/Frame step-mode toggle read `localStorage` inside its `useState` initializer, so SSR rendered the default (`action`) while the client hydrated to the saved value (`frame`) → a dev hydration-mismatch warning on the toggle's `aria-pressed`/styling (benign in prod; React reconciles to the client value). Predates the design-system work (surfaced while checking it locally). Fixed with the file's existing sidebar-width pattern: default on SSR, hydrate from localStorage in a mount effect, and skip the persist effect's mount pass so it doesn't clobber the stored value.
+
 ### [B90] Design-system foundation — tokens + themed MUI + enforcement (PoC)
 _completed: 2026-05-31 by claude_
 First phase of the consistency/branding pass ([ADR 0006](docs/adr/0006-design-system.md); strategy "themed MUI + tokens" chosen with Parker). The chrome had no MUI ThemeProvider (only the lifted gameboard did), so it was all hand-rolled inline styles + a mix of native/styled controls.

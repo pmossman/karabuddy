@@ -216,15 +216,23 @@ function ViewerShell({ replay, initialTags }: Props) {
     // on every meaningful frame change, not on its own URL writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
-  const [mode, setMode] = useState<StepMode>(() => {
-    if (typeof window === 'undefined') return 'action';
+  // Start at the server-safe default so SSR and the first client render agree;
+  // hydrate the persisted choice in an effect after mount (mirrors the
+  // sidebar-width pattern below). Reading localStorage in the useState
+  // initializer caused a hydration mismatch on the step-mode toggle's
+  // aria-pressed/styling when the saved mode differed from the default.
+  const [mode, setMode] = useState<StepMode>('action');
+  useEffect(() => {
     try {
       const v = window.localStorage.getItem('karabuddy:stepMode');
-      return v === 'frame' ? 'frame' : 'action';
-    } catch { return 'action'; }
-  });
-
+      if (v === 'frame' || v === 'action') setMode(v);
+    } catch {}
+  }, []);
+  // Persist on change — but skip the mount pass so we don't clobber the stored
+  // value before the hydrate effect above has read it.
+  const stepModePersistReady = useRef(false);
   useEffect(() => {
+    if (!stepModePersistReady.current) { stepModePersistReady.current = true; return; }
     try { window.localStorage.setItem('karabuddy:stepMode', mode); } catch {}
   }, [mode]);
 
