@@ -277,7 +277,7 @@ export function ReplayFilters({
           {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
         </div>
       ) : view === 'table' ? (
-        <TableView rows={filtered} />
+        <TableView rows={filtered} showShareColumn={tab !== 'unlisted'} />
       ) : view === 'by-leader' ? (
         <ByLeaderGroups rows={filtered} canManage={canManage} />
       ) : view === 'timeline' ? (
@@ -408,7 +408,7 @@ function formatDateShort(iso: string) {
   return d.toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
 }
 
-function TableView({ rows }: { rows: Row[] }) {
+function TableView({ rows, showShareColumn = true }: { rows: Row[]; showShareColumn?: boolean }) {
   // Default: newest first (matches the grid's pre-existing order).
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -434,8 +434,9 @@ function TableView({ rows }: { rows: Row[] }) {
   }, [rows, sortKey, sortDir]);
 
   // Show the "Shared with" column only when share data is present (the personal
-  // library passes it; the reused team grid doesn't → no empty column there).
-  const showShared = rows.some((r) => r.sharedTeams !== undefined);
+  // library passes it; the reused team grid doesn't → no empty column there) AND
+  // the caller wants it (hidden on the Unlisted tab, where it'd be all "UNLISTED").
+  const showShared = showShareColumn && rows.some((r) => r.sharedTeams !== undefined);
 
   const onHeaderClick = (k: SortKey) => {
     if (sortKey === k) {
