@@ -67,13 +67,12 @@ export default function PrivacyPage() {
 
         <p style={p}><strong style={{ color: '#e6e6e6' }}>Install token.</strong> The KaraBuddy chrome extension generates an opaque random identifier (format: <code style={codeStyle}>kbx_&lt;uuid&gt;</code>) the first time it runs and stores it in <code style={codeStyle}>chrome.storage.local</code>. Every replay the extension uploads carries this token. It's how we attribute uploads when you haven&apos;t signed in.</p>
 
-        <p style={p}><strong style={{ color: '#e6e6e6' }}>Replay payloads.</strong> When the extension finalizes a karabast.net match it uploads a JSON blob to karabuddy.app. The payload contains: the gameState frame history (deck contents for both players, card play sequence, in-game chat, player usernames, game timer state), and any tags you added mid-match. Payloads are stored in Vercel Blob; metadata (gameId, players, duration, action count, upload time, visibility) lives in a Postgres row that points at the blob. The extension also caches the most recent 50 replays in your browser&apos;s IndexedDB.</p>
+        <p style={p}><strong style={{ color: '#e6e6e6' }}>Replay payloads.</strong> When the extension finalizes a karabast.net match it uploads a JSON blob to karabuddy.app. The payload contains: the gameState frame history (deck contents for both players, card play sequence, in-game chat, player usernames, game timer state), and any tags you added mid-match. Payloads are stored in Vercel Blob; metadata (gameId, players, duration, action count, upload time) lives in a Postgres row that points at the blob. The extension also caches the most recent 50 replays in your browser&apos;s IndexedDB.</p>
 
-        <p style={p}><strong style={{ color: '#e6e6e6' }}>Tags.</strong> Short text notes anchored to specific frames. Each tag stores the comment text, the frame index, the author&apos;s display name (your karabast username or an <code style={codeStyle}>anon-XXXX</code> handle generated once per browser), and the author&apos;s install token (so tag editing can be gated). Created via the extension mid-match or directly in the replay viewer at <code style={codeStyle}>/r/&lt;slug&gt;</code>.</p>
+        <p style={p}><strong style={{ color: '#e6e6e6' }}>Tags.</strong> Short text notes anchored to specific frames. Each tag stores the comment text, the frame index, the author&apos;s display name (your karabuddy account name or an <code style={codeStyle}>anon-XXXX</code> handle generated once per browser), and the author&apos;s install token (so tag editing can be gated). Created via the extension mid-match or directly in the replay viewer at <code style={codeStyle}>/r/&lt;slug&gt;</code>.</p>
 
         <p style={p}><strong style={{ color: '#e6e6e6' }}>Account info (only if you sign in).</strong> Sign-in is optional. If you use it, Auth.js receives your Discord or Google profile via OAuth and stores: the provider name (<code style={codeStyle}>discord</code> or <code style={codeStyle}>google</code>), the provider&apos;s user ID, your email address (if the provider sends it), and your display name. Sessions are signed JWTs in an HTTP-only cookie.</p>
 
-        <p style={p}><strong style={{ color: '#e6e6e6' }}>Karabast username claim (optional).</strong> If you set this in <code style={codeStyle}>/settings</code>, we use it to backfill ownership of historical replays where you appear as a player.</p>
       </section>
 
       <section style={section}>
@@ -108,10 +107,10 @@ export default function PrivacyPage() {
       <section style={section}>
         <h2 style={h2}>Replay visibility</h2>
         <p style={p}>
-          Replays default to <strong style={{ color: '#e6e6e6' }}>unlisted</strong>: only accessible via the direct <code style={codeStyle}>/r/&lt;slug&gt;</code> URL. The slug is short but unguessable. You can flip a replay to <strong style={{ color: '#e6e6e6' }}>public</strong> in the viewer&apos;s Share menu, which makes it appear in the public browse list at <code style={codeStyle}>/replays?tab=public</code>.
+          Replays are <strong style={{ color: '#e6e6e6' }}>link-accessible</strong>: reachable only via the direct <code style={codeStyle}>/r/&lt;slug&gt;</code> URL (the slug is short but unguessable). There is no public browse list. You can also share a replay with a <strong style={{ color: '#e6e6e6' }}>team</strong> you&apos;re in, which surfaces it in that team&apos;s replay grid for its members.
         </p>
         <p style={muted}>
-          Anyone with the link to an unlisted replay can view its full content (deck contents, chat, frame-by-frame state). Treat the link like a shareable link to a Google Doc — if you don&apos;t want strangers seeing it, don&apos;t share the URL.
+          Anyone with the link can view a replay&apos;s full content (deck contents, chat, frame-by-frame state). Treat the link like a shareable Google Doc link — if you don&apos;t want others seeing it, don&apos;t share the URL.
         </p>
       </section>
 

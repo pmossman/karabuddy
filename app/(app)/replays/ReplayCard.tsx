@@ -13,7 +13,6 @@ interface ReplayRow {
   players: any;
   durationMs: number;
   actionCount: number;
-  visibility: string;
   createdAt: string;
   // B42: match metadata. Null for replays uploaded by pre-B42 extension
   // versions; new replays carry { gameFormat, cardPool, gamesToWinMode, ... }.
@@ -34,26 +33,9 @@ interface ReplayRow {
 export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage: boolean }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [visibility, setVisibility] = useState(replay.visibility);
 
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
-
-  const toggleVisibility = async () => {
-    const next = visibility === 'public' ? 'unlisted' : 'public';
-    const res = await fetch(`/api/replays/${replay.slug}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ visibility: next }),
-    });
-    const body = await res.json();
-    if (!body.ok) {
-      alert(`Failed to update: ${body.error || 'unknown'}`);
-      return;
-    }
-    setVisibility(next);
-    startTransition(() => router.refresh());
-  };
 
   const remove = async () => {
     if (!confirm('Delete this replay? This cannot be undone.')) return;
@@ -149,24 +131,6 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
       </Link>
       {canManage && (
         <div style={{ display: 'flex', gap: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
-          <button
-            type="button"
-            onClick={toggleVisibility}
-            disabled={isPending}
-            style={{
-              background: 'transparent',
-              border: '1px solid #4a4e56',
-              color: visibility === 'public' ? '#6bd968' : '#a0a8b8',
-              padding: '4px 10px',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-              cursor: isPending ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            {visibility === 'public' ? '✓ Public' : 'Make public'}
-          </button>
           <button
             type="button"
             onClick={remove}

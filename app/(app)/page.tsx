@@ -103,7 +103,6 @@ function serializeRow(r: any) {
     players: orderPlayersOwnerFirst(r.players, r.ownerPlayerId),
     durationMs: r.durationMs,
     actionCount: r.actionCount,
-    visibility: r.visibility,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
     match: r.match ?? null,
     displayName: r.displayName ?? null,

@@ -146,7 +146,7 @@ export function ShareWithTeam({
       </div>
       {shares.size > 0 && (
         <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-          Surfaces in selected teams&apos; replay grid regardless of visibility.
+          Surfaces in the selected teams&apos; replay grid.
         </div>
       )}
     </div>

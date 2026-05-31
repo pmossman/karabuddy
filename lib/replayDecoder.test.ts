@@ -5,6 +5,7 @@ import {
   extractWinners,
   reconstructFinalState,
   extractSeenCards,
+  mergeDecks,
   HIDDEN_SET,
   HIDDEN_DATA_CARD_ID,
 } from './replayDecoder';
@@ -103,5 +104,27 @@ describe('extractSeenCards', () => {
 
   it('ignores a player id that is not present', () => {
     expect(extractSeenCards([frameWith([{ uuid: 'x', setId: { set: 'SOR', number: 1 } }])], 'nobody')).toEqual([]);
+  });
+});
+
+describe('mergeDecks (B82 — teammate-vs-teammate complete info)', () => {
+  // Each recording has its own full deck + the opponent masked (no `deck` array).
+  const aSide = { p1: { username: 'A', deck: [{ id: 'x' }] }, p2: { username: 'B', deck: null } } as any;
+  const bSide = { p1: { username: 'A', deck: null }, p2: { username: 'B', deck: [{ id: 'y' }] } } as any;
+
+  it('fills each masked side from the other recording → both decks full', () => {
+    const merged = mergeDecks(aSide, bSide)!;
+    expect(merged.p1.deck).toEqual([{ id: 'x' }]); // A's own list kept
+    expect(merged.p2.deck).toEqual([{ id: 'y' }]); // B's full list filled in
+  });
+  it('does not overwrite an already-full list with a masked one', () => {
+    const merged = mergeDecks(bSide, aSide)!; // reverse order
+    expect(merged.p2.deck).toEqual([{ id: 'y' }]); // stays full, not clobbered by aSide's null
+    expect(merged.p1.deck).toEqual([{ id: 'x' }]);
+  });
+  it('handles null inputs', () => {
+    expect(mergeDecks(null, bSide)).toBe(bSide);
+    expect(mergeDecks(aSide, null)).toBe(aSide);
+    expect(mergeDecks(null, null)).toBeNull();
   });
 });

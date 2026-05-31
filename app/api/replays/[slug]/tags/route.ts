@@ -99,7 +99,7 @@ export async function POST(
     // Attribute via the same path as uploads: session → linked extension
     // token → karabast username match → null (anonymous, token-locked).
     const session = await auth();
-    const userId = await resolveUserId({ installToken, recordedUsername: null });
+    const userId = await resolveUserId({ installToken });
     const id = generateTagId();
     // B55c: structured mentions { userIds[], teamSlugs[] }. Caller picks
     // these from the autocomplete popover; we trust + persist them. The

@@ -28,7 +28,6 @@ export async function GET(req: Request) {
       id: users.id,
       name: users.name,
       image: users.image,
-      karabastUsername: users.karabastUsername,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -40,11 +39,9 @@ export async function GET(req: Request) {
     ok: true,
     user: {
       id: u.id,
-      // Prefer karabastUsername (matches what shows on karabast.net) →
-      // user.name (OAuth display) → null.
-      displayName: u.karabastUsername || u.name || null,
+      // B84: attribution by account name.
+      displayName: u.name || null,
       name: u.name,
-      karabastUsername: u.karabastUsername,
       image: u.image,
     },
   }, { headers });

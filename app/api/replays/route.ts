@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import { put } from '@/lib/blob';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, replayTeamShares, tags, teamMembers } from '@/lib/schema';
+import { replays, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
+import { extractWinners, mergeDecks, reconstructFinalState } from '@/lib/replayDecoder';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
@@ -38,6 +38,14 @@ async function applyUploadShares(slug: string, userId: string | null, shareTeamS
     .insert(replayTeamShares)
     .values(memberRows.map((m) => ({ replaySlug: slug, teamSlug: m.teamSlug, sharedBy: userId })))
     .onConflictDoNothing();
+}
+
+// B84: register the uploader's karabuddy account as a participant (recorder)
+// of this replay. Idempotent. When two teammates both record the same match,
+// both get rows → account-based intra-team detection, no karabast usernames.
+async function recordParticipant(slug: string, userId: string | null): Promise<void> {
+  if (!userId) return;
+  await getDb().insert(replayParticipants).values({ replaySlug: slug, userId }).onConflictDoNothing();
 }
 
 // B71: scope each lifted payload tag. Default (no per-tag teamSlugs) →
@@ -110,8 +118,7 @@ export async function POST(req: Request) {
       : [];
 
     const db = getDb();
-    const recordedUsername = players.find((p: any) => p?.username)?.username || null;
-    const userId = await resolveUserId({ installToken, recordedUsername });
+    const userId = await resolveUserId({ installToken });
 
     // B59: reconstruct the FINAL gamestate by applying all gamestate
     // patches in order, then extract winners from it. The recorder
@@ -138,7 +145,24 @@ export async function POST(req: Request) {
       const sameOwner = replay.ownerToken === installToken;
       const sameUser = replay.userId && userId && replay.userId === userId;
       if (!sameOwner && !sameUser) {
-        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true }, { headers });
+        // B82: teammate-vs-teammate — both players recorded the same match.
+        // Don't discard the second upload's deck snapshot; merge it into the
+        // canonical replay so the (otherwise-masked) opponent's FULL list is
+        // known — a complete-information review. Decks are immutable per match,
+        // so this is a safe idempotent enrich. The first uploader's POV/frames
+        // stay canonical (we don't overwrite the recording itself).
+        let enriched = false;
+        if (parsed.decks) {
+          const merged = mergeDecks(replay.decks as any, parsed.decks);
+          if (merged) {
+            await db.update(replays).set({ decks: merged }).where(eq(replays.slug, replay.slug));
+            enriched = true;
+          }
+        }
+        // B84: the 2nd teammate is now a recorded participant (account-based
+        // intra-team detection + the match shows in their library too).
+        await recordParticipant(replay.slug, userId);
+        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched }, { headers });
       }
 
       // Stale-snapshot guard: a finalize-upload can race with an in-flight
@@ -220,6 +244,7 @@ export async function POST(req: Request) {
       // B71: apply the bubble's armed shares, then scope the lifted tags.
       await applyUploadShares(replay.slug, userId, shareTeamSlugs);
       await scopeLiftedTags(replay.slug, userId, payloadTagsExisting);
+      await recordParticipant(replay.slug, userId);
 
       return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, snapshot: true }, { headers });
     }
@@ -251,7 +276,6 @@ export async function POST(req: Request) {
       // /replays?tab=mine knows which player was "me" without a per-
       // row karabast-username lookup.
       ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
-      visibility: 'unlisted',
     });
 
     // Lift tags embedded in the payload into the tags table so the viewer
@@ -282,6 +306,7 @@ export async function POST(req: Request) {
     // (default → the just-applied shares; per-tag teamSlugs narrows).
     await applyUploadShares(slug, userId, shareTeamSlugs);
     await scopeLiftedTags(slug, userId, payloadTags);
+    await recordParticipant(slug, userId);
 
     return NextResponse.json({ ok: true, slug, url: `/r/${slug}` }, { headers });
   } catch (err: any) {
@@ -290,19 +315,17 @@ export async function POST(req: Request) {
   }
 }
 
-// GET /api/replays?owner=<installToken> — list replays. With no owner param,
-// returns recent public replays; with owner, returns that token's library
-// (regardless of whether the install has been claimed by an account — the
-// token itself is the auth signal for view-only access, B54).
+// GET /api/replays?owner=<installToken> — an install's library (the token is
+// the view-only auth signal, B54). B85: no public list — without an owner there's
+// nothing to return (replays are link-accessible + team-shared, never browsable).
 export async function GET(req: Request) {
   const headers = corsHeaders(req.headers.get('origin'));
   try {
     const url = new URL(req.url);
     const owner = url.searchParams.get('owner');
+    if (!owner) return NextResponse.json({ ok: true, data: [] }, { headers });
     const db = getDb();
-    const rows = owner
-      ? await db.select().from(replays).where(eq(replays.ownerToken, owner)).orderBy(desc(replays.createdAt)).limit(100)
-      : await db.select().from(replays).where(eq(replays.visibility, 'public')).orderBy(desc(replays.createdAt)).limit(50);
+    const rows = await db.select().from(replays).where(eq(replays.ownerToken, owner)).orderBy(desc(replays.createdAt)).limit(100);
     return NextResponse.json({ ok: true, data: rows }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] GET /api/replays failed:', err);

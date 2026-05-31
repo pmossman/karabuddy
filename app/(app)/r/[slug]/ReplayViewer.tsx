@@ -29,7 +29,6 @@ interface ReplayRow {
   actionCount: number;
   payloadBlobUrl: string;
   payloadSizeBytes: number;
-  visibility: string;
   createdAt: string;
   // B42: nullable JSONB columns persisted by the server route.
   match?: any;

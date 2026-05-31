@@ -24,11 +24,9 @@ export const users = pgTable('users', {
   email: text('email').unique(),
   emailVerified: timestamp('email_verified', { mode: 'date' }),
   image: text('image'),
-  // karabuddy-specific: stash the user's karabast.net username so extension
-  // uploads from a logged-in karabast user can be auto-attributed. Set
-  // manually from settings until karabast offers OAuth (path 2) and we
-  // can pull it from the userinfo response.
-  karabastUsername: text('karabast_username'),
+  // B84: karabastUsername removed — the extension's install-token→account link
+  // is the only bridge; karabast username is never required. Attribution +
+  // intra-team detection are account-based (see replay_participants).
   // B75: per-user extension settings, synced across devices via /api/me/settings.
   // defaultShareTeamSlugs = the bubble's persistent "armed teams" set (which
   // teams a recorded replay auto-shares into). minUploadActions = the minimum
@@ -156,7 +154,8 @@ export const replays = pgTable(
     // these tag the whole replay. Stored as text[]; client trims, dedupes,
     // and caps server-side.
     labels: jsonb('labels'),
-    visibility: text('visibility').notNull().default('unlisted'), // 'unlisted' | 'public'
+    // B85: the "public" concept was removed — replays are link-accessible
+    // (anyone with /r/<slug>) and surface to teams via shares. No public list.
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -339,6 +338,28 @@ export const replayTeamShares = pgTable(
 );
 
 export type ReplayTeamShare = typeof replayTeamShares.$inferSelect;
+
+// B84: who RECORDED a replay, by karabuddy account. Account-based bridge —
+// when a linked install uploads, its user becomes a participant; when two
+// teammates both record the same match, both are participants. Drives
+// intra-team match detection (≥2 participants are teammates) and "shows in
+// both their libraries", with zero dependence on karabast usernames.
+export const replayParticipants = pgTable(
+  'replay_participants',
+  {
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.replaySlug, t.userId] }),
+    userIdx: index('replay_participants_user_idx').on(t.userId),
+  })
+);
+
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 

@@ -68,11 +68,10 @@ export async function Header() {
           </span>
         </Link>
         <nav style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-          <NavLink href="/replays?tab=public">Browse</NavLink>
-          {signedIn && <NavLink href="/replays?tab=mine">My replays</NavLink>}
+          {signedIn && <NavLink href="/replays">My replays</NavLink>}
           {signedIn && <NavLink href="/teams">Teams</NavLink>}
           {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
-          {signedIn && <NavLink href="/settings">Settings</NavLink>}
+          {/* Settings + Sign out now live in the avatar menu (SessionMenu). */}
           <SessionMenu compact />
         </nav>
       </div>
