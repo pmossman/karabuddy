@@ -16,6 +16,7 @@ export function LedToggle({
   label,
   statusOn,
   disabled = false,
+  shape = 'checkbox',
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -23,8 +24,14 @@ export function LedToggle({
   // Optional uppercase readout shown on the right when checked (e.g. "Sharing").
   statusOn?: string;
   disabled?: boolean;
+  // Square LED for multi-select (checkbox), round LED for an exclusive choice
+  // (radio). Matches the conventional control semantics users expect.
+  shape?: 'checkbox' | 'radio';
 }) {
   const [hover, setHover] = useState(false);
+  const ledRadius = shape === 'radio' ? '50%' : 3;
+  const dotRadius = shape === 'radio' ? '50%' : 1;
+  const role = shape === 'radio' ? 'radio' : 'checkbox';
   const accent = checked ? tokens.led.on : tokens.led.off;
   const background = checked
     ? tokens.led.rowOn
@@ -34,7 +41,7 @@ export function LedToggle({
 
   return (
     <div
-      role="checkbox"
+      role={role}
       aria-checked={checked}
       aria-label={label}
       aria-disabled={disabled || undefined}
@@ -69,7 +76,7 @@ export function LedToggle({
           justifyContent: 'center',
           width: 12,
           height: 12,
-          borderRadius: '50%',
+          borderRadius: ledRadius,
           border: `1.5px solid ${accent}`,
           background: 'rgba(0, 0, 0, 0.45)',
           boxShadow: checked ? tokens.led.ringGlow : tokens.led.ringInert,
@@ -78,7 +85,7 @@ export function LedToggle({
         }}
       >
         {checked && (
-          <span style={{ display: 'block', width: 5, height: 5, borderRadius: '50%', background: tokens.led.on, boxShadow: tokens.led.dotGlow }} />
+          <span style={{ display: 'block', width: 5, height: 5, borderRadius: dotRadius, background: tokens.led.on, boxShadow: tokens.led.dotGlow }} />
         )}
       </span>
 

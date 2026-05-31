@@ -1409,7 +1409,7 @@ function ScopeChip({
             );
           })}
           <div style={{ borderTop: '1px solid #2e333c', paddingTop: 4, marginTop: 2 }}>
-            <LedToggle checked={isPersonal} onChange={() => onPersonal()} label="Just me (personal)" />
+            <LedToggle checked={isPersonal} onChange={() => onPersonal()} label="Just me (personal)" shape="radio" />
           </div>
         </div>
       )}
