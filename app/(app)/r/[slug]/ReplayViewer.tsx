@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ThemeContextProvider } from '@/app/_contexts/Theme.context';
+import { KaraBuddyThemeProvider } from '@/app/_components/KaraBuddyThemeProvider';
 import { CosmeticsProvider } from '@/app/_contexts/CosmeticsContext';
 import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
@@ -393,6 +394,11 @@ function ViewerShell({ replay, initialTags }: Props) {
           </div>
         )}
       </div>
+      {/* The viewer is wrapped in the gameboard's ThemeContextProvider (for
+          the board); re-assert the KaraBuddy theme over the sidebar so its
+          MUI controls match the chrome instead of the gameboard's default
+          MUI theme. TagSidebar uses no gameboard contexts, only the theme. */}
+      <KaraBuddyThemeProvider>
       <TagSidebar
         replay={replay}
         frames={frames}
@@ -423,6 +429,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         armedTeams={armedTeams}
         onArmedTeamsChange={setArmedTeams}
       />
+      </KaraBuddyThemeProvider>
       <FrameNavOverlay
         drawerOpen={drawerOpen}
         leftPanelOpen={mobileLandscape && drawerOpen}
