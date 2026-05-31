@@ -33,8 +33,10 @@ swaps the Neon HTTP driver for node-postgres against any plain Postgres.
    no-op — though `npm run db:migrate` is the command if you ever start from
    an empty DB instead of a snapshot.
 4. Restart `npm run dev`. Local now reads/writes the Docker DB; prod is
-   untouched. Verify: the team page loads, and `db:migrate` reports it's
-   targeting `localhost:5434`.
+   untouched. Verify the target is local (not prod) — `drizzle-kit` doesn't
+   print the host, so check the resolved URL directly:
+   `node -r dotenv/config -e 'console.log(process.env.POSTGRES_URL_NON_POOLING)' dotenv_config_path=.env.development.local`
+   should print a `localhost:5434` URL. Then confirm the team page loads.
 
 ## Refreshing / teardown
 

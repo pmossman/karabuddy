@@ -49,6 +49,8 @@ interface TagRow {
   scope?: string[];
   // B55c: structured @-mentions, so the edit form can pre-fill them.
   mentions?: { userIds: string[]; teamSlugs: string[] } | null;
+  // B78: set on a reply → the id of the top-level tag it threads under.
+  parentTagId?: string | null;
 }
 
 type StepMode = 'action' | 'frame';
@@ -139,6 +141,14 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  // B76: immediate submitting feedback so the Save button shows progress the
+  // moment it's clicked (the POST can take a beat).
+  const [submittingTag, setSubmittingTag] = useState(false);
+  // B78: one-level reply threading. Which top-level tag the inline reply form
+  // is open under, its draft, and an in-flight flag for the submit button.
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replySubmitting, setReplySubmitting] = useState(false);
   const [decksOpen, setDecksOpen] = useState(false);
   const [draft, setDraft] = useState('');
   // B55c: structured mentions for the in-progress tag draft. Cleared on
@@ -326,26 +336,34 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const resetScope = () => { setScopeOverride(null); setScopeExpanded(false); };
 
   const submitTag = async () => {
-    if (!installToken || !frames) return;
+    if (!installToken || !frames || submittingTag) return;
     const hasMentions = draftMentions.userIds.length > 0 || draftMentions.teamSlugs.length > 0;
-    const res = await fetch(`/api/replays/${replay.slug}/tags`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        installToken,
-        authorName,
-        frameIndex: currentIndex,
-        comment: draft,
-        // B55c: structured mentions selected via autocomplete. Only sent
-        // when non-empty so old API consumers stay backward-compatible.
-        ...(hasMentions ? { mentions: draftMentions } : {}),
-        // B71: only send teamSlugs when the chip is in play (replay shared
-        // with 2+ of my teams). With 0/1 armed teams the server default
-        // (all shares) is already correct, so we stay backward-compatible.
-        ...(showScopeChip ? { teamSlugs: effectiveScope } : {}),
-      }),
-    });
-    const body = await res.json();
+    setSubmittingTag(true);
+    let body: any;
+    try {
+      const res = await fetch(`/api/replays/${replay.slug}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installToken,
+          authorName,
+          frameIndex: currentIndex,
+          comment: draft,
+          // B55c: structured mentions selected via autocomplete. Only sent
+          // when non-empty so old API consumers stay backward-compatible.
+          ...(hasMentions ? { mentions: draftMentions } : {}),
+          // B71: only send teamSlugs when the chip is in play (replay shared
+          // with 2+ of my teams). With 0/1 armed teams the server default
+          // (all shares) is already correct, so we stay backward-compatible.
+          ...(showScopeChip ? { teamSlugs: effectiveScope } : {}),
+        }),
+      });
+      body = await res.json();
+    } catch {
+      body = { ok: false, error: 'network error' };
+    } finally {
+      setSubmittingTag(false);
+    }
     if (!body.ok) {
       alert(`Failed to add tag: ${body.error || 'unknown'}`);
       return;
@@ -433,6 +451,131 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   };
 
   const tagsAtCurrent = tagsByFrame.get(currentIndex) || [];
+
+  // B78: replies grouped by their parent tag id, oldest-first within a thread.
+  const repliesByParent = useMemo(() => {
+    const m = new Map<string, TagRow[]>();
+    for (const t of tags) {
+      if (!t.parentTagId) continue;
+      const list = m.get(t.parentTagId) ?? [];
+      list.push(t);
+      m.set(t.parentTagId, list);
+    }
+    for (const list of m.values()) list.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    return m;
+  }, [tags]);
+
+  const submitReply = async (parentTagId: string, parentFrame: number) => {
+    if (!installToken || replySubmitting || !replyDraft.trim()) return;
+    setReplySubmitting(true);
+    let body: any;
+    try {
+      // The server inherits the parent's frame + scope and auto-@mentions the
+      // parent author, so the reply form only needs the text.
+      const res = await fetch(`/api/replays/${replay.slug}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installToken, authorName, frameIndex: parentFrame, comment: replyDraft.trim(), parentTagId }),
+      });
+      body = await res.json();
+    } catch {
+      body = { ok: false, error: 'network error' };
+    } finally {
+      setReplySubmitting(false);
+    }
+    if (!body.ok) {
+      alert(`Failed to reply: ${body.error || 'unknown'}`);
+      return;
+    }
+    setTags((prev) => [
+      ...prev,
+      {
+        id: body.id,
+        replaySlug: replay.slug,
+        frameIndex: parentFrame,
+        authorToken: installToken,
+        authorName,
+        comment: replyDraft.trim(),
+        createdAt: new Date().toISOString(),
+        scope: body.scope,
+        parentTagId,
+      },
+    ]);
+    setReplyDraft('');
+    setReplyingTo(null);
+  };
+
+  const replyLinkStyle: React.CSSProperties = {
+    alignSelf: 'flex-start', background: 'transparent', border: 0, padding: '2px 0',
+    color: '#6c7588', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+  };
+
+  // B78: render a top-level tag with its replies nested one level beneath,
+  // plus an inline Reply affordance. Replies reuse TagRowView (no further
+  // reply button — one level only).
+  const renderThread = (t: TagRow, isCurrent: boolean) => {
+    const rowFor = (tag: TagRow, current: boolean) => (
+      <TagRowView
+        key={tag.id}
+        tag={tag}
+        color={tagColor(tag.authorName, playerUsernames)}
+        isCurrent={current}
+        canEdit={canEditTag(tag, authCtx)}
+        canDelete={canDeleteTag(tag, { userId: replay.userId, ownerToken: replay.ownerToken }, authCtx)}
+        armedTeams={armedTeams}
+        mentionData={mentionData}
+        ensureMentionData={ensureMentionData}
+        onJumpTo={() => onJump(tag.frameIndex)}
+        onDelete={() => deleteTag(tag.id)}
+        onUpdate={(comment, teamSlugs, mentions) => updateComment(tag.id, comment, teamSlugs, mentions)}
+      />
+    );
+    const replies = repliesByParent.get(t.id) ?? [];
+    const open = replyingTo === t.id;
+    const nested = replies.length > 0 || open;
+    return (
+      <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {rowFor(t, isCurrent)}
+        <div
+          style={{
+            marginLeft: 14,
+            paddingLeft: 8,
+            borderLeft: nested ? '2px solid #2e333c' : 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          {replies.map((r) => rowFor(r, false))}
+          {installToken && (open ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <textarea
+                autoFocus
+                value={replyDraft}
+                onChange={(e) => setReplyDraft(e.target.value)}
+                placeholder={`Reply to ${t.authorName}…`}
+                rows={2}
+                style={{
+                  background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c',
+                  borderRadius: 4, padding: '6px 8px', font: '12px inherit', resize: 'vertical', outline: 'none',
+                }}
+              />
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <FooterBtn variant="ghost" onClick={() => { setReplyingTo(null); setReplyDraft(''); }}>Cancel</FooterBtn>
+                <FooterBtn onClick={() => submitReply(t.id, t.frameIndex)} disabled={replySubmitting}>
+                  {replySubmitting ? 'Replying…' : 'Reply'}
+                </FooterBtn>
+              </div>
+            </div>
+          ) : (
+            <button type="button" style={replyLinkStyle} onClick={() => { setReplyingTo(t.id); setReplyDraft(''); }}>
+              ↳ Reply
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // B44/B66: mobile drawer styling overrides desktop's flex-child positioning.
   // The aside takes itself out of normal flow with position:fixed so the
@@ -804,41 +947,22 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             )}
             <div style={{ display: 'flex', gap: 6, alignSelf: 'flex-end' }}>
               <FooterBtn variant="ghost" onClick={() => { resetScope(); setFormOpen(false); }}>Cancel</FooterBtn>
-              <FooterBtn onClick={submitTag}>Save tag</FooterBtn>
+              <FooterBtn onClick={submitTag} disabled={submittingTag}>{submittingTag ? 'Saving…' : 'Save tag'}</FooterBtn>
             </div>
           </div>
         )}
       </section>
 
       <section style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
-        {tagsAtCurrent.length > 0 && (
+        {tagsAtCurrent.some((t) => !t.parentTagId) && (
           <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This frame</div>
-            {tagsAtCurrent.map((t) => {
-              const canEdit = canEditTag(t, authCtx);
-              const canDelete = canDeleteTag(t, { userId: replay.userId, ownerToken: replay.ownerToken }, authCtx);
-              const c = tagColor(t.authorName, playerUsernames);
-              return (
-                <TagRowView
-                  key={t.id}
-                  tag={t}
-                  color={c}
-                  isCurrent={true}
-                  canEdit={canEdit}
-                  canDelete={canDelete}
-                  armedTeams={armedTeams}
-                  mentionData={mentionData}
-                  ensureMentionData={ensureMentionData}
-                  onJumpTo={() => {}}
-                  onDelete={() => deleteTag(t.id)}
-                  onUpdate={(comment, teamSlugs, mentions) => updateComment(t.id, comment, teamSlugs, mentions)}
-                />
-              );
-            })}
+            {/* B78: render top-level tags only; replies nest inside via renderThread. */}
+            {tagsAtCurrent.filter((t) => !t.parentTagId).map((t) => renderThread(t, true))}
           </div>
         )}
 
-        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>All tags ({tags.length})</div>
+        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>All tags ({tags.filter((t) => !t.parentTagId).length})</div>
         {tags.length === 0 ? (
           <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No tags yet. Click &quot;+ Tag this frame&quot; to add one.</div>
         ) : (
@@ -847,7 +971,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           // / canDelete computation so replay owners can delete others'
           // comments but only authors can edit text.
           (() => {
-            const otherTags = tags.filter((t) => t.frameIndex !== currentIndex);
+            // B78: top-level tags not on the current frame; their replies nest
+            // inside via renderThread (replies share the parent's frame).
+            const otherTags = tags.filter((t) => t.frameIndex !== currentIndex && !t.parentTagId);
             if (otherTags.length === 0) {
               return (
                 <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No other tags on this replay.</div>
@@ -855,27 +981,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             }
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {[...otherTags].sort((a, b) => a.frameIndex - b.frameIndex).map((t) => {
-                  const canEdit = canEditTag(t, authCtx);
-                  const canDelete = canDeleteTag(t, { userId: replay.userId, ownerToken: replay.ownerToken }, authCtx);
-                  const c = tagColor(t.authorName, playerUsernames);
-                  return (
-                    <TagRowView
-                      key={t.id}
-                      tag={t}
-                      color={c}
-                      isCurrent={false}
-                      canEdit={canEdit}
-                      canDelete={canDelete}
-                      armedTeams={armedTeams}
-                      mentionData={mentionData}
-                      ensureMentionData={ensureMentionData}
-                      onJumpTo={() => onJump(t.frameIndex)}
-                      onDelete={() => deleteTag(t.id)}
-                      onUpdate={(comment, teamSlugs, mentions) => updateComment(t.id, comment, teamSlugs, mentions)}
-                    />
-                  );
-                })}
+                {[...otherTags].sort((a, b) => a.frameIndex - b.frameIndex).map((t) => renderThread(t, false))}
               </div>
             );
           })()
@@ -1361,19 +1467,21 @@ function FooterBtn({
   alignSelf = false,
   fullWidth = false,
   title,
+  disabled = false,
 }: {
   children: React.ReactNode;
-  onClick: () => void;
+  onClick: (e?: any) => void;
   variant?: 'primary' | 'ghost' | 'outline';
   alignSelf?: boolean;
   fullWidth?: boolean;
   title?: string;
+  disabled?: boolean;
 }) {
   const base: React.CSSProperties = {
     border: 0,
     borderRadius: 4,
     padding: '6px 10px',
-    cursor: 'pointer',
+    cursor: disabled ? 'wait' : 'pointer',
     fontSize: 12,
     fontWeight: 600,
     fontFamily: 'inherit',
@@ -1393,8 +1501,9 @@ function FooterBtn({
   }
   if (alignSelf) base.alignSelf = 'flex-start';
   if (fullWidth) { base.width = '100%'; base.padding = '8px 10px'; }
+  if (disabled) base.opacity = 0.65;
   return (
-    <button type="button" style={base} onClick={onClick} title={title}>
+    <button type="button" style={base} onClick={onClick} title={title} disabled={disabled}>
       {children}
     </button>
   );

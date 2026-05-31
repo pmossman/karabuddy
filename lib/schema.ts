@@ -29,6 +29,17 @@ export const users = pgTable('users', {
   // manually from settings until karabast offers OAuth (path 2) and we
   // can pull it from the userinfo response.
   karabastUsername: text('karabast_username'),
+  // B75: per-user extension settings, synced across devices via /api/me/settings.
+  // defaultShareTeamSlugs = the bubble's persistent "armed teams" set (which
+  // teams a recorded replay auto-shares into). minUploadActions = the minimum
+  // number of actions EACH player must take before a replay is worth uploading
+  // (gates the recorder's auto/periodic/pagehide uploads; manual is exempt).
+  defaultShareTeamSlugs: jsonb('default_share_team_slugs').$type<string[]>(),
+  minUploadActions: integer('min_upload_actions').notNull().default(5),
+  // B81: global Discord-notifications kill switch. The user's Discord ID isn't
+  // stored here — it's already in accounts.providerAccountId (provider=discord)
+  // from sign-in, so notifyMentions reads it from there.
+  notificationsDisabled: boolean('notifications_disabled').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -186,12 +197,19 @@ export const tags = pgTable(
     // display; this column is authoritative for queries (mentions inbox,
     // notifications). Null on tags created before B55c.
     mentions: jsonb('mentions'),
+    // B78: one-level reply threading (Google-Docs-style). A reply is a tag
+    // whose parentTagId points at a top-level tag; it inherits the parent's
+    // frame + team scope and auto-@mentions the parent author. Replies can't
+    // themselves be replied to (one level only — enforced in the POST route).
+    // FK + index in migration 0012.
+    parentTagId: text('parent_tag_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     replayIdx: index('tags_replay_idx').on(t.replaySlug),
     authorIdx: index('tags_author_idx').on(t.authorToken),
     userIdx: index('tags_user_idx').on(t.userId),
+    parentIdx: index('tags_parent_idx').on(t.parentTagId),
   })
 );
 
@@ -214,8 +232,33 @@ export const teams = pgTable('teams', {
   createdBy: text('created_by')
     .notNull()
     .references(() => users.id, { onDelete: 'set null' as any }),
+  // B81: when the KaraBuddy bot is invited to a team's own Discord server, the
+  // owner picks a channel; team activity (new shares, mentions) posts there via
+  // the bot token. Null = no Discord posting configured for this team.
+  discordGuildId: text('discord_guild_id'),
+  discordChannelId: text('discord_channel_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// B81: per-(team, member) Discord DM preferences. Defaults ON — a member opts
+// out of direct or team-mention DMs for a specific team. The global kill switch
+// (users.notificationsDisabled) overrides these.
+export const teamMemberPrefs = pgTable(
+  'team_member_prefs',
+  {
+    teamSlug: text('team_slug')
+      .notNull()
+      .references(() => teams.slug, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    dmOnDirectMention: boolean('dm_on_direct_mention').notNull().default(true),
+    dmOnTeamMention: boolean('dm_on_team_mention').notNull().default(true),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamSlug, t.userId] }),
+  })
+);
 
 export const teamMembers = pgTable(
   'team_members',

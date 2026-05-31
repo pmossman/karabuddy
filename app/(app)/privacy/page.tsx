@@ -87,11 +87,21 @@ export default function PrivacyPage() {
       </section>
 
       <section style={section}>
+        <h2 style={h2}>Breakage detection</h2>
+        <p style={p}>
+          karabast.net is an independent project that can change its data format without notice, which can quietly break recording. To catch that fast, the extension checks each match&apos;s gamestate against the structure it expects and, <strong style={{ color: '#e6e6e6' }}>only when it detects a mismatch</strong>, sends a tiny diagnostic ping to karabuddy.
+        </p>
+        <p style={muted}>
+          This is a content-free error report, not analytics. By design it can contain <strong style={{ color: '#e6e6e6' }}>only</strong> a fixed set of predefined structural-check codes (e.g. <code style={codeStyle}>missing_players</code>) plus the extension version — the server rejects anything else. It never includes your matches, deck, username, card data, or browsing. It stays silent unless something is actually broken. You can turn it off anytime via the toggle in the extension&apos;s launcher panel.
+        </p>
+      </section>
+
+      <section style={section}>
         <h2 style={h2}>Where it goes</h2>
         <ul style={list}>
           <li><strong style={{ color: '#e6e6e6' }}>Vercel</strong> — hosts the webapp, serves Vercel Blob (replay payload storage), and runs Vercel Edge Functions. Operates per their <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noreferrer" style={linkStyle}>privacy policy</a>.</li>
           <li><strong style={{ color: '#e6e6e6' }}>Neon</strong> — managed Postgres for metadata (replays table, tags table, users table, extension-token mappings). Operates per their <a href="https://neon.tech/privacy-policy" target="_blank" rel="noreferrer" style={linkStyle}>privacy policy</a>.</li>
-          <li><strong style={{ color: '#e6e6e6' }}>Discord</strong> and <strong style={{ color: '#e6e6e6' }}>Google</strong> — OAuth providers, only if you sign in with one. We never see your password.</li>
+          <li><strong style={{ color: '#e6e6e6' }}>Discord</strong> and <strong style={{ color: '#e6e6e6' }}>Google</strong> — OAuth providers, only if you sign in with one. We never see your password. If you sign in with Discord, the KaraBuddy bot can DM you (or @-ping you in your team&apos;s channel) when you&apos;re mentioned on a replay — controllable per-team and via a master switch in <a href="/settings" style={linkStyle}>Settings</a>, and only to the extent you share a Discord server with the bot.</li>
         </ul>
       </section>
 

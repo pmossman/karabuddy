@@ -27,6 +27,24 @@
     // karabuddy.app at clean game-end.
     const PERIODIC_UPLOAD_INTERVAL_MS = 5 * 60 * 1000;
     let periodicUploadTimer = null;
+    // B75: minimum actions EACH player must take before an automatic upload
+    // (periodic / finalize / pagehide) is worth it — server-configurable per
+    // user via /api/me/settings, default 5. Manual saves ignore it. Fetched
+    // on record start (and module load) via the SW bridge; falls back to the
+    // default when signed out / offline.
+    let minUploadActions = 5;
+    const refreshUploadThreshold = () => {
+        try {
+            B()?.getUserSettings?.().then((resp) => {
+                // resp is the server JSON (companionRequest already unwrapped the
+                // SW envelope), so read minUploadActions directly off it.
+                if (resp && resp.ok) {
+                    const n = Number(resp.minUploadActions);
+                    if (Number.isFinite(n) && n > 0) minUploadActions = n;
+                }
+            }).catch(() => {});
+        } catch {}
+    };
     // After a successful auto-finalize, karabast often sends a couple more
     // gamestate events (cleanup, lobby return). They look like game-end and
     // would re-trigger scheduleAutoDownload on the SAME gameId, finalizing
@@ -54,6 +72,9 @@
     // format, cardPool, gameType, bo3 mode, and per-player deck data).
     let latestLobbyState = null;
     let matchLobbySnapshot = null;
+    // B80: gameId we've already sent a karabast-drift beacon for (dedup — one
+    // beacon per match, on the first gamestate).
+    let healthReportedGameId = null;
 
     const resetRecording = () => {
         recording.length = 0;
@@ -195,6 +216,26 @@
             // to the normal flow.)
             if (incomingId && incomingId === finalizedGameId) return;
 
+            // B80: karabast upstream-drift canary. Validate the RAW frame's
+            // shape against what our pipeline needs (00-karabast-shape.js, the
+            // shared rule). On structural drift, fire a content-free beacon
+            // (predefined codes only), once per match. Best-effort — wrapped so
+            // it can never interfere with recording, and guarded for the case
+            // where the shared file isn't present.
+            try {
+                if (incomingId && healthReportedGameId !== incomingId && typeof validateKarabastGamestate === 'function') {
+                    const report = validateKarabastGamestate(original);
+                    if (!report.ok) {
+                        const structural = typeof structuralIssueCodes === 'function' ? structuralIssueCodes() : [];
+                        const drift = report.issues.filter((c) => structural.indexOf(c) !== -1);
+                        if (drift.length > 0) {
+                            healthReportedGameId = incomingId;
+                            B().reportHealth?.(drift);
+                        }
+                    }
+                }
+            } catch {}
+
             // First gamestate of this page load: maybe a mid-game refresh.
             // If localStorage has a persisted recording for the same gameId,
             // restore it so we continue the same file.
@@ -240,7 +281,7 @@
             // The first gamestate of a match may arrive before mulligan is
             // resolved (hands empty for both players), in which case
             // detectLocalPlayerId returns null and we try again next tick.
-            if (localPlayerId === null) localPlayerId = detectLocalPlayerId(norm.players);
+            if (localPlayerId === null) localPlayerId = D().detectLocalPlayerId(norm.players);
             // Keep a live full snapshot for author sniffing when a tag is added.
             lastFullGamestate = norm;
             if (d.looksLikeGameEnd(original)) scheduleAutoDownload();
@@ -255,56 +296,9 @@
     // Walk the recorded events and tally how many distinct actions there were
     // (consecutive runs of the same active player) and how many distinct
     // players ever acted. Mirrors what the playback decoder would compute.
-    const analyzeRecording = () => {
-        let lastFull = null;
-        let lastActive = null;
-        let actionCount = 0;
-        const activePlayers = new Set();
-        for (const e of recording) {
-            if (e.event !== 'gamestate') continue;
-            const arg = e.args?.[0];
-            if (!arg) continue;
-            if (arg.full) lastFull = structuredClone(arg.full);
-            else if (arg.patch && lastFull) D().applyPatch(lastFull, arg.patch);
-            const players = lastFull?.players;
-            if (!players) continue;
-            let active = null;
-            for (const pid of Object.keys(players)) {
-                if (players[pid]?.isActionPhaseActivePlayer) { active = pid; break; }
-            }
-            if (active && active !== lastActive) {
-                actionCount++;
-                lastActive = active;
-                activePlayers.add(active);
-            }
-        }
-        return { actionCount, distinctActivePlayers: activePlayers.size };
-    };
-
-    // Detect which player ID in the gamestate corresponds to the local
-    // karabast user (the one whose perspective this match was played from).
-    // Karabast server-side-masks each client's view: the LOCAL player's
-    // hand contains cards with full data (`.id` / `.setId`); the opponent's
-    // hand contains stubs without that data (this is exactly the asymmetry
-    // `lib/replayDecoder.ts:stripHiddenHandCards` was built to handle).
-    // Whichever player has visible cards in hand is the recorder's POV —
-    // works for anonymous and logged-in karabast users alike, and doesn't
-    // depend on any karabast internal storage layout.
-    const detectLocalPlayerId = (players) => {
-        if (!players || typeof players !== 'object') return null;
-        const withVisibleHand = [];
-        for (const [pid, p] of Object.entries(players)) {
-            const hand = p?.cardPiles?.hand;
-            if (!Array.isArray(hand)) continue;
-            if (hand.some((c) => c && (c.id || c.setId))) withVisibleHand.push(pid);
-        }
-        // Exactly one visible hand = unambiguous local POV. Zero or two
-        // means hands were empty (very early game / between turns) or
-        // we're in a spectator-style state where karabast sent full data
-        // for both — in either case return null and try again on the next
-        // gamestate.
-        return withVisibleHand.length === 1 ? withVisibleHand[0] : null;
-    };
+    // B75/B79: the per-player action tally lives in the (pure, unit-tested)
+    // Decoder; the recorder just feeds it the live recording.
+    const analyzeRecording = () => D().analyzeRecording(recording);
 
     // Build the upload payload for the current recording state. Same shape
     // for finalize and periodic snapshots; the `reason` field distinguishes.
@@ -341,8 +335,8 @@
     // so a slow periodic that lands after finalize can't roll back state.
     const snapshotUpload = () => {
         if (gamestateCount === 0) return;
-        const { actionCount, distinctActivePlayers } = analyzeRecording();
-        if (distinctActivePlayers < 2) return;
+        const { actionCount, distinctActivePlayers, minPlayerActions } = analyzeRecording();
+        if (distinctActivePlayers < 2 || minPlayerActions < minUploadActions) return;
         const durationMs = Date.now() - recordingStart;
         const payloadText = buildPayloadText('periodic', durationMs, actionCount);
         B().uploadReplay(payloadText).then((result) => {
@@ -368,6 +362,9 @@
     };
 
     const startPeriodicUploads = () => {
+        // B75: refresh the user's upload threshold on record start (once per
+        // recording — the timer guard below means this only fires fresh).
+        if (!periodicUploadTimer) refreshUploadThreshold();
         if (periodicUploadTimer) return;
         periodicUploadTimer = setInterval(snapshotUpload, PERIODIC_UPLOAD_INTERVAL_MS);
     };
@@ -388,7 +385,7 @@
         const d = D();
         const meta = d.extractReplayMeta(recording);
         const durationMs = Date.now() - recordingStart;
-        const { actionCount, distinctActivePlayers } = analyzeRecording();
+        const { actionCount, distinctActivePlayers, minPlayerActions } = analyzeRecording();
         const isManual = reason === 'manual';
 
         // Finalize-time uploads stop the periodic cadence; further snapshots
@@ -396,11 +393,12 @@
         // guard rejects them, but stopping the timer avoids the wasted call).
         stopPeriodicUploads();
 
-        // Skip non-games unless the user explicitly asked. Manual still saves
-        // so the user can pull a snapshot mid-game even if only one player
-        // has acted so far.
-        if (!isManual && distinctActivePlayers < 2) {
-            NS.dlog(`[karabuddy] skipped save (${reason}) — only ${distinctActivePlayers} distinct active player(s)`);
+        // Skip non-games unless the user explicitly asked. B75: "worth keeping"
+        // now means each player took >= minUploadActions actions (default 5) —
+        // filters rage-quits / abandoned lobbies. Manual still saves regardless
+        // so the user can always pull a snapshot mid-game.
+        if (!isManual && (distinctActivePlayers < 2 || minPlayerActions < minUploadActions)) {
+            NS.dlog(`[karabuddy] skipped save (${reason}) — ${distinctActivePlayers} active player(s), min ${minPlayerActions}/${minUploadActions} actions`);
             clearPersistedRecording();
             if (currentGameId) finalizedGameId = currentGameId;
             resetRecording();
@@ -614,8 +612,8 @@
     // cross-origin-JSON-preflight issue and fetch keepalive's 64KB cap.
     window.addEventListener('pagehide', () => {
         if (gamestateCount === 0) return;
-        const { actionCount, distinctActivePlayers } = analyzeRecording();
-        if (distinctActivePlayers < 2) return;
+        const { actionCount, distinctActivePlayers, minPlayerActions } = analyzeRecording();
+        if (distinctActivePlayers < 2 || minPlayerActions < minUploadActions) return;
         const durationMs = Date.now() - recordingStart;
         const payloadText = buildPayloadText('pagehide', durationMs, actionCount);
         // Fire-and-forget — by the time the SW responds the page is gone

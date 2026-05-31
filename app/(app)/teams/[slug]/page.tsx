@@ -5,6 +5,8 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
+import { TeamNotificationPrefs } from './TeamNotificationPrefs';
+import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
 
@@ -24,6 +26,17 @@ const DEFAULT_TAB: Tab = 'discussion';
 
 function parseTab(raw: string | undefined): Tab {
   return VALID_TABS.includes(raw as Tab) ? (raw as Tab) : DEFAULT_TAB;
+}
+
+// B81: the "Add to Discord" bot-invite URL (scope=bot, View+Send perms). State
+// carries the team slug so the callback binds the guild to this team. Null when
+// Discord isn't configured (no client id) → the connect UI shows a hint instead.
+function discordAuthorizeUrl(slug: string): string | null {
+  const clientId = process.env.AUTH_DISCORD_ID;
+  if (!clientId) return null;
+  const base = (process.env.KARABUDDY_PUBLIC_URL || 'https://karabuddy.app').replace(/\/$/, '');
+  const redirect = encodeURIComponent(`${base}/api/discord/callback`);
+  return `https://discord.com/oauth2/authorize?client_id=${clientId}&scope=bot&permissions=3072&response_type=code&redirect_uri=${redirect}&state=${encodeURIComponent(slug)}`;
 }
 
 export default async function TeamPage({ params, searchParams }: PageProps) {
@@ -100,12 +113,23 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         {tab === 'replays' && <TeamReplays teamSlug={slug} />}
         {tab === 'members' && <MembersList members={members} viewerUserId={userId} />}
         {tab === 'settings' && (
-          <TeamControls
-            slug={slug}
-            teamName={team.name}
-            viewerRole={me.role}
-            memberCount={members.length}
-          />
+          <>
+            <TeamControls
+              slug={slug}
+              teamName={team.name}
+              viewerRole={me.role}
+              memberCount={members.length}
+            />
+            <TeamNotificationPrefs slug={slug} />
+            {me.role === 'owner' && (
+              <TeamDiscordConnect
+                slug={slug}
+                authorizeUrl={discordAuthorizeUrl(slug)}
+                initialGuildId={team.discordGuildId}
+                initialChannelId={team.discordChannelId}
+              />
+            )}
+          </>
         )}
       </div>
     </main>

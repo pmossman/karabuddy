@@ -15,7 +15,7 @@
     "db:dev:up": "docker compose -f docker-compose.dev.yml up -d --wait",
     "db:dev:down": "docker compose -f docker-compose.dev.yml down",
     "db:pull-snapshot": "bash scripts/pull-prod-snapshot.sh",
-    "sync:extension-shared": "cp lib/commentScope.js extension/replays/00-comment-scope.js",
+    "sync:extension-shared": "cp lib/commentScope.js extension/replays/00-comment-scope.js && cp lib/karabastShape.js extension/replays/00-karabast-shape.js",
     "package:extension": "npm run sync:extension-shared && bash scripts/package-extension.sh",
     "generate:icons": "bash scripts/generate-icons.sh",
     "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",

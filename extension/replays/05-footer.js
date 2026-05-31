@@ -95,28 +95,60 @@
     let lastShareTeamSlugs = [];
     const SHARE_STORAGE_KEY = 'karabuddyShareTeamSlugs';
     const SHARE_LAST_STORAGE_KEY = 'karabuddyLastShareTeamSlugs';
+    // B80: opt-out for the content-free karabast-drift beacon (default OFF =
+    // participating). The SW (background.js) reads this same key before sending.
+    const HEALTH_OPTOUT_KEY = 'karabuddyHealthOptOut';
+
+    // B76: chrome.storage.local is unavailable in this MAIN-world content
+    // script, so route it through the SW bridge. This is what makes the local
+    // cache (share state, launcher position) actually persist across reloads —
+    // the old direct chrome.storage.local calls here silently no-op'd.
+    //   lsGet(keys) → Promise<object>  (the stored values; {} on failure)
+    //   lsSet(items) → fire-and-forget
+    const lsGet = (keys) => {
+        const bridge = B();
+        if (!bridge || !bridge.storageGet) return Promise.resolve({});
+        // companionRequest already unwraps to the SW response's `data` (the
+        // stored values), so use the resolved value directly — do NOT re-unwrap
+        // (resp.data here would be undefined; that was the persistence bug).
+        return bridge.storageGet(keys).then((res) => res || {}).catch(() => ({}));
+    };
+    const lsSet = (items) => {
+        const bridge = B();
+        if (bridge && bridge.storageSet) bridge.storageSet(items);
+    };
+
+    // B79: the unwrap-sensitive reads/writes live in NS.shareStore (04-share-
+    // store.js) so they're pure + unit-tested. The footer just orchestrates:
+    // show the local cache fast, then let the server (when signed in) override.
+    const syncShareStateFromServer = () => {
+        NS.shareStore.loadServerArmed(B()).then((res) => {
+            if (!res) return; // not signed in / unavailable → keep local
+            shareTeamSlugs = res.shareTeamSlugs;
+            if (shareTeamSlugs.length > 0) lastShareTeamSlugs = [...shareTeamSlugs];
+            // Mirror the server value into the local cache for offline reloads.
+            const payload = { [SHARE_STORAGE_KEY]: shareTeamSlugs };
+            if (shareTeamSlugs.length > 0) payload[SHARE_LAST_STORAGE_KEY] = lastShareTeamSlugs;
+            lsSet(payload);
+            refreshFooter();
+            refreshSharePanel();
+        }).catch(() => {});
+    };
 
     const loadShareState = () => {
-        try {
-            chrome.storage.local.get([SHARE_STORAGE_KEY, SHARE_LAST_STORAGE_KEY], (res) => {
-                if (Array.isArray(res?.[SHARE_STORAGE_KEY])) shareTeamSlugs = res[SHARE_STORAGE_KEY];
-                if (Array.isArray(res?.[SHARE_LAST_STORAGE_KEY])) lastShareTeamSlugs = res[SHARE_LAST_STORAGE_KEY];
-                refreshFooter();
-            });
-        } catch {}
+        NS.shareStore.loadLocalArmed(B()).then((r) => {
+            if (r.shareTeamSlugs) shareTeamSlugs = r.shareTeamSlugs;
+            if (r.lastShareTeamSlugs) lastShareTeamSlugs = r.lastShareTeamSlugs;
+            refreshFooter();
+        });
+        syncShareStateFromServer();
     };
 
     const persistShareState = () => {
-        try {
-            const payload = { [SHARE_STORAGE_KEY]: shareTeamSlugs };
-            // Only update lastShareTeamSlugs when we have a non-empty
-            // selection so toggling OFF doesn't wipe the restore target.
-            if (shareTeamSlugs.length > 0) {
-                lastShareTeamSlugs = [...shareTeamSlugs];
-                payload[SHARE_LAST_STORAGE_KEY] = lastShareTeamSlugs;
-            }
-            chrome.storage.local.set(payload);
-        } catch {}
+        // Only update lastShareTeamSlugs when we have a non-empty selection so
+        // toggling OFF doesn't wipe the restore target.
+        if (shareTeamSlugs.length > 0) lastShareTeamSlugs = [...shareTeamSlugs];
+        NS.shareStore.persistArmed(B(), shareTeamSlugs, lastShareTeamSlugs);
     };
 
     // Public-ish accessor — the recorder reads this after every successful
@@ -469,15 +501,13 @@
             'user-select: none'
         ].join(';'));
 
-        // Restore persisted position.
-        try {
-            chrome.storage.local.get([LAUNCHER_POS_STORAGE_KEY], (res) => {
-                const pos = res && res[LAUNCHER_POS_STORAGE_KEY];
-                if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
-                    applyPos(root, pos.x, pos.y);
-                }
-            });
-        } catch {}
+        // Restore persisted position (B76: via the SW-routed local cache).
+        lsGet([LAUNCHER_POS_STORAGE_KEY]).then((res) => {
+            const pos = res && res[LAUNCHER_POS_STORAGE_KEY];
+            if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+                applyPos(root, pos.x, pos.y);
+            }
+        });
 
         root.appendChild(buildHeader(root));
         root.appendChild(buildBody());
@@ -572,6 +602,7 @@
             'height: 100%'
         ].join(';'));
         const shareDot = document.createElement('span');
+        shareDot.id = 'karabast-replays-launcher-share-dot';
         shareDot.setAttribute('style', 'display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6bd968; box-shadow: 0 0 5px #6bd968;');
         const shareLabel = document.createElement('span');
         shareLabel.id = 'karabast-replays-launcher-share-label';
@@ -674,11 +705,7 @@
             window.removeEventListener('mouseup', onUp);
             if (wasDrag) {
                 const rect = root.getBoundingClientRect();
-                try {
-                    chrome.storage.local.set({
-                        [LAUNCHER_POS_STORAGE_KEY]: { x: rect.left, y: rect.top }
-                    });
-                } catch {}
+                lsSet({ [LAUNCHER_POS_STORAGE_KEY]: { x: rect.left, y: rect.top } });
             } else {
                 toggleExpanded();
             }
@@ -791,6 +818,41 @@
     };
 
     // ----- Body content builders -----
+    // B80: tiny opt-out control for the karabast-drift beacon. LED + label, no
+    // native input (matches the bubble's aesthetic). Default = participating;
+    // tap to opt out. Reads/writes the same key the SW gates on.
+    const buildHealthOptOut = () => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.setAttribute('style', [
+            'display: inline-flex', 'align-items: center', 'gap: 6px', 'align-self: flex-start',
+            'background: transparent', 'border: 0', 'padding: 4px 0', 'cursor: pointer',
+            'font: 500 10px -apple-system, BlinkMacSystemFont, sans-serif', 'color: #6c7588', 'text-align: left',
+        ].join(';'));
+        let optedOut = false;
+        const render = () => {
+            row.innerHTML = '';
+            const dot = document.createElement('span');
+            dot.setAttribute('style', 'flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; display: inline-block; ' + (optedOut ? 'background: #5a6473;' : 'background: #6bd968; box-shadow: 0 0 4px #6bd968;'));
+            const lbl = document.createElement('span');
+            lbl.textContent = optedOut
+                ? 'Breakage detection off — tap to help spot karabast changes'
+                : 'Anonymous breakage detection on — tap to opt out';
+            row.appendChild(dot);
+            row.appendChild(lbl);
+        };
+        render();
+        lsGet([HEALTH_OPTOUT_KEY]).then((res) => { optedOut = !!res[HEALTH_OPTOUT_KEY]; render(); });
+        row.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            optedOut = !optedOut;
+            lsSet({ [HEALTH_OPTOUT_KEY]: optedOut });
+            render();
+        });
+        return row;
+    };
+
     const buildIdleBody = () => {
         const els = [];
 
@@ -809,6 +871,7 @@
 
         els.push(buildShareSection());
         els.push(buildWhoamiBlock());
+        els.push(buildHealthOptOut());
 
         return els;
     };
@@ -1042,26 +1105,184 @@
             return scopeFromMentions({ armedTeams: armed, mentionedUserIds: formMentions.userIds, memberTeams });
         };
 
-        // B73: live "Visible to: …" readout — always shown so you can see a
-        // comment's audience before saving. @mentions narrow it when 2+ teams
-        // are armed; with one armed team it confirms the destination.
+        // B75: per-comment scope override. null = follow the mention-driven
+        // rule above; an array = an explicit choice from the chip checkboxes
+        // (wins until reset, always clamped to the armed set). Reset each time
+        // the form opens/closes. Mirrors the web viewer's ScopeChip.
+        let scopeOverride = null;
+        let scopeExpanded = false;
+        const resetScope = () => { scopeOverride = null; scopeExpanded = false; };
+        // Effective audience: the override (clamped to armed) if set, else the
+        // mention-driven scope. [] = personal.
+        const effectiveScopeArr = () => {
+            const armed = getShareTeamSlugs();
+            if (armed.length === 0) return [];
+            if (scopeOverride !== null) return scopeOverride.filter((s) => armed.includes(s));
+            return computeTagScope() || [];
+        };
+        // What we send to addTag: null when nothing is armed (server defaults
+        // to the replay's shares — empty → personal), else the chosen audience.
+        const scopeToSave = () => (getShareTeamSlugs().length === 0 ? null : effectiveScopeArr());
+        // Chip handlers — seed from the current effective scope so the first
+        // click turns the live rule into an explicit set, then toggle.
+        const toggleTeam = (slug) => {
+            const cur = effectiveScopeArr();
+            scopeOverride = cur.includes(slug) ? cur.filter((s) => s !== slug) : [...cur, slug];
+            refreshScopeReadout();
+        };
+        const setPersonalScope = () => { scopeOverride = []; refreshScopeReadout(); };
+
+        // B73/B75: clickable "Visible to: …" chip. Collapsed = the audience
+        // readout; click to expand per-team checkboxes + a "Just me" option so
+        // a comment can be scoped to a subset of the armed teams directly (not
+        // only via @-mentions). Mirrors the web viewer's ScopeChip.
         const scopeReadout = document.createElement('div');
-        scopeReadout.setAttribute('style', [
-            'font: 600 10px -apple-system, BlinkMacSystemFont, sans-serif',
-            'color: #6c7588',
+        scopeReadout.setAttribute('style', 'display: flex; flex-direction: column; gap: 6px; align-self: flex-start;');
+        const scopeToggle = document.createElement('button');
+        scopeToggle.type = 'button';
+        scopeToggle.setAttribute('style', [
+            'display: inline-flex',
+            'align-items: center',
+            'gap: 6px',
             'align-self: flex-start',
+            'background: rgba(74, 124, 255, 0.08)',
+            'border: 1px solid rgba(74, 124, 255, 0.3)',
+            'color: #a0c4ff',
+            'border-radius: 999px',
+            'padding: 3px 10px',
+            'font: 600 11px -apple-system, BlinkMacSystemFont, sans-serif',
+            'cursor: pointer'
         ].join(';'));
+        scopeToggle.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        scopeToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (getShareTeamSlugs().length === 0) return; // nothing to choose
+            scopeExpanded = !scopeExpanded;
+            refreshScopeReadout();
+        });
+        const scopePanel = document.createElement('div');
+        scopePanel.setAttribute('style', [
+            'display: none',
+            'flex-direction: column',
+            'gap: 4px',
+            'padding: 6px 8px',
+            'background: #11141a',
+            'border: 1px solid #2e333c',
+            'border-radius: 6px'
+        ].join(';'));
+        scopePanel.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        scopeReadout.appendChild(scopeToggle);
+        scopeReadout.appendChild(scopePanel);
+        // B75: a scope row reuses the "Share with teams" LED idiom (status LED
+        // + monospace name + uppercase status), not a native checkbox/radio, so
+        // the panel reads as the same cockpit control as the rest of the bubble.
+        const buildScopeRow = (name, lit, statusText, onClick) => {
+            const accent = lit ? '#4dd2ff' : '#3a4150';
+            const row = document.createElement('div');
+            row.setAttribute('role', 'button');
+            row.setAttribute('tabindex', '0');
+            row.setAttribute('aria-pressed', lit ? 'true' : 'false');
+            row.setAttribute('style', [
+                'display: flex',
+                'align-items: center',
+                'gap: 9px',
+                'padding: 5px 8px',
+                'border-radius: 4px',
+                'background: ' + (lit ? 'rgba(77, 210, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)'),
+                'border-left: 2px solid ' + accent,
+                'cursor: pointer',
+                'transition: background 120ms ease, border-color 120ms ease'
+            ].join(';'));
+            row.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+            row.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+            row.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+            });
+            const led = document.createElement('span');
+            led.setAttribute('style', [
+                'display: inline-flex',
+                'align-items: center',
+                'justify-content: center',
+                'width: 12px',
+                'height: 12px',
+                'border-radius: 50%',
+                'border: 1.5px solid ' + accent,
+                'background: rgba(0, 0, 0, 0.45)',
+                'box-shadow: ' + (lit ? '0 0 6px rgba(77, 210, 255, 0.7), inset 0 0 4px rgba(77, 210, 255, 0.45)' : 'inset 0 0 2px rgba(0,0,0,0.6)'),
+                'flex: 0 0 auto'
+            ].join(';'));
+            if (lit) {
+                const dot = document.createElement('span');
+                dot.setAttribute('style', 'display: block; width: 5px; height: 5px; border-radius: 50%; background: #4dd2ff; box-shadow: 0 0 4px #4dd2ff;');
+                led.appendChild(dot);
+            }
+            const nm = document.createElement('span');
+            nm.setAttribute('style', [
+                'flex: 1 1 auto',
+                'min-width: 0',
+                'overflow: hidden',
+                'text-overflow: ellipsis',
+                'white-space: nowrap',
+                'font: 600 12px "SF Mono", Menlo, Consolas, monospace',
+                'color: ' + (lit ? '#d6f0ff' : '#a8b0bd'),
+                'letter-spacing: 0.02em'
+            ].join(';'));
+            nm.textContent = name;
+            row.appendChild(led);
+            row.appendChild(nm);
+            if (lit && statusText) {
+                const status = document.createElement('span');
+                status.setAttribute('style', 'font: 700 9px "SF Mono", Menlo, Consolas, monospace; color: #4dd2ff; letter-spacing: 0.18em; text-transform: uppercase; flex: 0 0 auto;');
+                status.textContent = statusText;
+                row.appendChild(status);
+            }
+            return row;
+        };
         const refreshScopeReadout = () => {
             const armed = getShareTeamSlugs();
-            scopeReadout.style.display = 'block';
             const teamNames = {};
             for (const t of (mentionDataCache && mentionDataCache.teams) || []) teamNames[t.slug] = t.name;
-            // Always show where this comment will go: the armed team(s) (and
-            // @mentions narrow it when 2+ are armed), or "just you" when no
-            // team is armed. Confidence > minimalism for a privacy control.
-            scopeReadout.textContent = armed.length === 0
-                ? 'Visible to: just you (personal)'
-                : 'Visible to: ' + scopeLabel(computeTagScope() || [], armed, teamNames);
+            const eff = effectiveScopeArr();
+            if (armed.length === 0) scopeExpanded = false;
+
+            // Collapsed pill: "Visible to: <label>" + caret when expandable.
+            scopeToggle.innerHTML = '';
+            const lead = document.createElement('span');
+            lead.setAttribute('style', 'color: #6c7588;');
+            lead.textContent = 'Visible to:';
+            const lbl = document.createElement('span');
+            lbl.textContent = armed.length === 0 ? 'just you (personal)' : scopeLabel(eff, armed, teamNames);
+            scopeToggle.appendChild(lead);
+            scopeToggle.appendChild(lbl);
+            if (armed.length > 0) {
+                const caret = document.createElement('span');
+                caret.setAttribute('style', 'font-size: 9px;');
+                caret.textContent = scopeExpanded ? '▴' : '▾';
+                scopeToggle.appendChild(caret);
+                scopeToggle.style.cursor = 'pointer';
+            } else {
+                scopeToggle.style.cursor = 'default';
+            }
+
+            // Expanded panel: LED rows (no native inputs) — one per armed team
+            // + a "Just me" row, matching the Share-with-teams control idiom.
+            scopePanel.innerHTML = '';
+            if (armed.length > 0 && scopeExpanded) {
+                scopePanel.style.display = 'flex';
+                for (const slug of armed) {
+                    scopePanel.appendChild(
+                        buildScopeRow(teamNames[slug] || slug, eff.includes(slug), 'Included', () => toggleTeam(slug)),
+                    );
+                }
+                const divider = document.createElement('div');
+                divider.setAttribute('style', 'height: 1px; background: #2e333c; margin: 2px 0;');
+                scopePanel.appendChild(divider);
+                scopePanel.appendChild(
+                    buildScopeRow('Just me (personal)', eff.length === 0, 'Only me', setPersonalScope),
+                );
+            } else {
+                scopePanel.style.display = 'none';
+            }
         };
 
         // Autocomplete popover element (built lazily on first @-detect).
@@ -1213,6 +1434,7 @@
             form.style.display = 'flex';
             input.value = '';
             formMentions = { userIds: [], teamSlugs: [] };
+            resetScope();
             // Kick off mention data fetch in parallel with form open —
             // it'll be cached by the time the user types `@`. B73: refresh
             // the scope readout once team names are available too.
@@ -1224,6 +1446,7 @@
             form.style.display = 'none';
             closePopover();
             formMentions = { userIds: [], teamSlugs: [] };
+            resetScope();
         };
 
         addBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
@@ -1261,7 +1484,7 @@
             }
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
-                R().addTag(input.value.trim(), formMentions, computeTagScope());
+                R().addTag(input.value.trim(), formMentions, scopeToSave());
                 closeForm();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
@@ -1312,7 +1535,7 @@
         saveBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
         saveBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            R().addTag(input.value.trim(), formMentions, computeTagScope());
+            R().addTag(input.value.trim(), formMentions, scopeToSave());
             closeForm();
         });
 
@@ -1391,6 +1614,48 @@
         refreshFooter();
     };
 
+    // B75: team list backing the header share indicator (so it knows whether
+    // the user has teams + how many). null = not yet fetched.
+    let indicatorTeams = null;
+    let indicatorFetchInFlight = false;
+    const ensureIndicatorTeams = () => {
+        if (indicatorTeams !== null || indicatorFetchInFlight) return;
+        indicatorFetchInFlight = true;
+        loadMentionData()
+            .then((data) => { indicatorTeams = data ? data.teams : []; })
+            .catch(() => { indicatorTeams = []; })
+            .finally(() => { indicatorFetchInFlight = false; refreshFooter(); });
+    };
+    const SHARE_DOT_BASE = 'display: inline-block; width: 6px; height: 6px; border-radius: 50%;';
+    const SHARE_DOT_ON = SHARE_DOT_BASE + ' background: #6bd968; box-shadow: 0 0 5px #6bd968;';
+    const SHARE_DOT_OFF = SHARE_DOT_BASE + ' background: #5a6473; box-shadow: none;';
+    // B75: the share indicator is MATCH-ONLY (hidden on karabast home/non-match
+    // screens — nothing to share off-match) and shown only when the user has
+    // teams. Sharing → green "SHARING (X)" (drop the count if they have just one
+    // team); has teams but not sharing → dim gray "NOT SHARING" as a nudge.
+    const updateShareIndicator = (block, active) => {
+        if (!active) { block.style.display = 'none'; return; }
+        ensureIndicatorTeams();
+        const teams = indicatorTeams || [];
+        if (teams.length === 0) { block.style.display = 'none'; return; }
+        block.style.display = 'inline-flex';
+        const dot = document.getElementById('karabast-replays-launcher-share-dot');
+        const label = document.getElementById('karabast-replays-launcher-share-label');
+        const sharedCount = shareTeamSlugs.filter((s) => teams.some((t) => t.slug === s)).length;
+        if (sharedCount > 0) {
+            if (dot) dot.setAttribute('style', SHARE_DOT_ON);
+            if (label) {
+                label.style.color = '#c8eecf';
+                label.textContent = teams.length > 1 ? `SHARING (${sharedCount})` : 'SHARING';
+            }
+            block.title = 'Sharing this match with your team(s) — click to stop';
+        } else {
+            if (dot) dot.setAttribute('style', SHARE_DOT_OFF);
+            if (label) { label.style.color = '#8a93a3'; label.textContent = 'NOT SHARING'; }
+            block.title = 'This match is not being shared — click to share with your team(s)';
+        }
+    };
+
     const refreshFooter = () => {
         const launcher = document.getElementById(LAUNCHER_ID);
         if (!launcher) return;
@@ -1400,11 +1665,9 @@
         const recBlock = document.getElementById('karabast-replays-launcher-rec');
         if (recBlock) recBlock.style.display = active ? 'flex' : 'none';
 
-        // B67: share indicator in the header reveals only when sharing
-        // is currently ON (≥1 team selected). Stays visible whether or
-        // not the user is recording — sharing is a persistent setting.
+        // B75: match-only share indicator (sharing / not-sharing states).
         const shareBlock = document.getElementById('karabast-replays-launcher-share');
-        if (shareBlock) shareBlock.style.display = shareTeamSlugs.length > 0 ? 'inline-flex' : 'none';
+        if (shareBlock) updateShareIndicator(shareBlock, active);
 
         // If the recording state flipped while expanded, the body content
         // (idle links vs recording controls) is now stale. Collapse so the

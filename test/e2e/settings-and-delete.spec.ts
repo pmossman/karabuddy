@@ -20,7 +20,12 @@ test('settings: set karabast username → backfills matching anonymous replays',
   await page.goto('/settings');
   await expect(page.getByPlaceholder(/ReprintConfiscate/i)).toBeVisible();
   await page.getByPlaceholder(/ReprintConfiscate/i).fill('BackfillMe');
-  await page.getByRole('button', { name: 'Save' }).click();
+  // Scope to the username section's Save — the page has multiple Save buttons
+  // (B75 added an upload-threshold form).
+  await page
+    .locator('section', { has: page.getByPlaceholder(/ReprintConfiscate/i) })
+    .getByRole('button', { name: 'Save' })
+    .click();
   await expect(page.getByText(/Claimed 2 replay/)).toBeVisible({ timeout: 5000 });
 
   // Confirm the user now owns those replays via /replays?tab=mine.

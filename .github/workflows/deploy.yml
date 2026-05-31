@@ -117,3 +117,27 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"
+
+  # B81: report the outcome to the KaraBuddy Discord #ci channel. No-op until
+  # the DISCORD_CI_WEBHOOK_URL secret is set, so this is safe to merge now.
+  notify:
+    needs: [test, smoke-and-deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord deploy notification
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_CI_WEBHOOK_URL }}
+          TEST: ${{ needs.test.result }}
+          DEPLOY: ${{ needs.smoke-and-deploy.result }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          SHA="${GITHUB_SHA::7}"
+          if [ "$DEPLOY" = "success" ]; then
+            MSG="✅ KaraBuddy deployed to prod ($SHA)"
+          elif [ "$TEST" != "success" ]; then
+            MSG="❌ KaraBuddy CI failed at tests ($SHA) — no deploy"
+          else
+            MSG="❌ KaraBuddy deploy failed ($SHA)"
+          fi
+          curl -s -H 'Content-Type: application/json' -d "{\"content\": \"$MSG\"}" "$WEBHOOK" || true

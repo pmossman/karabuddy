@@ -9,6 +9,7 @@ import { auth } from '@/auth';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { getMyTeamSlugs } from '@/lib/teamSurface';
 import { loadTagScopes, resolveTagScope, tagVisibleToViewer, writeTagScope } from '@/lib/tagScope';
+import { notifyMentions } from '@/lib/discordNotify';
 
 export const runtime = 'nodejs';
 
@@ -105,24 +106,71 @@ export async function POST(
     // server doesn't re-parse the comment text — autocomplete is the
     // disambiguation layer (free-typed @something is just text).
     const mentions = sanitizeIncomingMentions(body.mentions);
+
+    // B71: the comment's team audience. `teamSlugs` undefined → default scope
+    // (all of the author's shared teams); an array → that explicit set,
+    // clamped to (shares ∩ memberships).
+    let requested = Array.isArray(body.teamSlugs)
+      ? body.teamSlugs.filter((s: unknown) => typeof s === 'string')
+      : undefined;
+    let effectiveFrameIndex = frameIndex;
+    let outgoingMentions = mentions;
+
+    // B78: one-level reply threading. A reply (parentTagId set) inherits the
+    // parent's frame + team scope and auto-@mentions the parent author so the
+    // reply lands in their /mentions inbox. Replies can't be replied to.
+    const parentTagId =
+      typeof body.parentTagId === 'string' && body.parentTagId.trim() ? body.parentTagId.trim() : null;
+    if (parentTagId) {
+      const [parent] = await db
+        .select()
+        .from(tags)
+        .where(and(eq(tags.id, parentTagId), eq(tags.replaySlug, slug)))
+        .limit(1);
+      if (!parent) return NextResponse.json({ ok: false, error: 'parent tag not found' }, { status: 404, headers });
+      if (parent.parentTagId) {
+        return NextResponse.json({ ok: false, error: 'cannot reply to a reply' }, { status: 400, headers });
+      }
+      effectiveFrameIndex = parent.frameIndex; // anchor the reply to the thread
+      // Inherit the parent's audience (resolveTagScope still clamps to shares ∩
+      // the replier's memberships) so a reply never escapes the thread's scope.
+      const parentScopes = await loadTagScopes([parentTagId]);
+      requested = Array.from(parentScopes.get(parentTagId) ?? []);
+      // Auto-mention the parent author. The inbox's existing self-authored
+      // exclusion means replying to your own comment doesn't self-notify.
+      if (parent.userId && !outgoingMentions.userIds.includes(parent.userId)) {
+        outgoingMentions = {
+          userIds: [...outgoingMentions.userIds, parent.userId],
+          teamSlugs: outgoingMentions.teamSlugs,
+        };
+      }
+    }
+
     await db.insert(tags).values({
       id,
       replaySlug: slug,
-      frameIndex,
+      frameIndex: effectiveFrameIndex,
       userId,
       authorToken: installToken,
       authorName: session?.user?.name || authorName,
       comment,
-      mentions: mentions.userIds.length || mentions.teamSlugs.length ? mentions : null,
+      mentions: outgoingMentions.userIds.length || outgoingMentions.teamSlugs.length ? outgoingMentions : null,
+      parentTagId,
     });
-    // B71: persist the comment's team audience. `teamSlugs` undefined →
-    // default scope (all of the author's shared teams); an array → that
-    // explicit set, clamped to (shares ∩ memberships).
-    const requested = Array.isArray(body.teamSlugs)
-      ? body.teamSlugs.filter((s: unknown) => typeof s === 'string')
-      : undefined;
     const scope = await resolveTagScope({ replaySlug: slug, authorUserId: userId, requested });
     await writeTagScope(id, scope);
+    // B81: fan the mention out to Discord (best-effort DM → team-channel ping →
+    // inbox). Awaited but guarded — the tag is already persisted, so a Discord
+    // failure can never fail the write; and notifyMentions returns near-instantly
+    // when there are no mentions or no bot token. (Includes B78's reply
+    // auto-mention of the parent author.) The upload-lift path is deliberately
+    // NOT wired yet — periodic re-uploads would re-notify; needs insert-vs-update
+    // dedup first.
+    try {
+      await notifyMentions({ mentions: outgoingMentions, replaySlug: slug, frameIndex: effectiveFrameIndex, comment, authorUserId: userId });
+    } catch (e) {
+      console.error('[karabuddy] notifyMentions failed (tag persisted):', e);
+    }
     return NextResponse.json({ ok: true, id, scope }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] POST /api/replays/:slug/tags failed:', err);
