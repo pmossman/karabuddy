@@ -34,7 +34,7 @@ export function TeamNotificationPrefs({ slug }: { slug: string }) {
   if (!prefs) return null;
 
   const row = (label: string, key: 'dmOnDirectMention' | 'dmOnTeamMention') => (
-    <LedToggle checked={prefs[key]} onChange={(next) => set({ [key]: next })} label={label} statusOn="On" />
+    <LedToggle variant="inline" checked={prefs[key]} onChange={(next) => set({ [key]: next })} label={label} />
   );
 
   return (

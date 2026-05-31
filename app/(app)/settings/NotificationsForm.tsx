@@ -30,10 +30,10 @@ export function NotificationsForm({ initialDisabled }: { initialDisabled: boolea
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <LedToggle
+        variant="inline"
         checked={enabled}
         onChange={() => toggle()}
         label="Send me Discord notifications when I’m @-mentioned"
-        statusOn="On"
       />
       {status.kind === 'error' && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{status.text}</span>}
     </div>
