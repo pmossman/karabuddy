@@ -25,6 +25,7 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
   - ✅ Wired `notifyMentions` (awaited + try/caught, never fails the write) into `POST /api/replays/[slug]/tags` — covers web tags + the B78 reply auto-mention. 2 api wiring tests. **Upload-lift path deliberately NOT wired** (periodic re-uploads would re-notify; needs insert-vs-update dedup first — noted).
   - ✅ CI + drift webhooks (code; live once URLs set): `deploy.yml` `notify` job → `DISCORD_CI_WEBHOOK_URL` (gated, no-op without it); B80 drift endpoint → `DISCORD_ALERTS_WEBHOOK_URL` via `postWebhook`.
   - ✅ `/privacy` updated for DM notifications.
+  - ✅ **Connect Discord on `/settings`** — Google-only users link a Discord account (Auth.js in-session provider linking via a server-action `signIn('discord')`) so DMs can reach them; shows "✓ Discord connected" once linked.
 - **Remaining (needs your Discord app/server):**
   - ⏳ Bot-in-server: OAuth2 "Add to Discord" flow for a team owner → store `discord_guild_id`/`discord_channel_id` → post team activity via `postToChannel`. Needs the Discord app's bot scope + redirect URI (can't be built/verified without the app configured).
   - ⏳ Go-live verification: real DMs, channel pings, CI/drift webhook delivery — all gated on your setup.
