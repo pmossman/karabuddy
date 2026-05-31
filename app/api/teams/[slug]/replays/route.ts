@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { desc, eq, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users } from '@/lib/schema';
+import { replays, users, teamMembers } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 
@@ -30,6 +30,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   }
 
   const db = getDb();
+  // B82: the team's members' karabast usernames → a replay is "internal"
+  // (teammate-vs-teammate) when 2+ of its players map to members. Best-effort:
+  // only members who've set their karabast username count.
+  const memberUsernames = new Set(
+    (await db
+      .select({ u: users.karabastUsername })
+      .from(teamMembers)
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .where(eq(teamMembers.teamSlug, slug)))
+      .map((r) => r.u)
+      .filter((u): u is string => !!u),
+  );
   const rows = await db
     .select({ replay: replays, ownerName: users.name })
     .from(replays)
@@ -41,10 +53,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   // Flatten {replay, ownerName} so TeamReplays sees the same shape it
   // always has, with ownerName tacked on for the Member column. Players
   // are reordered owner-first (B59-followup).
-  const flat = rows.map(({ replay, ownerName }) => ({
-    ...replay,
-    players: orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId),
-    ownerName,
-  }));
+  const flat = rows.map(({ replay, ownerName }) => {
+    const players = orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId) as any[];
+    const teammates = (Array.isArray(players) ? players : []).filter((p) => p?.username && memberUsernames.has(p.username)).length;
+    return { ...replay, players, ownerName, internal: teammates >= 2 };
+  });
   return NextResponse.json({ ok: true, data: flat });
 }

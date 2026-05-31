@@ -257,6 +257,24 @@ export function extractSeenCards(frames: Frame[], playerId: string): DeckCardRef
   }));
 }
 
+// B82: merge two per-match deck snapshots. karabast masks the opponent's full
+// list, so a single recording only has the recorder's own deck complete. When
+// two teammates both record the same match, each has the OTHER masked — merging
+// (per playerId, preferring whichever entry carries a full `deck` array) yields
+// both full lists for a complete-information review. Idempotent.
+export function mergeDecks(existing: DecksByUserId | null | undefined, incoming: DecksByUserId | null | undefined): DecksByUserId | null {
+  if (!existing) return incoming ?? null;
+  if (!incoming) return existing;
+  const out: DecksByUserId = { ...existing };
+  const hasFullList = (d: UserDeck | undefined) => Array.isArray(d?.deck) && (d!.deck as unknown[]).length > 0;
+  for (const pid of Object.keys(incoming)) {
+    if (!out[pid] || (!hasFullList(out[pid]) && hasFullList(incoming[pid]))) {
+      out[pid] = incoming[pid];
+    }
+  }
+  return out;
+}
+
 export interface DecodedReplay {
   frames: Frame[];
   sideEvents: SideEvent[];

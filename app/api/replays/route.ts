@@ -7,7 +7,7 @@ import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
+import { extractWinners, mergeDecks, reconstructFinalState } from '@/lib/replayDecoder';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
@@ -138,7 +138,21 @@ export async function POST(req: Request) {
       const sameOwner = replay.ownerToken === installToken;
       const sameUser = replay.userId && userId && replay.userId === userId;
       if (!sameOwner && !sameUser) {
-        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true }, { headers });
+        // B82: teammate-vs-teammate — both players recorded the same match.
+        // Don't discard the second upload's deck snapshot; merge it into the
+        // canonical replay so the (otherwise-masked) opponent's FULL list is
+        // known — a complete-information review. Decks are immutable per match,
+        // so this is a safe idempotent enrich. The first uploader's POV/frames
+        // stay canonical (we don't overwrite the recording itself).
+        let enriched = false;
+        if (parsed.decks) {
+          const merged = mergeDecks(replay.decks as any, parsed.decks);
+          if (merged) {
+            await db.update(replays).set({ decks: merged }).where(eq(replays.slug, replay.slug));
+            enriched = true;
+          }
+        }
+        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched }, { headers });
       }
 
       // Stale-snapshot guard: a finalize-upload can race with an in-flight

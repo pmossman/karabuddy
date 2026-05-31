@@ -93,6 +93,14 @@ _empty_
 
 ## Done
 
+### [B82] Teammate-vs-teammate matches — deck-merge enrichment + intra-team filter
+_completed: 2026-05-31 by claude_
+When two team members play each other and both record, the match now reviews with **complete information**, and teams can filter to their internal games.
+- **Deck-merge enrichment:** the upload dedupe path (different owner, same `gameId`) no longer discards the second teammate's recording — it merges their deck snapshot into the canonical replay (`mergeDecks` in `replayDecoder`, per-playerId, prefers the full list), so the otherwise-masked opponent's full deck is now known. Idempotent; first uploader's POV/frames stay canonical. 3 unit tests.
+- **Intra-team detection + filter:** `GET /api/teams/[slug]/replays` flags each replay `internal` when ≥2 of its players map to team members (`players[].username` → `users.karabastUsername`). `TeamReplays` gains an **All / Internal (N)** toggle. Best-effort — counts members who've set their karabast username.
+- Kept ONE canonical replay per match (not dual per-player rows — avoids duplicate browsing entries; the deck-merge delivers the value).
+- **Deferred (small follow-up):** per-row "vs teammate" badge in the mixed view (needs threading `internal` through the shared `ReplayFilters`/`ReplayCard`/table renderers).
+
 ### [B80] Recorder end-to-end harness + karabast upstream-drift validator
 _completed: 2026-05-30 by claude_
 Closed the biggest coverage gap (the recorder's stateful lifecycle) and added a foundation for detecting karabast schema drift.

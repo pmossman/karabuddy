@@ -11,6 +11,8 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [rows, setRows] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // B82: filter to teammate-vs-teammate ("internal") matches.
+  const [internalOnly, setInternalOnly] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,19 +64,44 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
     ownerName: r.ownerName ?? null,
     winners: r.winners ?? null,
     ownerPlayerId: r.ownerPlayerId ?? null,
+    internal: !!r.internal,
   }));
 
+  const internalCount = normalized.filter((r) => r.internal).length;
+  const shown = internalOnly ? normalized.filter((r) => r.internal) : normalized;
+
   return (
-    <ReplayFilters
-      rows={normalized}
-      canManage={false}
-      emptyState={
-        <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
-          No team replays yet. Replays surface here when a team member tags one,
-          or when an owner explicitly shares a replay with the team from its
-          viewer page.
+    <>
+      {internalCount > 0 && (
+        <div style={{ display: 'inline-flex', gap: 4, marginBottom: 12, background: 'rgba(17,20,26,0.6)', border: '1px solid #2e333c', borderRadius: 8, padding: 3 }}>
+          {([['All', false], [`Internal (${internalCount})`, true]] as const).map(([label, val]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setInternalOnly(val)}
+              title={val ? 'Matches played between teammates' : undefined}
+              style={{
+                background: internalOnly === val ? '#4a7cff' : 'transparent',
+                color: internalOnly === val ? '#fff' : '#a0a8b8',
+                border: 0, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      }
-    />
+      )}
+      <ReplayFilters
+        rows={shown}
+        canManage={false}
+        emptyState={
+          <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
+            {internalOnly
+              ? 'No teammate-vs-teammate matches yet (both players must be team members with their karabast username set in Settings).'
+              : 'No team replays yet. Replays surface here when a team member tags one, or when an owner explicitly shares a replay with the team from its viewer page.'}
+          </div>
+        }
+      />
+    </>
   );
 }
