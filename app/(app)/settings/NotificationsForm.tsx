@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { FormControlLabel, Switch } from '@mui/material';
 
 // B81: global Discord-notifications kill switch. PATCHes /api/me/notifications.
 // notifyMentions skips a user entirely when this is on (overrides per-team prefs).
@@ -27,10 +28,12 @@ export function NotificationsForm({ initialDisabled }: { initialDisabled: boolea
   };
 
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-      <input type="checkbox" checked={enabled} onChange={toggle} />
-      <span style={{ fontSize: 14 }}>Send me Discord notifications when I&apos;m @-mentioned</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <FormControlLabel
+        control={<Switch checked={enabled} onChange={toggle} />}
+        label="Send me Discord notifications when I’m @-mentioned"
+      />
       {status.kind === 'error' && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{status.text}</span>}
-    </label>
+    </div>
   );
 }

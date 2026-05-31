@@ -93,6 +93,15 @@ _empty_
 
 ## Done
 
+### [B90] Design-system foundation — tokens + themed MUI + enforcement (PoC)
+_completed: 2026-05-31 by claude_
+First phase of the consistency/branding pass ([ADR 0006](docs/adr/0006-design-system.md); strategy "themed MUI + tokens" chosen with Parker). The chrome had no MUI ThemeProvider (only the lifted gameboard did), so it was all hand-rolled inline styles + a mix of native/styled controls.
+- **Tokens** `app/_theme/karabuddyTokens.ts` (neon-dark palette/radii/spacing/font, single source).
+- **Theme** `app/_theme/karabuddyTheme.ts` (MUI theme from tokens) applied via `<KaraBuddyThemeProvider>` around the `(app)` layout — no CssBaseline (globals.css + gameboard own the base; gameboard theme nests + wins for its subtree).
+- **Converted the 5 native offenders** to themed MUI: NotificationsForm + TeamNotificationPrefs + ShareWithTeam (Switch), ScopeChip (Checkbox + Radio).
+- **Enforcement** `test/unit/no-native-form-controls.test.ts` — CI guard failing on any native `type=checkbox|radio` (grep idiom, runs in the deploy gate). "Can't introduce an unstyled checkbox" is now real.
+- typecheck + unit 124 + full e2e 107 green. **Remaining phases:** migrate the rest of the chrome (buttons/inputs/selects) to MUI; widen the guard; extension plain-JS primitives from the same tokens; polish pass.
+
 ### [B89] "Your replays": Shared / Unlisted tabs + per-card share status
 _completed: 2026-05-31 by claude_
 The library gave no at-a-glance signal of who a replay was visible to. Added explicit **All / Shared / Unlisted** tabs (with counts) to `/replays`, plus a per-card share badge (team chips when shared, a muted "🔒 Unlisted" otherwise) and a compact chip in the table view. "Unlisted" (not "Private") is the honest label — every replay stays link-accessible. Tabs/badges are opt-in (`showShareTabs`) so the team grid + anonymous library are unaffected; the URL key is `?share=` to avoid colliding with the team page's `?tab=`. Regression E2E `replays-share-tabs.spec.ts`.

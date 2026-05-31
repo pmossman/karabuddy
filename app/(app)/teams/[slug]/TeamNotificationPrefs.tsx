@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { FormControlLabel, Switch } from '@mui/material';
 
 // B81: per-team Discord DM preferences (member-only). Two toggles, both default
 // ON; the global switch on /settings overrides these. PATCHes
@@ -33,10 +34,10 @@ export function TeamNotificationPrefs({ slug }: { slug: string }) {
   if (!prefs) return null;
 
   const row = (label: string, key: 'dmOnDirectMention' | 'dmOnTeamMention') => (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-      <input type="checkbox" checked={prefs[key]} onChange={(e) => set({ [key]: e.target.checked })} />
-      <span style={{ fontSize: 13 }}>{label}</span>
-    </label>
+    <FormControlLabel
+      control={<Switch checked={prefs[key]} onChange={(e) => set({ [key]: e.target.checked })} />}
+      label={label}
+    />
   );
 
   return (

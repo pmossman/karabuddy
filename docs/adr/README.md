@@ -8,3 +8,4 @@ otherwise get re-litigated. One file per decision, numbered. Terse on purpose.
 - [0003 — Local dev DB isolation via Docker Postgres](./0003-local-db-isolation.md)
 - [0004 — Graduated extension kill-switch](./0004-extension-kill-switch.md)
 - [0005 — Safe deploys: expand/contract, enforced](./0005-safe-deploys-expand-contract.md)
+- [0006 — Design system: tokens + themed MUI, enforced](./0006-design-system.md)
