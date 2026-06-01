@@ -28,8 +28,9 @@ npm-debug.log*
 .idea/
 .vscode/
 
-# Claude
-.claude/
+# Claude — ignore local settings/state, but version shared skills.
+.claude/*
+!.claude/skills/
 .vercel
 .env*
 

@@ -24,6 +24,7 @@ on:
       - 'docs/**'
       - 'extension/**'
       - 'assets/**' # store/Discord/brand images — uploaded manually, not part of the app build
+      - '.claude/**' # editor/agent skills + config — never part of the app build
       - '.github/workflows/extension-release.yml'
       - '.github/workflows/extension-submit-cws.yml'
 

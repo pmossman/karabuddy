@@ -8,7 +8,7 @@
 #
 # Outputs:
 #   extension/icons/{16,48,128}.png    — extension manifest icons
-#   assets/store/icon-128.png          — Web Store listing icon (same art)
+#   assets/store/store-icon-128.png    — Web Store listing icon (same art)
 #   assets/store/promo-440x280.png     — Web Store "small promo tile"
 #   assets/store/promo-920x680.png     — Web Store "large promo tile"
 #   assets/store/promo-1400x560.png    — Web Store "marquee promo tile"
