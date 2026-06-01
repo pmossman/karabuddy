@@ -39,7 +39,12 @@ test('team-mention autocomplete suggestion shows team name, not slug', async ({ 
   await claimInstallToken(page, r.installToken);
 
   await page.goto(`/r/${r.slug}`);
+  // The autocomplete data is lazily fetched when the tag form first opens.
+  // Typing before it resolves races the fetch (the source of this test's
+  // historical flakiness), so wait for the response before typing @.
+  const mentionData = page.waitForResponse((res) => res.url().includes('/api/me/teams-mention-data'));
   await page.getByRole('button', { name: /Tag this frame/i }).click();
+  await mentionData;
   await page.locator('textarea').first().fill('@Auto');
 
   const popover = page.locator('[data-mention-popover]');
