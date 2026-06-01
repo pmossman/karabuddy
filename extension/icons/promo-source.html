@@ -5,7 +5,7 @@
 <title>KaraBuddy promo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;800&family=Orbitron:wght@700;800&display=swap" rel="stylesheet">
 <style>
   /* Same vw-driven layout as source.html — render at any size by sizing
      the viewport. Aspect ratio assumed roughly 11:7 (440x280 = Chrome
@@ -45,7 +45,7 @@
     right: -10vw;
     width: 70vw;
     height: 70vh;
-    background: radial-gradient(circle at 50% 50%, rgba(74, 124, 255, 0.18), transparent 60%);
+    background: radial-gradient(circle at 50% 50%, rgba(77, 157, 255, 0.18), transparent 60%);
     pointer-events: none;
   }
   .row {
@@ -72,14 +72,16 @@
     text-transform: uppercase;
   }
   .buddy {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-style: italic;
-    font-weight: 700;
-    font-size: 19vh;
-    color: #5a8cff;
-    letter-spacing: -0.01em;
-    margin-left: 4vh;
-    margin-top: -0.5vh;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 800;
+    font-size: 13vh;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    margin-top: 0.8vh;
+    background: linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
   .tag {
     flex: 1 1 auto;
@@ -96,13 +98,13 @@
   .sub {
     font-weight: 400;
     font-size: 4.6vh;
-    color: #a0c4ff;
+    color: #a7d2ff;
     line-height: 1.3;
   }
   .url {
     font-weight: 600;
     font-size: 3.8vh;
-    color: #5a8cff;
+    color: #5db4ff;
     letter-spacing: 0.02em;
     margin-top: 0.5vh;
   }
@@ -112,7 +114,7 @@
   <div class="row">
     <div class="logo">
       <span class="kara">KARA</span>
-      <span class="buddy">buddy</span>
+      <span class="buddy">BUDDY</span>
     </div>
     <div class="tag">
       <div class="tagline">Capture &amp; tag your karabast.net matches</div>

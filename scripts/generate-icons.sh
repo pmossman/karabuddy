@@ -70,13 +70,22 @@ render() {
   echo "  ${w}x${h}  →  $out  ($(du -h "$out" | cut -f1))"
 }
 
-echo "rendering square icons from source.html…"
-render "$ICON_SRC" "$ICON_OUT/16.png" 16 16
-render "$ICON_SRC" "$ICON_OUT/48.png" 48 48
-render "$ICON_SRC" "$ICON_OUT/128.png" 128 128
-render "$ICON_SRC" "$STORE_OUT/icon-128.png" 128 128
+# Square icon: render ONE high-res 2056² master from source.html, then downscale
+# every size from it with `sips` (single high-quality resample). The master is
+# the canonical art (committed) so any size can be re-derived later. The gradient
+# BUDDY has no glow, so it stays crisp down to 128.
+BRAND_OUT="$REPO_ROOT/assets/brand"
+MASTER="$BRAND_OUT/karabuddy-icon-2056.png"
+mkdir -p "$BRAND_OUT"
+echo "rendering 2056² master from source.html…"
+render "$ICON_SRC" "$MASTER" 2056 2056
 
-echo "rendering promo tiles from promo-source.html…"
+echo "downscaling icon sizes from the master…"
+for sz in 16 48 128; do sips -z "$sz" "$sz" "$MASTER" --out "$ICON_OUT/$sz.png" >/dev/null; echo "  ${sz}²  →  $ICON_OUT/$sz.png"; done
+sips -z 128 128 "$MASTER" --out "$STORE_OUT/store-icon-128.png" >/dev/null;     echo "  128²  →  $STORE_OUT/store-icon-128.png"
+sips -z 1024 1024 "$MASTER" --out "$REPO_ROOT/assets/discord/karabuddy-1024-square.png" >/dev/null; echo "  1024² →  assets/discord/karabuddy-1024-square.png (Discord app icon; masked to a circle)"
+
+echo "rendering promo tiles from promo-source.html (rectangular — rendered natively, not from the square master)…"
 render "$PROMO_SRC" "$STORE_OUT/promo-440x280.png" 440 280
 render "$PROMO_SRC" "$STORE_OUT/promo-920x680.png" 920 680
 render "$PROMO_SRC" "$STORE_OUT/promo-1400x560.png" 1400 560

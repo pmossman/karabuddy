@@ -1,44 +1,41 @@
 # Brand assets
 
-Source generators + exported assets for the store/Discord listings. The logo
-wordmark = **KARA** in Barlow + **BUDDY** in Orbitron (uppercase) with the
-cyan→azure gradient (`#4dd2ff → #4d9dff`) on the tactical-dark background — the
-same palette/fonts as the app (see `app/_theme/karabuddyTokens.ts`).
+The icon art has ONE source: **`extension/icons/source.html`** (the vw-driven
+launcher mark) — `KARA` in Barlow 400 (matches the **karabast** wordmark) over
+`BUDDY` in Orbitron with the cyan→azure gradient (`#4dd2ff → #4d9dff`), on the
+tactical-dark rounded square. The promo tiles use `extension/icons/promo-source.html`.
+Same palette/fonts as the app (`app/_theme/karabuddyTokens.ts`).
 
-## Required dimensions
+## Regenerating — `scripts/generate-icons.sh`
 
-**Chrome Web Store** (uploaded in the dev dashboard)
-| Asset | Size | File |
-|---|---|---|
-| Store icon | 128×128 | `../store/store-icon-128.png` |
-| Screenshots (1–5) | 1280×800 | `../store/screenshot-*.png` |
-| Small promo tile *(optional)* | 440×280 | — |
-| Marquee promo tile *(optional)* | 1400×560 | — |
-
-**Extension package icons** (bundled, in `extension/manifest.json`)
-| Size | File |
-|---|---|
-| 16 / 48 / 128 | `../../extension/icons/{16,48,128}.png` |
-
-**Discord** (Developer Portal app icon = bot avatar)
-| Asset | Size | File |
-|---|---|---|
-| App icon | 1024×1024 | `../discord/karabuddy-1024-square.png` (Discord masks to a circle) |
-
-## Regenerating (no ImageMagick needed — render + downscale)
-
-`app-icon.html` is the rounded-square mark (extension/store icon); `discord-icon.html`
-is the circle-safe version (more padding). Render each with the agent-browser CLI
-at 2× then downscale for crisp text:
+Renders a high-res **2056×2056 master** (`karabuddy-icon-2056.png`) from
+`source.html` via headless Chrome, then **downscales every size from that master**
+with `sips` (single high-quality resample). Run it after editing `source.html`:
 
 ```sh
-agent-browser set viewport 1024 1024 2
-agent-browser open "file://$PWD/assets/brand/app-icon.html"
-agent-browser eval "await document.fonts.ready; await new Promise(r=>setTimeout(r,700))"
-agent-browser screenshot '.icon' /tmp/raw.png
-sips -z 1024 1024 /tmp/raw.png --out assets/brand/karabuddy-appicon-1024.png
-# then slice: for sz in 16 48 128; do sips -z $sz $sz <src> --out extension/icons/$sz.png; done
+./scripts/generate-icons.sh
 ```
 
-Screenshots: sign in, `agent-browser set viewport 1280 800`, navigate to each page,
-hide the Next dev badge (`nextjs-portal{display:none}`), `screenshot`.
+Outputs:
+| Asset | Size | Path |
+|---|---|---|
+| Master (canonical source-of-resizes) | **2056×2056** | `assets/brand/karabuddy-icon-2056.png` |
+| Extension manifest icons | **16 / 48 / 128** | `extension/icons/{16,48,128}.png` |
+| CWS store icon | **128×128** | `assets/store/store-icon-128.png` |
+| Discord app icon (masked to a circle) | **1024×1024** | `assets/discord/karabuddy-1024-square.png` |
+| CWS promo tiles *(optional)* | 440×280 / 920×680 / 1400×560 | `assets/store/promo-*.png` |
+
+To pull any other size, downscale from the master:
+`sips -z <px> <px> assets/brand/karabuddy-icon-2056.png --out <dest>`.
+
+## Screenshots — `assets/store/screenshot-*.png` (1280×800)
+
+Captured from the running app (signed in) via agent-browser at `viewport 1280 800`
+(DSF 1 → exact pixels), Next dev badge hidden. Pages: home / viewer / replays /
+teams / tagging.
+
+## Required listing dimensions (uploaded manually to the dashboards)
+
+- **Chrome Web Store:** icon 128×128, screenshots 1280×800 (1–5), optional promo
+  tiles 440×280 + 1400×560.
+- **Discord Developer Portal:** app icon 1024×1024 (= bot avatar; masked to a circle).

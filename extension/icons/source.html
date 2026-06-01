@@ -5,7 +5,7 @@
 <title>KaraBuddy icon</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;800&family=Orbitron:wght@700;800&display=swap" rel="stylesheet">
 <style>
   /* Viewport-relative so the same HTML renders crisply at any size
      (16/48/128/512). The browser does the layout pass at native pixels,
@@ -18,7 +18,7 @@
     height: 100vh;
     border-radius: 23.8%; /* launcher 10/42 ≈ 23.8% */
     background: linear-gradient(140deg, #243044 0%, #1a1d23 100%);
-    border: 2.4vw solid rgba(74, 124, 255, 0.55); /* launcher 1/42 ≈ 2.4% */
+    border: 2.4vw solid rgba(77, 157, 255, 0.55); /* launcher 1/42 ≈ 2.4% */
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -41,18 +41,23 @@
     text-transform: uppercase;
   }
   .buddy {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-style: italic;
-    font-weight: 700;
-    font-size: 23.8vw; /* launcher 10/42 ≈ 23.8% */
-    color: #5a8cff;
-    letter-spacing: -0.01em;
-    margin-left: 14.3vw; /* launcher 6/42 ≈ 14.3% */
-    margin-top: -2.4vw; /* launcher -1/42 ≈ -2.4% */
+    /* New brand: squared "space-HUD" Orbitron + the cyan→azure gradient, to
+       match the app logo. No glow/shadow — keeps small sizes crisp. KARA stays
+       Barlow (the KARABAST wordmark match) above. */
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 800;
+    font-size: 16vw;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    margin-top: 1vw;
+    background: linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 </style>
 </head>
 <body>
-<div class="icon"><div class="mono"><span class="kara">KARA</span><span class="buddy">buddy</span></div></div>
+<div class="icon"><div class="mono"><span class="kara">KARA</span><span class="buddy">BUDDY</span></div></div>
 </body>
 </html>
