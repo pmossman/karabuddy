@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react';
 import { LedToggle } from '@/app/_components/LedToggle';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
-// B81: per-team Discord DM preferences (member-only). Two toggles, both default
-// ON; the global switch on /settings overrides these. PATCHes
-// /api/teams/[slug]/members/me/prefs.
+// B81/B99: per-team Discord DM preferences (member-only). Two toggles, both
+// default OFF — DMs are strictly opt-in. Team-mention DMs also require the
+// global switch on /settings to be on. PATCHes /api/teams/[slug]/members/me/prefs.
 export function TeamNotificationPrefs({ slug }: { slug: string }) {
   const [prefs, setPrefs] = useState<{ dmOnDirectMention: boolean; dmOnTeamMention: boolean } | null>(null);
 

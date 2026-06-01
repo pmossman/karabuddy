@@ -59,14 +59,14 @@ describe('notifyMentions', () => {
     expect(mockedSendDM).toHaveBeenCalledTimes(1);
   });
 
-  it('honours per-team opt-out and excludes the author on a team mention', async () => {
+  it('team mention is strictly opt-in: only dmOnTeamMention=true members are DM\'d (author + no-row members excluded)', async () => {
     const author = await seedUser();
-    const on = await seedUser();
-    const optedOut = await seedUser();
-    const team = await seedTeam([author, on, optedOut]);
-    await getDb().insert(teamMemberPrefs).values({ teamSlug: team, userId: optedOut, dmOnTeamMention: false });
+    const optedIn = await seedUser();
+    const noRow = await seedUser(); // never opted in → no team DM
+    const team = await seedTeam([author, optedIn, noRow]);
+    await getDb().insert(teamMemberPrefs).values({ teamSlug: team, userId: optedIn, dmOnTeamMention: true });
     const res = await notifyMentions({ mentions: { teamSlugs: [team] }, replaySlug: 'r', frameIndex: 2, comment: 'team look', authorUserId: author });
-    expect(res.map((r) => r.userId)).toEqual([on]);
+    expect(res.map((r) => r.userId)).toEqual([optedIn]);
   });
 
   it('falls back to a grouped team-channel @-ping when the DM is refused', async () => {
@@ -75,6 +75,10 @@ describe('notifyMentions', () => {
     const m1 = await seedUser();
     const m2 = await seedUser();
     const team = await seedTeam([author, m1, m2], 'chan-123');
+    await getDb().insert(teamMemberPrefs).values([
+      { teamSlug: team, userId: m1, dmOnTeamMention: true },
+      { teamSlug: team, userId: m2, dmOnTeamMention: true },
+    ]); // both opted in to team-mention DMs
     const res = await notifyMentions({ mentions: { teamSlugs: [team] }, replaySlug: 'r', frameIndex: 0, comment: 'look', authorUserId: author });
     expect(res.every((r) => r.via === 'channel')).toBe(true);
     // One grouped message to the team channel, pinging both members.
@@ -89,6 +93,7 @@ describe('notifyMentions', () => {
     const author = await seedUser();
     const m1 = await seedUser();
     const team = await seedTeam([author, m1]); // no channel
+    await getDb().insert(teamMemberPrefs).values({ teamSlug: team, userId: m1, dmOnTeamMention: true }); // opted in
     const res = await notifyMentions({ mentions: { teamSlugs: [team] }, replaySlug: 'r', frameIndex: 0, comment: 'x', authorUserId: author });
     expect(res).toEqual([{ userId: m1, via: 'none' }]);
     expect(mockedPostChannel).not.toHaveBeenCalled();

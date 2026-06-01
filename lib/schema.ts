@@ -37,7 +37,10 @@ export const users = pgTable('users', {
   // B81: global Discord-notifications kill switch. The user's Discord ID isn't
   // stored here — it's already in accounts.providerAccountId (provider=discord)
   // from sign-in, so notifyMentions reads it from there.
-  notificationsDisabled: boolean('notifications_disabled').notNull().default(false),
+  // Discord DMs are STRICTLY OPT-IN (B99): this defaults to true (disabled), so
+  // no one is DM'd until they explicitly enable "Send me Discord notifications".
+  // It's the master gate over both direct + team mentions in notifyMentions.
+  notificationsDisabled: boolean('notifications_disabled').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -251,8 +254,10 @@ export const teamMemberPrefs = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    dmOnDirectMention: boolean('dm_on_direct_mention').notNull().default(true),
-    dmOnTeamMention: boolean('dm_on_team_mention').notNull().default(true),
+    // Strictly opt-in (B99): default false. A member gets team-mention DMs only
+    // if a row here explicitly sets the flag true (and the global switch is on).
+    dmOnDirectMention: boolean('dm_on_direct_mention').notNull().default(false),
+    dmOnTeamMention: boolean('dm_on_team_mention').notNull().default(false),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.teamSlug, t.userId] }),

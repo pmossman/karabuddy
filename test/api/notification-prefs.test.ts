@@ -29,12 +29,12 @@ beforeEach(() => vi.mocked(auth).mockReset());
 
 describe('GET/PATCH /api/me/notifications (global kill switch)', () => {
   it('401s anon', async () => { as(null); expect((await getGlobal()).status).toBe(401); });
-  it('defaults to enabled (not disabled), and PATCH flips it', async () => {
+  it('defaults to DISABLED (strictly opt-in), and PATCH opts in', async () => {
     const id = await seedUser();
     as(id);
+    expect((await (await getGlobal()).json()).notificationsDisabled).toBe(true); // B99: off by default
+    await patchGlobal(body('PATCH', { notificationsDisabled: false }));
     expect((await (await getGlobal()).json()).notificationsDisabled).toBe(false);
-    await patchGlobal(body('PATCH', { notificationsDisabled: true }));
-    expect((await (await getGlobal()).json()).notificationsDisabled).toBe(true);
   });
   it('400s a non-boolean', async () => {
     const id = await seedUser(); as(id);
@@ -49,19 +49,19 @@ describe('GET/PATCH /api/teams/:slug/members/me/prefs', () => {
     as(await seedUser());
     expect((await getTeamPrefs(body('GET'), teamParams(slug))).status).toBe(403);
   });
-  it('defaults both prefs ON for a member', async () => {
+  it('defaults both prefs OFF for a member (strictly opt-in)', async () => {
     const id = await seedUser();
     const slug = await seedTeam(id, [id]);
     as(id);
-    expect(await (await getTeamPrefs(body('GET'), teamParams(slug))).json()).toMatchObject({ ok: true, dmOnDirectMention: true, dmOnTeamMention: true });
+    expect(await (await getTeamPrefs(body('GET'), teamParams(slug))).json()).toMatchObject({ ok: true, dmOnDirectMention: false, dmOnTeamMention: false });
   });
-  it('PATCH persists a single pref and leaves the other unchanged', async () => {
+  it('PATCH persists a single pref and leaves the other at its (off) default', async () => {
     const id = await seedUser();
     const slug = await seedTeam(id, [id]);
     as(id);
-    await patchTeamPrefs(body('PATCH', { dmOnTeamMention: false }), teamParams(slug));
+    await patchTeamPrefs(body('PATCH', { dmOnTeamMention: true }), teamParams(slug));
     const got = await (await getTeamPrefs(body('GET'), teamParams(slug))).json();
-    expect(got.dmOnTeamMention).toBe(false);
-    expect(got.dmOnDirectMention).toBe(true); // untouched
+    expect(got.dmOnTeamMention).toBe(true);
+    expect(got.dmOnDirectMention).toBe(false); // untouched → stays off
   });
 });

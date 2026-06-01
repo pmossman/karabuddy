@@ -32,8 +32,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     .limit(1);
   return NextResponse.json({
     ok: true,
-    dmOnDirectMention: row ? row.dmOnDirectMention : true,
-    dmOnTeamMention: row ? row.dmOnTeamMention : true,
+    // B99: strictly opt-in — no row means OFF (not enabled).
+    dmOnDirectMention: row ? row.dmOnDirectMention : false,
+    dmOnTeamMention: row ? row.dmOnTeamMention : false,
   });
 }
 
@@ -48,9 +49,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     .from(teamMemberPrefs)
     .where(and(eq(teamMemberPrefs.teamSlug, slug), eq(teamMemberPrefs.userId, userId)))
     .limit(1);
+  // B99: strictly opt-in — an omitted field on a brand-new row stays OFF
+  // (false), not the old opt-out default.
   const next = {
-    dmOnDirectMention: typeof body.dmOnDirectMention === 'boolean' ? body.dmOnDirectMention : existing?.dmOnDirectMention ?? true,
-    dmOnTeamMention: typeof body.dmOnTeamMention === 'boolean' ? body.dmOnTeamMention : existing?.dmOnTeamMention ?? true,
+    dmOnDirectMention: typeof body.dmOnDirectMention === 'boolean' ? body.dmOnDirectMention : existing?.dmOnDirectMention ?? false,
+    dmOnTeamMention: typeof body.dmOnTeamMention === 'boolean' ? body.dmOnTeamMention : existing?.dmOnTeamMention ?? false,
   };
   await db
     .insert(teamMemberPrefs)

@@ -93,6 +93,10 @@ _empty_
 
 ## Done
 
+### [B99] Discord DMs strictly opt-in (defaults OFF + reset existing)
+_completed: 2026-06-01 by claude_
+DMs were opt-OUT (global `notifications_disabled` defaulted false; per-team `dm_on_*` defaulted true; no-row treated as ON) — all existing users (2/2, both Discord-linked) were defaulted to receive DMs. Parker chose "everything defaults OFF (strictest)". Changes: schema defaults → `notifications_disabled` true, `dm_on_*` false; inverted the team-mention gate in `discordNotify` to opt-in (DM only if a `dmOnTeamMention=true` row exists); prefs GET no-row → false; PATCH omitted-field fallback → false. Migration 0016 flips the defaults + **backfills every existing user/membership to OFF** (SET DEFAULT + UPDATE — backward-compatible, not destructive). Result: global switch is the master opt-in (gates direct + team); team-mention DMs need global ON **and** the per-team toggle ON (two opt-ins). Updated discord-notify + notification-prefs tests; typecheck + api 72 + unit 125 + e2e 107.
+
 ### [B98] Forward extension↔server contract test
 _completed: 2026-05-31 by claude_
 Closed the gap Parker flagged: the auto-release is artifact-only (manual CWS gate), but nothing in CI verified that a *new* extension version is wire-compatible with the *current* server — the frozen-0.5.0 contract only guards the reverse. Added a forward contract in `extension/replays/recorder.test.js`: drives the REAL recorder via the fake-socket harness, then feeds its exact payload to the REAL server decoder (`decodeReplay`/`extractWinners`) and asserts it extracts frames/POV/match/winner/tags. A breaking recorder wire change now fails CI (unit project, runs on PRs + in the extension-release job's `test:unit`) before the extension could ever be submitted. unit 125 green. Noted the known churn footgun (any extension/** change auto-cuts a release) as deliberately left per Parker; offered a `!extension/**/*.test.js` trigger exclusion if wanted.

@@ -69,12 +69,15 @@ export async function notifyMentions(opts: MentionNotifyInput): Promise<NotifyRe
       .where(inArray(teamMembers.teamSlug, teamSlugs));
     const prefRows = await db.select().from(teamMemberPrefs).where(inArray(teamMemberPrefs.teamSlug, teamSlugs));
     const key = (t: string, u: string) => `${t}:${u}`;
-    const teamMentionOff = new Set(prefRows.filter((p) => !p.dmOnTeamMention).map((p) => key(p.teamSlug, p.userId)));
+    // Strictly opt-in (B99): a member is DM'd for a team mention ONLY if they
+    // explicitly enabled it (a pref row with dmOnTeamMention=true). No row /
+    // false → no DM. (The global switch in notifies further gates this.)
+    const teamMentionOn = new Set(prefRows.filter((p) => p.dmOnTeamMention).map((p) => key(p.teamSlug, p.userId)));
     const teamRows = await db.select({ slug: teams.slug, channel: teams.discordChannelId }).from(teams).where(inArray(teams.slug, teamSlugs));
     for (const t of teamRows) if (t.channel) teamChannels.set(t.slug, t.channel);
     for (const m of members) {
       if (m.userId === authorUserId) continue;
-      if (teamMentionOff.has(key(m.teamSlug, m.userId))) continue;
+      if (!teamMentionOn.has(key(m.teamSlug, m.userId))) continue; // opt-in only
       ensure(m.userId).add(m.teamSlug);
     }
   }

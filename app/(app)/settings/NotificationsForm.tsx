@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { LedToggle } from '@/app/_components/LedToggle';
 
-// B81: global Discord-notifications kill switch. PATCHes /api/me/notifications.
+// B81/B99: global Discord-notifications switch — the strictly-opt-in master.
+// Defaults OFF (no DMs until enabled); gates both direct + team mentions.
+// PATCHes /api/me/notifications.
 // notifyMentions skips a user entirely when this is on (overrides per-team prefs).
 export function NotificationsForm({ initialDisabled }: { initialDisabled: boolean }) {
   const [enabled, setEnabled] = useState(!initialDisabled);
