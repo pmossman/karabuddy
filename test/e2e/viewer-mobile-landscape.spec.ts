@@ -1,20 +1,25 @@
 import { test, expect } from '@playwright/test';
 import { signInAsTestUser, uploadReplay, claimInstallToken } from './helpers';
 
-// B66: mobile landscape viewer rework. Currently the single right-side
-// drawer holds everything (matchup, share, decks, step toggle,
-// what-happened, tags). That's cramped on phone landscape. Splitting:
-//   - Step toggle → small overlay pill near the menu button. Always
-//     visible (mobile only), not gated by drawer open/close.
-//   - Matchup + share + "View decks" → left slide-in panel that opens
-//     alongside the drawer when ☰ is tapped. Landscape only.
-//   - Right drawer stays for "what happened" + tags + tag form.
-// Portrait stays single-drawer (not enough width for two panels).
+// B66 → B100: mobile viewer chrome. Two independent FABs in the bottom-right:
+//   - ☰  "Open/Close tags panel" → the REVIEW sheet (what-happened + tags +
+//        tag form). Bottom sheet in portrait, right sheet in landscape.
+//        Draggable (clear grabber on the edge nearest the board) + an explicit
+//        × close inside the sheet header.
+//   - ⓘ  "Show/Hide matchup info" → the MATCHUP sheet (chips + title + decks).
+//        Top sheet in portrait, left sheet in landscape. Collapsed by default
+//        (rarely needed mid-replay). Also draggable.
+// The two are mutually exclusive on mobile (opening one closes the other) so
+// they never sandwich the board — that simultaneity was the old "mess". The
+// step-mode pill is a separate always-visible overlay; the prev/next chevrons
+// are pinned to the screen edges and don't move when a sheet opens.
+//
+// Portrait + landscape share the model now (the old portrait/landscape split
+// only differed in which edges the sheets slide from).
 
 // Viewport must fit under the `(max-width: 900px)` breakpoint that
 // useMediaQuery uses for isMobile — Playwright doesn't simulate
-// `pointer: coarse`. iPhone 12-ish landscape (844px) is comfortably
-// under 900.
+// `pointer: coarse`. iPhone 12-ish landscape (844px) is comfortably under 900.
 const MOBILE_LANDSCAPE = { width: 844, height: 390 };
 const MOBILE_PORTRAIT = { width: 390, height: 844 };
 
@@ -38,41 +43,74 @@ async function loadReplay(page: any, request: any) {
   return r;
 }
 
-test('mobile landscape: step-toggle overlay is always visible (drawer closed)', async ({ page, request }) => {
+test('mobile landscape: step-toggle overlay is always visible (sheets closed)', async ({ page, request }) => {
   await page.setViewportSize(MOBILE_LANDSCAPE);
   const r = await loadReplay(page, request);
   await page.goto(`/r/${r.slug}`);
-  // Drawer is closed by default. The overlay should still render.
+  // Both sheets are closed by default. The overlay should still render.
   const overlay = page.getByTestId('step-mode-overlay');
   await expect(overlay).toBeVisible();
   await expect(overlay.getByRole('button', { name: /^Action$/ })).toBeVisible();
   await expect(overlay.getByRole('button', { name: /^Frame$/ })).toBeVisible();
 });
 
-test('mobile landscape: tapping ☰ reveals a LEFT-anchored matchup panel + right drawer', async ({ page, request }) => {
+test('mobile: matchup is collapsed by default and opens via the ⓘ FAB (LEFT-anchored in landscape)', async ({ page, request }) => {
   await page.setViewportSize(MOBILE_LANDSCAPE);
   const r = await loadReplay(page, request);
   await page.goto(`/r/${r.slug}`);
 
-  await page.getByRole('button', { name: /Open tags/i }).click();
+  // Collapsed by default — the matchup FAB exists but the panel hasn't slid in.
+  const fab = page.getByRole('button', { name: /matchup info/i });
+  await expect(fab).toBeVisible();
+
+  await fab.click();
   const panel = page.getByTestId('match-panel');
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute('data-anchor', 'left');
   await expect(panel.getByRole('button', { name: /View decks/i })).toBeVisible();
 });
 
-test('mobile landscape: right drawer no longer contains matchup or View decks', async ({ page, request }) => {
+test('mobile: ☰ opens the review sheet; it holds what-happened + tag form, never the matchup/decks', async ({ page, request }) => {
   await page.setViewportSize(MOBILE_LANDSCAPE);
   const r = await loadReplay(page, request);
   await page.goto(`/r/${r.slug}`);
 
   await page.getByRole('button', { name: /Open tags/i }).click();
   const drawer = page.getByTestId('tags-drawer');
-  // What-happened + tag form stay in the drawer.
+  await expect(drawer).toBeVisible();
+  // B100: log + tags split into tabs (the sheet can't fit both). Default tab
+  // is the game log.
   await expect(drawer.getByText(/What happened/i)).toBeVisible();
+  await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toHaveCount(0);
+  // Switch to the Tags tab → the tag form appears, the log goes away.
+  await drawer.getByRole('button', { name: /^Tags/ }).click();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toBeVisible();
-  // View decks moved to the LEFT panel; drawer should not have it.
+  await expect(drawer.getByText(/What happened/i)).toHaveCount(0);
+  // The matchup + decks live on the separate matchup sheet.
   await expect(drawer.getByRole('button', { name: /View decks/i })).toHaveCount(0);
+  // Clear drag handle to resize the sheet.
+  await expect(drawer.getByRole('separator', { name: /resize review panel/i })).toBeVisible();
+  // Explicit in-sheet close (the FAB is covered while the sheet is open). The
+  // sheet slides out via transform (stays mounted, so assert the FAB's label
+  // flips back rather than checking visibility of an off-screen element).
+  await drawer.getByRole('button', { name: /Close tags panel/i }).click();
+  await expect(page.getByRole('button', { name: /Open tags panel/i })).toBeVisible();
+});
+
+test('mobile: the two sheets are mutually exclusive (opening matchup closes review)', async ({ page, request }) => {
+  await page.setViewportSize(MOBILE_PORTRAIT);
+  const r = await loadReplay(page, request);
+  await page.goto(`/r/${r.slug}`);
+
+  await page.getByRole('button', { name: /Open tags/i }).click();
+  const drawer = page.getByTestId('tags-drawer');
+  await expect(drawer).toBeVisible();
+
+  await page.getByRole('button', { name: /matchup info/i }).click();
+  const panel = page.getByTestId('match-panel');
+  await expect(panel).toBeVisible();
+  // Review slid back out when matchup opened — its FAB reverts to "Open".
+  await expect(page.getByRole('button', { name: /Open tags panel/i })).toBeVisible();
 });
 
 // Title + Edit button surfaced in the sidebar header (own affordance,
@@ -90,7 +128,7 @@ test('opening Share does NOT also show a second title-edit button (de-duplicated
   await expect(page.getByRole('button', { name: /Edit replay title/i })).toHaveCount(1);
 });
 
-// B66b: desktop now mirrors mobile landscape — chevrons + step-overlay
+// B66b: desktop mirrors the mobile-landscape chrome — chevrons + step-overlay
 // + ☰ toggle + right-anchored sidebar.
 
 test('desktop: frame-nav chevrons render over the gameboard', async ({ page, request }) => {
@@ -99,6 +137,12 @@ test('desktop: frame-nav chevrons render over the gameboard', async ({ page, req
   await page.goto(`/r/${r.slug}`);
   await expect(page.getByRole('button', { name: 'Previous frame' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Next frame' })).toBeVisible();
+});
+
+test('desktop: no matchup FAB (matchup lives in the docked sidebar header)', async ({ page, request }) => {
+  const r = await loadReplay(page, request);
+  await page.goto(`/r/${r.slug}`);
+  await expect(page.getByRole('button', { name: /matchup info/i })).toHaveCount(0);
 });
 
 test('desktop: step-mode overlay renders too (with "Step by:" label)', async ({ page, request }) => {
@@ -120,9 +164,7 @@ test('desktop: sidebar opens on the RIGHT and can be dismissed via ☰', async (
   const vp = page.viewportSize();
   expect(box && vp && Math.abs((box.x + box.width) - vp.width) < 5).toBe(true);
 
-  // The ☰ button itself is the toggle — same visible affordance opens
-  // and closes the sidebar (no separate × hunt). Click once to close,
-  // click again to reopen.
+  // The ☰ FAB toggles the docked sidebar (open + close from one affordance).
   const toggle = page.getByRole('button', { name: /tags panel/i });
   await toggle.click();
   await expect(drawer).toHaveCount(0);
@@ -146,33 +188,32 @@ test('mobile MatchupPanel exposes title-edit + add-label affordances (landscape 
     await page.setViewportSize(viewport);
     const r = await loadReplay(page, request);
     await page.goto(`/r/${r.slug}`);
-    await page.getByRole('button', { name: /Open tags/i }).click();
+    await page.getByRole('button', { name: /matchup info/i }).click();
     const panel = page.getByTestId('match-panel');
     await expect(panel.getByRole('button', { name: /Edit replay title/i })).toBeVisible();
     await expect(panel.getByRole('button', { name: /Add label/i })).toBeVisible();
   }
 });
 
-test('mobile portrait: ☰ reveals a TOP-anchored matchup panel + bottom drawer (split top/bottom)', async ({ page, request }) => {
+test('mobile portrait: matchup slides from the TOP, review from the BOTTOM (split top/bottom)', async ({ page, request }) => {
   await page.setViewportSize(MOBILE_PORTRAIT);
   const r = await loadReplay(page, request);
   await page.goto(`/r/${r.slug}`);
 
-  await page.getByRole('button', { name: /Open tags/i }).click();
-  // Same split principle as landscape, but the panels slide in from the
-  // top and bottom edges instead of left/right (since portrait is too
-  // narrow for two horizontal panels). Gameboard stays partially visible
-  // in the middle band.
+  // Matchup → top sheet.
+  await page.getByRole('button', { name: /matchup info/i }).click();
   const panel = page.getByTestId('match-panel');
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute('data-anchor', 'top');
   await expect(panel.getByRole('button', { name: /View decks/i })).toBeVisible();
 
-  // Bottom drawer carries "what happened" + tag form; matchup/decks are
-  // on the top panel, not duplicated here.
+  // Review → bottom sheet (opening it closes the matchup sheet).
+  await page.getByRole('button', { name: /Open tags/i }).click();
   const drawer = page.getByTestId('tags-drawer');
   await expect(drawer).toBeVisible();
+  // Game-log tab by default; Tags tab holds the tag form.
   await expect(drawer.getByText(/What happened/i)).toBeVisible();
+  await drawer.getByRole('button', { name: /^Tags/ }).click();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toBeVisible();
   await expect(drawer.getByRole('button', { name: /View decks/i })).toHaveCount(0);
 });

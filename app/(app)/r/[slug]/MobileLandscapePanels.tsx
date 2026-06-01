@@ -22,6 +22,7 @@ import { DecksModal } from './DecksModal';
 import { EditableTitle } from './EditableTitle';
 import { LabelsRow } from './LabelsRow';
 import { ResultBadge } from './ResultBadge';
+import { useDragSize, Grabber } from './useDragSize';
 import type { DecksByUserId, MatchMeta, Frame } from '@/lib/replayDecoder';
 
 interface ReplayShape {
@@ -39,6 +40,8 @@ export function StepModeOverlay({
   drawerOpen,
   drawerWidth,
   portraitDrawerOpen,
+  portraitBottom,
+  dragging,
 }: {
   mode: 'action' | 'frame';
   setMode: (m: 'action' | 'frame') => void;
@@ -52,8 +55,12 @@ export function StepModeOverlay({
   // overlay stays alongside the sidebar instead of being covered by it.
   drawerOpen?: boolean;
   drawerWidth?: string;
-  // Portrait drawer (bottom slide-up) → lift the overlay above it.
+  // Portrait drawer (bottom slide-up) → lift the overlay above it. B100:
+  // `portraitBottom` carries the live sheet height so the pill rides up with
+  // the sheet as it's dragged; `dragging` kills the transition during a drag.
   portraitDrawerOpen?: boolean;
+  portraitBottom?: string;
+  dragging?: boolean;
 }) {
   const positionStyle: React.CSSProperties = landscape
     ? {
@@ -67,7 +74,7 @@ export function StepModeOverlay({
       }
     : {
         bottom: portraitDrawerOpen
-          ? 'calc(60vh + 12px)'
+          ? portraitBottom ?? 'calc(60vh + 12px)'
           : 'max(12px, env(safe-area-inset-bottom, 12px))',
         left: '50%',
         transform: 'translateX(-50%)',
@@ -78,7 +85,9 @@ export function StepModeOverlay({
       style={{
         position: 'fixed',
         zIndex: 90,
-        transition: 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: dragging
+          ? 'none'
+          : 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1)',
         display: 'flex',
         alignItems: 'center',
         gap: 6,
@@ -166,16 +175,37 @@ export function MatchupPanel({
   const [p1, p2] = players;
   const chips = matchChips(matchMeta);
 
-  const anchorStyle: React.CSSProperties = anchor === 'left'
+  // B100: draggable size, matching the review sheet. TOP (portrait) → height,
+  // grabber on the BOTTOM edge (drag down grows → grow +1). LEFT (landscape)
+  // → width, grabber on the RIGHT edge (drag right grows → grow +1).
+  const top = anchor === 'top';
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+  const drag = useDragSize({
+    axis: top ? 'y' : 'x',
+    grow: 1,
+    initial: top ? Math.round(vh * 0.42) : Math.min(300, Math.round(vw * 0.6)),
+    min: top ? 140 : 200,
+    // Reserve a fixed minimum board size (240px tall / 340px wide) so dragging
+    // the matchup sheet open can't squish the board to a sliver.
+    max: top ? Math.max(200, vh - 240) : Math.max(260, vw - 340),
+    storageKey: top ? 'karabuddy:matchupSheetH' : 'karabuddy:matchupSheetW',
+  });
+  const transition = drag.dragging ? 'none' : 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)';
+
+  const anchorStyle: React.CSSProperties = top
     ? {
         left: 'max(8px, env(safe-area-inset-left, 8px))',
-        width: 'min(280px, 60vw)',
-        transform: open ? 'translateX(0)' : 'translateX(calc(-100% - 16px))',
+        right: 'max(8px, env(safe-area-inset-right, 8px))',
+        height: drag.size,
+        flexDirection: 'column',
+        transform: open ? 'translateY(0)' : 'translateY(calc(-100% - 16px))',
       }
     : {
         left: 'max(8px, env(safe-area-inset-left, 8px))',
-        right: 'max(8px, env(safe-area-inset-right, 8px))',
-        transform: open ? 'translateY(0)' : 'translateY(calc(-100% - 16px))',
+        width: drag.size,
+        flexDirection: 'row',
+        transform: open ? 'translateX(0)' : 'translateX(calc(-100% - 16px))',
       };
 
   return (
@@ -183,29 +213,27 @@ export function MatchupPanel({
       <aside
         data-testid="match-panel"
         data-anchor={anchor}
-        // Auto-height — anchored at the top-left of the viewport,
-        // just tall enough for its content. Full-height was eating
-        // real estate for nothing.
+        // B100: was auto-height; now an explicitly-sized, draggable sheet.
+        // The aside is the non-scrolling frame (content scrolls inside) so the
+        // grabber stays pinned to the resize edge regardless of scroll.
         style={{
           position: 'fixed',
           top: 'calc(var(--kb-header-h, 0px) + max(8px, env(safe-area-inset-top, 8px)))',
           maxHeight: 'calc(100vh - var(--kb-header-h, 0px) - 16px)',
           zIndex: 80,
-          transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+          transition,
           boxShadow: open ? '0 8px 24px rgba(0,0,0,0.45)' : 'none',
           background: 'rgba(17, 20, 26, 0.97)',
           border: '1px solid #2e333c',
           borderRadius: 10,
           color: '#e6e6e6',
           font: '12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
-          padding: '12px 14px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          overflow: 'auto',
+          overflow: 'hidden',
           ...anchorStyle,
         }}
       >
+        <div style={{ flex: '1 1 auto', minWidth: 0, minHeight: 0, overflow: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <a href="/" style={{ color: '#a0a8b8', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>← karabuddy</a>
           <button
@@ -256,9 +284,6 @@ export function MatchupPanel({
             type="button"
             onClick={() => setDecksOpen(true)}
             style={{
-              // Was `marginTop: auto` to pin to the bottom of a full-
-              // height panel — panel's now auto-height so the button
-              // sits naturally below the matchup row.
               background: 'transparent',
               border: '1px solid #2e333c',
               borderRadius: 4,
@@ -274,6 +299,15 @@ export function MatchupPanel({
             View decks →
           </button>
         )}
+        </div>
+        {/* Resize grabber on the edge nearest the board: bottom (top sheet)
+            / right (left sheet). */}
+        <Grabber
+          orientation={top ? 'horizontal' : 'vertical'}
+          dragging={drag.dragging}
+          label="Drag to resize matchup panel"
+          handleProps={drag.handleProps}
+        />
       </aside>
 
       {decks && (

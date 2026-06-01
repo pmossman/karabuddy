@@ -19,6 +19,7 @@ import { EditableTitle } from './EditableTitle';
 // web comment form and the in-game bubble narrow audiences identically.
 import { scopeFromMentions, scopeLabel } from '@/lib/commentScope';
 import { LabelsRow } from './LabelsRow';
+import { Grabber } from './useDragSize';
 
 interface ReplayRow {
   slug: string;
@@ -83,6 +84,12 @@ interface Props {
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
   isMobile: boolean;
+  // B100: the mobile review-sheet drag size lives in ReplayViewer (single
+  // source of truth so the chevrons + FABs ride with the sheet). This drawer
+  // just consumes the live size and spreads the handle props onto its grabber.
+  reviewSize: number;
+  reviewDragging: boolean;
+  reviewHandleProps: React.HTMLAttributes<HTMLDivElement>;
   // B66: when EITHER mobileLandscape or mobilePortrait is true, the
   // matchup header + decks button render in the separate MatchupPanel
   // instead of inside this drawer, and the step toggle moves to a fixed
@@ -140,7 +147,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -154,6 +161,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [replyDraft, setReplyDraft] = useState('');
   const [replySubmitting, setReplySubmitting] = useState(false);
   const [decksOpen, setDecksOpen] = useState(false);
+  // B100: on mobile the sheet is too short to show both the game log and the
+  // tags/discussion at once, so they split into two tabs. Desktop (tall docked
+  // sidebar) ignores this and stacks both. Default to the log — "what happened
+  // here" is the context you read before tagging/discussing.
+  const [mobileTab, setMobileTab] = useState<'log' | 'tags'>('log');
   const [draft, setDraft] = useState('');
   // B55c: structured mentions for the in-progress tag draft. Cleared on
   // submit/cancel. Userid + teamSlug picked from the autocomplete popover.
@@ -557,17 +569,21 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // the RIGHT edge; portrait anchors to the BOTTOM (slides up) so the
   // gameboard remains visible above between the top MatchupPanel and this
   // drawer.
-  const mobileWidth = 'min(380px, 100vw)';
+  // B100: while dragging, kill the slide transition so the sheet tracks the
+  // finger 1:1; restore it for the open/close slide.
+  const sheetTransition = reviewDragging
+    ? 'none'
+    : 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)';
   const asideStyle: React.CSSProperties = mobilePortrait
     ? {
         position: 'fixed',
         left: 0,
         right: 0,
         bottom: 0,
-        maxHeight: '60vh',
+        height: reviewSize,
         zIndex: 80,
         transform: drawerOpen ? 'translateY(0)' : 'translateY(100%)',
-        transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: sheetTransition,
         boxShadow: drawerOpen ? '0 -8px 24px rgba(0,0,0,0.45)' : 'none',
         background: 'rgba(17, 20, 26, 0.97)',
         borderTop: '1px solid #2e333c',
@@ -583,14 +599,17 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     ? {
         // Mobile landscape: right-anchored overlay slide-in. Doesn't
         // displace the gameboard — slides over the right edge instead.
+        // Draggable WIDTH; the grabber lives on the left edge (paddingLeft
+        // keeps content clear of it).
         position: 'fixed',
         top: 'var(--kb-header-h, 0px)',
         right: 0,
         bottom: 0,
-        width: mobileWidth,
+        width: reviewSize,
+        paddingLeft: 22,
         zIndex: 80,
         transform: drawerOpen ? 'translateX(0)' : 'translateX(100%)',
-        transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: sheetTransition,
         boxShadow: drawerOpen ? '-8px 0 24px rgba(0,0,0,0.45)' : 'none',
         background: 'rgba(17, 20, 26, 0.97)',
         borderLeft: '1px solid #2e333c',
@@ -619,32 +638,34 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   return (
     <>
-      {/* B44/B66b: single ☰ toggle — opens AND closes the sidebar so the
-          affordance doesn't relocate between states. Shifts horizontally
-          past the sidebar/drawer when open so it stays alongside the
-          drawer's outer edge (instead of getting buried under the panel).
-          Portrait: shifts UP past the bottom drawer instead. */}
+      {/* B44/B66b/B100: the ☰ review toggle (log + tags). On DESKTOP it
+          shifts horizontally past the docked sidebar when open so it isn't
+          buried. On MOBILE it's pinned to the bottom-right corner and stays
+          put — the sheet has its own × + drag handle + backdrop to close, so
+          the FAB no longer needs to chase the drawer (chasing it is what made
+          the old layout feel broken). The matchup (ⓘ) FAB sits just above it,
+          rendered by ReplayViewer. The mobile backdrop also lives in
+          ReplayViewer (shared between both sheets). */}
       {(() => {
-        // Outer edge of the sidebar/drawer when open — the toggle hugs it
-        // from outside so its position feels continuous with the drawer.
-        const horizontalRight = mobilePortrait
-          ? 'max(12px, env(safe-area-inset-right, 12px))'
-          : drawerOpen
-          ? `calc(${isMobile ? mobileWidth : `${sidebarWidth}px`} + 12px)`
-          : 'max(12px, env(safe-area-inset-right, 12px))';
-        const bottomOffset = mobilePortrait && drawerOpen
-          ? 'calc(60vh + 12px)'
-          : 'max(12px, env(safe-area-inset-bottom, 12px))';
+        // B100: on mobile the ☰ FAB rides clear of the open sheet (up past a
+        // portrait bottom sheet, left past a landscape right sheet) so it never
+        // overlays the drawer. Desktop keeps hugging the docked sidebar.
+        const edgeR = 'max(12px, env(safe-area-inset-right, 12px))';
+        const edgeB = 'max(12px, env(safe-area-inset-bottom, 12px))';
+        const right = !isMobile
+          ? (drawerOpen ? `calc(${sidebarWidth}px + 12px)` : edgeR)
+          : (mobileLandscape && drawerOpen ? `calc(${reviewSize}px + 12px)` : edgeR);
+        const bottom = mobilePortrait && drawerOpen ? `calc(${reviewSize}px + 12px)` : edgeB;
         return (
           <button
             type="button"
             onClick={() => setDrawerOpen(!drawerOpen)}
             aria-label={drawerOpen ? 'Close tags panel' : 'Open tags panel'}
-            title={drawerOpen ? 'Close tags' : 'Open tags'}
+            title={drawerOpen ? 'Close review' : 'Open review'}
             style={{
               position: 'fixed',
-              bottom: bottomOffset,
-              right: horizontalRight,
+              bottom,
+              right,
               zIndex: 90,
               width: 38,
               height: 38,
@@ -662,7 +683,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
               alignItems: 'center',
               justifyContent: 'center',
               backdropFilter: 'blur(6px)',
-              transition: 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1), background 160ms ease',
+              transition: reviewDragging
+                ? 'background 160ms ease'
+                : 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1), background 160ms ease',
             }}
           >
             ☰
@@ -670,29 +693,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         );
       })()}
 
-      {/* B44 mobile: dimmed backdrop — fades in with the drawer, dismisses
-          on tap. Only rendered while the drawer is open AND we're on mobile;
-          desktop never gets a backdrop because the sidebar is docked, not
-          floating. */}
-      {isMobile && drawerOpen && (
-        <div
-          onClick={() => setDrawerOpen(false)}
-          aria-hidden="true"
-          style={{
-            position: 'fixed',
-            top: 'var(--kb-header-h, 0px)',
-            right: 0,
-            bottom: 0,
-            left: 0,
-            zIndex: 75,
-            background: 'rgba(0, 0, 0, 0.45)',
-            animation: 'kb-fade-in 220ms ease',
-          }}
-        />
-      )}
-
-      {/* Keyframes scoped inline so this file remains self-contained — only
-          referenced by the backdrop above. */}
+      {/* Keyframes scoped inline so this file remains self-contained —
+          referenced by the shared mobile backdrop in ReplayViewer. */}
       <style>{`@keyframes kb-fade-in { from { opacity: 0; } to { opacity: 1; } }`}</style>
 
       {/* B66b: desktop unmounts the aside when closed so the gameboard
@@ -700,6 +702,29 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           out via transform so internal state (scroll, popovers) survives. */}
       {(isMobile || drawerOpen) && (
       <aside data-testid="tags-drawer" style={asideStyle}>
+      {/* B100: clear drag handle to resize the mobile sheet. Portrait → a
+          horizontal grabber at the sheet's TOP edge (flows above the header).
+          Landscape → a vertical grabber pinned to the sheet's LEFT edge
+          (absolute, so it doesn't disturb the column flow; the aside's
+          paddingLeft keeps content clear of it). */}
+      {mobilePortrait && (
+        <Grabber
+          orientation="horizontal"
+          dragging={reviewDragging}
+          label="Drag to resize review panel"
+          handleProps={reviewHandleProps}
+        />
+      )}
+      {isMobile && !mobilePortrait && (
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 22, zIndex: 10 }}>
+          <Grabber
+            orientation="vertical"
+            dragging={reviewDragging}
+            label="Drag to resize review panel"
+            handleProps={reviewHandleProps}
+          />
+        </div>
+      )}
       {/* B10: compact header — leader+base per player, share collapsed
           into a top-right popover. B12: usernames now wrap to their own
           line beneath the thumbs, so the row aligns to the top of the
@@ -799,12 +824,40 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
       {/* B48/B66/B66b: frame-counter row inside the drawer on every
           viewport. Step-by toggle and prev/next arrows moved out to the
-          gameboard overlays (StepModeOverlay + FrameNavOverlay). */}
-      <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          gameboard overlays (StepModeOverlay + FrameNavOverlay). B100: on
+          mobile this row doubles as the sheet header — a "Review" label on
+          the left and an explicit × close on the right (the FAB is covered
+          while the sheet is open, so the sheet needs its own dismiss). */}
+      <section style={{ padding: '8px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: isMobile ? 'space-between' : 'center', gap: 8 }}>
+        {isMobile && (
+          <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Review</span>
+        )}
         <span style={{ fontSize: 11, color: '#d6d6d6', fontWeight: 600 }}>
           {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
         </span>
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(false)}
+            aria-label="Close tags panel"
+            title="Close review"
+            style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            ×
+          </button>
+        )}
       </section>
+
+      {/* B100: mobile tab switcher — Game log vs Tags. The sheet is too short
+          to show both; desktop stacks them so it never renders this. */}
+      {isMobile && (
+        <section style={{ padding: '8px 14px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6 }}>
+          <DrawerTab active={mobileTab === 'log'} onClick={() => setMobileTab('log')}>Game log</DrawerTab>
+          <DrawerTab active={mobileTab === 'tags'} onClick={() => setMobileTab('tags')}>
+            Tags{tags.filter((t) => !t.parentTagId).length > 0 ? ` (${tags.filter((t) => !t.parentTagId).length})` : ''}
+          </DrawerTab>
+        </section>
+      )}
 
       {/* B66b dead-store: previous desktop-only nav/step row got replaced
           by the floating overlays. Block kept-but-gated so the imports
@@ -830,13 +883,17 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         </section>
       )}
 
-      <FrameLog
-        messagesByFrame={messagesByFrame}
-        currentIndex={currentIndex}
-        lastTransition={lastTransition}
-        frames={frames}
-      />
+      {(!isMobile || mobileTab === 'log') && (
+        <FrameLog
+          messagesByFrame={messagesByFrame}
+          currentIndex={currentIndex}
+          lastTransition={lastTransition}
+          frames={frames}
+        />
+      )}
 
+      {(!isMobile || mobileTab === 'tags') && (
+      <>
       <section style={{ padding: '14px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {/* B34: "+ Tag this frame" gets its own line (full-width button) so
             it's the primary action above the tag list. Prev/Next tag nav
@@ -949,6 +1006,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           })()
         )}
       </section>
+      </>
+      )}
 
       {/* B42 / B64 / B66: deck snapshot launcher. Hidden on ANY mobile
           — the MatchupPanel (left/top) owns the View-decks button so
@@ -989,8 +1048,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
       {/* B34: prev/next tag nav lives below the tag display, not above —
           natural "after you've read the current frame's tags, jump to the
-          next one" flow. Hidden when there are no tags to jump to. */}
-      {tags.length > 0 && (
+          next one" flow. Hidden when there are no tags to jump to, and (mobile)
+          only on the Tags tab. */}
+      {(!isMobile || mobileTab === 'tags') && tags.length > 0 && (
         <section style={{ padding: '10px 22px', borderTop: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6, justifyContent: 'space-between' }}>
           <FooterBtn onClick={() => onJumpToAdjacentTag(-1)} variant="ghost" title="Previous tag ([)">‹ Prev tag</FooterBtn>
           <FooterBtn onClick={() => onJumpToAdjacentTag(1)} variant="ghost" title="Next tag (])">Next tag ›</FooterBtn>
@@ -1415,6 +1475,36 @@ function ScopeChip({
         </div>
       )}
     </div>
+  );
+}
+
+// B100: mobile drawer tab — a full-width segmented control between the game
+// log and the tags/discussion. Active tab gets the cyan-ish HUD fill + a
+// bottom underline; inactive is muted.
+function DrawerTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        flex: 1,
+        background: active ? 'rgba(77, 157, 255, 0.16)' : 'transparent',
+        border: `1px solid ${active ? 'rgba(77, 157, 255, 0.5)' : '#2e333c'}`,
+        color: active ? '#a7d2ff' : '#6c7588',
+        borderRadius: 6,
+        padding: '7px 8px',
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+        lineHeight: 1,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

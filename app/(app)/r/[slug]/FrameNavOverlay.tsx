@@ -2,49 +2,49 @@
 
 import { useRef, useState } from 'react';
 
-// B46/B66b: gameboard-overlay frame navigation. Two slim chevron buttons
-// pinned to the left and right edges of the viewport — used on every
-// viewport now (B66b removed the desktop-sidebar-only fallback so chrome
-// is consistent across breakpoints). The right-edge button shifts left
-// when a drawer/sidebar is open so it doesn't slide behind it.
+// B46/B66b/B100: gameboard-overlay frame navigation. Two slim chevron
+// buttons at the left and right edges of the viewport, on every breakpoint.
 //
-// Desktop also gets a faint "← / →" keyboard hint adjacent to each
-// chevron so users discover the keyboard shortcuts without having to
-// hover for the title tooltip.
+// B100: on MOBILE the chevrons are pinned to the screen edges at vertical-
+// center and never move — the old drawer-reactive offsets (shifting left of
+// the drawer, jumping to 20% above the portrait sheet) are exactly what made
+// them feel broken once the menu expanded. The mobile sheets carry a backdrop
+// + their own prev/next-tag nav, so a chevron briefly under an open sheet is
+// fine. On DESKTOP the docked sidebar still pushes the right chevron inward so
+// it hugs the sidebar's left edge as it resizes.
+//
+// Desktop also gets a faint "← / →" keyboard hint adjacent to each chevron
+// so users discover the shortcuts without hovering for the title tooltip.
 export function FrameNavOverlay({
-  drawerOpen,
-  leftPanelOpen,
-  leftPanelWidth,
+  leftOffset,
+  rightOffset,
   verticalCenter,
+  dragging,
   onStep,
   canPrev,
   canNext,
-  drawerWidth,
   showKeyboardHint,
 }: {
-  drawerOpen: boolean;
-  leftPanelOpen?: boolean;
-  leftPanelWidth?: string;
-  verticalCenter?: string;
+  // Edge offsets + vertical centre are computed by the parent (ReplayViewer)
+  // from the live review-sheet size, so the chevrons ride with the sheet.
+  leftOffset: string;
+  rightOffset: string;
+  verticalCenter: string;
+  // While the sheet is being dragged, suppress the slide transition so the
+  // chevrons track the finger 1:1 instead of easing behind it.
+  dragging?: boolean;
   onStep: (dir: 1 | -1) => void;
   canPrev: boolean;
   canNext: boolean;
-  drawerWidth: string;
   showKeyboardHint?: boolean;
 }) {
-  const leftOffset = leftPanelOpen && leftPanelWidth
-    ? `calc(${leftPanelWidth} + 16px)`
-    : 'max(8px, env(safe-area-inset-left, 8px))';
-  const rightOffset = drawerOpen
-    ? `calc(${drawerWidth} + 8px)`
-    : 'max(8px, env(safe-area-inset-right, 8px))';
-
   return (
     <>
       <ChevronButton
         side="left"
         offset={leftOffset}
-        verticalCenter={verticalCenter ?? '50%'}
+        verticalCenter={verticalCenter}
+        dragging={dragging}
         ariaLabel="Previous frame"
         disabled={!canPrev}
         onClick={() => onStep(-1)}
@@ -55,7 +55,8 @@ export function FrameNavOverlay({
       <ChevronButton
         side="right"
         offset={rightOffset}
-        verticalCenter={verticalCenter ?? '50%'}
+        verticalCenter={verticalCenter}
+        dragging={dragging}
         ariaLabel="Next frame"
         disabled={!canNext}
         onClick={() => onStep(1)}
@@ -71,6 +72,7 @@ function ChevronButton({
   side,
   offset,
   verticalCenter,
+  dragging,
   ariaLabel,
   disabled,
   onClick,
@@ -80,6 +82,7 @@ function ChevronButton({
   side: 'left' | 'right';
   offset: string;
   verticalCenter: string;
+  dragging?: boolean;
   ariaLabel: string;
   disabled: boolean;
   onClick: () => void;
@@ -135,7 +138,9 @@ function ChevronButton({
         alignItems: 'center',
         justifyContent: 'center',
         backdropFilter: 'blur(6px)',
-        transition: 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms ease',
+        transition: dragging
+          ? 'opacity 120ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms ease'
+          : 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms ease',
       }}
     >
       {children}

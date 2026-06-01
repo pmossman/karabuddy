@@ -13,12 +13,11 @@ import { decodeReplay, type Frame, type DecodedReplay } from '@/lib/replayDecode
 import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MatchupPanel } from './MobileLandscapePanels';
 import { FrameNavOverlay } from './FrameNavOverlay';
+import { useDragSize } from './useDragSize';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSession } from 'next-auth/react';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { canMutateReplay } from '@/lib/replayPermissions';
-
-const MOBILE_DRAWER_WIDTH = 'min(380px, 100vw)';
 
 interface ReplayRow {
   slug: string;
@@ -75,6 +74,18 @@ export function ReplayViewer({ replay, initialTags }: Props) {
 
 type StepMode = 'action' | 'frame';
 
+// B100: matchup-info FAB glyph — a simple info circle, distinct from the ☰
+// review toggle so the two mobile buttons read as different actions.
+function InfoIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <line x1="12" y1="11" x2="12" y2="16" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  );
+}
+
 function ViewerShell({ replay, initialTags }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<DecodedReplay | null>(null);
@@ -112,24 +123,62 @@ function ViewerShell({ replay, initialTags }: Props) {
   const isLandscape = useMediaQuery('(orientation: landscape)');
   const mobileLandscape = isMobile && isLandscape;
   const mobilePortrait = isMobile && !isLandscape;
-  // B66b: desktop now also uses the toggleable sidebar — same chrome on
-  // every viewport. Open by default on desktop, closed on mobile so the
-  // first paint shows the full gameboard. We track "did the user touch
-  // it" so the isMobile-based auto-sync doesn't clobber a manual choice.
-  const [drawerOpen, setDrawerOpenRaw] = useState(false);
+  // B100: two independent mobile panels, two FABs. `reviewOpen` is the
+  // log/tags drawer (the old single `drawerOpen` — still the docked sidebar
+  // on desktop, open by default there, closed on mobile so the first paint
+  // shows the full gameboard). `matchupOpen` is the matchup info panel, which
+  // exists only on mobile and starts collapsed (rarely needed mid-replay).
+  // On mobile the two are mutually exclusive — they're top/bottom (or
+  // left/right) sheets that would otherwise sandwich the board, which was the
+  // "total mess" of the old shared-state model. Desktop ignores matchupOpen.
+  const [reviewOpen, setReviewOpenRaw] = useState(false);
+  const [matchupOpen, setMatchupOpen] = useState(false);
   const userTouchedDrawerRef = useRef(false);
   useEffect(() => {
     if (userTouchedDrawerRef.current) return;
-    setDrawerOpenRaw(!isMobile);
+    setReviewOpenRaw(!isMobile);
   }, [isMobile]);
-  const setDrawerOpen = useCallback((next: boolean) => {
+  const setReviewOpen = useCallback((next: boolean) => {
     userTouchedDrawerRef.current = true;
-    setDrawerOpenRaw(next);
+    setReviewOpenRaw(next);
+    if (next) setMatchupOpen(false); // mobile: opening review closes matchup
   }, []);
+  const openMatchup = useCallback((next: boolean) => {
+    setMatchupOpen(next);
+    if (next) setReviewOpenRaw(false); // mobile: opening matchup closes review
+  }, []);
+  // Keep the drawerOpen name for the props passed down (desktop sidebar +
+  // overlays still reason about "is the review panel open").
+  const drawerOpen = reviewOpen;
   // B66b: lifted from TagSidebar so FrameNavOverlay's right-chevron
   // offset can track the actual desktop sidebar width (was hardcoded to
   // the mobile drawer width, making it float in dead space).
   const [sidebarWidth, setSidebarWidth] = useState<number>(360);
+
+  // B100: the mobile review-sheet drag size lives HERE (not in TagSidebar) so
+  // the live height/width drives three things at once as you drag: the sheet
+  // itself, the frame-nav chevrons (they ride up/inward with the sheet edge so
+  // they're never buried under it), and the FABs + step pill (they sit just
+  // outside the sheet edge instead of overlaying it). Portrait → height
+  // (bottom sheet, grabber on its TOP edge → drag up grows, grow:-1).
+  // Landscape → width (right sheet, grabber on its LEFT edge → drag left grows,
+  // grow:-1). Computed unconditionally (hook rule); consumed only on mobile.
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+  // Cap the sheet by RESERVING a fixed minimum board size rather than a % of
+  // the viewport — past ~0.9vh the board (and the controls floating above it)
+  // got squished into a sliver. Reserving 240px of board height / 340px of
+  // board width keeps it readable on any phone.
+  const reviewDrag = useDragSize({
+    axis: mobilePortrait ? 'y' : 'x',
+    grow: -1,
+    initial: mobilePortrait ? Math.round(vh * 0.55) : Math.min(380, Math.round(vw * 0.5)),
+    min: mobilePortrait ? 160 : 260,
+    max: mobilePortrait ? Math.max(200, vh - 240) : Math.max(280, vw - 340),
+    // Persist per orientation so a tall portrait sheet / wide landscape sheet
+    // is remembered across reloads (no re-dragging each visit).
+    storageKey: mobilePortrait ? 'karabuddy:reviewSheetH' : 'karabuddy:reviewSheetW',
+  });
 
   // B66e: ownership resolved here so both TagSidebar (desktop) AND
   // MatchupPanel (mobile) can show owner-only affordances from the
@@ -414,8 +463,11 @@ function ViewerShell({ replay, initialTags }: Props) {
         setMode={setMode}
         messagesByFrame={decoded?.messagesByFrame || null}
         drawerOpen={drawerOpen}
-        setDrawerOpen={setDrawerOpen}
+        setDrawerOpen={setReviewOpen}
         isMobile={isMobile}
+        reviewSize={reviewDrag.size}
+        reviewDragging={reviewDrag.dragging}
+        reviewHandleProps={reviewDrag.handleProps}
         mobileLandscape={mobileLandscape}
         mobilePortrait={mobilePortrait}
         sidebarWidth={sidebarWidth}
@@ -430,41 +482,110 @@ function ViewerShell({ replay, initialTags }: Props) {
         onArmedTeamsChange={setArmedTeams}
       />
       </KaraBuddyThemeProvider>
-      <FrameNavOverlay
-        drawerOpen={drawerOpen}
-        leftPanelOpen={mobileLandscape && drawerOpen}
-        leftPanelWidth="min(280px, 60vw)"
-        // Portrait's bottom drawer covers vertical 50%; shift chevrons
-        // up to the centerline above it so they stay reachable.
-        verticalCenter={mobilePortrait && drawerOpen ? '20%' : '50%'}
-        onStep={step}
-        canPrev={currentIndex > 0}
-        canNext={!!frames && currentIndex < frames.length - 1}
-        // B66b: track the actual desktop sidebar width so the right
-        // chevron hugs the sidebar's left edge as it resizes. Mobile
-        // sticks with the fixed mobile drawer width.
-        drawerWidth={isMobile ? MOBILE_DRAWER_WIDTH : `${sidebarWidth}px`}
-        // Desktop only: faint keyboard hint adjacent to each chevron.
-        showKeyboardHint={!isMobile}
-      />
-      {/* B66b: floating step-mode toggle on every viewport. Tracks the
-          sidebar — shifts LEFT past it when open so it doesn't get
-          buried; lifts UP above the portrait bottom drawer. */}
-      <StepModeOverlay
-        mode={mode}
-        setMode={setMode}
-        landscape={isLandscape || !isMobile}
-        drawerOpen={drawerOpen}
-        drawerWidth={isMobile ? MOBILE_DRAWER_WIDTH : `${sidebarWidth}px`}
-        portraitDrawerOpen={mobilePortrait && drawerOpen}
-      />
-      {/* B66: mobile matchup panel. Anchored LEFT in landscape, TOP in
-          portrait — same ☰ trigger that opens the tags drawer (which
-          anchors RIGHT in landscape, BOTTOM in portrait) opens this. */}
+      {(() => {
+        // B100: chevron + FAB geometry, derived from the LIVE review-sheet
+        // size so everything rides with the sheet as you drag it.
+        //   • Portrait review open → chevrons centre in the board band ABOVE
+        //     the bottom sheet (drag taller → they rise). FABs + step pill lift
+        //     to just above the sheet's top edge.
+        //   • A RIGHT-anchored sheet (desktop docked sidebar OR mobile-landscape
+        //     review) pushes the right chevron + FABs inward past its left edge.
+        const edgeR = 'max(8px, env(safe-area-inset-right, 8px))';
+        const edgeB = 'max(12px, env(safe-area-inset-bottom, 12px))';
+        const rightSheetOpen = drawerOpen && (!isMobile || mobileLandscape);
+        const rightSheetW = isMobile ? `${reviewDrag.size}px` : `${sidebarWidth}px`;
+        const chevRight = rightSheetOpen ? `calc(${rightSheetW} + 8px)` : 'max(8px, env(safe-area-inset-left, 8px))';
+        const portraitLift = mobilePortrait && drawerOpen;
+        const fabRight = mobileLandscape && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeR;
+        const navVerticalCenter = portraitLift ? `calc((100vh - ${reviewDrag.size}px) / 2)` : '50%';
+        return (
+          <>
+            <FrameNavOverlay
+              leftOffset="max(8px, env(safe-area-inset-left, 8px))"
+              rightOffset={chevRight}
+              verticalCenter={navVerticalCenter}
+              dragging={reviewDrag.dragging}
+              onStep={step}
+              canPrev={currentIndex > 0}
+              canNext={!!frames && currentIndex < frames.length - 1}
+              // Desktop only: faint keyboard hint adjacent to each chevron.
+              showKeyboardHint={!isMobile}
+            />
+            {/* B66b/B100: floating step-mode toggle. Desktop tracks the docked
+                sidebar (shifts left past it). Mobile pins it bottom-center but
+                lifts above the portrait sheet so it doesn't overlay it. */}
+            <StepModeOverlay
+              mode={mode}
+              setMode={setMode}
+              landscape={!isMobile}
+              drawerOpen={drawerOpen}
+              drawerWidth={`${sidebarWidth}px`}
+              portraitDrawerOpen={portraitLift}
+              portraitBottom={portraitLift ? `calc(${reviewDrag.size}px + 12px)` : undefined}
+              dragging={reviewDrag.dragging}
+            />
+            {/* B100: matchup FAB sits to the LEFT of the ☰ review FAB on the
+                same row (horizontal, to spare a row of vertical space), and
+                rides clear of the sheet edge using the same offsets. */}
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => openMatchup(!matchupOpen)}
+                aria-label={matchupOpen ? 'Hide matchup info' : 'Show matchup info'}
+                title={matchupOpen ? 'Hide matchup' : 'Matchup info'}
+                style={{
+                  position: 'fixed',
+                  bottom: portraitLift ? `calc(${reviewDrag.size}px + 12px)` : edgeB,
+                  right: `calc(${fabRight} + 50px)`,
+                  zIndex: 90,
+                  width: 38,
+                  height: 38,
+                  background: matchupOpen ? 'rgba(77, 157, 255, 0.32)' : 'rgba(36, 48, 68, 0.85)',
+                  color: '#d6e7ff',
+                  border: '1px solid rgba(77, 157, 255, 0.4)',
+                  borderRadius: '50%',
+                  padding: 0,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backdropFilter: 'blur(6px)',
+                  transition: reviewDrag.dragging
+                    ? 'background 160ms ease'
+                    : 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1), background 160ms ease',
+                }}
+              >
+                <InfoIcon />
+              </button>
+            )}
+          </>
+        );
+      })()}
+      {/* B100: mobile backdrop — closes whichever sheet is open. The two FABs
+          (☰ review in TagSidebar so it can track the desktop sidebar, ⓘ
+          matchup in the overlay block above) sit just outside the open sheet
+          rather than over it. */}
+      {isMobile && (matchupOpen || reviewOpen) && (
+        <div
+          onClick={() => { setMatchupOpen(false); setReviewOpen(false); }}
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 'var(--kb-header-h, 0px) 0 0 0',
+            zIndex: 75,
+            background: 'rgba(0, 0, 0, 0.45)',
+            animation: 'kb-fade-in 220ms ease',
+          }}
+        />
+      )}
+      {/* B66/B100: mobile matchup panel. Anchored LEFT in landscape, TOP in
+          portrait. Opened by the dedicated ⓘ FAB (no longer shares the ☰
+          tags trigger). Collapsed by default. */}
       {isMobile && (
         <MatchupPanel
-          open={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
+          open={matchupOpen}
+          onClose={() => setMatchupOpen(false)}
           anchor={isLandscape ? 'left' : 'top'}
           replay={replay}
           matchMeta={replay.match ?? decoded?.meta.match ?? null}
