@@ -1,0 +1,62 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { GET } from '@/app/api/stats/route';
+import { getDb } from '@/lib/db';
+import { users, teams, teamMembers } from '@/lib/schema';
+
+// B101/P1: the stats API's job is scope resolution + authorization (the
+// aggregation itself is covered by stats-query.test). These pin the auth gates.
+
+vi.mock('@/auth', () => ({ auth: vi.fn() }));
+const { auth } = await import('@/auth');
+const as = (id: string | null) => vi.mocked(auth).mockResolvedValue(id ? ({ user: { id } } as any) : (null as any));
+
+const req = (qs: string) => new Request(`http://t/api/stats?${qs}`);
+beforeEach(() => vi.mocked(auth).mockReset());
+
+async function seedUser() {
+  const id = randomUUID();
+  await getDb().insert(users).values({ id, email: `${id}@e.com` });
+  return id;
+}
+
+describe('GET /api/stats — scope authorization', () => {
+  it('global is open (no auth) and reports the min-N floor it applied', async () => {
+    as(null);
+    const res = await GET(req('type=leaders&scope=global'));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, scope: 'global', type: 'leaders' });
+    expect(body.minGames).toBeGreaterThanOrEqual(20); // privacy floor
+    expect(Array.isArray(body.data)).toBe(true);
+  });
+
+  it('personal requires a session', async () => {
+    as(null);
+    expect((await GET(req('scope=personal'))).status).toBe(401);
+    as(await seedUser());
+    expect((await GET(req('scope=personal'))).status).toBe(200);
+  });
+
+  it('team requires membership (403 for a non-member, 200 for a member)', async () => {
+    const owner = await seedUser();
+    await getDb().insert(teams).values({ slug: 'tQ', name: 'Q', createdBy: owner });
+    await getDb().insert(teamMembers).values({ teamSlug: 'tQ', userId: owner, role: 'owner' });
+
+    as(await seedUser()); // a different, non-member user
+    expect((await GET(req('scope=team&team=tQ'))).status).toBe(403);
+
+    as(owner);
+    const ok = await GET(req('scope=team&team=tQ'));
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).scope).toBe('team');
+  });
+
+  it('validates type, event, and team-slug-required', async () => {
+    as(await seedUser());
+    expect((await GET(req('scope=team'))).status).toBe(400); // missing team
+    expect((await GET(req('scope=global&type=bogus'))).status).toBe(400);
+    expect((await GET(req('scope=global&type=cards&event=bogus'))).status).toBe(400);
+    expect((await GET(req('scope=weird'))).status).toBe(400);
+  });
+});

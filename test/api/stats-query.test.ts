@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, teams, replays, matches, matchPlayers, replayTeamShares } from '@/lib/schema';
-import { getLeaderStats, getLeaderMatchups } from '@/lib/statsQuery';
+import { users, teams, replays, matches, matchPlayers, replayTeamShares, cardEvents } from '@/lib/schema';
+import { getLeaderStats, getLeaderMatchups, getCardStats } from '@/lib/statsQuery';
 
 // B101/P1: the scoping + aggregation layer. These tests double as the privacy
 // QA — they pin that personal/team/global never leak into each other, that an
@@ -25,6 +25,9 @@ async function seedMatch(opts: {
   p1: { leader: string; won: boolean };
   p2: { leader: string; won: boolean };
   shareTeam?: string;
+  // card events to attach: each entry can repeat (copies) to prove the
+  // distinct (game,side,card) collapse.
+  events?: Array<{ side: 'p1' | 'p2'; cardId: string; event: string; copies?: number }>;
 }) {
   const db = getDb();
   const slug = 'r_' + id().slice(0, 8);
@@ -39,6 +42,17 @@ async function seedMatch(opts: {
     { gameId: opts.gameId, playerId: 'p2', leader: opts.p2.leader, opponentLeader: opts.p1.leader, won: opts.p2.won, isRecorder: false, format },
   ]);
   if (opts.shareTeam) await db.insert(replayTeamShares).values({ replaySlug: slug, teamSlug: opts.shareTeam, sharedBy: opts.userId ?? null });
+  if (opts.events?.length) {
+    const wonBy = { p1: opts.p1.won, p2: opts.p2.won };
+    const rows = opts.events.flatMap((e, i) =>
+      Array.from({ length: e.copies ?? 1 }, (_, c) => ({
+        gameId: opts.gameId, playerId: e.side, isRecorder: e.side === 'p1', cardId: e.cardId,
+        event: e.event, attribution: e.event === 'drawn' || e.event === 'resourced' ? 'recorder' : 'both',
+        frameIndex: i * 10 + c, sideWon: wonBy[e.side], format,
+      })),
+    );
+    await db.insert(cardEvents).values(rows);
+  }
   return slug;
 }
 
@@ -50,8 +64,16 @@ beforeEach(async () => {
 
   // userA: two games, L1 vs L2, 1 win each side. game1 shared with team T.
   const g1 = 'q-' + id().slice(0, 6);
-  await seedMatch({ gameId: g1, userId: userA, p1: { leader: 'L1', won: true }, p2: { leader: 'L2', won: false }, shareTeam: 'tT' });
-  await seedMatch({ gameId: 'q-' + id().slice(0, 6), userId: userA, p1: { leader: 'L1', won: false }, p2: { leader: 'L2', won: true } });
+  // game1 (p1 WON): p1 drew C1 twice (copies) + played C2.
+  await seedMatch({
+    gameId: g1, userId: userA, p1: { leader: 'L1', won: true }, p2: { leader: 'L2', won: false }, shareTeam: 'tT',
+    events: [{ side: 'p1', cardId: 'C1', event: 'drawn', copies: 2 }, { side: 'p1', cardId: 'C2', event: 'played' }],
+  });
+  // game2 (p1 LOST): p1 drew C1 once.
+  await seedMatch({
+    gameId: 'q-' + id().slice(0, 6), userId: userA, p1: { leader: 'L1', won: false }, p2: { leader: 'L2', won: true },
+    events: [{ side: 'p1', cardId: 'C1', event: 'drawn' }],
+  });
   // userB (opted out): L1 wins vs L3 — must NOT appear in global.
   await seedMatch({ gameId: 'q-' + id().slice(0, 6), userId: userB, p1: { leader: 'L1', won: true }, p2: { leader: 'L3', won: false } });
   // anonymous upload: L1 wins vs L3 — included in global (no user to opt out).
@@ -90,6 +112,26 @@ describe('getLeaderStats — scope isolation', () => {
     const m = byLeader(await getLeaderStats({ scope: { kind: 'team', teamSlug: 'tT' } }));
     expect(m.L1.games).toBe(1); // only game1 was shared
     expect(m.L2.games).toBe(1);
+  });
+});
+
+describe('getCardStats', () => {
+  it('win-rate-when-drawn: collapses copies to one (game,side) observation', async () => {
+    const rows = await getCardStats({ scope: { kind: 'personal', userId: userA }, event: 'drawn' });
+    const c1 = rows.find((r) => r.cardId === 'C1')!;
+    // 2 games (game1 won, game2 lost) — NOT 3, despite 2 copies drawn in game1.
+    expect(c1.observations).toBe(2);
+    expect(c1.wins).toBe(1);
+    expect(c1.winRate).toBeCloseTo(0.5);
+    // C2 was played, not drawn → absent from the drawn query.
+    expect(rows.find((r) => r.cardId === 'C2')).toBeUndefined();
+  });
+
+  it('filters by event — played picks up C2 only', async () => {
+    const rows = await getCardStats({ scope: { kind: 'personal', userId: userA }, event: 'played' });
+    expect(rows.map((r) => r.cardId)).toEqual(['C2']);
+    expect(rows[0].observations).toBe(1);
+    expect(rows[0].wins).toBe(1);
   });
 });
 

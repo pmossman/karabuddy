@@ -14,7 +14,7 @@
 
 import { and, eq, isNull, isNotNull, or, sql } from 'drizzle-orm';
 import { getDb } from './db';
-import { matchPlayers, matches, replays, replayTeamShares, users } from './schema';
+import { matchPlayers, matches, replays, replayTeamShares, users, cardEvents } from './schema';
 
 export type StatsScope =
   | { kind: 'personal'; userId: string }
@@ -119,6 +119,62 @@ export async function getLeaderMatchups(opts: StatsQueryOpts): Promise<LeaderMat
     games: r.games,
     wins: r.wins,
     decisive: r.decisive,
+    winRate: r.decisive > 0 ? r.wins / r.decisive : null,
+  }));
+}
+
+export type CardEventKind = 'drawn' | 'resourced' | 'played' | 'discarded';
+
+export interface CardStat {
+  cardId: string;
+  event: CardEventKind;
+  observations: number; // (game, side) pairs where this card hit the event
+  decisive: number; // …with a winner signal
+  wins: number; // …where that side won
+  winRate: number | null;
+}
+
+// "Win rate when card X was {event}". The unit is a (game, side) pair, NOT a
+// raw event row — drawing 3 copies in one game is ONE observation, so we
+// collapse to distinct (card, game, player) before aggregating. side_won is
+// functionally determined by (game, player), so carrying it through the
+// distinct doesn't change cardinality. Attribution lives on the rows
+// (drawn/resourced = recorder-side; played/discarded = both) — callers pick the
+// event knowing what it means; the UI labels it.
+export async function getCardStats(opts: StatsQueryOpts & { event: CardEventKind }): Promise<CardStat[]> {
+  const minGames = opts.minGames ?? 1;
+  const db = getDb();
+  const base = db
+    .selectDistinct({
+      cardId: cardEvents.cardId,
+      gameId: cardEvents.gameId,
+      playerId: cardEvents.playerId,
+      sideWon: cardEvents.sideWon,
+    })
+    .from(cardEvents)
+    .innerJoin(matches, eq(matches.gameId, cardEvents.gameId))
+    .innerJoin(replays, eq(replays.slug, matches.replaySlug))
+    .$dynamic();
+  const sub = applyScopeJoins(base, opts.scope)
+    .where(and(eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, scopePredicate(opts.scope)))
+    .as('obs');
+  const rows = await db
+    .select({
+      cardId: sub.cardId,
+      observations: sql<number>`count(*)::int`,
+      decisive: sql<number>`count(${sub.sideWon})::int`,
+      wins: sql<number>`count(*) filter (where ${sub.sideWon})::int`,
+    })
+    .from(sub)
+    .groupBy(sub.cardId)
+    .having(sql`count(*) >= ${minGames}`)
+    .orderBy(sql`count(*) desc`);
+  return rows.map((r: any) => ({
+    cardId: r.cardId as string,
+    event: opts.event,
+    observations: r.observations,
+    decisive: r.decisive,
+    wins: r.wins,
     winRate: r.decisive > 0 ? r.wins / r.decisive : null,
   }));
 }
