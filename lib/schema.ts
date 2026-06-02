@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   integer,
+  bigserial,
   jsonb,
   timestamp,
   index,
@@ -41,6 +42,10 @@ export const users = pgTable('users', {
   // no one is DM'd until they explicitly enable "Send me Discord notifications".
   // It's the master gate over both direct + team mentions in notifyMentions.
   notificationsDisabled: boolean('notifications_disabled').notNull().default(true),
+  // B101: opt OUT of the GLOBAL stats corpus (ADR 0007). Default included
+  // (opt-out model); the global aggregates are anonymized + min-N gated, and
+  // personal/team scopes ignore this flag entirely. Toggle on /settings.
+  excludeFromGlobalStats: boolean('exclude_from_global_stats').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -397,3 +402,111 @@ export const tagTeamScope = pgTable(
 );
 
 export type TagTeamScope = typeof tagTeamScope.$inferSelect;
+
+// ----- B101: Stats / Meta (ADR 0007) -----
+//
+// Facts mined from replay frames by lib/statsExtract, materialized so all
+// aggregation is plain SQL — never re-decoding payload blobs at read time.
+// Written at upload + a one-time backfill; rolled up by a cron (P1). Scope
+// (personal / team / global) is resolved by joining `matches.replaySlug` back
+// to `replays` (uploader + team shares). The ADR's single `match_facts` is
+// split here into `matches` (one row/game) + `match_players` (one row/game/
+// player) — the per-player shape makes win-rate + matchup aggregation trivial.
+
+// Card catalog, keyed by SET_NNN. Seeded from karabast-dev and SELF-HEALING:
+// extraction upserts any unknown cardId straight from the payload's card
+// object, so spoiler-season cards register the first time anyone plays one.
+export const cards = pgTable('cards', {
+  cardId: text('card_id').primaryKey(), // 'SOR_001'
+  name: text('name'),
+  set: text('set'),
+  number: integer('number'),
+  aspects: jsonb('aspects').$type<string[]>(),
+  cost: integer('cost'),
+  type: text('type'), // unit | event | upgrade | leader | base
+  arena: text('arena'), // ground | space | null
+  traits: jsonb('traits').$type<string[]>(),
+  source: text('source').notNull().default('observed'), // 'seed' | 'observed'
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One row per game. gameId is the dedup key (replays.gameId is already unique,
+// and multi-perspective uploads upsert into one replay). replaySlug drives
+// scope + cascades when the replay is deleted.
+export const matches = pgTable(
+  'matches',
+  {
+    gameId: text('game_id').primaryKey(),
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    format: text('format'), // premier | eternal | open | limited | null
+    cardPool: text('card_pool'),
+    bo3: boolean('bo3'),
+    result: text('result').notNull(), // decisive | draw | unknown
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    replayIdx: index('matches_replay_idx').on(t.replaySlug),
+    formatIdx: index('matches_format_idx').on(t.format),
+  })
+);
+
+// One row per (game, player) — the friendly shape for win-rate aggregation.
+// opponentLeader/base are denormalized so the leader-vs-leader matrix needs no
+// self-join. `won` is null when there's no winner signal (abandon/disconnect).
+export const matchPlayers = pgTable(
+  'match_players',
+  {
+    gameId: text('game_id')
+      .notNull()
+      .references(() => matches.gameId, { onDelete: 'cascade' }),
+    playerId: text('player_id').notNull(),
+    username: text('username'),
+    leader: text('leader'), // cardId
+    base: text('base'),
+    aspects: jsonb('aspects').$type<string[]>(),
+    isRecorder: boolean('is_recorder').notNull().default(false),
+    won: boolean('won'),
+    opponentLeader: text('opponent_leader'),
+    opponentBase: text('opponent_base'),
+    format: text('format'), // denormalized for filtered aggregation
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.gameId, t.playerId] }),
+    leaderIdx: index('match_players_leader_idx').on(t.leader),
+    matchupIdx: index('match_players_matchup_idx').on(t.leader, t.opponentLeader),
+  })
+);
+
+// Append-only card-level facts — one row per (card uuid, event) per game.
+// `attribution` ('both' | 'recorder') keeps recorder-side vs whole-meta stats
+// honest at query time. `format` denormalized so the hot card-stat query can
+// filter without joining `matches`.
+export const cardEvents = pgTable(
+  'card_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => matches.gameId, { onDelete: 'cascade' }),
+    playerId: text('player_id').notNull(),
+    isRecorder: boolean('is_recorder').notNull().default(false),
+    cardId: text('card_id').notNull(),
+    event: text('event').notNull(), // drawn | resourced | played | discarded
+    attribution: text('attribution').notNull(), // both | recorder
+    frameIndex: integer('frame_index').notNull(),
+    sideWon: boolean('side_won'),
+    format: text('format'),
+  },
+  (t) => ({
+    gameIdx: index('card_events_game_idx').on(t.gameId),
+    cardEventIdx: index('card_events_card_event_idx').on(t.cardId, t.event),
+  })
+);
+
+export type Card = typeof cards.$inferSelect;
+export type MatchRow = typeof matches.$inferSelect;
+export type MatchPlayerRow = typeof matchPlayers.$inferSelect;
+export type CardEventRow = typeof cardEvents.$inferSelect;
