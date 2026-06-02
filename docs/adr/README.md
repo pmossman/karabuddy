@@ -9,3 +9,4 @@ otherwise get re-litigated. One file per decision, numbered. Terse on purpose.
 - [0004 — Graduated extension kill-switch](./0004-extension-kill-switch.md)
 - [0005 — Safe deploys: expand/contract, enforced](./0005-safe-deploys-expand-contract.md)
 - [0006 — Design system: tokens + themed MUI, enforced](./0006-design-system.md)
+- [0007 — Stats / Meta: frame-mined matchup + card analytics](./0007-stats-meta.md)
