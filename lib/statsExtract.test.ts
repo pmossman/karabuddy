@@ -129,6 +129,23 @@ describe('extractReplayFacts — card events', () => {
     expect(oppEvents[0].sideWon).toBe(false); // p2 lost
   });
 
+  it('infers the recorder from the real-hand player when ownerPlayerId is absent', () => {
+    const own = card('SOR', 200, 'own');
+    const oppPlay = card('SHD', 60, 'op');
+    const frames = [
+      // p2 holds a real hand card → p2 is the recorder, even with no ownerPlayerId.
+      frame({ p1: { ...piles({}) }, p2: { ...piles({ deck: [own], hand: [] }) } }),
+      frame({ p1: { ...piles({ groundArena: [oppPlay] }) }, p2: { ...piles({ deck: [], hand: [own] }) } }, 1),
+    ];
+    const { cardEvents, matchFact } = extractReplayFacts(decodedFrom(frames), { gameId: 'g8', winners: null, ownerPlayerId: null, durationMs: 1 });
+    const drawn = cardEvents.find((e) => e.event === 'drawn')!;
+    expect(drawn.playerId).toBe('p2');
+    expect(drawn.isRecorder).toBe(true); // inferred, despite ownerPlayerId=null
+    // p1's board play is the non-recorder side.
+    expect(cardEvents.find((e) => e.event === 'played')!.isRecorder).toBe(false);
+    expect(matchFact!.players.find((p) => p.playerId === 'p2')!.isRecorder).toBe(true);
+  });
+
   it('emits each (uuid,event) once even across many frames', () => {
     const c = card('SOR', 7, 'u7');
     const frames = [
