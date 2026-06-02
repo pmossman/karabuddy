@@ -7,7 +7,8 @@ import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { extractWinners, mergeDecks, reconstructFinalState } from '@/lib/replayDecoder';
+import { decodeReplay, extractWinners, mergeDecks, reconstructFinalState } from '@/lib/replayDecoder';
+import { persistReplayFacts } from '@/lib/statsPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
@@ -43,6 +44,28 @@ async function applyUploadShares(slug: string, userId: string | null, shareTeamS
 // B84: register the uploader's karabuddy account as a participant (recorder)
 // of this replay. Idempotent. When two teammates both record the same match,
 // both get rows → account-based intra-team detection, no karabast usernames.
+// B101/P0: materialize Stats/Meta facts for this upload (ADR 0007). Guarded —
+// must NEVER fail the upload (same posture as notifyMentions). Idempotent on
+// gameId, so re-running on a re-upload just refreshes. Decoding all frames is
+// bounded work; we only call this on the new-insert path + the final (winner-
+// present) snapshot, not on every mid-match periodic snapshot (perf — a P1
+// rollup/cron can revisit). The backfill covers historical replays.
+async function persistStatsSafe(slug: string, parsed: any, gameId: string, winners: string[] | null): Promise<void> {
+  try {
+    const decoded = decodeReplay(parsed);
+    await persistReplayFacts({
+      decoded,
+      replaySlug: slug,
+      gameId,
+      winners,
+      ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
+      durationMs: typeof parsed.durationMs === 'number' ? parsed.durationMs : null,
+    });
+  } catch (e) {
+    console.error('[stats] persistReplayFacts failed for', slug, e);
+  }
+}
+
 async function recordParticipant(slug: string, userId: string | null): Promise<void> {
   if (!userId) return;
   await getDb().insert(replayParticipants).values({ replaySlug: slug, userId }).onConflictDoNothing();
@@ -245,6 +268,9 @@ export async function POST(req: Request) {
       await applyUploadShares(replay.slug, userId, shareTeamSlugs);
       await scopeLiftedTags(replay.slug, userId, payloadTagsExisting);
       await recordParticipant(replay.slug, userId);
+      // Refresh stats only once the game has ended (winner present) — skips the
+      // re-decode on every mid-match periodic snapshot.
+      if (winners) await persistStatsSafe(replay.slug, parsed, gameId, winners);
 
       return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, snapshot: true }, { headers });
     }
@@ -307,6 +333,7 @@ export async function POST(req: Request) {
     await applyUploadShares(slug, userId, shareTeamSlugs);
     await scopeLiftedTags(slug, userId, payloadTags);
     await recordParticipant(slug, userId);
+    await persistStatsSafe(slug, parsed, gameId, winners);
 
     return NextResponse.json({ ok: true, slug, url: `/r/${slug}` }, { headers });
   } catch (err: any) {
