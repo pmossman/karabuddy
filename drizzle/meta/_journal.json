@@ -120,6 +120,13 @@
       "when": 1780790400000,
       "tag": "0016_dm_optin_default_off",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1780876800000,
+      "tag": "0017_stats",
+      "breakpoints": true
     }
   ]
 }
