@@ -7,29 +7,24 @@ import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatch
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
 // `type`, over a resolved + authorized `scope`:
-//   GET /api/stats?type=leaders|matchups|cards&scope=global|personal|team
+//   GET /api/stats?type=leaders|matchups|cards|decks|resourcing&scope=personal|team
 //       &team=<slug>&format=<f>&event=drawn|resourced|played|discarded
 //
-// Scope auth: personal needs a session; team needs membership (else 403);
-// global is open but min-N gated so no single game is identifiable. Queries
-// run live against the fact tables for now — a rollup/cron (later P1) can
-// back these same shapes when volume warrants.
-
-// Privacy floor for the GLOBAL corpus: a leader/matchup/card row must clear
-// this many games/observations before it's surfaced. Env-overridable.
-const GLOBAL_MIN_GAMES = Number(process.env.KARABUDDY_STATS_MIN_GAMES) || 20;
+// Scope auth: personal needs a session; team needs membership (else 403).
+// Global/community stats are intentionally NOT exposed — the feature is scoped
+// to the individual + their teams. Queries run live against the fact tables.
 
 const CARD_EVENTS = ['drawn', 'resourced', 'played', 'discarded'];
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const type = url.searchParams.get('type') || 'leaders';
-  const scopeKind = url.searchParams.get('scope') || 'global';
+  const scopeKind = url.searchParams.get('scope') || 'personal';
   const format = url.searchParams.get('format') || null;
 
-  // Resolve + authorize the scope.
+  // Resolve + authorize the scope. Global/community stats are not exposed.
   let scope: StatsScope;
-  let minGames = 1;
+  const minGames = 1;
   if (scopeKind === 'personal') {
     const userId = await resolveUserIdFromRequest(req);
     if (!userId) return NextResponse.json({ ok: false, error: 'not signed in' }, { status: 401 });
@@ -46,11 +41,9 @@ export async function GET(req: Request) {
       .limit(1);
     if (!member) return NextResponse.json({ ok: false, error: 'not a team member' }, { status: 403 });
     scope = { kind: 'team', teamSlug };
-  } else if (scopeKind === 'global') {
-    scope = { kind: 'global' };
-    minGames = GLOBAL_MIN_GAMES;
   } else {
-    return NextResponse.json({ ok: false, error: 'bad scope' }, { status: 400 });
+    // Global/community stats are intentionally not exposed — personal + team only.
+    return NextResponse.json({ ok: false, error: 'global stats are disabled; use scope=personal or scope=team' }, { status: 400 });
   }
 
   const opts = { scope, format, minGames };
@@ -62,9 +55,7 @@ export async function GET(req: Request) {
     // Decks (leader + base-identity) played in scope — populates the deck picker.
     data = await getDecks({ ...opts, leader: url.searchParams.get('leader') || null });
   } else if (type === 'resourcing') {
-    // First-person coaching stat — never global (no aggregate-meta meaning + it
-    // would expose individual play quality). personal/team scopes only.
-    if (scopeKind === 'global') return NextResponse.json({ ok: false, error: 'resourcing is personal/team only' }, { status: 400 });
+    // First-person coaching stat — personal/team scopes only (as is everything).
     data = await getResourcingGames(opts);
   } else if (type === 'cards') {
     const event = (url.searchParams.get('event') || 'played') as CardEventKind;

@@ -6,7 +6,6 @@ import { getDb } from '@/lib/db';
 import { users, accounts, teams, teamMembers } from '@/lib/schema';
 import { UploadThresholdForm } from './UploadThresholdForm';
 import { NotificationsForm } from './NotificationsForm';
-import { StatsPrivacyForm } from './StatsPrivacyForm';
 import { TeamNotificationPrefs } from '../teams/[slug]/TeamNotificationPrefs';
 import { LinkedExtensions } from './LinkedExtensions';
 import { Panel } from '@/app/_components/Panel';
@@ -90,15 +89,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                     </button>
                   </form>
                 )}
-              </Panel>
-              <Panel>
-                <TacticalHeading>Community stats</TacticalHeading>
-                <p style={desc}>
-                  Your games feed the anonymized <Link href="/stats" style={{ color: '#5db4ff' }}>global meta stats</Link> (aggregate win
-                  rates only, never individual games, and only above a minimum sample size). Turn this off to exclude your
-                  replays from the global numbers — your personal and team stats are unaffected.
-                </p>
-                <StatsPrivacyForm initialExcluded={!!user?.excludeFromGlobalStats} />
               </Panel>
             </>
           )}
