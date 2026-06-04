@@ -60,7 +60,11 @@ export async function GET(req: Request) {
   } else if (type === 'cards') {
     const event = (url.searchParams.get('event') || 'played') as CardEventKind;
     if (!CARD_EVENTS.includes(event)) return NextResponse.json({ ok: false, error: 'bad event' }, { status: 400 });
-    data = await getCardStats({ ...opts, event });
+    // Deck context: card stats for games where the player was on this leader
+    // (and optionally a base of this aspect) — the team/personal use case.
+    const leader = url.searchParams.get('leader') || null;
+    const baseAspect = url.searchParams.get('baseAspect') || null;
+    data = await getCardStats({ ...opts, event, leader, baseAspect });
   } else if (type === 'leaders') {
     data = await getLeaderStats(opts);
   } else {

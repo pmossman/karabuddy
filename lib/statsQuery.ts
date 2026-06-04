@@ -13,8 +13,9 @@
 // across neon / pg / pglite).
 
 import { and, eq, isNull, isNotNull, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
-import { matchPlayers, matches, replays, replayTeamShares, users, cardEvents } from './schema';
+import { matchPlayers, matches, replays, replayTeamShares, users, cardEvents, cards } from './schema';
 
 export type StatsScope =
   | { kind: 'personal'; userId: string }
@@ -141,10 +142,16 @@ export interface CardStat {
 // distinct doesn't change cardinality. Attribution lives on the rows
 // (drawn/resourced = recorder-side; played/discarded = both) — callers pick the
 // event knowing what it means; the UI labels it.
-export async function getCardStats(opts: StatsQueryOpts & { event: CardEventKind }): Promise<CardStat[]> {
+// `leader` / `baseAspect` scope card stats to a DECK context — i.e. only count
+// events where the side that triggered them was playing that leader (and a base
+// of that aspect). This is the "how does card X do in MY Krennic/Vigilance deck"
+// view the teams actually want, not whole-meta card rates.
+export async function getCardStats(
+  opts: StatsQueryOpts & { event: CardEventKind; leader?: string | null; baseAspect?: string | null },
+): Promise<CardStat[]> {
   const minGames = opts.minGames ?? 1;
   const db = getDb();
-  const base = db
+  let base = db
     .selectDistinct({
       cardId: cardEvents.cardId,
       gameId: cardEvents.gameId,
@@ -155,9 +162,18 @@ export async function getCardStats(opts: StatsQueryOpts & { event: CardEventKind
     .innerJoin(matches, eq(matches.gameId, cardEvents.gameId))
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
-  const sub = applyScopeJoins(base, opts.scope)
-    .where(and(eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, scopePredicate(opts.scope)))
-    .as('obs');
+  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, scopePredicate(opts.scope)];
+  if (opts.leader || opts.baseAspect) {
+    // Join the EVENT side's own match_players row (same game + player).
+    base = base.innerJoin(matchPlayers, and(eq(matchPlayers.gameId, cardEvents.gameId), eq(matchPlayers.playerId, cardEvents.playerId)));
+    if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
+    if (opts.baseAspect) {
+      const baseCard = alias(cards, 'base_card');
+      base = base.innerJoin(baseCard, eq(baseCard.cardId, matchPlayers.base));
+      conds.push(sql`${baseCard.aspects} @> ${JSON.stringify([opts.baseAspect])}::jsonb`);
+    }
+  }
+  const sub = applyScopeJoins(base, opts.scope).where(and(...conds)).as('obs');
   const rows = await db
     .select({
       cardId: sub.cardId,

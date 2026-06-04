@@ -133,6 +133,15 @@ describe('getCardStats', () => {
     expect(rows[0].observations).toBe(1);
     expect(rows[0].wins).toBe(1);
   });
+
+  it('scopes to a leader/deck context — only events from that leader-side count', async () => {
+    // p1 (the event side) was on L1 in both userA games; C1 was drawn by p1.
+    const onL1 = await getCardStats({ scope: { kind: 'personal', userId: userA }, event: 'drawn', leader: 'L1' });
+    expect(onL1.find((r) => r.cardId === 'C1')?.observations).toBe(2);
+    // No events come from an L2-side, so an L2 context is empty for C1.
+    const onL2 = await getCardStats({ scope: { kind: 'personal', userId: userA }, event: 'drawn', leader: 'L2' });
+    expect(onL2.find((r) => r.cardId === 'C1')).toBeUndefined();
+  });
 });
 
 describe('getLeaderMatchups', () => {

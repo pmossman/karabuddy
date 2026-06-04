@@ -4,7 +4,8 @@ import { test, expect } from '@playwright/test';
 // so it renders signed-out. Smoke: the shell, audience switcher, and view tabs.
 test('stats page renders the meta surface (public)', async ({ page }) => {
   await page.goto('/stats');
-  await expect(page.getByRole('heading', { name: /Meta\s*Stats/i })).toBeVisible();
+  // The page does a couple of client fetches on mount; give the first paint room.
+  await expect(page.getByRole('heading', { name: /Meta\s*Stats/i })).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole('button', { name: 'Global' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Leaders' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Matchups' })).toBeVisible();
