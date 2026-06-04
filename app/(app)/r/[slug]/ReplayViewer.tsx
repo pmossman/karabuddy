@@ -9,7 +9,7 @@ import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { decodeReplay, type Frame, type DecodedReplay } from '@/lib/replayDecoder';
+import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MatchupPanel } from './MobileLandscapePanels';
 import { FrameNavOverlay } from './FrameNavOverlay';
@@ -88,7 +88,7 @@ function InfoIcon() {
 
 function ViewerShell({ replay, initialTags }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
-  const [decoded, setDecoded] = useState<DecodedReplay | null>(null);
+  const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
   const [currentIndex, setCurrentIndexRaw] = useState(0);
   // B11: track the most recent frame transition so FrameLog can highlight
   // the range of frames a single action stepped across. Null on initial
@@ -256,7 +256,9 @@ function ViewerShell({ replay, initialTags }: Props) {
       return;
     }
     const params = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
-    const human = currentIndex + 1;
+    // Mirror as an ORIGINAL index so the link round-trips and matches external
+    // deep-links (comments/decks) that point at original frame indices.
+    const human = collapsedToOriginal(currentIndex) + 1;
     if (currentIndex === 0) params.delete('f');
     else params.set('f', String(human));
     const qs = params.toString();
@@ -289,16 +291,39 @@ function ViewerShell({ replay, initialTags }: Props) {
   const frames = decoded?.frames || null;
   const activeByFrame = decoded?.activeByFrame || null;
 
+  // B102: the viewer steps in COLLAPSED frame space (currentIndex), but the DB
+  // and the shareable `?f=` URL stay in the recorder's ORIGINAL space so old
+  // tags + external deep-links keep working. Convert at the boundary.
+  const frameRemap = decoded?.frameRemap || null;          // orig -> collapsed
+  const collapsedToOrig = decoded?.collapsedToOrig || null; // collapsed -> orig
+  const origToCollapsed = useCallback((i: number) => {
+    if (!frameRemap || frameRemap.length === 0) return i;
+    return frameRemap[Math.min(Math.max(i, 0), frameRemap.length - 1)] ?? 0;
+  }, [frameRemap]);
+  const collapsedToOriginal = useCallback((c: number) => {
+    if (!collapsedToOrig || collapsedToOrig.length === 0) return c;
+    return collapsedToOrig[Math.min(Math.max(c, 0), collapsedToOrig.length - 1)] ?? c;
+  }, [collapsedToOrig]);
+  // Tags are stored at original indices; reposition them onto collapsed frames
+  // for display (markers, jump targets, "tags at this frame").
+  const displayTags = useMemo(
+    () => tagState.map((t) => ({ ...t, frameIndex: origToCollapsed(t.frameIndex) })),
+    [tagState, origToCollapsed],
+  );
+
   // B48: apply the URL-derived initial frame once frames are decoded.
   // Clamps to [0, total-1] in case the link points at a frame that no
   // longer exists (replay re-uploaded shorter, etc).
   useEffect(() => {
     if (appliedInitialRef.current) return;
     if (!frames || frames.length === 0) return;
-    const target = Math.max(0, Math.min(frames.length - 1, initialFrameRef.current ?? 0));
+    // The URL's ?f= is an ORIGINAL frame index — map it onto the collapsed
+    // timeline (a deep-link to an undone/static frame lands on its survivor).
+    const collapsedTarget = origToCollapsed(initialFrameRef.current ?? 0);
+    const target = Math.max(0, Math.min(frames.length - 1, collapsedTarget));
     appliedInitialRef.current = true;
     if (target !== 0) setCurrentIndex(target);
-  }, [frames, setCurrentIndex]);
+  }, [frames, setCurrentIndex, origToCollapsed]);
 
   // Step delta — `dir` is +/-1. Action mode walks through frames until the
   // active player changes (matches the extension's advanceByAction).
@@ -321,13 +346,13 @@ function ViewerShell({ replay, initialTags }: Props) {
   // the keydown handler below can invoke it for `[` / `]` without DOM
   // querying; TagSidebar's prev/next-tag buttons now call this via prop.
   const jumpToAdjacentTag = useCallback((dir: 1 | -1) => {
-    const sorted = tagState.map((t) => t.frameIndex).sort((a, b) => a - b);
+    const sorted = displayTags.map((t) => t.frameIndex).sort((a, b) => a - b);
     const target =
       dir > 0
         ? sorted.find((i) => i > currentIndex)
         : [...sorted].reverse().find((i) => i < currentIndex);
     if (target != null) setCurrentIndex(target);
-  }, [tagState, currentIndex, setCurrentIndex]);
+  }, [displayTags, currentIndex, setCurrentIndex]);
 
   // Fetch + decode the payload from Blob.
   useEffect(() => {
@@ -338,7 +363,10 @@ function ViewerShell({ replay, initialTags }: Props) {
         if (!res.ok) throw new Error(`payload fetch failed: ${res.status}`);
         const text = await res.text();
         const parsed = JSON.parse(text);
-        const result = decodeReplay(parsed);
+        // B102: collapse undone + board-static frames so stepping only lands on
+        // real, distinct board positions. `decodeReplay` stays raw (extraction
+        // path); the viewer renders the collapsed timeline.
+        const result = collapseReplay(decodeReplay(parsed));
         if (cancelled) return;
         setDecoded(result);
         // Prefer the player ID captured by the recorder (the local karabast
@@ -456,8 +484,9 @@ function ViewerShell({ replay, initialTags }: Props) {
         onStep={step}
         onJump={setCurrentIndex}
         onJumpToAdjacentTag={jumpToAdjacentTag}
-        tags={tagState}
+        tags={displayTags}
         setTags={setTagState}
+        toOriginalFrame={collapsedToOriginal}
         playerUsernames={playerUsernames}
         mode={mode}
         setMode={setMode}
