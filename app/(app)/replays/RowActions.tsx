@@ -136,6 +136,10 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
             padding: 6,
             color: '#e6e6e6',
             fontFamily: 'var(--font-barlow), sans-serif',
+            // The table's actions cell sets white-space: nowrap; reset it here
+            // so menu copy (share helper text, the confirm modal) wraps.
+            whiteSpace: 'normal',
+            textAlign: 'left',
             display: 'flex',
             flexDirection: 'column',
             gap: 2,

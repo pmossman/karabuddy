@@ -193,7 +193,11 @@ export function ShareWithTeam({
 }
 
 // B100: confirmation for an un-share that will also untag comments from the
-// team. Explains the consequence in plain terms before it happens.
+// team. Explains the consequence in plain terms before it happens. Rendered
+// inline (a child of the kebab menu, where ShareWithTeam lives on the team
+// grid) so the menu's outside-click guard keeps it mounted while you read it
+// — but it must reset `white-space` because the table's actions cell sets
+// `nowrap`, which would otherwise inherit in and stop the copy wrapping.
 function UnshareConfirm({
   teamName,
   count,
@@ -211,11 +215,16 @@ function UnshareConfirm({
     return () => window.removeEventListener('keydown', onKey);
   }, [onCancel]);
 
-  const n = `${count} ${count === 1 ? 'comment' : 'comments'}`;
+  const noun = count === 1 ? 'comment is' : 'comments are';
+  const message =
+    `This removes the replay from ${teamName}'s browser. ${count} ${noun} scoped to ` +
+    `${teamName} and will be untagged from the team — they stay on the replay but ` +
+    `won't appear in ${teamName}'s discussion anymore.`;
+
   return (
     <div
       onClick={onCancel}
-      style={{ position: 'fixed', inset: 0, zIndex: 240, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, whiteSpace: 'normal' }}
     >
       <div
         role="alertdialog"
@@ -223,13 +232,11 @@ function UnshareConfirm({
         aria-label={`Un-share from ${teamName}`}
         data-testid="unshare-confirm"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(420px, 95vw)', background: '#11141a', border: '1px solid #2e333c', borderRadius: 10, padding: 18, color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif' }}
+        style={{ width: 'min(440px, 92vw)', boxSizing: 'border-box', background: '#11141a', border: '1px solid #2e333c', borderRadius: 10, padding: 18, color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif', textAlign: 'left' }}
       >
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Un-share from {teamName}?</div>
-        <p style={{ fontSize: 13, color: '#c2c8d4', lineHeight: 1.5, margin: '0 0 16px' }}>
-          This removes the replay from {teamName}&apos;s browser. {n} on this replay
-          {count === 1 ? ' is' : ' are'} scoped to {teamName} and will be untagged from the team — they stay on the
-          replay but won&apos;t appear in {teamName}&apos;s discussion anymore.
+        <p style={{ fontSize: 13, color: '#c2c8d4', lineHeight: 1.5, margin: '0 0 16px', wordBreak: 'break-word' }}>
+          {message}
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button
