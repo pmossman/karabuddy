@@ -96,6 +96,47 @@ Actions). Getting them once:
 These creds can publish the extension — keep them as Actions secrets only
 (repo admins), never in the repo.
 
+## Submitting to Firefox / AMO (deliberate)
+
+The extension also ships on Firefox (Gecko). Each auto-cut Release carries a
+**second** zip — `karabuddy-extension-firefox-X.Y.Z.zip` — built by
+`npm run package:extension:firefox` (a Gecko manifest variant: event-page
+`background.scripts` instead of a service worker, no `type:module`, Chrome-only
+`version_name` stripped, plus `browser_specific_settings.gecko` with the add-on
+id, `strict_min_version` 140 / Android 142, and the `data_collection_permissions`
+disclosure). `world: "MAIN"` is kept — Firefox supports it (128+); the 140 floor
+is for `data_collection_permissions`. Build it cleanly: `npx web-ext lint` reports
+0 errors / 0 warnings.
+
+Promotion is a manual trigger (same model as CWS):
+
+- **GitHub Action (preferred):** Actions tab → **extension-submit-amo** → Run
+  workflow → pick the tag (blank = latest `ext-v*`) and the channel (`listed` =
+  public AMO review; `unlisted` = AMO-signed `.xpi` for self-hosting, attached
+  as a workflow artifact). It downloads the Release's firefox zip and submits via
+  `web-ext sign`.
+- **By hand:** download a Release's firefox zip → addons.mozilla.org Developer
+  Hub → upload a new version. (`npm run package:extension:firefox` builds the
+  same zip locally; the unpacked dir under `dist/` loads via `about:debugging`
+  → Load Temporary Add-on for local testing.)
+
+### Firefox / AMO API creds + first listing (one-time)
+
+The Action needs two repo secrets (Settings → Secrets and variables → Actions):
+
+1. A Mozilla **add-on developer account** (addons.mozilla.org). The add-on id is
+   fixed as `karabuddy@karabuddy.app` (in the Gecko manifest).
+2. **First listed submission is via the AMO web UI** — upload the firefox zip,
+   then complete the listing (summary/description, screenshots, categories,
+   **privacy policy**, and the **data-collection** disclosure — we declare
+   `websiteContent`, since we upload karabast game state). AMO reviews it; once
+   the add-on exists, the Action ships subsequent versions.
+3. **API key** — Developer Hub → **Manage API Keys** → generate. That yields
+   the **`AMO_JWT_ISSUER`** (key) + **`AMO_JWT_SECRET`** (secret). Add both as
+   repo secrets. The secret is shown once — copy it immediately.
+
+These creds can publish the extension — Actions secrets only, never in the repo.
+
 ## Adding a new contract baseline
 
 When you ship a version whose request shapes changed, freeze the NEW
@@ -133,6 +174,9 @@ tracking the CWS-published version.
 - **CWS auto-submit:** store the four `CWS_*` API creds as repo secrets to let
   the `extension-submit-cws` workflow submit (today it needs them; without
   them, submit by hand). See the creds section above.
+- **AMO auto-submit:** create the AMO add-on + its first listed version via the
+  web UI, then store `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` as repo secrets for the
+  `extension-submit-amo` workflow. See "Firefox / AMO" above.
 
 Dropped from the original plan: per-preview Vercel DB branching (we don't gate
 on Vercel previews — the gated pipeline smokes against the `ci-preview` branch

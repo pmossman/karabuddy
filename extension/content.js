@@ -23,6 +23,15 @@ const fireContextInvalidated = () => {
 const isContextInvalidatedError = (err) =>
     String(err && err.message || err).includes('Extension context invalidated');
 
+// B103 (Firefox): Firefox isolates content-script objects from the page via
+// Xray vision — a CustomEvent whose `detail` we build here can't be read by
+// MAIN-world page scripts (01-namespace) unless we clone it into the page's
+// scope. `cloneInto` exists only on Gecko; Chrome reads the object directly,
+// so guard on it. (The reverse direction — us reading the page's action
+// `detail` — works via Xray, so only outbound dispatches need this.)
+const toPageDetail = (detail) =>
+    (typeof cloneInto !== 'undefined') ? cloneInto(detail, window) : detail;
+
 const installCompanionBridge = () => {
     window.addEventListener('karabast-companion-action', (e) => {
         const detail = e.detail || {};
@@ -30,7 +39,7 @@ const installCompanionBridge = () => {
         const { _id, ...payload } = detail;
         const dispatchResult = (ok, error, data) => {
             window.dispatchEvent(new CustomEvent('karabast-companion-result', {
-                detail: { _id: correlationId, type: detail.type, ok, error, data }
+                detail: toPageDetail({ _id: correlationId, type: detail.type, ok, error, data })
             }));
         };
         try {
