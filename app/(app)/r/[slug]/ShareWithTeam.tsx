@@ -30,6 +30,12 @@ export function ShareWithTeam({
   const [shares, setShares] = useState<Set<string>>(new Set());
   const [teams, setTeams] = useState<{ slug: string; name: string }[]>([]);
   const [pending, setPending] = useState<Set<string>>(new Set());
+  // B100: tags on this replay scoped to each team — drives the "un-sharing
+  // also removes N comments" confirmation.
+  const [scopedCounts, setScopedCounts] = useState<Record<string, number>>({});
+  // Pending un-share awaiting confirmation (only set when it would untag
+  // comments from the team).
+  const [confirm, setConfirm] = useState<{ slug: string; name: string; count: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +58,7 @@ export function ShareWithTeam({
         }
         setShares(new Set((body.shares || []).map((s: any) => s.teamSlug)));
         setTeams(body.ownerTeams || []);
+        setScopedCounts(body.scopedTagCounts || {});
         setState(body.ownerTeams && body.ownerTeams.length > 0 ? 'ready' : 'empty');
       } catch {
         if (cancelled) return;
@@ -73,7 +80,22 @@ export function ShareWithTeam({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shares, teams, state]);
 
-  const toggle = async (teamSlug: string) => {
+  // Toggle entry point: turning a team OFF that has comments scoped to it
+  // first asks for confirmation (the un-share strips those comments from the
+  // team). Everything else applies immediately.
+  const requestToggle = (teamSlug: string) => {
+    if (pending.has(teamSlug)) return;
+    const wasShared = shares.has(teamSlug);
+    const affected = scopedCounts[teamSlug] ?? 0;
+    if (wasShared && affected > 0) {
+      const t = teams.find((x) => x.slug === teamSlug);
+      setConfirm({ slug: teamSlug, name: t?.name ?? teamSlug, count: affected });
+      return;
+    }
+    applyToggle(teamSlug);
+  };
+
+  const applyToggle = async (teamSlug: string) => {
     if (pending.has(teamSlug)) return;
     const wasShared = shares.has(teamSlug);
     // Optimistic update — revert on failure.
@@ -99,6 +121,10 @@ export function ShareWithTeam({
           else next.delete(teamSlug);
           return next;
         });
+      } else if (wasShared) {
+        // Un-share succeeded: the server stripped this team from the replay's
+        // tag scopes, so nothing more is scoped to it.
+        setScopedCounts((prev) => ({ ...prev, [teamSlug]: 0 }));
       }
     } catch {
       setShares((prev) => {
@@ -141,7 +167,7 @@ export function ShareWithTeam({
             <LedToggle
               key={t.slug}
               checked={isShared}
-              onChange={() => toggle(t.slug)}
+              onChange={() => requestToggle(t.slug)}
               label={t.name}
               statusOn="Sharing"
               disabled={isPending}
@@ -154,6 +180,75 @@ export function ShareWithTeam({
           Surfaces in the selected teams&apos; replay grid.
         </div>
       )}
+      {confirm && (
+        <UnshareConfirm
+          teamName={confirm.name}
+          count={confirm.count}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => { const slug = confirm.slug; setConfirm(null); applyToggle(slug); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// B100: confirmation for an un-share that will also untag comments from the
+// team. Explains the consequence in plain terms before it happens.
+function UnshareConfirm({
+  teamName,
+  count,
+  onConfirm,
+  onCancel,
+}: {
+  teamName: string;
+  count: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  const n = `${count} ${count === 1 ? 'comment' : 'comments'}`;
+  return (
+    <div
+      onClick={onCancel}
+      style={{ position: 'fixed', inset: 0, zIndex: 240, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={`Un-share from ${teamName}`}
+        data-testid="unshare-confirm"
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: 'min(420px, 95vw)', background: '#11141a', border: '1px solid #2e333c', borderRadius: 10, padding: 18, color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif' }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Un-share from {teamName}?</div>
+        <p style={{ fontSize: 13, color: '#c2c8d4', lineHeight: 1.5, margin: '0 0 16px' }}>
+          This removes the replay from {teamName}&apos;s browser. {n} on this replay
+          {count === 1 ? ' is' : ' are'} scoped to {teamName} and will be untagged from the team — they stay on the
+          replay but won&apos;t appear in {teamName}&apos;s discussion anymore.
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{ background: 'transparent', border: '1px solid #2e333c', color: '#a0a8b8', padding: '6px 14px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="unshare-confirm-button"
+            onClick={onConfirm}
+            style={{ background: 'rgba(255,107,107,0.14)', border: '1px solid #5a2a2a', color: '#ff6b6b', padding: '6px 14px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Un-share
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

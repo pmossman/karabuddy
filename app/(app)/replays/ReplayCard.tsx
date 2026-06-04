@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ShareBadge } from './ShareBadge';
+import { RowActions } from './RowActions';
+import { CommentCountButton } from './CommentCountButton';
 
 interface ReplayRow {
   slug: string;
@@ -29,28 +29,22 @@ interface ReplayRow {
   labels?: string[] | null;
   // B89: teams this replay is shared with. Empty/absent = unlisted.
   sharedTeams?: { slug: string; name: string }[];
+  // B59-followup: recorder POV playerId — used by the manage modal to default
+  // the decks view to the owner's deck.
+  ownerPlayerId?: string | null;
+  // B100: total comments on the replay. Absent on grids that don't fetch it
+  // (anonymous library).
+  commentCount?: number;
+  // B100: viewer owns this replay (lets the owner un-share from the team grid).
+  isMine?: boolean;
 }
 
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
 // matchChips() helper used everywhere.
 
 export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage: boolean }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
-
-  const remove = async () => {
-    if (!confirm('Delete this replay? This cannot be undone.')) return;
-    const res = await fetch(`/api/replays/${replay.slug}`, { method: 'DELETE' });
-    const body = await res.json();
-    if (!body.ok) {
-      alert(`Failed to delete: ${body.error || 'unknown'}`);
-      return;
-    }
-    startTransition(() => router.refresh());
-  };
 
   return (
     <div
@@ -63,7 +57,6 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
-        opacity: isPending ? 0.5 : 1,
       }}
     >
       <Link href={`/r/${replay.slug}`} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -135,29 +128,10 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
           ))}
         </div>
       </Link>
-      {canManage && (
-        <div style={{ display: 'flex', gap: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
-          <button
-            type="button"
-            onClick={remove}
-            disabled={isPending}
-            style={{
-              background: 'transparent',
-              border: '1px solid #5a2a2a',
-              color: '#ff6b6b',
-              padding: '4px 10px',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-              cursor: isPending ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              marginLeft: 'auto',
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 6, paddingTop: 8, borderTop: '1px solid #2e333c', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div><CommentCountButton replay={replay} variant="card" /></div>
+        <RowActions replay={replay} canManage={canManage} />
+      </div>
     </div>
   );
 }

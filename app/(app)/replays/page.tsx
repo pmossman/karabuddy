@@ -1,7 +1,7 @@
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, inArray, count } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, replayTeamShares, teams } from '@/lib/schema';
+import { replays, users, replayTeamShares, teams, tags } from '@/lib/schema';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
@@ -21,6 +21,9 @@ export default async function ReplaysIndex() {
   // tell at a glance who a replay is surfaced to. A non-shared replay is
   // "unlisted" (link-accessible), never "private" — keep the label honest.
   const sharesBySlug = new Map<string, { slug: string; name: string }[]>();
+  // B100: per-replay comment count, surfaced in the browser so you can see
+  // discussion activity at a glance without opening each replay.
+  const commentCountBySlug = new Map<string, number>();
   if (userId) {
     const db = getDb();
     rows = await db
@@ -43,6 +46,15 @@ export default async function ReplaysIndex() {
         arr.push({ slug: s.teamSlug, name: s.teamName });
         sharesBySlug.set(s.replaySlug, arr);
       }
+
+      // Total comments per replay (all tags on the owner's own replays — it's
+      // their library, so we count everything, not the viewer-scoped subset).
+      const countRows = await db
+        .select({ replaySlug: tags.replaySlug, n: count() })
+        .from(tags)
+        .where(inArray(tags.replaySlug, slugs))
+        .groupBy(tags.replaySlug);
+      for (const c of countRows) commentCountBySlug.set(c.replaySlug, Number(c.n));
     }
   }
 
@@ -55,15 +67,16 @@ export default async function ReplaysIndex() {
         // MineEmpty (install pitch) if there's no extension.
         <MineAnonymous />
       ) : (
-        <ReplayFilters rows={rows.map((r) => serializeRow(r, sharesBySlug.get(r.replay.slug) ?? []))} canManage showShareTabs emptyState={<MineEmpty />} />
+        <ReplayFilters rows={rows.map((r) => serializeRow(r, sharesBySlug.get(r.replay.slug) ?? [], commentCountBySlug.get(r.replay.slug) ?? 0))} canManage showShareTabs emptyState={<MineEmpty />} />
       )}
     </main>
   );
 }
 
-function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string | null }, sharedTeams: { slug: string; name: string }[]) {
+function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string | null }, sharedTeams: { slug: string; name: string }[], commentCount: number) {
   return {
     sharedTeams,
+    commentCount,
     slug: r.slug,
     gameId: r.gameId,
     userId: r.userId,

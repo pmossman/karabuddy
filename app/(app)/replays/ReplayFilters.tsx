@@ -4,6 +4,8 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
+import { RowActions } from './RowActions';
+import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
@@ -42,6 +44,12 @@ interface Row {
   // (link-accessible but not surfaced to any team). Drives the Shared /
   // Unlisted tabs + the per-card share badge.
   sharedTeams?: { slug: string; name: string }[];
+  // B100: comments on the replay (total on the personal library; team-scoped
+  // on the team grid), surfaced inline + clickable to read.
+  commentCount?: number;
+  // B100: viewer owns this replay — lets the owner manage it (un-share) from
+  // the team grid where the grid-wide canManage is false.
+  isMine?: boolean;
 }
 
 type ResultFilter = '' | 'wins' | 'losses';
@@ -277,7 +285,7 @@ export function ReplayFilters({
           {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
         </div>
       ) : view === 'table' ? (
-        <TableView rows={filtered} showShareColumn={tab !== 'unlisted'} />
+        <TableView rows={filtered} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
       ) : view === 'by-leader' ? (
         <ByLeaderGroups rows={filtered} canManage={canManage} />
       ) : view === 'timeline' ? (
@@ -361,7 +369,7 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
 
 // -- Table view --------------------------------------------------------------
 
-type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member' | 'shared';
+type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member' | 'shared' | 'comments';
 
 // Sort/scan key for the "Shared with" column: joined team names (so teams
 // group together), empty for unlisted (sorts to one end).
@@ -408,7 +416,7 @@ function formatDateShort(iso: string) {
   return d.toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
 }
 
-function TableView({ rows, showShareColumn = true }: { rows: Row[]; showShareColumn?: boolean }) {
+function TableView({ rows, canManage = false, showShareColumn = true }: { rows: Row[]; canManage?: boolean; showShareColumn?: boolean }) {
   // Default: newest first (matches the grid's pre-existing order).
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -424,6 +432,7 @@ function TableView({ rows, showShareColumn = true }: { rows: Row[]; showShareCol
         case 'length': return r.durationMs || 0;
         case 'member': return (r.ownerName || '').toLowerCase();
         case 'shared': return sharedText(r);
+        case 'comments': return r.commentCount ?? 0;
       }
     };
     return [...rows].sort((a, b) => {
@@ -437,14 +446,17 @@ function TableView({ rows, showShareColumn = true }: { rows: Row[]; showShareCol
   // library passes it; the reused team grid doesn't → no empty column there) AND
   // the caller wants it (hidden on the Unlisted tab, where it'd be all "UNLISTED").
   const showShared = showShareColumn && rows.some((r) => r.sharedTeams !== undefined);
+  // Comments column only where the count was fetched (personal library); the
+  // reused team grid doesn't carry it → no empty column there.
+  const showComments = rows.some((r) => r.commentCount !== undefined);
 
   const onHeaderClick = (k: SortKey) => {
     if (sortKey === k) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(k);
-      // Sensible defaults: dates go newest first; everything else ascending.
-      setSortDir(k === 'date' || k === 'length' ? 'desc' : 'asc');
+      // Sensible defaults: dates / lengths / counts go highest-first; text asc.
+      setSortDir(k === 'date' || k === 'length' || k === 'comments' ? 'desc' : 'asc');
     }
   };
 
@@ -460,6 +472,8 @@ function TableView({ rows, showShareColumn = true }: { rows: Row[]; showShareCol
             <SortHeader k="format" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Format</SortHeader>
             <PlainHeader>Labels</PlainHeader>
             <SortHeader k="length" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Length</SortHeader>
+            {showComments && <SortHeader k="comments" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Comments</SortHeader>}
+            <PlainHeader>{''}</PlainHeader>
           </tr>
         </thead>
         <tbody>
@@ -486,6 +500,14 @@ function TableView({ rows, showShareColumn = true }: { rows: Row[]; showShareCol
                 ) : '—'}
               </td>
               <td style={cellStyle}>{formatDuration(r.durationMs || 0)}</td>
+              {showComments && (
+                <td style={cellStyle}>
+                  <CommentCountButton replay={r} variant="table" />
+                </td>
+              )}
+              <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <RowActions replay={r} canManage={canManage} />
+              </td>
             </tr>
           ))}
         </tbody>
