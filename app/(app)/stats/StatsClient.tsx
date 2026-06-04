@@ -28,6 +28,8 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const [event, setEvent] = useState<CardEvent>('played');
   const [leaderCtx, setLeaderCtx] = useState<string>(''); // deck context for the Cards view
   const [baseAspect, setBaseAspect] = useState<string>('');
+  const [cardSort, setCardSort] = useState<'games' | 'winrate'>('games'); // grid sort
+  const [cardSearch, setCardSearch] = useState<string>('');
   const [data, setData] = useState<any[] | null>(null);
   const [minGames, setMinGames] = useState<number>(1);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -92,6 +94,23 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
 
   const nm = (id: string) => names[id] || id;
 
+  // Cards view: client-side sort + name search over the fetched rows. Win% is
+  // null below a small decisive-game floor, so "Best win %" sinks those rows
+  // rather than letting a 1-of-1 card top the grid.
+  const cardRows = useMemo(() => {
+    if (view !== 'cards' || !data) return [];
+    const q = cardSearch.trim().toLowerCase();
+    const rows = data
+      .map((r) => ({ ...r, name: nm(r.cardId), win: pct(r.wins, r.decisive) }))
+      .filter((r) => !q || r.name.toLowerCase().includes(q));
+    rows.sort((a, b) =>
+      cardSort === 'winrate'
+        ? (b.win ?? -1) - (a.win ?? -1) || b.observations - a.observations
+        : b.observations - a.observations || (b.win ?? -1) - (a.win ?? -1),
+    );
+    return rows;
+  }, [view, data, cardSearch, cardSort, names]);
+
   const scopeOptions: [Scope, string][] = [
     ...(signedIn ? [['personal', 'Mine'] as [Scope, string]] : []),
     ...(teams.length ? [['team', 'Team'] as [Scope, string]] : []),
@@ -124,6 +143,11 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
           <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: RECORDER_SIDE[event] ? '#e0c64a' : '#6bd968' }}>
             {RECORDER_SIDE[event] ? 'recorder-side only' : 'whole-meta'}
           </span>
+          <div style={{ flexBasis: '100%', height: 0 }} />
+          <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort:</span>
+          <Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} />
+          <input value={cardSearch} onChange={(e) => setCardSearch(e.target.value)} placeholder="Search cards…" type="search"
+            style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', minWidth: 160 }} />
         </div>
       )}
 
@@ -135,8 +159,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         ) : !data || data.length === 0 ? (
           <div style={dim}>No data yet for this view{scope === 'personal' ? ' — upload some games or sign in' : ''}.</div>
         ) : view === 'cards' ? (
-          <Table head={['Card', `Win % ${EVENTS.find((e) => e[0] === event)![1]}`, 'Games']}
-            rows={data.map((r) => [cardCell(nm(r.cardId), r.cardId, false), <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>, <Muted key="g">{r.observations}</Muted>])} />
+          <CardGrid cards={cardRows} event={event} nm={nm} />
         ) : view === 'matchups' ? (
           <Table head={['Matchup', 'Win %', 'Games']}
             rows={data.map((r) => [matchupCell(nm(r.leader), r.leader, nm(r.opponentLeader), r.opponentLeader), <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>, <Muted key="g">{r.games}</Muted>])} />
@@ -170,6 +193,50 @@ const matchupCell = (a: string, aId: string, b: string, bId: string) => (
 );
 const Win = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#4dd2ff', fontWeight: 700 }}>{children}</span>;
 const Muted = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#a0a8b8' }}>{children}</span>;
+
+// Win% → color: red (poor) → amber (even) → green (strong). Null = unknown.
+function winColor(p: number | null): string {
+  if (p == null) return '#6c7588';
+  if (p >= 60) return '#6bd968';
+  if (p >= 50) return '#9bd14a';
+  if (p >= 40) return '#e0c64a';
+  return '#e06a5a';
+}
+
+// swubase-inspired: big card art in a responsive grid. Each tile leads with the
+// image (what players scan for), then win% in the result color, then sample size.
+function CardGrid({ cards, event, nm }: { cards: any[]; event: CardEvent; nm: (id: string) => string }) {
+  const label = EVENTS.find((e) => e[0] === event)![1];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14 }}>
+      {cards.map((r) => (
+        <CardTile key={r.cardId} cardId={r.cardId} name={nm(r.cardId)} win={r.win} observations={r.observations} label={label} />
+      ))}
+    </div>
+  );
+}
+function CardTile({ cardId, name, win, observations, label }: { cardId: string; name: string; win: number | null; observations: number; label: string }) {
+  const url = cardId && cardId.includes('_') ? cardImageUrl(parseId(cardId), false) : null;
+  return (
+    <div style={{ background: '#11141a', border: '1px solid #1c2128', borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ aspectRatio: '5 / 7', background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt={name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <span style={{ color: '#3a4150', fontSize: 11, padding: 8, textAlign: 'center' }}>{name}</span>
+        )}
+      </div>
+      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#e6e6e6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={name}>{name}</span>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: winColor(win) }}>{fmtPct(win)}</span>
+          <span style={{ fontSize: 10, color: '#6c7588' }}>{observations} {label}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Segmented({ options, value, onChange }: { options: readonly (readonly [string, string])[]; value: string; onChange: (v: string) => void }) {
   return (
