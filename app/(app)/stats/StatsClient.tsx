@@ -30,6 +30,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const [baseAspect, setBaseAspect] = useState<string>('');
   const [cardSort, setCardSort] = useState<'games' | 'winrate'>('games'); // grid sort
   const [cardSearch, setCardSearch] = useState<string>('');
+  const [matchupMode, setMatchupMode] = useState<'pct' | 'wl'>('pct'); // heatmap cell: win% vs W–L count
   const [data, setData] = useState<any[] | null>(null);
   const [minGames, setMinGames] = useState<number>(1);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -111,6 +112,25 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     return rows;
   }, [view, data, cardSearch, cardSort, names]);
 
+  // Matchups view: pivot the flat directed rows (leader → opponentLeader) into a
+  // square matrix. Axes share one leader set, ordered by total games played, so
+  // the popular decks cluster top-left. Per-leader totals come from summing its
+  // own matchup rows (one fetch, no extra round-trip).
+  const matrix = useMemo(() => {
+    if (view !== 'matchups' || !data) return null;
+    const cell = new Map<string, any>();
+    const totals = new Map<string, { games: number; wins: number; decisive: number }>();
+    for (const r of data) {
+      cell.set(`${r.leader}|${r.opponentLeader}`, r);
+      const t = totals.get(r.leader) || { games: 0, wins: 0, decisive: 0 };
+      t.games += r.games; t.wins += r.wins; t.decisive += r.decisive;
+      totals.set(r.leader, t);
+      if (!totals.has(r.opponentLeader)) totals.set(r.opponentLeader, { games: 0, wins: 0, decisive: 0 });
+    }
+    const leaders = [...totals.keys()].sort((a, b) => (totals.get(b)!.games) - (totals.get(a)!.games));
+    return { leaders, cell, totals };
+  }, [view, data]);
+
   const scopeOptions: [Scope, string][] = [
     ...(signedIn ? [['personal', 'Mine'] as [Scope, string]] : []),
     ...(teams.length ? [['team', 'Team'] as [Scope, string]] : []),
@@ -151,6 +171,14 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         </div>
       )}
 
+      {view === 'matchups' && (
+        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cells:</span>
+          <Segmented options={[['pct', 'Win %'], ['wl', 'W–L']]} value={matchupMode} onChange={(v) => setMatchupMode(v as any)} />
+          <span style={{ fontSize: 11, color: '#6c7588' }}>Row leader vs. column leader. Color = win rate, faded when the sample is small.</span>
+        </div>
+      )}
+
       {scope === 'global' && <div style={{ fontSize: 12, color: '#6c7588', margin: '12px 0 0' }}>Global rows need ≥{minGames} games to appear (privacy).</div>}
 
       <div style={{ marginTop: 16 }}>
@@ -161,8 +189,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         ) : view === 'cards' ? (
           <CardGrid cards={cardRows} event={event} nm={nm} />
         ) : view === 'matchups' ? (
-          <Table head={['Matchup', 'Win %', 'Games']}
-            rows={data.map((r) => [matchupCell(nm(r.leader), r.leader, nm(r.opponentLeader), r.opponentLeader), <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>, <Muted key="g">{r.games}</Muted>])} />
+          <MatchupMatrix matrix={matrix!} mode={matchupMode} nm={nm} />
         ) : (
           <Table head={['Leader', 'Win %', 'Games']}
             rows={data.map((r) => [cardCell(nm(r.leader), r.leader, true), <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>, <Muted key="g">{r.games}</Muted>])} />
@@ -184,13 +211,6 @@ function CardThumb({ cardId, isLeader, h = 40 }: { cardId: string; isLeader?: bo
 const cardCell = (name: string, cardId: string, isLeader: boolean) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}><CardThumb cardId={cardId} isLeader={isLeader} /><span>{name}</span></span>
 );
-const matchupCell = (a: string, aId: string, b: string, bId: string) => (
-  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-    <CardThumb cardId={aId} isLeader h={34} /><span>{a}</span>
-    <span style={{ color: '#6c7588', fontWeight: 700, fontSize: 11 }}>vs</span>
-    <CardThumb cardId={bId} isLeader h={34} /><span style={{ color: '#a0a8b8' }}>{b}</span>
-  </span>
-);
 const Win = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#4dd2ff', fontWeight: 700 }}>{children}</span>;
 const Muted = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#a0a8b8' }}>{children}</span>;
 
@@ -201,6 +221,86 @@ function winColor(p: number | null): string {
   if (p >= 50) return '#9bd14a';
   if (p >= 40) return '#e0c64a';
   return '#e06a5a';
+}
+
+// Diverging heatmap with CONFIDENCE MUTING — the team-prep edge over swubase.
+// A cell's color is the win-rate hue (green favorable / red unfavorable) scaled
+// by BOTH how far from 50% it is AND how many decisive games back it: a 2–0
+// matchup stays near-neutral gray, not glowing green, so a tiny sample never
+// masquerades as a strong read. 12 decisive games ≈ full saturation.
+function heatColor(p: number | null, decisive: number): string {
+  if (p == null) return 'transparent';
+  const confidence = Math.min(decisive / 12, 1);
+  const magnitude = Math.min(Math.abs(p - 50) / 25, 1);
+  const intensity = magnitude * confidence;
+  const target = p >= 50 ? [47, 158, 68] : [201, 42, 42]; // green / red
+  const neutral = [28, 33, 40];
+  const c = neutral.map((n, i) => Math.round(n + (target[i] - n) * intensity));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+
+// Square leader-vs-leader matrix. Rows = your leader, columns = opponent, one
+// shared leader set ordered by games played. Each cell is win% or W–L, tinted
+// by heatColor; the leftmost Total column is the leader's overall rate.
+function MatchupMatrix({ matrix, mode, nm }: { matrix: { leaders: string[]; cell: Map<string, any>; totals: Map<string, { games: number; wins: number; decisive: number }> }; mode: 'pct' | 'wl'; nm: (id: string) => string }) {
+  const { leaders, cell, totals } = matrix;
+  const show = (wins: number, decisive: number) => {
+    const p = pct(wins, decisive);
+    if (mode === 'wl') return decisive ? `${wins}–${decisive - wins}` : '—';
+    return fmtPct(p);
+  };
+  const COL = 44;
+  return (
+    <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
+        <thead>
+          <tr>
+            <th style={{ position: 'sticky', left: 0, zIndex: 2, background: '#0e1116' }} />
+            <th style={{ width: COL, color: '#6c7588', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '0 2px', verticalAlign: 'bottom' }}>Total</th>
+            {leaders.map((id) => (
+              <th key={id} style={{ width: COL, height: 96, padding: 0, verticalAlign: 'bottom' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                  <CardThumb cardId={id} isLeader h={26} />
+                  <span title={nm(id)} style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', maxHeight: 64, overflow: 'hidden', textOverflow: 'ellipsis', color: '#a0a8b8', fontSize: 10 }}>{nm(id)}</span>
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {leaders.map((row) => {
+            const t = totals.get(row)!;
+            return (
+              <tr key={row}>
+                <td style={{ position: 'sticky', left: 0, zIndex: 1, background: '#0e1116', paddingRight: 8, whiteSpace: 'nowrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <CardThumb cardId={row} isLeader h={22} />
+                    <span style={{ color: '#e6e6e6', fontSize: 11, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>{nm(row)}</span>
+                  </span>
+                </td>
+                <td title={`${nm(row)} overall — ${t.wins}–${t.decisive - t.wins}, ${t.games} games`}
+                  style={{ width: COL, height: 30, textAlign: 'center', background: heatColor(pct(t.wins, t.decisive), t.decisive), color: '#fff', fontWeight: 700, borderLeft: '2px solid #0e1116' }}>
+                  {show(t.wins, t.decisive)}
+                </td>
+                {leaders.map((col) => {
+                  if (row === col) return <td key={col} style={{ width: COL, textAlign: 'center', color: '#3a4150', background: '#14171d' }}>{'–'}</td>;
+                  const r = cell.get(`${row}|${col}`);
+                  if (!r) return <td key={col} style={{ width: COL, background: '#101319' }} />;
+                  const p = pct(r.wins, r.decisive);
+                  return (
+                    <td key={col} title={`${nm(row)} vs ${nm(col)} — ${r.wins}–${r.decisive - r.wins} (${fmtPct(p)}), ${r.games} games`}
+                      style={{ width: COL, height: 30, textAlign: 'center', background: heatColor(p, r.decisive), color: '#e6e6e6', fontWeight: 600 }}>
+                      {show(r.wins, r.decisive)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 // swubase-inspired: big card art in a responsive grid. Each tile leads with the

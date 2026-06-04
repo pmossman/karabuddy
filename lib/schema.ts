@@ -426,6 +426,12 @@ export const cards = pgTable('cards', {
   type: text('type'), // unit | event | upgrade | leader | base
   arena: text('arena'), // ground | space | null
   traits: jsonb('traits').$type<string[]>(),
+  // For BASES: true when the base has rules text (an Epic Action) — i.e. it
+  // defines a deck (Tarkintown, Energy Conversion Lab, the LAW "splash" bases),
+  // vs a vanilla aspect+HP base that's interchangeable. Drives the deck axis:
+  // ability bases stay distinct, vanilla bases collapse to their aspect. Null
+  // for non-bases / not-yet-seeded.
+  hasAbility: boolean('has_ability'),
   source: text('source').notNull().default('observed'), // 'seed' | 'observed'
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

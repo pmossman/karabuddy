@@ -14,6 +14,8 @@ export interface SwuCard {
   Aspects?: string[];
   Arenas?: string[];
   Traits?: string[];
+  FrontText?: string | null;
+  Text?: string | null;
 }
 
 export interface CatalogRow {
@@ -26,6 +28,7 @@ export interface CatalogRow {
   type: string | null;
   arena: string | null;
   traits: string[] | null;
+  hasAbility: boolean | null;
   source: string;
 }
 
@@ -40,6 +43,11 @@ export function cardIdFromSetNumber(set: string, number: string | number): strin
 export function swuCardToRow(c: SwuCard): CatalogRow {
   const costN = c.Cost == null || c.Cost === '' ? NaN : Number(c.Cost);
   const numInt = Number.parseInt(String(c.Number), 10);
+  const type = c.Type ? c.Type.toLowerCase() : null;
+  // A base "defines a deck" iff it has rules text (an Epic Action). Only
+  // meaningful for bases; null elsewhere so we never imply a unit/event has no
+  // ability. FrontText is the printed body on bases; fall back to Text.
+  const ability = (c.FrontText ?? c.Text ?? '').trim();
   return {
     cardId: cardIdFromSetNumber(c.Set, c.Number),
     name: c.Name ?? null,
@@ -48,9 +56,10 @@ export function swuCardToRow(c: SwuCard): CatalogRow {
     // Lowercase aspects to match the gamestate-derived aspects on match_players.
     aspects: Array.isArray(c.Aspects) ? c.Aspects.map((a) => a.toLowerCase()) : null,
     cost: Number.isFinite(costN) ? costN : null,
-    type: c.Type ? c.Type.toLowerCase() : null, // unit | event | upgrade | leader | base
+    type, // unit | event | upgrade | leader | base
     arena: Array.isArray(c.Arenas) && c.Arenas.length ? c.Arenas[0].toLowerCase() : null, // ground | space | null
     traits: Array.isArray(c.Traits) ? c.Traits : null,
+    hasAbility: type === 'base' ? ability.length > 0 : null,
     source: 'seed',
   };
 }

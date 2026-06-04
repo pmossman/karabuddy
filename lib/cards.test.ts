@@ -18,8 +18,18 @@ describe('swuCardToRow', () => {
     const r = swuCardToRow({ Set: 'SOR', Number: '059', Name: '2-1B Surgical Droid', Cost: '1', Type: 'Unit', Aspects: ['Vigilance'], Arenas: ['Ground'], Traits: ['Droid'] });
     expect(r).toEqual({
       cardId: 'SOR_059', name: '2-1B Surgical Droid', set: 'SOR', number: 59,
-      aspects: ['vigilance'], cost: 1, type: 'unit', arena: 'ground', traits: ['Droid'], source: 'seed',
+      aspects: ['vigilance'], cost: 1, type: 'unit', arena: 'ground', traits: ['Droid'], hasAbility: null, source: 'seed',
     });
+  });
+  it('flags ability bases (has text) vs vanilla bases (no text); non-bases get null', () => {
+    // Vanilla aspect+HP base (no text) → collapses to its aspect.
+    expect(swuCardToRow({ Set: 'SOR', Number: '022', Type: 'Base', Aspects: ['Command'] }).hasAbility).toBe(false);
+    // Ability base (Epic Action) → its own deck.
+    expect(swuCardToRow({ Set: 'SOR', Number: '025', Type: 'Base', Aspects: ['Aggression'], FrontText: 'Epic Action: Deal 3 damage to a damaged non-leader unit.' }).hasAbility).toBe(true);
+    // The LAW "splash" bases have text too → distinct.
+    expect(swuCardToRow({ Set: 'LAW', Number: '023', Type: 'Base', Aspects: ['Command'], Text: 'Epic Action: Play a card from your hand, ignoring 1 of its Vigilance…' }).hasAbility).toBe(true);
+    // Non-base → null (never imply a unit "has no ability").
+    expect(swuCardToRow({ Set: 'SOR', Number: '100', Type: 'Unit', FrontText: 'When Played: draw a card.' }).hasAbility).toBeNull();
   });
   it('handles a free event (cost 0) vs a missing/blank cost (null)', () => {
     expect(swuCardToRow({ Set: 'SHD', Number: '012', Cost: '0', Type: 'Event' }).cost).toBe(0);
