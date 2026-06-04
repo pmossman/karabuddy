@@ -69,4 +69,11 @@ describe('GET /api/stats — scope authorization', () => {
     expect(byBase.status).toBe(200);
     expect(Array.isArray((await byBase.json()).data)).toBe(true);
   });
+
+  it('resourcing is personal/team only — global is rejected', async () => {
+    as(await seedUser());
+    expect((await GET(req('scope=personal&type=resourcing'))).status).toBe(200);
+    as(null);
+    expect((await GET(req('scope=global&type=resourcing'))).status).toBe(400);
+  });
 });

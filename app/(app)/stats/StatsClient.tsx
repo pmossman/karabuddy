@@ -9,7 +9,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 // fallback. /api/stats does the work; cardId→name via /api/cards.
 
 type Scope = 'personal' | 'team' | 'global';
-type View = 'leaders' | 'matchups' | 'cards';
+type View = 'leaders' | 'matchups' | 'cards' | 'resourcing';
 type CardEvent = 'played' | 'drawn' | 'resourced' | 'discarded';
 const FORMATS = [['', 'All formats'], ['premier', 'Premier'], ['eternal', 'Eternal'], ['open', 'Open'], ['limited', 'Limited']] as const;
 const EVENTS: [CardEvent, string][] = [['played', 'when played'], ['drawn', 'when drawn'], ['resourced', 'when resourced'], ['discarded', 'when discarded']];
@@ -99,6 +99,9 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   // Reset the base filter when the leader changes (its bases differ).
   useEffect(() => { setBaseSel(''); }, [leaderCtx]);
 
+  // Resourcing is personal/team only — bounce off global when entering it.
+  useEffect(() => { if (view === 'resourcing' && scope === 'global' && signedIn) setScope('personal'); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Main data for the active view.
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +109,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     setData(null); // drop stale rows so a view switch never renders the old shape (e.g. leaders rows under the Cards table)
     const p = new URLSearchParams(scopeQs);
     p.set('type', view);
+    if (view === 'resourcing' && scope === 'global') { setData([]); setLoading(false); return; } // resourcing is personal/team only
     if (view === 'cards') {
       p.set('event', event);
       if (leaderCtx) p.set('leader', leaderCtx);
@@ -178,7 +182,8 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const scopeOptions: [Scope, string][] = [
     ...(signedIn ? [['personal', 'Mine'] as [Scope, string]] : []),
     ...(teams.length ? [['team', 'Team'] as [Scope, string]] : []),
-    ['global', 'Global'],
+    // Resourcing is a first-person coaching stat — no global aggregate.
+    ...(view === 'resourcing' ? [] : [['global', 'Global'] as [Scope, string]]),
   ];
 
   return (
@@ -196,7 +201,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         <Select value={format} onChange={setFormat} options={FORMATS as any} />
       </div>
 
-      <Segmented options={[['leaders', 'Leaders'], ['matchups', 'Matchups'], ['cards', 'Cards']]} value={view} onChange={(v) => setView(v as View)} />
+      <Segmented options={[['leaders', 'Leaders'], ['matchups', 'Matchups'], ['cards', 'Cards'], ['resourcing', 'Resourcing']]} value={view} onChange={(v) => setView(v as View)} />
 
       {view === 'cards' && (
         <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
@@ -238,11 +243,21 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
 
       {scope === 'global' && <div style={{ fontSize: 12, color: '#6c7588', margin: '12px 0 0' }}>Global rows need ≥{minGames} games to appear (privacy).</div>}
 
+      {view === 'resourcing' && (
+        <p style={{ color: '#6c7588', fontSize: 12, margin: '14px 0 0' }}>
+          How tightly you spend resources, from your own games. Efficiency = resources spent ÷ resources you had, excluding rounds you claimed initiative and the game-deciding round. Higher is better.
+        </p>
+      )}
+
       <div style={{ marginTop: 16 }}>
-        {loading && !data ? (
+        {view === 'resourcing' && !signedIn ? (
+          <div style={dim}>Sign in to track your resourcing.</div>
+        ) : loading && !data ? (
           <div style={dim}>Loading…</div>
         ) : !data || data.length === 0 ? (
-          <div style={dim}>No data yet for this view{scope === 'personal' ? ' — upload some games or sign in' : ''}.</div>
+          <div style={dim}>{view === 'resourcing' ? 'No rated games yet — upload some games to see your resourcing trend.' : `No data yet for this view${scope === 'personal' ? ' — upload some games or sign in' : ''}.`}</div>
+        ) : view === 'resourcing' ? (
+          <ResourcingPanel games={data} nm={nm} />
         ) : view === 'cards' ? (
           <CardGrid cards={cardRows} event={event} nm={nm} />
         ) : view === 'matchups' ? (
@@ -371,6 +386,122 @@ function MatchupMatrix({ matrix, mode, byBase, nm }: { matrix: { axes: Axis[]; c
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Efficiency → color. Tighter band than win% (most efficiencies sit 70–100%).
+function effColor(p: number | null): string {
+  if (p == null) return '#6c7588';
+  if (p >= 90) return '#6bd968';
+  if (p >= 80) return '#9bd14a';
+  if (p >= 70) return '#e0c64a';
+  return '#e06a5a';
+}
+
+// Tiny inline sparkline of per-game efficiency (chronological). Dots colored by
+// value so a dip stands out at a glance.
+function Sparkline({ points }: { points: number[] }) {
+  const W = 280, H = 44, pad = 4;
+  if (points.length < 2) return <div style={{ color: '#6c7588', fontSize: 12 }}>Need a few more games to chart a trend.</div>;
+  const lo = Math.min(...points, 0.5), hi = Math.max(...points, 1);
+  const span = hi - lo || 1;
+  const x = (i: number) => pad + (i * (W - 2 * pad)) / (points.length - 1);
+  const y = (v: number) => H - pad - ((v - lo) / span) * (H - 2 * pad);
+  const path = points.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  return (
+    <svg width={W} height={H} style={{ display: 'block' }}>
+      <path d={path} fill="none" stroke="#3a4150" strokeWidth={1.5} />
+      {points.map((v, i) => <circle key={i} cx={x(i)} cy={y(v)} r={2.4} fill={effColor(Math.round(v * 100))} />)}
+    </svg>
+  );
+}
+
+// B101/Phase 3: the resourcing trend — blended efficiency headline + sparkline,
+// the dominant leak, dead cards/game, a by-deck breakdown, and recent games that
+// link into the in-viewer report. Aggregates the raw components (Σwasted/Σavail),
+// so it's a true blended rate, not an average of per-game percentages.
+function ResourcingPanel({ games, nm }: { games: any[]; nm: (id: string) => string }) {
+  const sum = (k: string) => games.reduce((s, g) => s + (g[k] || 0), 0);
+  const avail = sum('available'), wasted = sum('wasted'), forced = sum('forced'), underspend = sum('underspend');
+  const blended = avail > 0 ? Math.round((1 - wasted / avail) * 100) : null;
+  const deadPerGame = games.length ? (sum('deadCards') / games.length).toFixed(1) : '0';
+  const leak = forced === 0 && underspend === 0 ? 'none' : underspend >= forced ? 'underspend (capacity left after playing)' : 'forced (stuck with no play)';
+  // Chronological efficiency points (rows arrive newest-first).
+  const points = [...games].reverse().filter((g) => g.available > 0).map((g) => 1 - g.wasted / g.available);
+
+  // By deck (leader + base-identity), blended efficiency, games desc.
+  const deckMap = new Map<string, { leader: string; baseId: string | null; baseAspect: string | null; games: number; avail: number; wasted: number }>();
+  for (const g of games) {
+    if (!g.leader) continue;
+    const key = deckKeyOf(g.leader, g.baseId ?? null, g.baseAspect ?? null);
+    const d = deckMap.get(key) || { leader: g.leader, baseId: g.baseId ?? null, baseAspect: g.baseAspect ?? null, games: 0, avail: 0, wasted: 0 };
+    d.games += 1; d.avail += g.available || 0; d.wasted += g.wasted || 0;
+    deckMap.set(key, d);
+  }
+  const byDeck = [...deckMap.values()].map((d) => ({ ...d, eff: d.avail > 0 ? Math.round((1 - d.wasted / d.avail) * 100) : null })).sort((a, b) => b.games - a.games);
+  const recent = games.slice(0, 14);
+  const fmtDate = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()}`; };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 28, alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Resource efficiency</div>
+          <div style={{ fontSize: 44, fontWeight: 800, lineHeight: 1, color: effColor(blended) }}>{blended == null ? '—' : `${blended}%`}</div>
+          <div style={{ fontSize: 11, color: '#6c7588' }}>blended over {games.length} game{games.length === 1 ? '' : 's'}</div>
+        </div>
+        <div style={{ flex: '0 0 auto' }}>
+          <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Trend (oldest → newest)</div>
+          <Sparkline points={points} />
+        </div>
+        <div style={{ display: 'flex', gap: 22 }}>
+          <div><div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase' }}>Main leak</div><div style={{ fontSize: 13, color: '#e6e6e6', maxWidth: 180 }}>{leak}</div></div>
+          <div><div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase' }}>Dead cards / game</div><div style={{ fontSize: 13, color: '#e6e6e6' }}>{deadPerGame}</div></div>
+        </div>
+      </div>
+
+      {byDeck.length > 1 && (
+        <div>
+          <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>By deck</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <tbody>
+              {byDeck.map((d) => (
+                <tr key={deckKeyOf(d.leader, d.baseId, d.baseAspect)}>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #1c2128' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <CardThumb cardId={d.leader} isLeader h={24} />
+                      <BaseChip baseId={d.baseId} baseAspect={d.baseAspect} />
+                      <span>{nm(d.leader)}</span>
+                    </span>
+                  </td>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #1c2128', textAlign: 'right', fontWeight: 700, color: effColor(d.eff) }}>{d.eff == null ? '—' : `${d.eff}%`}</td>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #1c2128', textAlign: 'right', color: '#a0a8b8' }}>{d.games} game{d.games === 1 ? '' : 's'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div>
+        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Recent games</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {recent.map((g) => {
+            const eff = g.available > 0 ? Math.round((1 - g.wasted / g.available) * 100) : null;
+            return (
+              <a key={g.gameId} href={`/r/${g.replaySlug}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 8px', borderRadius: 6, textDecoration: 'none', color: '#e6e6e6' }}>
+                <span style={{ width: 34, color: '#6c7588', fontSize: 11 }}>{fmtDate(g.createdAt)}</span>
+                <CardThumb cardId={g.leader} isLeader h={22} />
+                <BaseChip baseId={g.baseId} baseAspect={g.baseAspect} />
+                <span style={{ flex: 1, fontSize: 12, color: '#a0a8b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.leader ? nm(g.leader) : 'Unknown'}</span>
+                {g.deadCards > 0 && <span style={{ fontSize: 10, color: '#6c7588' }}>{g.deadCards} dead</span>}
+                <span style={{ fontWeight: 700, color: effColor(eff), minWidth: 40, textAlign: 'right' }}>{eff == null ? '—' : `${eff}%`}</span>
+              </a>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

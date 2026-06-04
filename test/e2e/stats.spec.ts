@@ -16,6 +16,9 @@ test('stats page renders the meta surface (public)', async ({ page }) => {
   // Matchups view exposes the heatmap lens (leader-vs-leader / deck-vs-deck).
   await page.getByRole('button', { name: 'Matchups' }).click();
   await expect(page.getByRole('button', { name: 'Leaders & Bases' })).toBeVisible();
+  // Resourcing is a first-person stat — signed out, it prompts sign-in.
+  await page.getByRole('button', { name: 'Resourcing' }).click();
+  await expect(page.getByText(/sign in to track your resourcing/i)).toBeVisible();
 });
 
 test('Stats appears in the header nav', async ({ page }) => {

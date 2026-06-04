@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeResourcing } from './resourcingAnalysis';
+import { analyzeResourcing, summarizeResourcing, type ResourcingReport } from './resourcingAnalysis';
 import type { Frame } from './replayDecoder';
 
 // Cards: P played; CLOG held-dead; BUR resourced-then-dead; ALT held-dead (the
@@ -66,5 +66,38 @@ describe('analyzeResourcing', () => {
     const r2 = analyzeResourcing(frames, { costOf });
     expect(r2.recorderId).toBe('me');
     expect(r2.username).toBe('Me');
+  });
+});
+
+describe('summarizeResourcing', () => {
+  const round = (round: number, resources: number, float: number, reason: any, isFinal = false) =>
+    ({ round, resources, float, reason, plays: [], resourced: [], endFrameIndex: 0, isFinal });
+  const report: ResourcingReport = {
+    recorderId: 'me', username: 'Me',
+    rounds: [
+      round(1, 5, 0, 'spent'),
+      round(2, 6, 2, 'underspend'),
+      round(3, 7, 3, 'initiative'), // excluded from the denominator
+      round(4, 8, 8, 'forced-stuck', true), // decided round, excluded
+    ],
+    floatTotal: 13,
+    floatByReason: { initiative: 3, forced: 0, underspend: 2 },
+    deadCards: [{ cardId: 'X', drawnRound: 1 }, { cardId: 'Y', drawnRound: 2 }],
+    flags: [],
+    decidedRoundDropped: true,
+  };
+
+  it('blends efficiency over counted rounds (excludes initiative + decided round)', () => {
+    const s = summarizeResourcing(report);
+    expect(s.countedRounds).toBe(2); // R1 + R2 (R3 initiative, R4 final dropped)
+    expect(s.available).toBe(11); // 5 + 6
+    expect(s.wasted).toBe(2); // forced 0 + underspend 2
+    expect(s.deadCards).toBe(2);
+    expect(s.efficiency).toBeCloseTo(1 - 2 / 11, 5);
+  });
+
+  it('returns null efficiency when there is no counted capacity', () => {
+    const empty: ResourcingReport = { ...report, rounds: [round(1, 4, 4, 'initiative')], floatByReason: { initiative: 4, forced: 0, underspend: 0 } };
+    expect(summarizeResourcing(empty).efficiency).toBeNull();
   });
 });

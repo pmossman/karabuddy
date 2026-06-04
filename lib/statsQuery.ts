@@ -163,6 +163,73 @@ export async function getLeaderMatchups(opts: StatsQueryOpts): Promise<LeaderMat
   }));
 }
 
+// B101/Phase 3: per-game resourcing ratings for the trend (recorder rows that
+// carry a rating, scoped + chronological). The headline efficiency is blended
+// in the UI as Σwasted/Σavailable; each row also stands alone as a trend point.
+// Each row carries its deck (leader + base-identity) so the UI can break the
+// trend down by deck. personal/team only — resourcing is a first-person coaching
+// stat, not a global meta figure.
+export interface ResourcingGame {
+  gameId: string;
+  replaySlug: string;
+  createdAt: string;
+  leader: string | null;
+  baseId: string | null;
+  baseAspect: string | null;
+  available: number;
+  wasted: number;
+  forced: number;
+  underspend: number;
+  deadCards: number;
+  countedRounds: number;
+}
+
+export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number }): Promise<ResourcingGame[]> {
+  const db = getDb();
+  const bc = alias(cards, 'base_card');
+  const idCols = baseIdentityCols(bc);
+  const base = db
+    .select({
+      gameId: matchPlayers.gameId,
+      replaySlug: matches.replaySlug,
+      // replays.createdAt (upload time) is STABLE across a facts re-persist;
+      // matches.createdAt resets on the delete+reinsert, so it can't order a trend.
+      createdAt: replays.createdAt,
+      leader: matchPlayers.leader,
+      baseId: idCols.baseId,
+      baseAspect: idCols.baseAspect,
+      available: matchPlayers.resourceAvailable,
+      wasted: matchPlayers.resourceWasted,
+      forced: matchPlayers.resourceForced,
+      underspend: matchPlayers.resourceUnderspend,
+      deadCards: matchPlayers.resourceDeadCards,
+      countedRounds: matchPlayers.resourceCountedRounds,
+    })
+    .from(matchPlayers)
+    .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
+    .innerJoin(replays, eq(replays.slug, matches.replaySlug))
+    .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
+    .$dynamic();
+  const rows = await applyScopeJoins(base, opts.scope)
+    .where(and(eq(matchPlayers.isRecorder, true), isNotNull(matchPlayers.resourceAvailable), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .orderBy(sql`${replays.createdAt} desc`)
+    .limit(opts.limit ?? 200);
+  return rows.map((r: any) => ({
+    gameId: r.gameId,
+    replaySlug: r.replaySlug,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    leader: r.leader,
+    baseId: r.baseId,
+    baseAspect: r.baseAspect,
+    available: r.available ?? 0,
+    wasted: r.wasted ?? 0,
+    forced: r.forced ?? 0,
+    underspend: r.underspend ?? 0,
+    deadCards: r.deadCards ?? 0,
+    countedRounds: r.countedRounds ?? 0,
+  }));
+}
+
 export type CardEventKind = 'drawn' | 'resourced' | 'played' | 'discarded';
 
 export interface CardStat {

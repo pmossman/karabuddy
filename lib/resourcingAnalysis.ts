@@ -62,6 +62,41 @@ export interface AnalyzeOpts {
   nameOf?: (cardId: string) => string;
 }
 
+// B101/Phase 3: collapse a per-game report into the numbers that get PERSISTED
+// (one recorder row) and aggregated into the resourcing trend. The headline is
+// "resource efficiency" = 1 − wasted-float / available-resources over the
+// COUNTED rounds (the engine already excludes initiative claims + the decided
+// final round from the float buckets; we mirror that for the denominator). We
+// store the raw components, not the ratio, so a blended efficiency across games
+// is Σwasted/Σavailable — not an average of per-game percentages.
+export interface ResourcingRating {
+  countedRounds: number;
+  available: number; // Σ resource-row size over counted (non-initiative, non-final) rounds
+  wasted: number; // forced + underspend float
+  forced: number;
+  underspend: number;
+  deadCards: number;
+  efficiency: number | null; // 1 − wasted/available; null when no counted capacity
+}
+
+export function summarizeResourcing(report: ResourcingReport): ResourcingRating {
+  const counted = report.rounds.filter((r) => !r.isFinal && r.reason !== 'initiative');
+  const available = counted.reduce((s, r) => s + r.resources, 0);
+  const { forced, underspend } = report.floatByReason;
+  const wasted = forced + underspend;
+  return {
+    countedRounds: counted.length,
+    available,
+    wasted,
+    forced,
+    underspend,
+    deadCards: report.deadCards.length,
+    // Clamp: float can't exceed capacity in real games, but guard against any
+    // frame anomaly producing a nonsensical >100% waste.
+    efficiency: available > 0 ? Math.max(0, 1 - wasted / available) : null,
+  };
+}
+
 function inferRecorder(frames: Frame[]): string | null {
   for (const f of frames) for (const pid of Object.keys(f.state?.players || {})) if (((f.state.players[pid].cardPiles?.hand) || []).some((c: any) => cardIdOf(c))) return pid;
   return null;

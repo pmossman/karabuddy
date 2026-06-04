@@ -478,6 +478,16 @@ export const matchPlayers = pgTable(
     opponentLeader: text('opponent_leader'),
     opponentBase: text('opponent_base'),
     format: text('format'), // denormalized for filtered aggregation
+    // B101/Phase 3: resourcing rating, RECORDER ROW ONLY (first-person — we have
+    // full info only for the recorder). Raw components of the efficiency metric
+    // (1 − wasted/available over counted rounds); null on opponent rows + games
+    // recorded before this column. Aggregated into the /stats Resourcing trend.
+    resourceAvailable: integer('resource_available'),
+    resourceWasted: integer('resource_wasted'),
+    resourceForced: integer('resource_forced'),
+    resourceUnderspend: integer('resource_underspend'),
+    resourceDeadCards: integer('resource_dead_cards'),
+    resourceCountedRounds: integer('resource_counted_rounds'),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.gameId, t.playerId] }),

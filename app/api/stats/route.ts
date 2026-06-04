@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
-import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
+import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
 // `type`, over a resolved + authorized `scope`:
@@ -61,6 +61,11 @@ export async function GET(req: Request) {
   } else if (type === 'decks') {
     // Decks (leader + base-identity) played in scope — populates the deck picker.
     data = await getDecks({ ...opts, leader: url.searchParams.get('leader') || null });
+  } else if (type === 'resourcing') {
+    // First-person coaching stat — never global (no aggregate-meta meaning + it
+    // would expose individual play quality). personal/team scopes only.
+    if (scopeKind === 'global') return NextResponse.json({ ok: false, error: 'resourcing is personal/team only' }, { status: 400 });
+    data = await getResourcingGames(opts);
   } else if (type === 'cards') {
     const event = (url.searchParams.get('event') || 'played') as CardEventKind;
     if (!CARD_EVENTS.includes(event)) return NextResponse.json({ ok: false, error: 'bad event' }, { status: 400 });

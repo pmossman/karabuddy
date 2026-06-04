@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
 import { users, teams, replays, matches, matchPlayers, replayTeamShares, cardEvents, cards } from '@/lib/schema';
-import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups } from '@/lib/statsQuery';
+import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames } from '@/lib/statsQuery';
 
 // B101/P1: the scoping + aggregation layer. These tests double as the privacy
 // QA — they pin that personal/team/global never leak into each other, that an
@@ -22,7 +22,7 @@ async function seedMatch(opts: {
   gameId: string;
   userId?: string | null;
   format?: string;
-  p1: { leader: string; won: boolean; base?: string };
+  p1: { leader: string; won: boolean; base?: string; rating?: { available: number; wasted: number; forced?: number; underspend?: number; deadCards?: number; countedRounds?: number } };
   p2: { leader: string; won: boolean; base?: string };
   shareTeam?: string;
   // card events to attach: each entry can repeat (copies) to prove the
@@ -38,7 +38,9 @@ async function seedMatch(opts: {
   });
   await db.insert(matches).values({ gameId: opts.gameId, replaySlug: slug, format, result: 'decisive' });
   await db.insert(matchPlayers).values([
-    { gameId: opts.gameId, playerId: 'p1', leader: opts.p1.leader, base: opts.p1.base ?? null, opponentLeader: opts.p2.leader, opponentBase: opts.p2.base ?? null, won: opts.p1.won, isRecorder: true, format },
+    { gameId: opts.gameId, playerId: 'p1', leader: opts.p1.leader, base: opts.p1.base ?? null, opponentLeader: opts.p2.leader, opponentBase: opts.p2.base ?? null, won: opts.p1.won, isRecorder: true, format,
+      resourceAvailable: opts.p1.rating?.available ?? null, resourceWasted: opts.p1.rating?.wasted ?? null, resourceForced: opts.p1.rating?.forced ?? null,
+      resourceUnderspend: opts.p1.rating?.underspend ?? null, resourceDeadCards: opts.p1.rating?.deadCards ?? null, resourceCountedRounds: opts.p1.rating?.countedRounds ?? null },
     { gameId: opts.gameId, playerId: 'p2', leader: opts.p2.leader, base: opts.p2.base ?? null, opponentLeader: opts.p1.leader, opponentBase: opts.p1.base ?? null, won: opts.p2.won, isRecorder: false, format },
   ]);
   if (opts.shareTeam) await db.insert(replayTeamShares).values({ replaySlug: slug, teamSlug: opts.shareTeam, sharedBy: opts.userId ?? null });
@@ -185,6 +187,30 @@ describe('getDeckMatchups', () => {
     const vigVsL2 = rows.find((r) => r.leader === 'L1' && r.baseAspect === 'vigilance' && !r.baseId && r.opponentLeader === 'L2');
     expect(abilVsL2).toMatchObject({ games: 1, wins: 1, opponentBaseAspect: 'vigilance', opponentBaseId: null });
     expect(vigVsL2).toMatchObject({ games: 1, wins: 0, opponentBaseAspect: 'vigilance' });
+  });
+});
+
+describe('getResourcingGames', () => {
+  it('returns rated recorder games in scope, with deck + components', async () => {
+    await seedMatch({
+      gameId: 'res-' + id().slice(0, 6), userId: userA,
+      p1: { leader: 'L1', won: true, base: 'B_ABIL', rating: { available: 20, wasted: 4, forced: 1, underspend: 3, deadCards: 2, countedRounds: 5 } },
+      p2: { leader: 'L2', won: false },
+    });
+    const rows = await getResourcingGames({ scope: { kind: 'personal', userId: userA } });
+    // Only the rated game comes back (the beforeEach games have null ratings).
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ leader: 'L1', baseId: 'B_ABIL', available: 20, wasted: 4, deadCards: 2 });
+    expect(rows[0].createdAt).toBeTruthy();
+  });
+
+  it('excludes a different user’s games (scope isolation)', async () => {
+    await seedMatch({
+      gameId: 'res-' + id().slice(0, 6), userId: userB,
+      p1: { leader: 'L1', won: true, rating: { available: 10, wasted: 1 } }, p2: { leader: 'L3', won: false },
+    });
+    const mine = await getResourcingGames({ scope: { kind: 'personal', userId: userA } });
+    expect(mine).toHaveLength(0); // userA has no rated games of their own here
   });
 });
 
