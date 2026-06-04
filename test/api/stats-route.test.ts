@@ -21,14 +21,12 @@ async function seedUser() {
 }
 
 describe('GET /api/stats — scope authorization', () => {
-  it('global is open (no auth) and reports the min-N floor it applied', async () => {
+  it('global/community stats are disabled — scope=global is rejected', async () => {
+    as(await seedUser());
+    expect((await GET(req('type=leaders&scope=global'))).status).toBe(400);
+    // No scope param defaults to personal (not global), so it needs a session.
     as(null);
-    const res = await GET(req('type=leaders&scope=global'));
-    const body = await res.json();
-    expect(res.status).toBe(200);
-    expect(body).toMatchObject({ ok: true, scope: 'global', type: 'leaders' });
-    expect(body.minGames).toBeGreaterThanOrEqual(20); // privacy floor
-    expect(Array.isArray(body.data)).toBe(true);
+    expect((await GET(req('type=leaders'))).status).toBe(401);
   });
 
   it('personal requires a session', async () => {
@@ -55,8 +53,8 @@ describe('GET /api/stats — scope authorization', () => {
   it('validates type, event, and team-slug-required', async () => {
     as(await seedUser());
     expect((await GET(req('scope=team'))).status).toBe(400); // missing team
-    expect((await GET(req('scope=global&type=bogus'))).status).toBe(400);
-    expect((await GET(req('scope=global&type=cards&event=bogus'))).status).toBe(400);
+    expect((await GET(req('scope=personal&type=bogus'))).status).toBe(400);
+    expect((await GET(req('scope=personal&type=cards&event=bogus'))).status).toBe(400);
     expect((await GET(req('scope=weird'))).status).toBe(400);
   });
 
@@ -65,15 +63,15 @@ describe('GET /api/stats — scope authorization', () => {
     const decks = await GET(req('scope=personal&type=decks&leader=L1'));
     expect(decks.status).toBe(200);
     expect((await decks.json())).toMatchObject({ ok: true, type: 'decks' });
-    const byBase = await GET(req('scope=global&type=matchups&byBase=1'));
+    const byBase = await GET(req('scope=personal&type=matchups&byBase=1'));
     expect(byBase.status).toBe(200);
     expect(Array.isArray((await byBase.json()).data)).toBe(true);
   });
 
-  it('resourcing is personal/team only — global is rejected', async () => {
+  it('resourcing requires a session (personal/team only, like everything)', async () => {
     as(await seedUser());
     expect((await GET(req('scope=personal&type=resourcing'))).status).toBe(200);
     as(null);
-    expect((await GET(req('scope=global&type=resourcing'))).status).toBe(400);
+    expect((await GET(req('scope=personal&type=resourcing'))).status).toBe(401);
   });
 });

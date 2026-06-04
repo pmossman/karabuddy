@@ -1,24 +1,27 @@
 import { test, expect } from '@playwright/test';
+import { signInAsTestUser } from './helpers';
 
-// B101/Phase2: the /stats surface is public (global is the SEO/growth view),
-// so it renders signed-out. Smoke: the shell, audience switcher, and view tabs.
-test('stats page renders the meta surface (public)', async ({ page }) => {
+// B101: /stats is scoped to the signed-in user + their teams — NO global/
+// community view. Signed out, it prompts sign-in; signed in, it shows the
+// scope switcher (Mine, no Global) and the view tabs.
+test('stats page prompts sign-in when signed out — no global view', async ({ page }) => {
   await page.goto('/stats');
-  // The page does a couple of client fetches on mount; give the first paint room.
   await expect(page.getByRole('heading', { name: /Meta\s*Stats/i })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByRole('button', { name: 'Global' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Leaders' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Matchups' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Cards' })).toBeVisible();
-  // Cards view exposes the recorder-side vs whole-meta attribution label.
-  await page.getByRole('button', { name: 'Cards' }).click();
-  await expect(page.getByText(/whole-meta|recorder-side/i)).toBeVisible();
+  await expect(page.getByText(/sign in to see your personal and team stats/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Global' })).toHaveCount(0);
+});
+
+test('signed in, stats shows the scoped surface (Mine, no Global) + view tabs', async ({ page }) => {
+  await signInAsTestUser(page, { name: 'Stats Tester' });
+  await page.goto('/stats');
+  await expect(page.getByRole('button', { name: 'Mine' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('button', { name: 'Global' })).toHaveCount(0);
+  for (const tab of ['Leaders', 'Matchups', 'Cards', 'Resourcing']) {
+    await expect(page.getByRole('button', { name: tab })).toBeVisible();
+  }
   // Matchups view exposes the heatmap lens (leader-vs-leader / deck-vs-deck).
   await page.getByRole('button', { name: 'Matchups' }).click();
   await expect(page.getByRole('button', { name: 'Leaders & Bases' })).toBeVisible();
-  // Resourcing is a first-person stat — signed out, it prompts sign-in.
-  await page.getByRole('button', { name: 'Resourcing' }).click();
-  await expect(page.getByText(/sign in to track your resourcing/i)).toBeVisible();
 });
 
 test('Stats appears in the header nav', async ({ page }) => {

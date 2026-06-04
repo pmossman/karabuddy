@@ -5,10 +5,11 @@ import { cardImageUrl } from '@/lib/cardImage';
 
 // B101/Phase2 (reframed): the Stats/Meta client, centered on the team/personal
 // contexts teams actually want — "our leader matchups" and "card stats for the
-// decks we play". Card views always show card art. Global is a de-emphasized
-// fallback. /api/stats does the work; cardId→name via /api/cards.
+// decks we play". Card views always show card art. Scoped to the signed-in
+// user + their teams only — no global/community aggregate. /api/stats does the
+// work; cardId→name via /api/cards.
 
-type Scope = 'personal' | 'team' | 'global';
+type Scope = 'personal' | 'team';
 type View = 'leaders' | 'matchups' | 'cards' | 'resourcing';
 type CardEvent = 'played' | 'drawn' | 'resourced' | 'discarded';
 const FORMATS = [['', 'All formats'], ['premier', 'Premier'], ['eternal', 'Eternal'], ['open', 'Open'], ['limited', 'Limited']] as const;
@@ -28,7 +29,7 @@ const baseKeyOf = (baseId: string | null, baseAspect: string | null) =>
 const deckKeyOf = (leader: string, baseId: string | null, baseAspect: string | null) => `${leader}#${baseKeyOf(baseId, baseAspect)}`;
 
 export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { slug: string; name: string }[] }) {
-  const [scope, setScope] = useState<Scope>(signedIn ? 'personal' : 'global');
+  const [scope, setScope] = useState<Scope>(teams.length && !signedIn ? 'team' : 'personal');
   const [teamSlug, setTeamSlug] = useState<string>(teams[0]?.slug || '');
   const [view, setView] = useState<View>('leaders');
   const [format, setFormat] = useState<string>('');
@@ -40,7 +41,6 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const [matchupMode, setMatchupMode] = useState<'pct' | 'wl'>('pct'); // heatmap cell: win% vs W–L count
   const [matchupLens, setMatchupLens] = useState<'leaders' | 'bases'>('leaders'); // leader-vs-leader or deck-vs-deck
   const [data, setData] = useState<any[] | null>(null);
-  const [minGames, setMinGames] = useState<number>(1);
   const [names, setNames] = useState<Record<string, string>>({});
   const [leaderOptions, setLeaderOptions] = useState<string[]>([]); // leader cardIds in scope (for the deck picker)
   const [deckBases, setDeckBases] = useState<{ baseId: string | null; baseAspect: string | null; games: number }[]>([]); // bases played with the picked leader
@@ -99,9 +99,6 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   // Reset the base filter when the leader changes (its bases differ).
   useEffect(() => { setBaseSel(''); }, [leaderCtx]);
 
-  // Resourcing is personal/team only — bounce off global when entering it.
-  useEffect(() => { if (view === 'resourcing' && scope === 'global' && signedIn) setScope('personal'); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Main data for the active view.
   useEffect(() => {
     let cancelled = false;
@@ -109,7 +106,6 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     setData(null); // drop stale rows so a view switch never renders the old shape (e.g. leaders rows under the Cards table)
     const p = new URLSearchParams(scopeQs);
     p.set('type', view);
-    if (view === 'resourcing' && scope === 'global') { setData([]); setLoading(false); return; } // resourcing is personal/team only
     if (view === 'cards') {
       p.set('event', event);
       if (leaderCtx) p.set('leader', leaderCtx);
@@ -123,7 +119,6 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         const body = await res.json();
         if (cancelled) return;
         setData(body.ok ? body.data || [] : []);
-        setMinGames(body.minGames ?? 1);
         const ids = new Set<string>();
         for (const r of body.data || []) for (const k of ['leader', 'opponentLeader', 'cardId', 'baseId', 'opponentBaseId']) if (r[k]) ids.add(r[k]);
         resolveNames(ids);
@@ -182,8 +177,6 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const scopeOptions: [Scope, string][] = [
     ...(signedIn ? [['personal', 'Mine'] as [Scope, string]] : []),
     ...(teams.length ? [['team', 'Team'] as [Scope, string]] : []),
-    // Resourcing is a first-person coaching stat — no global aggregate.
-    ...(view === 'resourcing' ? [] : [['global', 'Global'] as [Scope, string]]),
   ];
 
   return (
@@ -195,6 +188,9 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         Your leader matchups and card stats for the decks you play. Win rates over games with a recorded result; every figure shows its sample size.
       </p>
 
+      {!signedIn ? (
+        <div style={dim}>Sign in to see your personal and team stats.</div>
+      ) : (<>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
         <Segmented options={scopeOptions} value={scope} onChange={(v) => setScope(v as Scope)} />
         {scope === 'team' && teams.length > 0 && <Select value={teamSlug} onChange={setTeamSlug} options={teams.map((t) => [t.slug, t.name])} />}
@@ -241,8 +237,6 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         </div>
       )}
 
-      {scope === 'global' && <div style={{ fontSize: 12, color: '#6c7588', margin: '12px 0 0' }}>Global rows need ≥{minGames} games to appear (privacy).</div>}
-
       {view === 'resourcing' && (
         <p style={{ color: '#6c7588', fontSize: 12, margin: '14px 0 0' }}>
           How tightly you spend resources, from your own games. Efficiency = resources spent ÷ resources you had, excluding rounds you claimed initiative and the game-deciding round. Higher is better.
@@ -250,12 +244,10 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
       )}
 
       <div style={{ marginTop: 16 }}>
-        {view === 'resourcing' && !signedIn ? (
-          <div style={dim}>Sign in to track your resourcing.</div>
-        ) : loading && !data ? (
+        {loading && !data ? (
           <div style={dim}>Loading…</div>
         ) : !data || data.length === 0 ? (
-          <div style={dim}>{view === 'resourcing' ? 'No rated games yet — upload some games to see your resourcing trend.' : `No data yet for this view${scope === 'personal' ? ' — upload some games or sign in' : ''}.`}</div>
+          <div style={dim}>{view === 'resourcing' ? 'No rated games yet — upload some games to see your resourcing trend.' : 'No data yet for this view — upload some games.'}</div>
         ) : view === 'resourcing' ? (
           <ResourcingPanel games={data} nm={nm} />
         ) : view === 'cards' ? (
@@ -267,6 +259,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
             rows={data.map((r) => [cardCell(nm(r.leader), r.leader, true), <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>, <Muted key="g">{r.games}</Muted>])} />
         )}
       </div>
+      </>)}
     </div>
   );
 }
