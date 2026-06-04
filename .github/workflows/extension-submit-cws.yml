@@ -62,7 +62,9 @@ jobs:
           if [ -z "$TAG" ]; then echo "::error::no ext-v* release found"; exit 1; fi
           echo "submitting release: $TAG"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.zip' --dir dist
-          ZIP="$(ls dist/*.zip | head -1)"
+          # Releases now carry both a Chrome and a Firefox zip — pick the Chrome
+          # one (the firefox build goes to AMO via extension-submit-amo).
+          ZIP="$(ls dist/*.zip | grep -v firefox | head -1)"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 

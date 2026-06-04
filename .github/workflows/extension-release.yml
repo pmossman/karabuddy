@@ -76,6 +76,10 @@ jobs:
 
       # Syncs shared files (again, no-op) then zips → dist/karabuddy-extension-<version>.zip
       - run: npm run package:extension
+      # Firefox/AMO build → dist/karabuddy-extension-firefox-<version>.zip (Gecko
+      # manifest variant). Both zips ride in the same Release; CWS submit picks
+      # the Chrome one, AMO submit picks the firefox one.
+      - run: npm run package:extension:firefox
 
       - name: Commit version bump / shared-file sync back to main
         run: |
@@ -100,4 +104,4 @@ jobs:
             --target "$(git rev-parse HEAD)" \
             --title "$TAG" \
             --generate-notes \
-            --notes "Automated extension build. NOT yet submitted to the Chrome Web Store — download the zip and upload it deliberately. See docs/extension-rollout.md."
+            --notes "Automated extension build (Chrome + Firefox zips). NOT yet submitted to any store — promote deliberately via extension-submit-cws (Chrome) / extension-submit-amo (Firefox). See docs/extension-rollout.md."

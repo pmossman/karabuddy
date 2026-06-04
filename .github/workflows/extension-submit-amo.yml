@@ -1,0 +1,108 @@
+name: extension-submit-amo
+
+# Manually submit a built Firefox release to addons.mozilla.org (AMO). The
+# deliberate counterpart to extension-submit-cws — the auto extension-release
+# workflow only builds artifacts; this promotes one to Firefox users. Trigger
+# from the Actions tab → "Run workflow".
+#
+# Requires two repo secrets (Settings → Secrets and variables → Actions):
+#   AMO_JWT_ISSUER   API key  ("JWT issuer")  from addons.mozilla.org
+#   AMO_JWT_SECRET   API secret ("JWT secret") for that key
+# Get them at addons.mozilla.org → Developer Hub → Manage API Keys.
+# One-time: the add-on must already exist on AMO (the FIRST listed version +
+# its listing/privacy/data-collection are submitted via the AMO web UI by
+# uploading the firefox zip). After that, this Action ships new versions.
+# Setup walkthrough: docs/extension-rollout.md → "Firefox / AMO".
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to submit (e.g. ext-v0.5.10). Blank = latest ext-v* release.'
+        required: false
+        default: ''
+      channel:
+        description: 'AMO channel: listed (public AMO review) or unlisted (signed XPI, self-hosted)'
+        type: choice
+        options: [listed, unlisted]
+        default: listed
+
+permissions:
+  contents: read # read + download the GitHub Release
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify AMO secrets are configured
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          missing=""
+          [ -z "$AMO_JWT_ISSUER" ] && missing="$missing AMO_JWT_ISSUER"
+          [ -z "$AMO_JWT_SECRET" ] && missing="$missing AMO_JWT_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing AMO secret(s):$missing — see docs/extension-rollout.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5 # for docs ref only; cheap
+
+      - name: Resolve the release tag + download its firefox zip
+        id: dl
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="$(gh release list --limit 30 --json tagName -q '[.[].tagName | select(startswith("ext-v"))][0]')"
+          fi
+          if [ -z "$TAG" ]; then echo "::error::no ext-v* release found"; exit 1; fi
+          echo "submitting release: $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*firefox*.zip' --dir dist
+          ZIP="$(ls dist/*firefox*.zip | head -1)"
+          if [ -z "$ZIP" ]; then echo "::error::no firefox zip in release $TAG"; exit 1; fi
+          # web-ext signs from a source dir, so unpack the released artifact.
+          SRC="dist/amo-src"
+          mkdir -p "$SRC"
+          unzip -q "$ZIP" -d "$SRC"
+          echo "src=$SRC" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Submit to AMO (${{ inputs.channel }})
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          # listed → uploaded to AMO for public review.
+          # unlisted → AMO signs it; the signed .xpi lands in web-ext-artifacts/
+          # for self-hosting.
+          CH="${{ inputs.channel }}"
+          if npx --yes web-ext@latest sign \
+               --source-dir "${{ steps.dl.outputs.src }}" \
+               --channel "$CH" \
+               --artifacts-dir web-ext-artifacts; then
+            echo "✓ ${{ steps.dl.outputs.tag }} submitted to AMO ($CH)."
+          else
+            # For a listed submission web-ext can exit non-zero while the
+            # version sits in review — that's still a successful upload.
+            if [ "$CH" = "listed" ]; then
+              echo "::warning::web-ext exited non-zero — for a listed channel this is normal while the version awaits review. Verify on addons.mozilla.org."
+            else
+              echo "::error::web-ext sign failed."; exit 1
+            fi
+          fi
+          ls -la web-ext-artifacts 2>/dev/null || true
+
+      - name: Upload signed artifacts (unlisted)
+        if: ${{ inputs.channel == 'unlisted' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: amo-signed-xpi
+          path: web-ext-artifacts/*.xpi
+          if-no-files-found: warn
