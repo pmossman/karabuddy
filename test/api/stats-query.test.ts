@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, teams, replays, matches, matchPlayers, replayTeamShares, cardEvents } from '@/lib/schema';
-import { getLeaderStats, getLeaderMatchups, getCardStats } from '@/lib/statsQuery';
+import { users, teams, replays, matches, matchPlayers, replayTeamShares, cardEvents, cards } from '@/lib/schema';
+import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups } from '@/lib/statsQuery';
 
 // B101/P1: the scoping + aggregation layer. These tests double as the privacy
 // QA — they pin that personal/team/global never leak into each other, that an
@@ -22,8 +22,8 @@ async function seedMatch(opts: {
   gameId: string;
   userId?: string | null;
   format?: string;
-  p1: { leader: string; won: boolean };
-  p2: { leader: string; won: boolean };
+  p1: { leader: string; won: boolean; base?: string };
+  p2: { leader: string; won: boolean; base?: string };
   shareTeam?: string;
   // card events to attach: each entry can repeat (copies) to prove the
   // distinct (game,side,card) collapse.
@@ -38,8 +38,8 @@ async function seedMatch(opts: {
   });
   await db.insert(matches).values({ gameId: opts.gameId, replaySlug: slug, format, result: 'decisive' });
   await db.insert(matchPlayers).values([
-    { gameId: opts.gameId, playerId: 'p1', leader: opts.p1.leader, opponentLeader: opts.p2.leader, won: opts.p1.won, isRecorder: true, format },
-    { gameId: opts.gameId, playerId: 'p2', leader: opts.p2.leader, opponentLeader: opts.p1.leader, won: opts.p2.won, isRecorder: false, format },
+    { gameId: opts.gameId, playerId: 'p1', leader: opts.p1.leader, base: opts.p1.base ?? null, opponentLeader: opts.p2.leader, opponentBase: opts.p2.base ?? null, won: opts.p1.won, isRecorder: true, format },
+    { gameId: opts.gameId, playerId: 'p2', leader: opts.p2.leader, base: opts.p2.base ?? null, opponentLeader: opts.p1.leader, opponentBase: opts.p1.base ?? null, won: opts.p2.won, isRecorder: false, format },
   ]);
   if (opts.shareTeam) await db.insert(replayTeamShares).values({ replaySlug: slug, teamSlug: opts.shareTeam, sharedBy: opts.userId ?? null });
   if (opts.events?.length) {
@@ -62,16 +62,24 @@ beforeEach(async () => {
   userB = await seedUser(true); // opted OUT of global
   await db.insert(teams).values({ slug: 'tT', name: 'Team T', createdBy: userA });
 
+  // Base catalog: one ability base (its own deck) + one vanilla aspect base.
+  await db.insert(cards).values([
+    { cardId: 'B_ABIL', type: 'base', aspects: ['command'], hasAbility: true, name: 'Ability Base' },
+    { cardId: 'B_VIG', type: 'base', aspects: ['vigilance'], hasAbility: false, name: 'Vanilla Vigilance' },
+  ]);
+
   // userA: two games, L1 vs L2, 1 win each side. game1 shared with team T.
+  // game1 = L1 on the ABILITY base; game2 = L1 on the vanilla vigilance base —
+  // so L1 has two distinct decks. p2 is always on the vanilla vigilance base.
   const g1 = 'q-' + id().slice(0, 6);
   // game1 (p1 WON): p1 drew C1 twice (copies) + played C2.
   await seedMatch({
-    gameId: g1, userId: userA, p1: { leader: 'L1', won: true }, p2: { leader: 'L2', won: false }, shareTeam: 'tT',
+    gameId: g1, userId: userA, p1: { leader: 'L1', won: true, base: 'B_ABIL' }, p2: { leader: 'L2', won: false, base: 'B_VIG' }, shareTeam: 'tT',
     events: [{ side: 'p1', cardId: 'C1', event: 'drawn', copies: 2 }, { side: 'p1', cardId: 'C2', event: 'played' }],
   });
   // game2 (p1 LOST): p1 drew C1 once.
   await seedMatch({
-    gameId: 'q-' + id().slice(0, 6), userId: userA, p1: { leader: 'L1', won: false }, p2: { leader: 'L2', won: true },
+    gameId: 'q-' + id().slice(0, 6), userId: userA, p1: { leader: 'L1', won: false, base: 'B_VIG' }, p2: { leader: 'L2', won: true, base: 'B_VIG' },
     events: [{ side: 'p1', cardId: 'C1', event: 'drawn' }],
   });
   // userB (opted out): L1 wins vs L3 — must NOT appear in global.
@@ -141,6 +149,42 @@ describe('getCardStats', () => {
     // No events come from an L2-side, so an L2 context is empty for C1.
     const onL2 = await getCardStats({ scope: { kind: 'personal', userId: userA }, event: 'drawn', leader: 'L2' });
     expect(onL2.find((r) => r.cardId === 'C1')).toBeUndefined();
+  });
+
+  it('base context: ability base vs vanilla aspect partition the same leader', async () => {
+    const scope = { kind: 'personal', userId: userA } as const;
+    // C1 was drawn in BOTH L1 games (ability-base game won, vanilla-base game lost).
+    // Ability-base deck → only game1 (the win).
+    const onAbil = await getCardStats({ scope, event: 'drawn', leader: 'L1', baseId: 'B_ABIL' });
+    expect(onAbil.find((r) => r.cardId === 'C1')).toMatchObject({ observations: 1, wins: 1 });
+    // Vanilla vigilance deck → only game2 (the loss).
+    const onVanilla = await getCardStats({ scope, event: 'drawn', leader: 'L1', baseAspect: 'vigilance' });
+    expect(onVanilla.find((r) => r.cardId === 'C1')).toMatchObject({ observations: 1, wins: 0 });
+    // The ability base is NOT swept into its own aspect (command) vanilla bucket.
+    const onCmdVanilla = await getCardStats({ scope, event: 'drawn', leader: 'L1', baseAspect: 'command' });
+    expect(onCmdVanilla.find((r) => r.cardId === 'C1')).toBeUndefined();
+  });
+});
+
+describe('getDecks', () => {
+  it('lists a leader’s decks: ability base as itself, vanilla base as its aspect', async () => {
+    const decks = await getDecks({ scope: { kind: 'personal', userId: userA }, leader: 'L1' });
+    const abil = decks.find((d) => d.baseId === 'B_ABIL');
+    const vanilla = decks.find((d) => d.baseAspect === 'vigilance' && !d.baseId);
+    expect(abil).toMatchObject({ leader: 'L1', baseAspect: null, games: 1, wins: 1 });
+    expect(vanilla).toMatchObject({ leader: 'L1', baseId: null, games: 1, wins: 0 });
+    expect(decks).toHaveLength(2);
+  });
+});
+
+describe('getDeckMatchups', () => {
+  it('splits one leader matchup into per-deck rows', async () => {
+    const rows = await getDeckMatchups({ scope: { kind: 'personal', userId: userA } });
+    // Both userA decks faced L2-on-vanilla-vigilance, once each.
+    const abilVsL2 = rows.find((r) => r.leader === 'L1' && r.baseId === 'B_ABIL' && r.opponentLeader === 'L2');
+    const vigVsL2 = rows.find((r) => r.leader === 'L1' && r.baseAspect === 'vigilance' && !r.baseId && r.opponentLeader === 'L2');
+    expect(abilVsL2).toMatchObject({ games: 1, wins: 1, opponentBaseAspect: 'vigilance', opponentBaseId: null });
+    expect(vigVsL2).toMatchObject({ games: 1, wins: 0, opponentBaseAspect: 'vigilance' });
   });
 });
 

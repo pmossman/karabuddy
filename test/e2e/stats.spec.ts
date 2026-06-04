@@ -13,6 +13,9 @@ test('stats page renders the meta surface (public)', async ({ page }) => {
   // Cards view exposes the recorder-side vs whole-meta attribution label.
   await page.getByRole('button', { name: 'Cards' }).click();
   await expect(page.getByText(/whole-meta|recorder-side/i)).toBeVisible();
+  // Matchups view exposes the heatmap lens (leader-vs-leader / deck-vs-deck).
+  await page.getByRole('button', { name: 'Matchups' }).click();
+  await expect(page.getByRole('button', { name: 'Leaders & Bases' })).toBeVisible();
 });
 
 test('Stats appears in the header nav', async ({ page }) => {

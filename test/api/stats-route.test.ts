@@ -59,4 +59,14 @@ describe('GET /api/stats — scope authorization', () => {
     expect((await GET(req('scope=global&type=cards&event=bogus'))).status).toBe(400);
     expect((await GET(req('scope=weird'))).status).toBe(400);
   });
+
+  it('dispatches the deck-aware types (decks, matchups byBase)', async () => {
+    as(await seedUser());
+    const decks = await GET(req('scope=personal&type=decks&leader=L1'));
+    expect(decks.status).toBe(200);
+    expect((await decks.json())).toMatchObject({ ok: true, type: 'decks' });
+    const byBase = await GET(req('scope=global&type=matchups&byBase=1'));
+    expect(byBase.status).toBe(200);
+    expect(Array.isArray((await byBase.json()).data)).toBe(true);
+  });
 });

@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
-import { getLeaderStats, getLeaderMatchups, getCardStats, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
+import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
 // `type`, over a resolved + authorized `scope`:
@@ -56,15 +56,21 @@ export async function GET(req: Request) {
   const opts = { scope, format, minGames };
   let data;
   if (type === 'matchups') {
-    data = await getLeaderMatchups(opts);
+    // byBase = the deck-vs-deck "Leaders & Bases" matrix; default is leader-only.
+    data = url.searchParams.get('byBase') === '1' ? await getDeckMatchups(opts) : await getLeaderMatchups(opts);
+  } else if (type === 'decks') {
+    // Decks (leader + base-identity) played in scope — populates the deck picker.
+    data = await getDecks({ ...opts, leader: url.searchParams.get('leader') || null });
   } else if (type === 'cards') {
     const event = (url.searchParams.get('event') || 'played') as CardEventKind;
     if (!CARD_EVENTS.includes(event)) return NextResponse.json({ ok: false, error: 'bad event' }, { status: 400 });
-    // Deck context: card stats for games where the player was on this leader
-    // (and optionally a base of this aspect) — the team/personal use case.
+    // Deck context: card stats for games where the player was on this leader and
+    // (optionally) this exact base — an ability base (`base`=cardId) or a vanilla
+    // aspect (`baseAspect`). This is the team/personal "in MY deck" use case.
     const leader = url.searchParams.get('leader') || null;
+    const baseId = url.searchParams.get('base') || null;
     const baseAspect = url.searchParams.get('baseAspect') || null;
-    data = await getCardStats({ ...opts, event, leader, baseAspect });
+    data = await getCardStats({ ...opts, event, leader, baseId, baseAspect });
   } else if (type === 'leaders') {
     data = await getLeaderStats(opts);
   } else {

@@ -45,6 +45,45 @@ export interface LeaderMatchup {
   winRate: number | null;
 }
 
+// A "deck" = leader + base-IDENTITY, where base-identity collapses vanilla
+// (no-ability) bases to their aspect but keeps ability bases (Tarkintown, the
+// LAW splash bases, …) distinct — see cards.has_ability. So baseId is set ONLY
+// for ability bases; vanilla decks carry baseAspect instead. Exactly one of the
+// two is non-null for a normal row (both null = base unknown/unseeded).
+export interface DeckStat {
+  leader: string;
+  baseId: string | null; // cardId, for ability bases
+  baseAspect: string | null; // aspect, for vanilla bases
+  games: number;
+  wins: number;
+  decisive: number;
+  winRate: number | null;
+}
+
+export interface DeckMatchup {
+  leader: string;
+  baseId: string | null;
+  baseAspect: string | null;
+  opponentLeader: string;
+  opponentBaseId: string | null;
+  opponentBaseAspect: string | null;
+  games: number;
+  wins: number;
+  decisive: number;
+  winRate: number | null;
+}
+
+// SQL for the two base-identity columns given a `cards` alias joined on the
+// base cardId: baseId is the cardId for ability bases (else null); baseAspect
+// is the lowercased aspect for vanilla/unknown bases (else null). One non-null
+// per row, so grouping on the pair partitions games into decks.
+function baseIdentityCols(bc: ReturnType<typeof alias>) {
+  return {
+    baseId: sql<string | null>`case when ${(bc as any).hasAbility} then ${(bc as any).cardId} else null end`,
+    baseAspect: sql<string | null>`case when ${(bc as any).hasAbility} then null else lower(${(bc as any).aspects}->>0) end`,
+  };
+}
+
 // Compose the scope predicate over the matches⋈replays join. For global we also
 // left-join users to honour the opt-out (anonymous uploads have no user to opt
 // out, so they stay in). Returns the predicate; callers add their own filters.
@@ -147,7 +186,7 @@ export interface CardStat {
 // of that aspect). This is the "how does card X do in MY Krennic/Vigilance deck"
 // view the teams actually want, not whole-meta card rates.
 export async function getCardStats(
-  opts: StatsQueryOpts & { event: CardEventKind; leader?: string | null; baseAspect?: string | null },
+  opts: StatsQueryOpts & { event: CardEventKind; leader?: string | null; baseAspect?: string | null; baseId?: string | null },
 ): Promise<CardStat[]> {
   const minGames = opts.minGames ?? 1;
   const db = getDb();
@@ -163,14 +202,20 @@ export async function getCardStats(
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
   const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, scopePredicate(opts.scope)];
-  if (opts.leader || opts.baseAspect) {
+  if (opts.leader || opts.baseAspect || opts.baseId) {
     // Join the EVENT side's own match_players row (same game + player).
     base = base.innerJoin(matchPlayers, and(eq(matchPlayers.gameId, cardEvents.gameId), eq(matchPlayers.playerId, cardEvents.playerId)));
     if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
-    if (opts.baseAspect) {
+    if (opts.baseId) {
+      // An ability base IS the deck — match the exact base card.
+      conds.push(eq(matchPlayers.base, opts.baseId));
+    } else if (opts.baseAspect) {
+      // A vanilla deck = any no-ability base of this aspect (ability bases of
+      // the same aspect are their own decks, so exclude them here).
       const baseCard = alias(cards, 'base_card');
       base = base.innerJoin(baseCard, eq(baseCard.cardId, matchPlayers.base));
       conds.push(sql`${baseCard.aspects} @> ${JSON.stringify([opts.baseAspect])}::jsonb`);
+      conds.push(sql`coalesce(${baseCard.hasAbility}, false) = false`);
     }
   }
   const sub = applyScopeJoins(base, opts.scope).where(and(...conds)).as('obs');
@@ -191,6 +236,80 @@ export async function getCardStats(
     observations: r.observations,
     decisive: r.decisive,
     wins: r.wins,
+    winRate: r.decisive > 0 ? r.wins / r.decisive : null,
+  }));
+}
+
+// Distinct decks (leader + base-identity) played in scope, by games desc.
+// Populates the Cards-view deck picker; `leader` narrows to one leader's decks.
+export async function getDecks(opts: StatsQueryOpts & { leader?: string | null }): Promise<DeckStat[]> {
+  const minGames = opts.minGames ?? 1;
+  const db = getDb();
+  const bc = alias(cards, 'base_card');
+  const idCols = baseIdentityCols(bc);
+  const base = db
+    .select({
+      leader: matchPlayers.leader,
+      baseId: idCols.baseId,
+      baseAspect: idCols.baseAspect,
+      games: sql<number>`count(*)::int`,
+      decisive: sql<number>`count(${matchPlayers.won})::int`,
+      wins: sql<number>`count(*) filter (where ${matchPlayers.won})::int`,
+    })
+    .from(matchPlayers)
+    .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
+    .innerJoin(replays, eq(replays.slug, matches.replaySlug))
+    .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
+    .$dynamic();
+  const rows = await applyScopeJoins(base, opts.scope)
+    .where(and(isNotNull(matchPlayers.leader), opts.leader ? eq(matchPlayers.leader, opts.leader) : undefined, fmtCond(opts.format), scopePredicate(opts.scope)))
+    .groupBy(matchPlayers.leader, idCols.baseId, idCols.baseAspect)
+    .having(sql`count(*) >= ${minGames}`)
+    .orderBy(sql`count(*) desc`);
+  return rows.map((r: any) => ({
+    leader: r.leader, baseId: r.baseId, baseAspect: r.baseAspect,
+    games: r.games, wins: r.wins, decisive: r.decisive,
+    winRate: r.decisive > 0 ? r.wins / r.decisive : null,
+  }));
+}
+
+// Deck-vs-deck matchups (the "Leaders & Bases" heatmap lens): like
+// getLeaderMatchups but both axes carry a base-identity, so e.g. "Boba /
+// Tarkintown vs Lando / Cunning" is its own row.
+export async function getDeckMatchups(opts: StatsQueryOpts): Promise<DeckMatchup[]> {
+  const minGames = opts.minGames ?? 1;
+  const db = getDb();
+  const sbc = alias(cards, 'self_base');
+  const obc = alias(cards, 'opp_base');
+  const self = baseIdentityCols(sbc);
+  const opp = baseIdentityCols(obc);
+  const base = db
+    .select({
+      leader: matchPlayers.leader,
+      baseId: self.baseId,
+      baseAspect: self.baseAspect,
+      opponentLeader: matchPlayers.opponentLeader,
+      opponentBaseId: opp.baseId,
+      opponentBaseAspect: opp.baseAspect,
+      games: sql<number>`count(*)::int`,
+      decisive: sql<number>`count(${matchPlayers.won})::int`,
+      wins: sql<number>`count(*) filter (where ${matchPlayers.won})::int`,
+    })
+    .from(matchPlayers)
+    .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
+    .innerJoin(replays, eq(replays.slug, matches.replaySlug))
+    .leftJoin(sbc, eq(sbc.cardId, matchPlayers.base))
+    .leftJoin(obc, eq(obc.cardId, matchPlayers.opponentBase))
+    .$dynamic();
+  const rows = await applyScopeJoins(base, opts.scope)
+    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .groupBy(matchPlayers.leader, self.baseId, self.baseAspect, matchPlayers.opponentLeader, opp.baseId, opp.baseAspect)
+    .having(sql`count(*) >= ${minGames}`)
+    .orderBy(sql`count(*) desc`);
+  return rows.map((r: any) => ({
+    leader: r.leader, baseId: r.baseId, baseAspect: r.baseAspect,
+    opponentLeader: r.opponentLeader, opponentBaseId: r.opponentBaseId, opponentBaseAspect: r.opponentBaseAspect,
+    games: r.games, wins: r.wins, decisive: r.decisive,
     winRate: r.decisive > 0 ? r.wins / r.decisive : null,
   }));
 }

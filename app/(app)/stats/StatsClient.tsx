@@ -13,12 +13,19 @@ type View = 'leaders' | 'matchups' | 'cards';
 type CardEvent = 'played' | 'drawn' | 'resourced' | 'discarded';
 const FORMATS = [['', 'All formats'], ['premier', 'Premier'], ['eternal', 'Eternal'], ['open', 'Open'], ['limited', 'Limited']] as const;
 const EVENTS: [CardEvent, string][] = [['played', 'when played'], ['drawn', 'when drawn'], ['resourced', 'when resourced'], ['discarded', 'when discarded']];
-const ASPECTS = [['', 'Any base aspect'], ['vigilance', 'Vigilance'], ['command', 'Command'], ['aggression', 'Aggression'], ['cunning', 'Cunning'], ['heroism', 'Heroism'], ['villainy', 'Villainy']] as const;
 const RECORDER_SIDE: Record<CardEvent, boolean> = { drawn: true, resourced: true, played: false, discarded: false };
 
 const pct = (wins: number, decisive: number) => (decisive > 0 ? Math.round((wins / decisive) * 100) : null);
 const fmtPct = (p: number | null) => (p == null ? '—' : `${p}%`);
 const parseId = (id: string) => { const i = id.indexOf('_'); return { set: id.slice(0, i), number: Number(id.slice(i + 1)) }; };
+
+const ASPECT_COLOR: Record<string, string> = { vigilance: '#2f74c0', command: '#2f9e44', aggression: '#c0392b', cunning: '#d4a017', heroism: '#cfd2d6', villainy: '#7b3fb5' };
+const aspectAbbr = (a: string) => a.slice(0, 3).toUpperCase();
+// A deck row carries baseId (ability base) XOR baseAspect (vanilla). Build a
+// stable key + a short base label from that pair, sharing the matrix axes.
+const baseKeyOf = (baseId: string | null, baseAspect: string | null) =>
+  baseId ? `base:${baseId}` : baseAspect ? `asp:${baseAspect}` : 'asp:?';
+const deckKeyOf = (leader: string, baseId: string | null, baseAspect: string | null) => `${leader}#${baseKeyOf(baseId, baseAspect)}`;
 
 export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { slug: string; name: string }[] }) {
   const [scope, setScope] = useState<Scope>(signedIn ? 'personal' : 'global');
@@ -27,14 +34,16 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const [format, setFormat] = useState<string>('');
   const [event, setEvent] = useState<CardEvent>('played');
   const [leaderCtx, setLeaderCtx] = useState<string>(''); // deck context for the Cards view
-  const [baseAspect, setBaseAspect] = useState<string>('');
+  const [baseSel, setBaseSel] = useState<string>(''); // base-identity key: ''=all | base:<id> | asp:<aspect>
   const [cardSort, setCardSort] = useState<'games' | 'winrate'>('games'); // grid sort
   const [cardSearch, setCardSearch] = useState<string>('');
   const [matchupMode, setMatchupMode] = useState<'pct' | 'wl'>('pct'); // heatmap cell: win% vs W–L count
+  const [matchupLens, setMatchupLens] = useState<'leaders' | 'bases'>('leaders'); // leader-vs-leader or deck-vs-deck
   const [data, setData] = useState<any[] | null>(null);
   const [minGames, setMinGames] = useState<number>(1);
   const [names, setNames] = useState<Record<string, string>>({});
   const [leaderOptions, setLeaderOptions] = useState<string[]>([]); // leader cardIds in scope (for the deck picker)
+  const [deckBases, setDeckBases] = useState<{ baseId: string | null; baseAspect: string | null; games: number }[]>([]); // bases played with the picked leader
   const [loading, setLoading] = useState(false);
 
   const scopeQs = useMemo(() => {
@@ -69,6 +78,27 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     return () => { cancelled = true; };
   }, [scopeQs]);
 
+  // Cards view: the bases actually played with the picked leader, so the base
+  // picker only offers real decks (ability bases as themselves + vanilla aspects).
+  useEffect(() => {
+    if (view !== 'cards' || !leaderCtx) { setDeckBases([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/stats?type=decks&leader=${encodeURIComponent(leaderCtx)}&${scopeQs}`);
+        const body = await res.json();
+        if (cancelled || !body.ok) return;
+        const bases = (body.data || []).map((d: any) => ({ baseId: d.baseId, baseAspect: d.baseAspect, games: d.games }));
+        setDeckBases(bases);
+        resolveNames(new Set(bases.map((b: any) => b.baseId).filter(Boolean)));
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [view, leaderCtx, scopeQs]);
+
+  // Reset the base filter when the leader changes (its bases differ).
+  useEffect(() => { setBaseSel(''); }, [leaderCtx]);
+
   // Main data for the active view.
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +106,13 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     setData(null); // drop stale rows so a view switch never renders the old shape (e.g. leaders rows under the Cards table)
     const p = new URLSearchParams(scopeQs);
     p.set('type', view);
-    if (view === 'cards') { p.set('event', event); if (leaderCtx) p.set('leader', leaderCtx); if (baseAspect) p.set('baseAspect', baseAspect); }
+    if (view === 'cards') {
+      p.set('event', event);
+      if (leaderCtx) p.set('leader', leaderCtx);
+      if (baseSel.startsWith('base:')) p.set('base', baseSel.slice(5));
+      else if (baseSel.startsWith('asp:')) p.set('baseAspect', baseSel.slice(4));
+    }
+    if (view === 'matchups' && matchupLens === 'bases') p.set('byBase', '1');
     (async () => {
       try {
         const res = await fetch(`/api/stats?${p}`);
@@ -85,13 +121,13 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         setData(body.ok ? body.data || [] : []);
         setMinGames(body.minGames ?? 1);
         const ids = new Set<string>();
-        for (const r of body.data || []) for (const k of ['leader', 'opponentLeader', 'cardId']) if (r[k]) ids.add(r[k]);
+        for (const r of body.data || []) for (const k of ['leader', 'opponentLeader', 'cardId', 'baseId', 'opponentBaseId']) if (r[k]) ids.add(r[k]);
         resolveNames(ids);
       } catch { if (!cancelled) setData([]); }
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [scopeQs, view, event, leaderCtx, baseAspect]);
+  }, [scopeQs, view, event, leaderCtx, baseSel, matchupLens]);
 
   const nm = (id: string) => names[id] || id;
 
@@ -112,24 +148,32 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     return rows;
   }, [view, data, cardSearch, cardSort, names]);
 
-  // Matchups view: pivot the flat directed rows (leader → opponentLeader) into a
-  // square matrix. Axes share one leader set, ordered by total games played, so
-  // the popular decks cluster top-left. Per-leader totals come from summing its
-  // own matchup rows (one fetch, no extra round-trip).
+  // Matchups view: pivot the flat directed rows into a square matrix. In the
+  // "Leaders" lens an axis is a leader; in "Leaders & Bases" it's a DECK
+  // (leader + base-identity). Both axes share one ordered set (by games), so
+  // popular decks cluster top-left. Per-axis totals sum that axis's own rows.
   const matrix = useMemo(() => {
     if (view !== 'matchups' || !data) return null;
+    const byBase = matchupLens === 'bases';
+    const axisOf = (leader: string, baseId: string | null, baseAspect: string | null) =>
+      byBase ? { key: deckKeyOf(leader, baseId, baseAspect), leader, baseId, baseAspect } : { key: leader, leader, baseId: null, baseAspect: null };
     const cell = new Map<string, any>();
     const totals = new Map<string, { games: number; wins: number; decisive: number }>();
+    const axes = new Map<string, { key: string; leader: string; baseId: string | null; baseAspect: string | null }>();
     for (const r of data) {
-      cell.set(`${r.leader}|${r.opponentLeader}`, r);
-      const t = totals.get(r.leader) || { games: 0, wins: 0, decisive: 0 };
+      const self = axisOf(r.leader, r.baseId ?? null, r.baseAspect ?? null);
+      const opp = axisOf(r.opponentLeader, r.opponentBaseId ?? null, r.opponentBaseAspect ?? null);
+      axes.set(self.key, self);
+      axes.set(opp.key, opp);
+      cell.set(`${self.key}|${opp.key}`, r);
+      const t = totals.get(self.key) || { games: 0, wins: 0, decisive: 0 };
       t.games += r.games; t.wins += r.wins; t.decisive += r.decisive;
-      totals.set(r.leader, t);
-      if (!totals.has(r.opponentLeader)) totals.set(r.opponentLeader, { games: 0, wins: 0, decisive: 0 });
+      totals.set(self.key, t);
+      if (!totals.has(opp.key)) totals.set(opp.key, { games: 0, wins: 0, decisive: 0 });
     }
-    const leaders = [...totals.keys()].sort((a, b) => (totals.get(b)!.games) - (totals.get(a)!.games));
-    return { leaders, cell, totals };
-  }, [view, data]);
+    const ordered = [...axes.values()].sort((a, b) => (totals.get(b.key)!.games) - (totals.get(a.key)!.games));
+    return { axes: ordered, cell, totals };
+  }, [view, data, matchupLens]);
 
   const scopeOptions: [Scope, string][] = [
     ...(signedIn ? [['personal', 'Mine'] as [Scope, string]] : []),
@@ -158,7 +202,15 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deck:</span>
           <Select value={leaderCtx} onChange={setLeaderCtx} options={[['', 'All decks'], ...leaderOptions.map((id) => [id, nm(id)] as [string, string])]} />
-          <Select value={baseAspect} onChange={setBaseAspect} options={ASPECTS as any} />
+          {leaderCtx && (
+            <Select value={baseSel} onChange={setBaseSel} options={[
+              ['', 'Any base'],
+              ...deckBases.map((b) => [
+                baseKeyOf(b.baseId, b.baseAspect),
+                b.baseId ? `${nm(b.baseId)} (${b.games})` : `${b.baseAspect ? b.baseAspect[0].toUpperCase() + b.baseAspect.slice(1) : 'Unknown'} — no ability (${b.games})`,
+              ] as [string, string]),
+            ]} />
+          )}
           <Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} />
           <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: RECORDER_SIDE[event] ? '#e0c64a' : '#6bd968' }}>
             {RECORDER_SIDE[event] ? 'recorder-side only' : 'whole-meta'}
@@ -173,9 +225,14 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
 
       {view === 'matchups' && (
         <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Axis:</span>
+          <Segmented options={[['leaders', 'Leaders'], ['bases', 'Leaders & Bases']]} value={matchupLens} onChange={(v) => setMatchupLens(v as any)} />
           <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cells:</span>
           <Segmented options={[['pct', 'Win %'], ['wl', 'W–L']]} value={matchupMode} onChange={(v) => setMatchupMode(v as any)} />
-          <span style={{ fontSize: 11, color: '#6c7588' }}>Row leader vs. column leader. Color = win rate, faded when the sample is small.</span>
+          <span style={{ fontSize: 11, color: '#6c7588', flexBasis: '100%' }}>
+            Row {matchupLens === 'bases' ? 'deck' : 'leader'} vs. column {matchupLens === 'bases' ? 'deck' : 'leader'}. Color = win rate, faded when the sample is small.
+            {matchupLens === 'bases' && ' Ability bases (Tarkintown, splash bases…) are their own decks; vanilla bases collapse to their aspect.'}
+          </span>
         </div>
       )}
 
@@ -189,7 +246,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         ) : view === 'cards' ? (
           <CardGrid cards={cardRows} event={event} nm={nm} />
         ) : view === 'matchups' ? (
-          <MatchupMatrix matrix={matrix!} mode={matchupMode} nm={nm} />
+          <MatchupMatrix matrix={matrix!} mode={matchupMode} byBase={matchupLens === 'bases'} nm={nm} />
         ) : (
           <Table head={['Leader', 'Win %', 'Games']}
             rows={data.map((r) => [cardCell(nm(r.leader), r.leader, true), <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>, <Muted key="g">{r.games}</Muted>])} />
@@ -239,16 +296,29 @@ function heatColor(p: number | null, decisive: number): string {
   return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
 }
 
-// Square leader-vs-leader matrix. Rows = your leader, columns = opponent, one
-// shared leader set ordered by games played. Each cell is win% or W–L, tinted
-// by heatColor; the leftmost Total column is the leader's overall rate.
-function MatchupMatrix({ matrix, mode, nm }: { matrix: { leaders: string[]; cell: Map<string, any>; totals: Map<string, { games: number; wins: number; decisive: number }> }; mode: 'pct' | 'wl'; nm: (id: string) => string }) {
-  const { leaders, cell, totals } = matrix;
+// A deck's base part: ability bases show their card art; vanilla bases show a
+// small aspect-colored tag. Distinguishes same-leader decks on the matrix axes.
+function BaseChip({ baseId, baseAspect }: { baseId: string | null; baseAspect: string | null }) {
+  if (baseId) return <CardThumb cardId={baseId} h={18} />;
+  if (baseAspect) {
+    const c = ASPECT_COLOR[baseAspect] || '#6c7588';
+    return <span title={baseAspect} style={{ fontSize: 8, fontWeight: 800, color: '#0a0c10', background: c, borderRadius: 3, padding: '1px 3px', lineHeight: 1.2, letterSpacing: '0.03em' }}>{aspectAbbr(baseAspect)}</span>;
+  }
+  return <span style={{ fontSize: 8, color: '#6c7588' }}>?</span>;
+}
+
+type Axis = { key: string; leader: string; baseId: string | null; baseAspect: string | null };
+
+// Square matchup matrix. Rows/columns are leaders ("Leaders" lens) or decks
+// ("Leaders & Bases") sharing one games-ordered axis set. Each cell is win% or
+// W–L, tinted by heatColor; the leftmost Total column is the axis's overall rate.
+function MatchupMatrix({ matrix, mode, byBase, nm }: { matrix: { axes: Axis[]; cell: Map<string, any>; totals: Map<string, { games: number; wins: number; decisive: number }> }; mode: 'pct' | 'wl'; byBase: boolean; nm: (id: string) => string }) {
+  const { axes, cell, totals } = matrix;
   const show = (wins: number, decisive: number) => {
-    const p = pct(wins, decisive);
     if (mode === 'wl') return decisive ? `${wins}–${decisive - wins}` : '—';
-    return fmtPct(p);
+    return fmtPct(pct(wins, decisive));
   };
+  const label = (a: Axis) => nm(a.leader) + (byBase ? ` · ${a.baseId ? nm(a.baseId) : a.baseAspect ?? '?'}` : '');
   const COL = 44;
   return (
     <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
@@ -257,38 +327,40 @@ function MatchupMatrix({ matrix, mode, nm }: { matrix: { leaders: string[]; cell
           <tr>
             <th style={{ position: 'sticky', left: 0, zIndex: 2, background: '#0e1116' }} />
             <th style={{ width: COL, color: '#6c7588', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '0 2px', verticalAlign: 'bottom' }}>Total</th>
-            {leaders.map((id) => (
-              <th key={id} style={{ width: COL, height: 96, padding: 0, verticalAlign: 'bottom' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                  <CardThumb cardId={id} isLeader h={26} />
-                  <span title={nm(id)} style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', maxHeight: 64, overflow: 'hidden', textOverflow: 'ellipsis', color: '#a0a8b8', fontSize: 10 }}>{nm(id)}</span>
+            {axes.map((a) => (
+              <th key={a.key} style={{ width: COL, height: 104, padding: 0, verticalAlign: 'bottom' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <CardThumb cardId={a.leader} isLeader h={26} />
+                  {byBase && <BaseChip baseId={a.baseId} baseAspect={a.baseAspect} />}
+                  <span title={label(a)} style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', maxHeight: 60, overflow: 'hidden', textOverflow: 'ellipsis', color: '#a0a8b8', fontSize: 10 }}>{nm(a.leader)}</span>
                 </div>
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {leaders.map((row) => {
-            const t = totals.get(row)!;
+          {axes.map((rowA) => {
+            const t = totals.get(rowA.key)!;
             return (
-              <tr key={row}>
+              <tr key={rowA.key}>
                 <td style={{ position: 'sticky', left: 0, zIndex: 1, background: '#0e1116', paddingRight: 8, whiteSpace: 'nowrap' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <CardThumb cardId={row} isLeader h={22} />
-                    <span style={{ color: '#e6e6e6', fontSize: 11, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>{nm(row)}</span>
+                    <CardThumb cardId={rowA.leader} isLeader h={22} />
+                    {byBase && <BaseChip baseId={rowA.baseId} baseAspect={rowA.baseAspect} />}
+                    <span style={{ color: '#e6e6e6', fontSize: 11, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label(rowA)}</span>
                   </span>
                 </td>
-                <td title={`${nm(row)} overall — ${t.wins}–${t.decisive - t.wins}, ${t.games} games`}
+                <td title={`${label(rowA)} overall — ${t.wins}–${t.decisive - t.wins}, ${t.games} games`}
                   style={{ width: COL, height: 30, textAlign: 'center', background: heatColor(pct(t.wins, t.decisive), t.decisive), color: '#fff', fontWeight: 700, borderLeft: '2px solid #0e1116' }}>
                   {show(t.wins, t.decisive)}
                 </td>
-                {leaders.map((col) => {
-                  if (row === col) return <td key={col} style={{ width: COL, textAlign: 'center', color: '#3a4150', background: '#14171d' }}>{'–'}</td>;
-                  const r = cell.get(`${row}|${col}`);
-                  if (!r) return <td key={col} style={{ width: COL, background: '#101319' }} />;
+                {axes.map((colA) => {
+                  if (rowA.key === colA.key) return <td key={colA.key} style={{ width: COL, textAlign: 'center', color: '#3a4150', background: '#14171d' }}>{'–'}</td>;
+                  const r = cell.get(`${rowA.key}|${colA.key}`);
+                  if (!r) return <td key={colA.key} style={{ width: COL, background: '#101319' }} />;
                   const p = pct(r.wins, r.decisive);
                   return (
-                    <td key={col} title={`${nm(row)} vs ${nm(col)} — ${r.wins}–${r.decisive - r.wins} (${fmtPct(p)}), ${r.games} games`}
+                    <td key={colA.key} title={`${label(rowA)} vs ${label(colA)} — ${r.wins}–${r.decisive - r.wins} (${fmtPct(p)}), ${r.games} games`}
                       style={{ width: COL, height: 30, textAlign: 'center', background: heatColor(p, r.decisive), color: '#e6e6e6', fontWeight: 600 }}>
                       {show(r.wins, r.decisive)}
                     </td>
