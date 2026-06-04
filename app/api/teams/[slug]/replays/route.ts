@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, count } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, teamMembers, replayParticipants } from '@/lib/schema';
+import { replays, users, teamMembers, replayParticipants, tags, tagTeamScope } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 
@@ -50,6 +50,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     s.add(p.userId);
   }
 
+  // B100: comments visible to THIS team per replay (tags scoped to the team
+  // via tag_team_scope — same rule the discussion feed counts by), so the
+  // team grid can show which replays have active discussion at a glance.
+  const commentCountBySlug = new Map<string, number>();
+  const countRows = await db
+    .select({ replaySlug: tags.replaySlug, n: count() })
+    .from(tags)
+    .innerJoin(tagTeamScope, eq(tagTeamScope.tagId, tags.id))
+    .where(and(inArray(tags.replaySlug, surfaceSlugs), eq(tagTeamScope.teamSlug, slug)))
+    .groupBy(tags.replaySlug);
+  for (const c of countRows) commentCountBySlug.set(c.replaySlug, Number(c.n));
+
   const rows = await db
     .select({ replay: replays, ownerName: users.name })
     .from(replays)
@@ -60,10 +72,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 
   // Flatten {replay, ownerName} so TeamReplays sees the same shape it
   // always has, with ownerName tacked on for the Member column. Players
-  // are reordered owner-first (B59-followup).
+  // are reordered owner-first (B59-followup). `isMine` lets the owner manage
+  // their own replay (e.g. un-share) straight from the team grid.
   const flat = rows.map(({ replay, ownerName }) => {
     const players = orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId) as any[];
-    return { ...replay, players, ownerName, internal: (teammatesByReplay.get(replay.slug)?.size ?? 0) >= 2 };
+    return {
+      ...replay,
+      players,
+      ownerName,
+      internal: (teammatesByReplay.get(replay.slug)?.size ?? 0) >= 2,
+      commentCount: commentCountBySlug.get(replay.slug) ?? 0,
+      isMine: !!replay.userId && replay.userId === userId,
+    };
   });
   return NextResponse.json({ ok: true, data: flat });
 }

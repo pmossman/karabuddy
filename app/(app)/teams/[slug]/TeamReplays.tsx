@@ -65,6 +65,10 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
     winners: r.winners ?? null,
     ownerPlayerId: r.ownerPlayerId ?? null,
     internal: !!r.internal,
+    // B100: team-scoped comment count + per-row ownership (so the owner can
+    // manage/un-share their own replay from the team grid).
+    commentCount: r.commentCount ?? 0,
+    isMine: !!r.isMine,
   }));
 
   const internalCount = normalized.filter((r) => r.internal).length;

@@ -374,3 +374,159 @@ export function decodeReplay(file: any): DecodedReplay {
     tags: Array.isArray(file.tags) ? file.tags : [],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Undo + board-static collapse (B102)
+//
+// karabast records every gamestate it sends, including ones produced by an
+// in-game undo (a server-side snapshot rollback re-sends an earlier state with
+// no "undo" marker) and ones that only advance the chat/game-log without
+// changing the board. Both make a replay confusing to step through. We collapse
+// them at decode time for the viewer:
+//   - **board-static**: a state whose board position equals the *current* kept
+//     position (only the log changed) is dropped; its log lines are carried
+//     onto the next real board frame.
+//   - **undo**: a state whose board position equals an *earlier* kept position
+//     means the player rewound — we truncate the undone branch back to it
+//     (handles nested undos). The branch's log lines are dropped (they describe
+//     actions that didn't happen).
+//
+// The collapse is the viewer's concern only; `decodeReplay` stays raw so the
+// upload/extraction path and the frozen wire contract are unaffected. Tags are
+// stored in the recorder's ORIGINAL frame-index space; `frameRemap`
+// (orig→collapsed) repositions them for display and `collapsedToOrig`
+// (collapsed→orig) converts a new tag's frame back to original space on write.
+// ---------------------------------------------------------------------------
+
+export interface CollapsedReplay extends DecodedReplay {
+  // For each ORIGINAL frame index, the collapsed frame index it maps to.
+  frameRemap: number[];
+  // For each COLLAPSED frame, a representative original frame index (the one
+  // that created it). Used to convert a new tag's current frame back to the
+  // original index space the DB stores.
+  collapsedToOrig: number[];
+}
+
+// Canonical (sorted-key) serialization so two reconstructions of the same
+// position hash identically regardless of key order introduced by patching.
+function canonicalize(v: any): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+  if (Array.isArray(v)) return '[' + v.map(canonicalize).join(',') + ']';
+  return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canonicalize(v[k])).join(',') + '}';
+}
+
+// The "board position": the players' board/hands/resources + phase. Excludes
+// newMessages (the chat/log, which keeps growing across an undo) and other
+// top-level volatile fields, so a true rewind hashes identically to its origin.
+export function positionKey(state: any): string {
+  return canonicalize({ players: state?.players ?? null, phase: state?.phase ?? null });
+}
+
+interface KeptEntry {
+  src: number;         // original frame index that created this collapsed frame
+  msgSrcs: number[];   // original indices whose newMessages this frame shows
+  allSrcs: number[];   // every original index currently mapping here (for tags)
+}
+
+// Pure core: given the per-frame position keys, decide which frames survive and
+// where every original frame maps. Separated from state-munging so it's trivial
+// to unit-test the collapse logic on plain string sequences.
+export function planCollapse(keys: string[]): {
+  kept: KeptEntry[];
+  frameRemap: number[]; // orig index -> collapsed index
+} {
+  const kept: KeptEntry[] = [];
+  const posToCollapsed = new Map<string, number>();
+  const frameRemap = new Array<number>(keys.length).fill(0);
+  let msgBuffer: number[] = []; // original indices pending attach to next board frame
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+
+    // Board-static: same position as the current kept frame → drop, buffer its
+    // log lines for the next board frame; tags on it point at the current pos.
+    if (kept.length > 0 && key === keys[kept[kept.length - 1].src]) {
+      msgBuffer.push(i);
+      frameRemap[i] = kept.length - 1;
+      continue;
+    }
+
+    // Undo: this position was kept earlier (and isn't the current one) → the
+    // player rewound. Truncate the undone branch back to that frame.
+    if (posToCollapsed.has(key)) {
+      const idx = posToCollapsed.get(key)!;
+      for (let j = idx + 1; j < kept.length; j++) {
+        posToCollapsed.delete(keys[kept[j].src]);
+        for (const s of kept[j].allSrcs) frameRemap[s] = idx;
+        kept[idx].allSrcs.push(...kept[j].allSrcs);
+      }
+      kept.length = idx + 1;
+      msgBuffer = []; // undone branch's pending log lines are discarded
+      frameRemap[i] = idx;
+      kept[idx].allSrcs.push(i);
+      // This frame == kept[idx]; don't re-add it, and drop its own log line
+      // (undo noise like "X undid their action").
+      continue;
+    }
+
+    // New board position.
+    const collapsedIdx = kept.length;
+    kept.push({ src: i, msgSrcs: [...msgBuffer, i], allSrcs: [i] });
+    msgBuffer = [];
+    posToCollapsed.set(key, collapsedIdx);
+    frameRemap[i] = collapsedIdx;
+  }
+
+  // Trailing board-static log lines (e.g. end-of-game messages after the final
+  // board state) attach to the last surviving frame so they aren't lost.
+  if (msgBuffer.length > 0 && kept.length > 0) {
+    kept[kept.length - 1].msgSrcs.push(...msgBuffer);
+  }
+
+  return { kept, frameRemap };
+}
+
+export function collapseReplay(decoded: DecodedReplay): CollapsedReplay {
+  const { frames, activeByFrame, messagesByFrame, sideEvents, tags } = decoded;
+  const n = frames.length;
+  if (n === 0) {
+    return { ...decoded, frameRemap: [], collapsedToOrig: [] };
+  }
+
+  const keys = frames.map((f) => positionKey(f.state));
+  const { kept, frameRemap } = planCollapse(keys);
+
+  const collapsedToOrig = kept.map((e) => e.src);
+
+  const newFrames: Frame[] = kept.map((e) => {
+    const merged = e.msgSrcs.flatMap((s) =>
+      Array.isArray(messagesByFrame[s]) ? messagesByFrame[s] : [],
+    );
+    // Clone the representative state and override its log with the merged set,
+    // so the rendered frame shows every carried-forward message.
+    const state = structuredClone(frames[e.src].state);
+    if (state && typeof state === 'object') state.newMessages = merged;
+    return { t: frames[e.src].t, state };
+  });
+
+  const newActive = kept.map((e) => activeByFrame[e.src] ?? null);
+  const newMessages = kept.map((e) =>
+    e.msgSrcs.flatMap((s) => (Array.isArray(messagesByFrame[s]) ? messagesByFrame[s] : [])),
+  );
+
+  const remapIndex = (i: number) => (i < 0 ? -1 : frameRemap[Math.min(Math.max(i, 0), n - 1)]);
+
+  const newSideEvents: SideEvent[] = sideEvents.map((e) => ({ ...e, frameIndex: remapIndex(e.frameIndex) }));
+  const newTags = tags.map((t) => ({ ...t, frameIndex: remapIndex(t.frameIndex) }));
+
+  return {
+    ...decoded,
+    frames: newFrames,
+    activeByFrame: newActive,
+    messagesByFrame: newMessages,
+    sideEvents: newSideEvents,
+    tags: newTags,
+    frameRemap,
+    collapsedToOrig,
+  };
+}

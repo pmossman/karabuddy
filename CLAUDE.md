@@ -33,7 +33,7 @@ Two cooperating pieces:
 - `drizzle/` — generated migrations + `meta/_journal.json`.
 - `scripts/` — `maybe-migrate.js` (prod-build prebuild), `validate-migration-journal.js`, `pull-prod-snapshot.sh`, `package-extension.sh`, backfills.
 - `test/` — `unit/`, `api/`, `e2e/` (+ `fixtures/`), `smoke/`.
-- `.github/workflows/` — `test.yml` (PR), `deploy.yml` (gated prod deploy), `extension-release.yml`, `extension-submit-cws.yml`.
+- `.github/workflows/` — `test.yml` (PR), `deploy.yml` (gated prod deploy), `extension-release.yml`, `extension-submit-cws.yml` (Chrome), `extension-submit-amo.yml` (Firefox).
 
 ## Auth
 
@@ -95,9 +95,10 @@ The prod build's `prebuild` (`scripts/maybe-migrate.js`) validates the journal t
 
 ## Extension build + release
 
-- `npm run package:extension` → `sync:extension-shared` (copies the shared dual-mode JS rules `lib/commentScope.js` → `extension/replays/00-comment-scope.js` and `lib/karabastShape.js` → `extension/replays/00-karabast-shape.js`; both parity-tested) then `scripts/package-extension.sh` → `dist/karabuddy-extension-<version>.zip` (manifest at zip root; dev hosts + source assets stripped for the published build).
+- `npm run package:extension` → `sync:extension-shared` (copies the shared dual-mode JS rules `lib/commentScope.js` → `extension/replays/00-comment-scope.js` and `lib/karabastShape.js` → `extension/replays/00-karabast-shape.js`; both parity-tested) then `scripts/package-extension.sh` → `dist/karabuddy-extension-<version>.zip` (manifest at zip root; dev hosts + source assets + `*.test.js` stripped for the published build).
+- **Firefox build:** `npm run package:extension:firefox` (`package-extension.sh --firefox`) → `dist/karabuddy-extension-firefox-<version>.zip` + an unpacked dir (for `about:debugging`). Gecko manifest variant: event-page `background.scripts` (no service worker / `type:module`), `version_name` stripped, `browser_specific_settings.gecko` (id `karabuddy@karabuddy.app`, `strict_min_version` 140 / Android 142, `data_collection_permissions: websiteContent`). `world: "MAIN"` stays (Firefox 128+). The only code accommodation is `content.js` `cloneInto`-ing outbound bridge replies (Firefox Xray; no-op on Chrome). `npx web-ext lint` = 0/0/0.
 - **Auto-release:** `extension-release.yml` cuts a **GitHub Release** on every push to `main` touching `extension/**`, `lib/commentScope.js`, or `package-extension.sh`. Hybrid versioning — if `manifest.json`'s version is unreleased it ships as-is (you bumped a minor/major), else CI auto-increments the patch and commits the bump back to `main` (via `GITHUB_TOKEN`, which doesn't re-trigger CI).
-- **CWS submit is manual:** `extension-submit-cws.yml` (`workflow_dispatch`) uploads a Release zip to the Chrome Web Store — needs the four `CWS_*` repo secrets. Build ≠ submit, so tiny pushes never flood CWS review.
+- **Store submits are manual** (`workflow_dispatch`), so tiny pushes never flood review: `extension-submit-cws.yml` pushes a Release's Chrome zip to the Chrome Web Store (needs the four `CWS_*` secrets); `extension-submit-amo.yml` submits the Release's firefox zip to addons.mozilla.org via `web-ext sign` (needs `AMO_JWT_ISSUER` + `AMO_JWT_SECRET`; the AMO add-on + first listed version are created once via the AMO web UI). Each auto Release carries both zips.
 - **Kill-switch:** `GET /api/extension/status?v=<v>` (`lib/extensionPolicy.ts`) returns `ok | nag | block`, env-overridable via `KARABUDDY_EXT_LATEST` / `_MIN_SUPPORTED` / `_NAG_MESSAGE` / `_BLOCK_MESSAGE`. Keep `KARABUDDY_EXT_LATEST` tracking the CWS-published version. The extension pings it on load (`06-bootstrap.js`) → nag/block toast. `block` is break-glass only (it still keeps buffering recordings locally — a stopped recording is a permanently lost game).
 
 Full runbook: [docs/extension-rollout.md](./docs/extension-rollout.md).
@@ -128,7 +129,7 @@ karabast can change its gamestate format without notice and silently break recor
 
 ## Backlog
 
-[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B99**; the next new task is **B100**. (B81 Discord foundation is in `## Backlog`, in progress.) The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
+[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B103**; the next new task is **B104**. (B81 Discord foundation is in `## Backlog`, in progress; B103 Firefox port spike is in `## In Progress`.) The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
 
 ## Related repos
 

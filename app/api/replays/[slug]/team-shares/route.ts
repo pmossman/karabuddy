@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, count } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, replayTeamShares, teamMembers, teams } from '@/lib/schema';
+import { replays, replayTeamShares, teamMembers, teams, tags, tagTeamScope } from '@/lib/schema';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 
 export const runtime = 'nodejs';
@@ -48,7 +48,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     ownerTeams = rows;
   }
 
-  return NextResponse.json({ ok: true, shares, ownerTeams });
+  // B100: per-team count of this replay's comments scoped to each team, so the
+  // UI can warn before un-sharing ("this also removes N comments from team X's
+  // discussion"). Un-sharing a team strips that team from those tags' scope
+  // (DELETE below) to keep the audience ⊆ shares invariant.
+  const scopeCountRows = await db
+    .select({ teamSlug: tagTeamScope.teamSlug, n: count() })
+    .from(tagTeamScope)
+    .innerJoin(tags, eq(tags.id, tagTeamScope.tagId))
+    .where(eq(tags.replaySlug, slug))
+    .groupBy(tagTeamScope.teamSlug);
+  const scopedTagCounts: Record<string, number> = {};
+  for (const r of scopeCountRows) scopedTagCounts[r.teamSlug] = Number(r.n);
+
+  return NextResponse.json({ ok: true, shares, ownerTeams, scopedTagCounts });
 }
 
 // POST /api/replays/[slug]/team-shares  body: { teamSlug }
@@ -112,6 +125,17 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   await db
     .delete(replayTeamShares)
     .where(and(eq(replayTeamShares.replaySlug, slug), eq(replayTeamShares.teamSlug, teamSlug)));
+
+  // Full un-share: also strip this team from the scope of every tag on the
+  // replay. Without this the replay would still surface to the team via a
+  // scoped tag (surfacing signal (a)) and the audience ⊆ shares invariant
+  // would break. A tag scoped to no other team falls back to personal.
+  const tagIds = (await db.select({ id: tags.id }).from(tags).where(eq(tags.replaySlug, slug))).map((t) => t.id);
+  if (tagIds.length > 0) {
+    await db
+      .delete(tagTeamScope)
+      .where(and(eq(tagTeamScope.teamSlug, teamSlug), inArray(tagTeamScope.tagId, tagIds)));
+  }
 
   return NextResponse.json({ ok: true });
 }

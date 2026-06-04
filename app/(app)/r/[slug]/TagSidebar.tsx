@@ -71,8 +71,12 @@ interface Props {
   // B13: parent owns the prev/next-tag jump so the ReplayViewer's keydown
   // handler can wire `[` / `]` to the same logic these buttons use.
   onJumpToAdjacentTag: (dir: 1 | -1) => void;
+  // Tags are passed in COLLAPSED frame space (positioned for display). When
+  // writing a tag we must convert the current collapsed frame back to the
+  // ORIGINAL recorder index the DB stores — `toOriginalFrame` does that.
   tags: TagRow[];
   setTags: React.Dispatch<React.SetStateAction<TagRow[]>>;
+  toOriginalFrame: (collapsedIndex: number) => number;
   playerUsernames: Set<string>;
   mode: StepMode;
   setMode: (m: StepMode) => void;
@@ -149,7 +153,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -334,7 +338,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         body: JSON.stringify({
           installToken,
           authorName,
-          frameIndex: currentIndex,
+          frameIndex: toOriginalFrame(currentIndex),
           comment: draft,
           // B55c: structured mentions selected via autocomplete. Only sent
           // when non-empty so old API consumers stay backward-compatible.
@@ -360,7 +364,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {
         id: body.id,
         replaySlug: replay.slug,
-        frameIndex: currentIndex,
+        // Stored (and kept in state) in ORIGINAL space; the parent remaps it
+        // back to this collapsed frame for display.
+        frameIndex: toOriginalFrame(currentIndex),
         authorToken: installToken,
         authorName,
         comment: draft,
@@ -462,7 +468,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       const res = await fetch(`/api/replays/${replay.slug}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ installToken, authorName, frameIndex: parentFrame, comment: replyDraft.trim(), parentTagId }),
+        body: JSON.stringify({ installToken, authorName, frameIndex: toOriginalFrame(parentFrame), comment: replyDraft.trim(), parentTagId }),
       });
       body = await res.json();
     } catch {
@@ -479,7 +485,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {
         id: body.id,
         replaySlug: replay.slug,
-        frameIndex: parentFrame,
+        frameIndex: toOriginalFrame(parentFrame),
         authorToken: installToken,
         authorName,
         comment: replyDraft.trim(),
@@ -834,7 +840,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         {isMobile && (
           <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Review</span>
         )}
-        <span style={{ fontSize: 11, color: '#d6d6d6', fontWeight: 600 }}>
+        <span data-testid="frame-counter" style={{ fontSize: 11, color: '#d6d6d6', fontWeight: 600 }}>
           {frames ? `Frame ${currentIndex + 1} / ${frames.length}` : '…'}
         </span>
         {isMobile && (
@@ -979,7 +985,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         )}
       </section>
 
-      <section style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
+      <section style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
         {tagsAtCurrent.some((t) => !t.parentTagId) && (
           <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This frame</div>
@@ -1181,11 +1187,23 @@ function FrameLog({
   // Scroll the first highlighted row into view whenever the current frame
   // (or the log contents) change. Falls back to scrolling to the bottom
   // when the current frame has no messages of its own.
+  //
+  // B102: scroll ONLY the log container, computed manually. `element
+  // .scrollIntoView()` bubbles up and also scrolls ancestor scrollers
+  // (including the document, which has a little overflow) — so as the log
+  // entry length changed frame-to-frame it scrolled the whole page a few
+  // pixels, making the gameboard appear to shift vertically.
   useEffect(() => {
-    if (currentRowRef.current) {
-      currentRowRef.current.scrollIntoView({ block: 'center', behavior: 'auto' });
-    } else if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const c = scrollRef.current;
+    if (!c) return;
+    const row = currentRowRef.current;
+    if (row) {
+      const cr = c.getBoundingClientRect();
+      const rr = row.getBoundingClientRect();
+      const delta = (rr.top - cr.top) - c.clientHeight / 2 + rr.height / 2;
+      c.scrollTop += delta;
+    } else {
+      c.scrollTop = c.scrollHeight;
     }
   }, [entries]);
 
@@ -1217,6 +1235,10 @@ function FrameLog({
           flex: '1 1 0',
           minHeight: 0,
           overflowY: 'auto',
+          // B102: reserve the scrollbar gutter so the log's scrollbar
+          // appearing/disappearing between frames (as the entry length
+          // changes) doesn't shift content or make the scrollbar "hop".
+          scrollbarGutter: 'stable',
           padding: '0 22px 12px',
           display: 'flex',
           flexDirection: 'column',

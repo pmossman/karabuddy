@@ -42,6 +42,12 @@ export interface SyntheticReplayOpts {
   // format (full at start, patches after). Default false (emits via
   // the full snapshot directly) for older tests that haven't moved.
   winnersViaPatch?: boolean;
+  // B102: extra gamestate patch events appended after the initial full, to
+  // exercise undo + board-static collapse in the viewer. Each entry is a
+  // patch object merged onto the running state (e.g. `{ phase: 'B' }` to move
+  // to a new board position, repeating a prior patch = an undo, or
+  // `{ newMessages: ['x'] }` = a board-static log-only frame).
+  extraGamestatePatches?: Record<string, any>[];
   // Optional deck snapshot (B42). When provided, the upload route persists
   // it into the `decks` jsonb column, which the deck page (B58) renders.
   // Shape is `Record<playerId, UserDeck>` from lib/replayDecoder.
@@ -156,6 +162,15 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
       dir: 'in',
       event: 'gamestate',
       args: [{ patch: { winners: opts.winners } }],
+    });
+  }
+  // B102: append extra gamestate patches (collapse fixtures).
+  for (let i = 0; i < (opts.extraGamestatePatches?.length ?? 0); i++) {
+    events.push({
+      t: 10 + i,
+      dir: 'in',
+      event: 'gamestate',
+      args: [{ patch: opts.extraGamestatePatches![i] }],
     });
   }
 
