@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from './db';
 import { cards, matches, matchPlayers, cardEvents } from './schema';
 import { extractReplayFacts, type ExtractOptions } from './statsExtract';
+import { analyzeResourcing, summarizeResourcing, type ResourcingRating } from './resourcingAnalysis';
 import type { DecodedReplay } from './replayDecoder';
 
 export interface PersistInput extends ExtractOptions {
@@ -53,6 +54,33 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
   const players = matchFact.players;
   const opponentOf = (pid: string) => (players.length === 2 ? players.find((p) => p.playerId !== pid) ?? null : null);
 
+  // Resourcing rating for the RECORDER (first-person). The efficiency metric
+  // needs no card costs, so cost lookup is a no-op here; only the in-viewer
+  // report (which surfaces cost-dependent regret flags) wires up the catalog.
+  let recorderRating: ResourcingRating | null = null;
+  const recorder = players.find((p) => p.isRecorder);
+  if (recorder) {
+    try {
+      const rating = summarizeResourcing(analyzeResourcing(decoded.frames, { recorderId: recorder.playerId, costOf: () => null }));
+      // Only persist a rating when there's something to rate (≥1 counted round);
+      // games with no analyzable action spans stay null → out of the trend.
+      if (rating.countedRounds > 0) recorderRating = rating;
+    } catch (e) {
+      console.error('[stats] resourcing rating failed for', replaySlug, e);
+    }
+  }
+  const ratingCols = (pid: string) =>
+    recorderRating && pid === recorder?.playerId
+      ? {
+          resourceAvailable: recorderRating.available,
+          resourceWasted: recorderRating.wasted,
+          resourceForced: recorderRating.forced,
+          resourceUnderspend: recorderRating.underspend,
+          resourceDeadCards: recorderRating.deadCards,
+          resourceCountedRounds: recorderRating.countedRounds,
+        }
+      : {};
+
   await db.transaction(async (tx) => {
     await tx.delete(matches).where(eq(matches.gameId, matchFact.gameId)); // cascades children
     await tx.insert(matches).values({
@@ -79,6 +107,7 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
           opponentLeader: opp?.leader ?? null,
           opponentBase: opp?.base ?? null,
           format: matchFact.format,
+          ...ratingCols(p.playerId),
         };
       }),
     );

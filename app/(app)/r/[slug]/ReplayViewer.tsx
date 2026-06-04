@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MatchupPanel } from './MobileLandscapePanels';
+import { ResourcingModal } from './ResourcingModal';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import { useDragSize } from './useDragSize';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -133,6 +134,8 @@ function ViewerShell({ replay, initialTags }: Props) {
   // "total mess" of the old shared-state model. Desktop ignores matchupOpen.
   const [reviewOpen, setReviewOpenRaw] = useState(false);
   const [matchupOpen, setMatchupOpen] = useState(false);
+  // B101: per-game resourcing report (analyzed client-side from decoded frames).
+  const [resourcingOpen, setResourcingOpen] = useState(false);
   const userTouchedDrawerRef = useRef(false);
   useEffect(() => {
     if (userTouchedDrawerRef.current) return;
@@ -509,8 +512,16 @@ function ViewerShell({ replay, initialTags }: Props) {
         localPlayerId={decoded?.meta.localPlayerId ?? null}
         armedTeams={armedTeams}
         onArmedTeamsChange={setArmedTeams}
+        onOpenResourcing={() => setResourcingOpen(true)}
       />
       </KaraBuddyThemeProvider>
+      <ResourcingModal
+        open={resourcingOpen}
+        onClose={() => setResourcingOpen(false)}
+        frames={frames}
+        localPlayerId={decoded?.meta.localPlayerId ?? null}
+        onJump={setCurrentIndex}
+      />
       {(() => {
         // B100: chevron + FAB geometry, derived from the LIVE review-sheet
         // size so everything rides with the sheet as you drag it.

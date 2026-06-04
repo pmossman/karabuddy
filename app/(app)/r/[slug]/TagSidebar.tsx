@@ -117,6 +117,8 @@ interface Props {
   // Lets ShareWithTeam push live share changes back up to `armedTeams` so the
   // scope chip stays truthful when the owner re-shares mid-session.
   onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
+  // B101: open the per-game resourcing report (analyzed in the viewer).
+  onOpenResourcing?: () => void;
 }
 
 // B42 chip labels live in lib/matchMetadata.ts — single source of truth
@@ -151,7 +153,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -910,6 +912,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         <FooterBtn variant="outline" onClick={() => setFormOpen((v) => !v)} fullWidth>
           + Tag this frame
         </FooterBtn>
+        {onOpenResourcing && (
+          <FooterBtn variant="ghost" onClick={onOpenResourcing} fullWidth>
+            ⚡ Resourcing report
+          </FooterBtn>
+        )}
         {formOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: 'rgba(77, 157, 255, 0.08)', border: '1px solid rgba(77, 157, 255, 0.3)', borderRadius: 6 }}>
             <div style={{ fontSize: 11, color: '#a0a8b8', display: 'flex', alignItems: 'center', gap: 6 }}>

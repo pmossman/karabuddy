@@ -79,6 +79,7 @@ export async function Header() {
           </span>
         </Link>
         <nav style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <NavLink href="/stats">Stats</NavLink>
           {signedIn && <NavLink href="/replays">My replays</NavLink>}
           {signedIn && <NavLink href="/teams">Teams</NavLink>}
           {signedIn && <NavLink href="/mentions">Mentions</NavLink>}

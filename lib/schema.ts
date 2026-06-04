@@ -426,6 +426,12 @@ export const cards = pgTable('cards', {
   type: text('type'), // unit | event | upgrade | leader | base
   arena: text('arena'), // ground | space | null
   traits: jsonb('traits').$type<string[]>(),
+  // For BASES: true when the base has rules text (an Epic Action) — i.e. it
+  // defines a deck (Tarkintown, Energy Conversion Lab, the LAW "splash" bases),
+  // vs a vanilla aspect+HP base that's interchangeable. Drives the deck axis:
+  // ability bases stay distinct, vanilla bases collapse to their aspect. Null
+  // for non-bases / not-yet-seeded.
+  hasAbility: boolean('has_ability'),
   source: text('source').notNull().default('observed'), // 'seed' | 'observed'
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -472,6 +478,16 @@ export const matchPlayers = pgTable(
     opponentLeader: text('opponent_leader'),
     opponentBase: text('opponent_base'),
     format: text('format'), // denormalized for filtered aggregation
+    // B101/Phase 3: resourcing rating, RECORDER ROW ONLY (first-person — we have
+    // full info only for the recorder). Raw components of the efficiency metric
+    // (1 − wasted/available over counted rounds); null on opponent rows + games
+    // recorded before this column. Aggregated into the /stats Resourcing trend.
+    resourceAvailable: integer('resource_available'),
+    resourceWasted: integer('resource_wasted'),
+    resourceForced: integer('resource_forced'),
+    resourceUnderspend: integer('resource_underspend'),
+    resourceDeadCards: integer('resource_dead_cards'),
+    resourceCountedRounds: integer('resource_counted_rounds'),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.gameId, t.playerId] }),

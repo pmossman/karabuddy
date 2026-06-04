@@ -73,6 +73,8 @@ export default function PrivacyPage() {
 
         <p style={p}><strong style={{ color: '#e6e6e6' }}>Account info (only if you sign in).</strong> Sign-in is optional. If you use it, Auth.js receives your Discord or Google profile via OAuth and stores: the provider name (<code style={codeStyle}>discord</code> or <code style={codeStyle}>google</code>), the provider&apos;s user ID, your email address (if the provider sends it), and your display name. Sessions are signed JWTs in an HTTP-only cookie.</p>
 
+        <p style={p}><strong style={{ color: '#e6e6e6' }}>Aggregate stats.</strong> Uploaded replays feed anonymized community meta stats (leader/matchup/card win rates) shown at <code style={codeStyle}>/stats</code>. Only <em>aggregate</em> figures are published — never an individual game — and a row appears only above a minimum sample size, so no single match is identifiable. You can exclude your replays from these global aggregates anytime under <code style={codeStyle}>Settings → Community stats</code>; your own personal and team stats are unaffected.</p>
+
       </section>
 
       <section style={section}>

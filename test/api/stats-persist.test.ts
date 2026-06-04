@@ -113,6 +113,37 @@ describe('persistReplayFacts', () => {
     expect(cat[0]).toMatchObject({ name: 'Played Card', cost: 4, type: 'unit', source: 'observed' });
   });
 
+  it('writes a resourcing rating on the recorder row only (≥1 counted round)', async () => {
+    // Minimal phase-bearing fixture: 3 action spans (regroup between), the
+    // recorder floats 2 in R2 with a play (underspend); R3 is the decided round.
+    const c = (n: number, uuid: string) => card('SOR', n, uuid);
+    const me = (zones: Record<string, any[]>, avail: number) => ({
+      user: { username: 'Rec' }, leader: { setId: { set: 'SOR', number: 1 } }, base: { setId: { set: 'SOR', number: 20 } },
+      availableResources: avail, ...piles(zones),
+    });
+    const opp = { user: { username: 'Opp' }, leader: { setId: { set: 'SHD', number: 5 } }, base: { setId: { set: 'SHD', number: 9 } }, ...piles({}) };
+    const F = (phase: string, zones: Record<string, any[]>, avail: number) => ({ t: 0, state: { phase, newMessages: [], players: { p1: me(zones, avail), p2: opp } } });
+    const frames = [
+      F('action', { deck: [c(102, 'p')], hand: [c(101, 'h')], resources: [], groundArena: [] }, 0), // R1
+      F('regroup', {}, 0),
+      F('action', { hand: [c(101, 'h')], resources: [c(103, 'r')], groundArena: [c(102, 'p')] }, 2), // R2 played p, float 2
+      F('regroup', {}, 0),
+      F('action', { hand: [c(101, 'h')], resources: [c(103, 'r')], groundArena: [c(102, 'p')] }, 4), // R3 final (dropped)
+    ];
+    const decoded = { frames, sideEvents: [], activeByFrame: [], messagesByFrame: [], meta: { version: 2, match: { gameFormat: 'premier' } }, tags: [] } as any;
+    const gameId = 'gr-' + randomUUID().slice(0, 6);
+    const slug = await seedReplay(gameId);
+    await persistReplayFacts({ decoded, replaySlug: slug, gameId, winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+
+    const mp = await getDb().select().from(matchPlayers).where(eq(matchPlayers.gameId, gameId));
+    const rec = mp.find((p) => p.isRecorder)!;
+    const other = mp.find((p) => !p.isRecorder)!;
+    expect(rec.resourceCountedRounds).toBeGreaterThan(0);
+    expect(rec.resourceAvailable).not.toBeNull();
+    expect(rec.resourceUnderspend).toBe(2); // R2 float, not final/initiative
+    expect(other.resourceAvailable).toBeNull(); // opponent never rated
+  });
+
   it('is idempotent on gameId — re-persist replaces, never duplicates', async () => {
     const gameId = 'gp-' + randomUUID().slice(0, 6);
     const slug = await seedReplay(gameId);

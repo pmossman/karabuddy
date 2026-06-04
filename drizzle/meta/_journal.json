@@ -127,6 +127,20 @@
       "when": 1780876800000,
       "tag": "0017_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780963200000,
+      "tag": "0018_card_has_ability",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781049600000,
+      "tag": "0019_resourcing_rating",
+      "breakpoints": true
     }
   ]
 }
