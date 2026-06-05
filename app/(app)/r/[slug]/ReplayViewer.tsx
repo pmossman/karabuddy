@@ -12,7 +12,7 @@ import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { TagSidebar } from './TagSidebar';
-import { StepModeOverlay, MatchupPanel } from './MobileLandscapePanels';
+import { StepModeOverlay, MobileControlsFab, MatchupPanel } from './MobileLandscapePanels';
 import { ResourcingModal } from './ResourcingModal';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import { useDragSize } from './useDragSize';
@@ -27,6 +27,20 @@ const PLAYBACK_TICK_MS = 300;
 // If two action steps arrive within this window, the user is holding the arrow
 // (key-repeat ~30-50ms) — fly through instead of playing the choreography.
 const HELD_STEP_MS = 180;
+
+// B104: auto-play speed tiers. There's no objective "real-time" rate for a
+// replay (frames aren't evenly spaced in wall-clock), so the UI labels these
+// qualitatively; `value` is the dwell divisor (higher = less time per frame).
+const PLAY_SPEEDS = [
+  { label: 'Slow', value: 0.5 },
+  { label: 'Normal', value: 1 },
+  { label: 'Fast', value: 2 },
+  { label: 'Fastest', value: 4 },
+] as const;
+const PLAY_SPEED_STORAGE_KEY = 'karabuddy:playSpeed';
+// Never dwell shorter than this regardless of speed — below it the board can't
+// keep up and frames just blur past without registering.
+const PLAY_MIN_DWELL_MS = 45;
 
 interface ReplayRow {
   slug: string;
@@ -133,6 +147,38 @@ function ViewerShell({ replay, initialTags }: Props) {
   }, []);
   const toggleAnimate = useCallback(() => {
     setAnimate((v) => { const next = !v; try { window.localStorage.setItem('karabuddy:animate', next ? '1' : '0'); } catch {} return next; });
+  }, []);
+  // Live mirror for the autoplay driver, which reads `animate` from inside a
+  // setTimeout closure — toggling animation mid-play then takes effect on the
+  // next frame (animate on → per-frame choreography dwell; off → flat cadence)
+  // without restarting playback.
+  const animateRef = useRef(animate);
+  useEffect(() => { animateRef.current = animate; }, [animate]);
+
+  // B104: auto-play ("watch the replay"). A self-rescheduling timer that walks
+  // every frame to the end so card animations actually play, dwelling per frame
+  // by its choreography length (frameAnimMs) scaled by the speed multiplier.
+  // Independent of step-mode (which only governs manual arrow/chevron stepping).
+  const [playing, setPlaying] = useState(false);
+  const playingRef = useRef(false);
+  const autoplayTimerRef = useRef<number | null>(null);
+  const [speed, setSpeed] = useState<number>(1);
+  const speedRef = useRef(1);
+  useEffect(() => {
+    try {
+      const v = Number(window.localStorage.getItem(PLAY_SPEED_STORAGE_KEY));
+      if (PLAY_SPEEDS.some((o) => o.value === v)) { setSpeed(v); speedRef.current = v; }
+    } catch {}
+  }, []);
+  const stopAutoplay = useCallback(() => {
+    playingRef.current = false;
+    if (autoplayTimerRef.current != null) { window.clearTimeout(autoplayTimerRef.current); autoplayTimerRef.current = null; }
+    setPlaying(false);
+  }, []);
+  const setSpeedValue = useCallback((next: number) => {
+    speedRef.current = next;
+    setSpeed(next);
+    try { window.localStorage.setItem(PLAY_SPEED_STORAGE_KEY, String(next)); } catch {}
   }, []);
   // B44/B46: drawer state owned here so the gameboard overlay (FrameNavOverlay)
   // can shift in response. Starts closed on mobile so the first paint gives
@@ -402,6 +448,7 @@ function ViewerShell({ replay, initialTags }: Props) {
   //    fly through — no cadence pacing, no animation.
   const step = useMemo(() => (dir: 1 | -1) => {
     if (!frames || frames.length === 0) return;
+    stopAutoplay(); // a manual step takes over from auto-play
     if (mode === 'action' && activeByFrame) {
       const now = performance.now();
       const held = now - lastStepAt.current < HELD_STEP_MS;
@@ -437,7 +484,35 @@ function ViewerShell({ replay, initialTags }: Props) {
       // the arrow is held (rapid steps come faster than re-renders commit).
       setCurrentIndex((cur) => Math.max(0, Math.min(frames.length - 1, cur + dir)));
     }
-  }, [frames, activeByFrame, mode, actionBoundary, stopPlayback, setCurrentIndex]);
+  }, [frames, activeByFrame, mode, actionBoundary, stopPlayback, stopAutoplay, setCurrentIndex]);
+
+  // B104: start auto-play from the current frame to the end. If we're already
+  // at (or past) the last frame, restart from the top — matches the "press play
+  // again at the end to rewatch" convention of every video player.
+  const startAutoplay = useCallback(() => {
+    if (!frames || frames.length === 0) return;
+    stopPlayback(); // cancel any in-flight action-step play-through
+    let pos = currentIndexRef.current;
+    if (pos >= frames.length - 1) { pos = 0; setCurrentIndex(0); }
+    playingRef.current = true;
+    setPlaying(true);
+    const tick = () => {
+      if (!playingRef.current || !frames) return;
+      if (pos >= frames.length - 1) { stopAutoplay(); return; }
+      pos += 1;
+      setCurrentIndex(pos);
+      if (pos >= frames.length - 1) { stopAutoplay(); return; } // landed on last
+      const base = animateRef.current ? (frameAnimMsRef.current[pos] ?? PLAYBACK_TICK_MS) : PLAYBACK_TICK_MS;
+      autoplayTimerRef.current = window.setTimeout(tick, Math.max(PLAY_MIN_DWELL_MS, base / speedRef.current));
+    };
+    // Dwell on the CURRENT frame before advancing to the next, so the very
+    // first transition gets the same pacing as the rest.
+    const first = animateRef.current ? (frameAnimMsRef.current[pos] ?? PLAYBACK_TICK_MS) : PLAYBACK_TICK_MS;
+    autoplayTimerRef.current = window.setTimeout(tick, Math.max(PLAY_MIN_DWELL_MS, first / speedRef.current));
+  }, [frames, stopPlayback, stopAutoplay, setCurrentIndex]);
+  const toggleAutoplay = useCallback(() => {
+    if (playingRef.current) stopAutoplay(); else startAutoplay();
+  }, [startAutoplay, stopAutoplay]);
 
   // B13: jump to the previous/next tagged frame. Lifted out of TagSidebar so
   // the keydown handler below can invoke it for `[` / `]` without DOM
@@ -448,11 +523,11 @@ function ViewerShell({ replay, initialTags }: Props) {
       dir > 0
         ? sorted.find((i) => i > currentIndex)
         : [...sorted].reverse().find((i) => i < currentIndex);
-    if (target != null) { stopPlayback(); setCurrentIndex(target); }
-  }, [displayTags, currentIndex, setCurrentIndex, stopPlayback]);
+    if (target != null) { stopAutoplay(); stopPlayback(); setCurrentIndex(target); }
+  }, [displayTags, currentIndex, setCurrentIndex, stopPlayback, stopAutoplay]);
 
-  // B104: a direct jump (slider, tag click) must cancel any action playback.
-  const jumpTo = useCallback((i: number) => { stopPlayback(); setCurrentIndex(i); }, [stopPlayback, setCurrentIndex]);
+  // B104: a direct jump (slider, tag click) must cancel any playback.
+  const jumpTo = useCallback((i: number) => { stopAutoplay(); stopPlayback(); setCurrentIndex(i); }, [stopPlayback, stopAutoplay, setCurrentIndex]);
 
   // Fetch + decode the payload from Blob.
   useEffect(() => {
@@ -513,12 +588,17 @@ function ViewerShell({ replay, initialTags }: Props) {
     const handler = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      if (e.key === ' ' || e.code === 'Space') {
+        // Spacebar = play/pause, the universal transport shortcut.
+        e.preventDefault();
+        toggleAutoplay();
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
         const dir = e.key === 'ArrowRight' ? 1 : -1;
         if (e.shiftKey) {
           // Temporary flip — step one in the OTHER mode, then leave the
           // mode setting alone.
+          stopAutoplay();
           const otherMode: StepMode = mode === 'action' ? 'frame' : 'action';
           if (!frames) return;
           if (otherMode === 'action' && activeByFrame) {
@@ -549,7 +629,10 @@ function ViewerShell({ replay, initialTags }: Props) {
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [frames, activeByFrame, currentIndex, mode, step, jumpToAdjacentTag, jumpTo]);
+  }, [frames, activeByFrame, currentIndex, mode, step, jumpToAdjacentTag, jumpTo, toggleAutoplay, stopAutoplay, setCurrentIndex]);
+
+  // Stop the auto-play timer on unmount so it can't fire into a dead component.
+  useEffect(() => () => stopAutoplay(), [stopAutoplay]);
 
   const playerUsernames = useMemo(() => {
     const set = new Set<string>();
@@ -662,24 +745,52 @@ function ViewerShell({ replay, initialTags }: Props) {
               // Desktop only: faint keyboard hint adjacent to each chevron.
               showKeyboardHint={!isMobile}
             />
-            {/* B66b/B100: floating step-mode toggle. Desktop tracks the docked
-                sidebar (shifts left past it). Mobile pins it bottom-center but
-                lifts above the portrait sheet so it doesn't overlay it. */}
-            <StepModeOverlay
-              mode={mode}
-              setMode={setMode}
-              animate={animate}
-              onToggleAnimate={toggleAnimate}
-              landscape={!isMobile}
-              drawerOpen={drawerOpen}
-              drawerWidth={`${sidebarWidth}px`}
-              portraitDrawerOpen={portraitLift}
-              portraitBottom={portraitLift ? `calc(${reviewDrag.size}px + 12px)` : undefined}
-              dragging={reviewDrag.dragging}
-            />
-            {/* B100: matchup FAB sits to the LEFT of the ☰ review FAB on the
-                same row (horizontal, to spare a row of vertical space), and
-                rides clear of the sheet edge using the same offsets. */}
+            {/* B66b/B100: desktop step/playback controls as an inline pill that
+                tracks the docked sidebar (shifts left past it). On MOBILE the
+                same controls collapse into a bubble FAB (below) so they don't
+                sprawl across the cramped bottom edge. */}
+            {!isMobile && (
+              <StepModeOverlay
+                mode={mode}
+                setMode={setMode}
+                animate={animate}
+                onToggleAnimate={toggleAnimate}
+                playing={playing}
+                onTogglePlay={toggleAutoplay}
+                speed={speed}
+                speeds={PLAY_SPEEDS as unknown as { label: string; value: number }[]}
+                onSetSpeed={setSpeedValue}
+                landscape
+                drawerOpen={drawerOpen}
+                drawerWidth={`${sidebarWidth}px`}
+                dragging={reviewDrag.dragging}
+              />
+            )}
+            {/* B104: mobile playback-controls bubble. A round FAB in the
+                bottom-right cluster (left of the ☰ review FAB) that opens a
+                small panel with play/pause, speed, step-mode + animate —
+                mirroring the ☰/ⓘ bubble pattern. Lifts above the portrait
+                sheet using the same offsets as its neighbours. */}
+            {isMobile && (
+              <MobileControlsFab
+                mode={mode}
+                setMode={setMode}
+                animate={animate}
+                onToggleAnimate={toggleAnimate}
+                playing={playing}
+                onTogglePlay={toggleAutoplay}
+                speed={speed}
+                speeds={PLAY_SPEEDS as unknown as { label: string; value: number }[]}
+                onSetSpeed={setSpeedValue}
+                bottom={portraitLift ? `calc(${reviewDrag.size}px + 12px)` : edgeB}
+                right={`calc(${fabRight} + 50px)`}
+                dragging={reviewDrag.dragging}
+              />
+            )}
+            {/* B100/B104: matchup info FAB lives TOP-RIGHT on mobile — the
+                matchup panel opens from the top edge (portrait), so the
+                affordance reads as "info, up there" instead of competing with
+                the bottom playback cluster. */}
             {isMobile && (
               <button
                 type="button"
@@ -688,8 +799,8 @@ function ViewerShell({ replay, initialTags }: Props) {
                 title={matchupOpen ? 'Hide matchup' : 'Matchup info'}
                 style={{
                   position: 'fixed',
-                  bottom: portraitLift ? `calc(${reviewDrag.size}px + 12px)` : edgeB,
-                  right: `calc(${fabRight} + 50px)`,
+                  top: 'max(10px, env(safe-area-inset-top, 10px))',
+                  right: 'max(10px, env(safe-area-inset-right, 10px))',
                   zIndex: 90,
                   width: 38,
                   height: 38,
@@ -704,9 +815,7 @@ function ViewerShell({ replay, initialTags }: Props) {
                   alignItems: 'center',
                   justifyContent: 'center',
                   backdropFilter: 'blur(6px)',
-                  transition: reviewDrag.dragging
-                    ? 'background 160ms ease'
-                    : 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1), background 160ms ease',
+                  transition: 'background 160ms ease',
                 }}
               >
                 <InfoIcon />

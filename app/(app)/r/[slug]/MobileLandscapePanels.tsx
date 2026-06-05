@@ -15,7 +15,7 @@
 //                          Carries matchup thumbs + chips + the View-
 //                          decks button so the tags drawer stays slim.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
 import { DecksModal } from './DecksModal';
@@ -38,6 +38,11 @@ export function StepModeOverlay({
   setMode,
   animate,
   onToggleAnimate,
+  playing,
+  onTogglePlay,
+  speed,
+  speeds,
+  onSetSpeed,
   landscape,
   drawerOpen,
   drawerWidth,
@@ -52,6 +57,14 @@ export function StepModeOverlay({
   // looks), instead of a separate top-level button cluttering the board.
   animate: boolean;
   onToggleAnimate: () => void;
+  // B104: auto-play transport. Play/pause + a podcast-style speed-cycle button
+  // anchor the pill (left) since they're the primary "watch the replay" action;
+  // the step-mode + animate controls sit after a divider.
+  playing: boolean;
+  onTogglePlay: () => void;
+  speed: number;
+  speeds: { label: string; value: number }[];
+  onSetSpeed: (s: number) => void;
   // Landscape (desktop or mobile-landscape) parks it directly LEFT of
   // the ☰ menu button — hugs the sidebar/drawer outer edge so it
   // tracks open/close + resize. Portrait can't share that corner with
@@ -107,31 +120,58 @@ export function StepModeOverlay({
         ...positionStyle,
       }}
     >
-      <span style={{
-        fontSize: 10,
-        color: '#6c7588',
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        fontWeight: 700,
-        fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
-      }}>
-        Step by:
-      </span>
+      {/* Transport: play/pause + speed cycle. Primary, so it leads the pill. */}
+      <button
+        type="button"
+        onClick={onTogglePlay}
+        aria-label={playing ? 'Pause' : 'Play'}
+        title={playing ? 'Pause (space)' : 'Play (space)'}
+        style={{
+          width: 26,
+          height: 26,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: playing ? 'rgba(77, 157, 255, 0.55)' : 'rgba(77, 157, 255, 0.25)',
+          color: '#fff',
+          border: 0,
+          borderRadius: '50%',
+          padding: 0,
+          cursor: 'pointer',
+          flex: '0 0 auto',
+        }}
+      >
+        {playing ? <PauseGlyph /> : <PlayGlyph />}
+      </button>
+      <SpeedMenu speed={speed} speeds={speeds} onSetSpeed={onSetSpeed} />
+      <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 0', background: 'rgba(77, 157, 255, 0.25)' }} />
+      {landscape && (
+        <span style={{
+          fontSize: 10,
+          color: '#6c7588',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          fontWeight: 700,
+          fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+        }}>
+          Step by:
+        </span>
+      )}
       <div style={{ display: 'flex', gap: 0 }}>
         <ModeButton active={mode === 'action'} onClick={() => setMode('action')}>Action</ModeButton>
         <ModeButton active={mode === 'frame'} onClick={() => setMode('frame')}>Frame</ModeButton>
       </div>
-      <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 2px', background: 'rgba(77, 157, 255, 0.25)' }} />
+      <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 0', background: 'rgba(77, 157, 255, 0.25)' }} />
       <button
         type="button"
         onClick={onToggleAnimate}
         aria-pressed={animate}
-        title={animate ? 'Card animation on — click to disable' : 'Card animation off — click to enable'}
+        title={animate ? 'Card animation on — tap to disable' : 'Card animation off — tap to enable'}
         style={{
           background: animate ? 'rgba(77, 157, 255, 0.4)' : 'transparent',
           color: animate ? '#fff' : '#6c7588',
           border: 0,
-          padding: '4px 8px',
+          padding: landscape ? '4px 8px' : '4px 7px',
           fontSize: 12,
           fontWeight: 700,
           cursor: 'pointer',
@@ -141,11 +181,129 @@ export function StepModeOverlay({
           display: 'flex',
           alignItems: 'center',
           gap: 4,
+          flex: '0 0 auto',
         }}
       >
-        <span style={{ fontSize: 11 }}>✦</span>
-        <span style={{ fontSize: 11 }}>Animate</span>
+        <span style={{ fontSize: 12 }}>✦</span>
+        {landscape && <span style={{ fontSize: 11 }}>Animate</span>}
       </button>
+    </div>
+  );
+}
+
+// Small inline transport glyphs — crisp at any DPI, theme via currentColor.
+function PlayGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true" style={{ marginLeft: 1 }}>
+      <path d="M2.5 1.5 L10 6 L2.5 10.5 Z" fill="currentColor" />
+    </svg>
+  );
+}
+function PauseGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+      <rect x="2.5" y="2" width="2.6" height="8" rx="0.6" fill="currentColor" />
+      <rect x="6.9" y="2" width="2.6" height="8" rx="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+// B104: speed picker. Tapping the rate chip opens a small pop-up list (above
+// the pill, since it lives at the bottom edge) of every speed — pick one
+// directly instead of cycling through them. Click-outside / Escape closes it.
+function SpeedMenu({ speed, speeds, onSetSpeed }: { speed: number; speeds: { label: string; value: number }[]; onSetSpeed: (s: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const activeLabel = speeds.find((o) => o.value === speed)?.label ?? 'Normal';
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Playback speed: ${activeLabel}`}
+        title="Playback speed"
+        style={{
+          height: 26,
+          background: open ? 'rgba(77, 157, 255, 0.25)' : 'transparent',
+          color: '#a7d2ff',
+          border: 0,
+          padding: '0 7px',
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: 'pointer',
+          fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+          borderRadius: 4,
+          lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 3,
+        }}
+      >
+        {activeLabel}
+        <span aria-hidden="true" style={{ fontSize: 8, opacity: 0.7, transform: open ? 'rotate(180deg)' : 'none' }}>▲</span>
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Playback speed"
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 8px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 95,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            padding: 4,
+            background: 'rgba(17, 20, 26, 0.97)',
+            border: '1px solid rgba(77, 157, 255, 0.4)',
+            borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(6px)',
+          }}
+        >
+          {speeds.map((o) => {
+            const active = o.value === speed;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onClick={() => { onSetSpeed(o.value); setOpen(false); }}
+                style={{
+                  minWidth: 84,
+                  padding: '6px 14px',
+                  background: active ? 'rgba(77, 157, 255, 0.4)' : 'transparent',
+                  color: active ? '#fff' : '#a7d2ff',
+                  border: 0,
+                  borderRadius: 5,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+                  textAlign: 'left',
+                  lineHeight: 1.1,
+                }}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -171,6 +329,171 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
     >
       {children}
     </button>
+  );
+}
+
+// B104: mobile playback-controls bubble. A round FAB (sliders glyph, lit while
+// playing) that opens a compact panel above it — play/pause, speed, step-mode,
+// animate — so the controls collapse off the cramped bottom edge into the same
+// FAB+bubble pattern as the ☰ review and ⓘ matchup affordances.
+export function MobileControlsFab({
+  mode, setMode, animate, onToggleAnimate,
+  playing, onTogglePlay, speed, speeds, onSetSpeed,
+  bottom, right, dragging,
+}: {
+  mode: 'action' | 'frame';
+  setMode: (m: 'action' | 'frame') => void;
+  animate: boolean;
+  onToggleAnimate: () => void;
+  playing: boolean;
+  onTogglePlay: () => void;
+  speed: number;
+  speeds: { label: string; value: number }[];
+  onSetSpeed: (s: number) => void;
+  bottom: string;
+  right: string;
+  dragging?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.07em',
+    fontWeight: 700, fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+  };
+  return (
+    <div
+      ref={wrapRef}
+      style={{
+        position: 'fixed', bottom, right, zIndex: 91,
+        transition: dragging ? 'none' : 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
+    >
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Playback controls"
+          style={{
+            position: 'absolute', bottom: 'calc(100% + 10px)', right: 0, width: 232,
+            display: 'flex', flexDirection: 'column', gap: 13, padding: 14,
+            background: 'rgba(17, 20, 26, 0.97)', border: '1px solid rgba(77, 157, 255, 0.4)',
+            borderRadius: 12, boxShadow: '0 6px 22px rgba(0, 0, 0, 0.55)', backdropFilter: 'blur(8px)',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={sectionLabel}>Speed</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {speeds.map((o) => {
+                const active = o.value === speed;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => onSetSpeed(o.value)}
+                    style={{
+                      flex: '1 0 auto', padding: '7px 10px', borderRadius: 6, border: 0, cursor: 'pointer',
+                      background: active ? 'rgba(77, 157, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
+                      color: active ? '#fff' : '#a7d2ff', fontSize: 12, fontWeight: 700,
+                      fontFamily: 'var(--font-barlow), -apple-system, sans-serif', lineHeight: 1,
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={sectionLabel}>Step by</span>
+            <div style={{ display: 'inline-flex', alignSelf: 'flex-start', border: '1px solid rgba(77, 157, 255, 0.3)', borderRadius: 6, overflow: 'hidden' }}>
+              <ModeButton active={mode === 'action'} onClick={() => setMode('action')}>Action</ModeButton>
+              <ModeButton active={mode === 'frame'} onClick={() => setMode('frame')}>Frame</ModeButton>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onToggleAnimate}
+            aria-pressed={animate}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              width: '100%', padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+              border: '1px solid ' + (animate ? 'rgba(77, 157, 255, 0.5)' : 'rgba(255, 255, 255, 0.08)'),
+              background: animate ? 'rgba(77, 157, 255, 0.18)' : 'transparent',
+              color: animate ? '#d6e7ff' : '#8b93a5', fontSize: 12, fontWeight: 700,
+              fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 13 }}>✦</span> Card animation</span>
+            <span style={{ fontSize: 11, opacity: 0.9 }}>{animate ? 'On' : 'Off'}</span>
+          </button>
+        </div>
+      )}
+      {/* Joined capsule: play/pause (always one tap) fused to the controls
+          opener, so it's obvious the second half surfaces finer settings. */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'stretch', height: 38,
+          borderRadius: 19, overflow: 'hidden',
+          border: '1px solid rgba(77, 157, 255, 0.4)',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)', backdropFilter: 'blur(6px)',
+          background: 'rgba(36, 48, 68, 0.85)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onTogglePlay}
+          aria-label={playing ? 'Pause' : 'Play'}
+          title={playing ? 'Pause' : 'Play'}
+          style={{
+            width: 44, border: 0, padding: 0, cursor: 'pointer',
+            background: playing ? 'rgba(77, 157, 255, 0.5)' : 'transparent',
+            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 160ms ease',
+          }}
+        >
+          {playing ? <PauseGlyph /> : <PlayGlyph />}
+        </button>
+        <span aria-hidden="true" style={{ width: 1, background: 'rgba(77, 157, 255, 0.35)' }} />
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Playback settings"
+          aria-expanded={open}
+          title="Playback settings"
+          style={{
+            width: 40, border: 0, padding: 0, cursor: 'pointer',
+            background: open ? 'rgba(77, 157, 255, 0.32)' : 'transparent',
+            color: '#d6e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2,
+            transition: 'background 160ms ease',
+          }}
+        >
+          <SlidersGlyph />
+          <span aria-hidden="true" style={{ fontSize: 7, opacity: 0.75, transform: open ? 'rotate(180deg)' : 'none' }}>▲</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Horizontal-sliders "controls" glyph for the mobile playback FAB.
+function SlidersGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <line x1="4" y1="8" x2="20" y2="8" />
+      <circle cx="9" cy="8" r="2.4" fill="#1a1d24" />
+      <line x1="4" y1="16" x2="20" y2="16" />
+      <circle cx="15" cy="16" r="2.4" fill="#1a1d24" />
+    </svg>
   );
 }
 
