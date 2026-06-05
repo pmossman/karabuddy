@@ -80,6 +80,13 @@
     // B80: gameId we've already sent a karabast-drift beacon for (dedup — one
     // beacon per match, on the first gamestate).
     let healthReportedGameId = null;
+    // B105: spectator guard. karabast connects its game socket with a
+    // `spectator=true|false` query param (the same flag it uses to decide
+    // spectator mode). When we're spectating we must NOT record or upload the
+    // game — it isn't ours. `true`/`false` come from the socket URL; `null`
+    // means we couldn't read it, in which case the looksLikeSpectatorView
+    // fallback (both hands visible) can still flag a spectated game.
+    let spectatorParam = null;
 
     const resetRecording = () => {
         recording.length = 0;
@@ -199,6 +206,8 @@
 
     // ----- record(dir, frame): the WebSocket interceptor feeds us packets. -----
     const record = (dir, frame) => {
+        // B105: we're spectating — don't record someone else's game at all.
+        if (spectatorParam === true) return;
         const d = D();
         if (frame.kind !== 'event') return;
         if (!d.RECORDED_EVENTS.has(frame.event)) return;
@@ -262,6 +271,18 @@
 
             const t = Date.now() - recordingStart;
             const norm = d.normalizeGamestate(structuredClone(original));
+            // B105 fallback: the socket URL didn't say spectator=false AND
+            // karabast is sending us BOTH players' hands — the unmasked view
+            // only a spectator receives. Treat it as a spectated game: flag it,
+            // discard anything captured so far, and stop. (Skipped when the URL
+            // explicitly said spectator=false — e.g. solo testing, where seeing
+            // both hands is legitimate.)
+            if (spectatorParam !== false && d.looksLikeSpectatorView(norm.players)) {
+                spectatorParam = true;
+                if (recording.length > 0) { resetRecording(); clearPersistedRecording(); }
+                F()?.refreshOverlay?.();
+                return;
+            }
             if (prevNormalizedGamestate === null) {
                 recording.push({ t, dir, event: 'gamestate', args: [{ full: norm }] });
                 prevNormalizedGamestate = norm;
@@ -600,6 +621,16 @@
             // Match karabast.net AND api.karabast.net (confirmed via B42
             // debug capture — karabast's WS is at wss://api.karabast.net).
             if (typeof url === 'string' && /karabast/.test(url)) {
+                // B105: karabast carries `spectator=true|false` in the game
+                // socket's query string (the same flag it uses to decide
+                // spectator mode). Read it here, before any gamestate arrives,
+                // so we can suppress recording for a spectated game from the
+                // very first frame. Check raw + percent-encoded forms.
+                if (/[?&]spectator=true(?:&|$)/i.test(url) || /spectator%3Dtrue/i.test(url)) {
+                    spectatorParam = true;
+                } else if (/[?&]spectator=false(?:&|$)/i.test(url) || /spectator%3Dfalse/i.test(url)) {
+                    spectatorParam = false;
+                }
                 // Lazy lookup — NS.Recorder is the exports object at the
                 // bottom of this IIFE; safe by the time karabast's bundle
                 // constructs its socket.

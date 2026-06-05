@@ -115,6 +115,22 @@
         return withVisibleHand.length === 1 ? withVisibleHand[0] : null;
     };
 
+    // B105: a player only ever sees their OWN hand unmasked — karabast masks
+    // the opponent's. A SPECTATOR, by contrast, is sent both players' hands in
+    // full. So two (or more) visible hands = we're watching, not playing. Used
+    // as a defensive fallback for the spectator guard when the socket URL's
+    // `spectator` flag couldn't be read; the URL flag is the primary signal.
+    // Pure + unit-testable (B79).
+    const looksLikeSpectatorView = (players) => {
+        if (!players || typeof players !== 'object') return false;
+        let visibleHands = 0;
+        for (const p of Object.values(players)) {
+            const hand = p?.cardPiles?.hand;
+            if (Array.isArray(hand) && hand.some((c) => c && (c.id || c.setId))) visibleHands += 1;
+        }
+        return visibleHands >= 2;
+    };
+
     // B75: walk a recording's gamestate events and tally actions per player
     // (an "action" = a transition to being the action-phase active player).
     // Returns { actionCount, distinctActivePlayers, minPlayerActions } where
@@ -490,6 +506,7 @@
         makePatch,
         applyPatch,
         detectLocalPlayerId,
+        looksLikeSpectatorView,
         analyzeRecording,
         parseEngineIoFrame,
         looksLikeGameEnd,

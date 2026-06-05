@@ -92,6 +92,22 @@ describe('detectLocalPlayerId (B33 — POV via hand-visibility asymmetry)', () =
   });
 });
 
+describe('looksLikeSpectatorView (B105 — both hands visible = watching, not playing)', () => {
+  const visibleHand = [{ id: 'SOR_001', setId: { set: 'SOR', number: 1 } }];
+  const stubHand = [{ controllerId: 'x' }];
+
+  it('is true when two+ players have unmasked hands (spectator full view)', () => {
+    expect(D.looksLikeSpectatorView({ p1: { cardPiles: { hand: visibleHand } }, p2: { cardPiles: { hand: visibleHand } } })).toBe(true);
+  });
+  it('is false for a normal player view (only own hand visible)', () => {
+    expect(D.looksLikeSpectatorView({ p1: { cardPiles: { hand: visibleHand } }, p2: { cardPiles: { hand: stubHand } } })).toBe(false);
+  });
+  it('is false when no hands are dealt yet, or on bad input', () => {
+    expect(D.looksLikeSpectatorView({ p1: { cardPiles: { hand: [] } }, p2: { cardPiles: { hand: [] } } })).toBe(false);
+    expect(D.looksLikeSpectatorView(null)).toBe(false);
+  });
+});
+
 describe('analyzeRecording (B75 — per-player upload threshold)', () => {
   // Each gamestate full marks exactly one player as the action-phase active
   // player; a NEW active player (transition) counts as one action for them.
