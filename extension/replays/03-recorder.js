@@ -177,6 +177,7 @@
                 sideboard: Array.isArray(deck.sideboard) ? deck.sideboard : null
             };
         }
+        const winHistory = lobbyState.winHistory || null;
         return {
             match: {
                 lobbyId: lobbyState.id || null,
@@ -184,8 +185,19 @@
                 gameType: lobbyState.gameType || null,
                 gameFormat: lobbyState.gameFormat || null,
                 cardPool: lobbyState.cardPool || null,
-                gamesToWinMode: lobbyState.winHistory?.gamesToWinMode || null,
-                isPrivate: !!lobbyState.isPrivate
+                gamesToWinMode: winHistory?.gamesToWinMode || null,
+                isPrivate: !!lobbyState.isPrivate,
+                // B104: Bo3 set progress, so the server can identify COMPLETE
+                // best-of-three matches (and exclude a set someone bailed on).
+                // Captured at game start, so currentGameNumber + winsPerPlayer are
+                // the score BEFORE this game; the server adds this game's winner
+                // (and groups a lobby's games) to decide if the set reached 2 wins.
+                // setEndResult is usually null here (only set once the set ends).
+                winHistory: winHistory ? {
+                    currentGameNumber: winHistory.currentGameNumber ?? null,
+                    winsPerPlayer: winHistory.winsPerPlayer ?? null,
+                    setEndResult: winHistory.setEndResult ?? null
+                } : null
             },
             decks: decksByUserId
         };

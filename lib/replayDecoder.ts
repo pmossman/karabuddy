@@ -109,6 +109,14 @@ export interface MatchMeta {
   cardPool?: string | null; // 'current' | 'nextSet' | 'unlimited'
   gamesToWinMode?: string | null; // 'bestOfOne' | 'bestOfThree'
   isPrivate?: boolean;
+  // B104: Bo3 set progress (captured at game start — score BEFORE this game).
+  // Lets the server identify COMPLETE best-of-three matches. null on Bo1 / older
+  // recordings that predate the capture.
+  winHistory?: {
+    currentGameNumber?: number | null;
+    winsPerPlayer?: Record<string, number> | null;
+    setEndResult?: { endedReason?: string } | null;
+  } | null;
 }
 
 export interface DeckCardRef {

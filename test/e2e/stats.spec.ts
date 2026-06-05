@@ -22,6 +22,9 @@ test('signed in, stats shows the scoped surface (Mine, no Global) + view tabs', 
   // Matchups view exposes the heatmap lens (leader-vs-leader / deck-vs-deck).
   await page.getByRole('button', { name: 'Matchups' }).click();
   await expect(page.getByRole('button', { name: 'Leaders & Bases' })).toBeVisible();
+  // Complete-Bo3 filter: selecting it explains the rule.
+  await page.locator('select', { has: page.locator('option', { hasText: 'Complete Bo3 only' }) }).selectOption('complete');
+  await expect(page.getByText(/finished.*best-of-three|won 2/i)).toBeVisible();
 });
 
 test('Stats appears in the header nav', async ({ page }) => {

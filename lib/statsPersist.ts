@@ -89,6 +89,9 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
       format: matchFact.format,
       cardPool: matchFact.cardPool,
       bo3: matchFact.bo3,
+      lobbyId: matchFact.lobbyId,
+      gameNumber: matchFact.gameNumber,
+      bo3WinsAfter: matchFact.bo3WinsAfter,
       result: matchFact.result,
       durationMs: matchFact.durationMs,
     });

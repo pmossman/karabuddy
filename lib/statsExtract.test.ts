@@ -81,6 +81,26 @@ describe('extractReplayFacts — match fact', () => {
     expect(matchFact!.result).toBe('unknown');
     expect(matchFact!.players.every((p) => p.won === null)).toBe(true);
   });
+
+  it('derives Bo3 set linkage: lobbyId, gameNumber, and winner wins-after = winsBefore+1', () => {
+    const decoded = decodedFrom([frame({ p1: { user: { username: 'A' }, cardPiles: {} }, p2: { user: { username: 'B' }, cardPiles: {} } })]);
+    // Game 2 of a set, p1 leads 1-0 going in; p1 wins → set is now 2-0 (clinched).
+    decoded.meta!.match = { gameFormat: 'premier', gamesToWinMode: 'bestOfThree', lobbyId: 'lob1', winHistory: { currentGameNumber: 2, winsPerPlayer: { p1: 1, p2: 0 } } } as any;
+    const { matchFact } = extractReplayFacts(decoded, { gameId: 'g2', winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+    expect(matchFact!.bo3).toBe(true);
+    expect(matchFact!.lobbyId).toBe('lob1');
+    expect(matchFact!.gameNumber).toBe(2);
+    expect(matchFact!.bo3WinsAfter).toBe(2); // 1 before + this win
+  });
+
+  it('leaves Bo3 linkage null for a Bo1 game', () => {
+    const decoded = decodedFrom([frame({ p1: { user: { username: 'A' }, cardPiles: {} }, p2: { user: { username: 'B' }, cardPiles: {} } })]);
+    decoded.meta!.match = { gameFormat: 'premier', gamesToWinMode: 'bestOfOne', lobbyId: 'lob2' } as any;
+    const { matchFact } = extractReplayFacts(decoded, { gameId: 'g9', winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+    expect(matchFact!.bo3).toBe(false);
+    expect(matchFact!.lobbyId).toBeNull();
+    expect(matchFact!.bo3WinsAfter).toBeNull();
+  });
 });
 
 describe('extractReplayFacts — card events', () => {

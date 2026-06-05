@@ -46,7 +46,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: 'global stats are disabled; use scope=personal or scope=team' }, { status: 400 });
   }
 
-  const opts = { scope, format, minGames };
+  // bo3=complete restricts to games from a finished best-of-three set.
+  const completeBo3 = url.searchParams.get('bo3') === 'complete';
+  const opts = { scope, format, minGames, completeBo3 };
   let data;
   if (type === 'matchups') {
     // byBase = the deck-vs-deck "Leaders & Bases" matrix; default is leader-only.

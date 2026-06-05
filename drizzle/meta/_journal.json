@@ -141,6 +141,13 @@
       "when": 1781049600000,
       "tag": "0019_resourcing_rating",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1781136000000,
+      "tag": "0020_bo3_set",
+      "breakpoints": true
     }
   ]
 }

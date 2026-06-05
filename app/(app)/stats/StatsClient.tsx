@@ -33,6 +33,7 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const [teamSlug, setTeamSlug] = useState<string>(teams[0]?.slug || '');
   const [view, setView] = useState<View>('leaders');
   const [format, setFormat] = useState<string>('');
+  const [bo3Mode, setBo3Mode] = useState<'all' | 'complete'>('all'); // restrict to finished best-of-three sets
   const [event, setEvent] = useState<CardEvent>('played');
   const [leaderCtx, setLeaderCtx] = useState<string>(''); // deck context for the Cards view
   const [baseSel, setBaseSel] = useState<string>(''); // base-identity key: ''=all | base:<id> | asp:<aspect>
@@ -50,8 +51,9 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     const p = new URLSearchParams({ scope });
     if (format) p.set('format', format);
     if (scope === 'team' && teamSlug) p.set('team', teamSlug);
+    if (bo3Mode === 'complete') p.set('bo3', 'complete');
     return p;
-  }, [scope, format, teamSlug]);
+  }, [scope, format, teamSlug, bo3Mode]);
 
   const resolveNames = async (ids: Set<string>) => {
     if (!ids.size) return;
@@ -195,7 +197,13 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         <Segmented options={scopeOptions} value={scope} onChange={(v) => setScope(v as Scope)} />
         {scope === 'team' && teams.length > 0 && <Select value={teamSlug} onChange={setTeamSlug} options={teams.map((t) => [t.slug, t.name])} />}
         <Select value={format} onChange={setFormat} options={FORMATS as any} />
+        <Select value={bo3Mode} onChange={(v) => setBo3Mode(v as any)} options={[['all', 'All games'], ['complete', 'Complete Bo3 only']]} />
       </div>
+      {bo3Mode === 'complete' && (
+        <p style={{ color: '#6c7588', fontSize: 12, margin: '-4px 0 10px' }}>
+          Only games from a <strong>finished</strong> best-of-three (someone won 2). Sets abandoned before game 2 or 3 are excluded. Needs the current extension, which records the set score.
+        </p>
+      )}
 
       <Segmented options={[['leaders', 'Leaders'], ['matchups', 'Matchups'], ['cards', 'Cards'], ['resourcing', 'Resourcing']]} value={view} onChange={(v) => setView(v as View)} />
 

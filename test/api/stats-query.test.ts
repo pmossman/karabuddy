@@ -25,6 +25,7 @@ async function seedMatch(opts: {
   p1: { leader: string; won: boolean; base?: string; rating?: { available: number; wasted: number; forced?: number; underspend?: number; deadCards?: number; countedRounds?: number } };
   p2: { leader: string; won: boolean; base?: string };
   shareTeam?: string;
+  bo3?: { lobbyId: string; gameNumber: number; winsAfter: number | null };
   // card events to attach: each entry can repeat (copies) to prove the
   // distinct (game,side,card) collapse.
   events?: Array<{ side: 'p1' | 'p2'; cardId: string; event: string; copies?: number }>;
@@ -36,7 +37,11 @@ async function seedMatch(opts: {
     slug, gameId: opts.gameId, userId: opts.userId ?? null, ownerToken: 'kbx_' + id(),
     players: [], payloadBlobUrl: 'memory://x', durationMs: 1,
   });
-  await db.insert(matches).values({ gameId: opts.gameId, replaySlug: slug, format, result: 'decisive' });
+  await db.insert(matches).values({
+    gameId: opts.gameId, replaySlug: slug, format, result: 'decisive',
+    bo3: opts.bo3 ? true : null, lobbyId: opts.bo3?.lobbyId ?? null,
+    gameNumber: opts.bo3?.gameNumber ?? null, bo3WinsAfter: opts.bo3?.winsAfter ?? null,
+  });
   await db.insert(matchPlayers).values([
     { gameId: opts.gameId, playerId: 'p1', leader: opts.p1.leader, base: opts.p1.base ?? null, opponentLeader: opts.p2.leader, opponentBase: opts.p2.base ?? null, won: opts.p1.won, isRecorder: true, format,
       resourceAvailable: opts.p1.rating?.available ?? null, resourceWasted: opts.p1.rating?.wasted ?? null, resourceForced: opts.p1.rating?.forced ?? null,
@@ -211,6 +216,23 @@ describe('getResourcingGames', () => {
     });
     const mine = await getResourcingGames({ scope: { kind: 'personal', userId: userA } });
     expect(mine).toHaveLength(0); // userA has no rated games of their own here
+  });
+});
+
+describe('completeBo3 filter', () => {
+  it('counts only games from a lobby whose set reached 2 wins', async () => {
+    const u = await seedUser();
+    // Complete set (lobby A, 2-0): both games are "complete-Bo3" games.
+    await seedMatch({ gameId: 'a1-' + id().slice(0, 5), userId: u, p1: { leader: 'BO3', won: true }, p2: { leader: 'X', won: false }, bo3: { lobbyId: 'lobA', gameNumber: 1, winsAfter: 1 } });
+    await seedMatch({ gameId: 'a2-' + id().slice(0, 5), userId: u, p1: { leader: 'BO3', won: true }, p2: { leader: 'X', won: false }, bo3: { lobbyId: 'lobA', gameNumber: 2, winsAfter: 2 } });
+    // Abandoned set (lobby B, 1-0 then someone left): never reached 2 → excluded.
+    await seedMatch({ gameId: 'b1-' + id().slice(0, 5), userId: u, p1: { leader: 'BO3', won: true }, p2: { leader: 'X', won: false }, bo3: { lobbyId: 'lobB', gameNumber: 1, winsAfter: 1 } });
+
+    const all = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: u } }));
+    expect(all.BO3.games).toBe(3); // unfiltered sees all three
+
+    const complete = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: u }, completeBo3: true }));
+    expect(complete.BO3.games).toBe(2); // only lobby A's two games
   });
 });
 

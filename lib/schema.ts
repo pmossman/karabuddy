@@ -449,6 +449,13 @@ export const matches = pgTable(
     format: text('format'), // premier | eternal | open | limited | null
     cardPool: text('card_pool'),
     bo3: boolean('bo3'),
+    // B104: Bo3 set linkage + completeness. lobbyId groups a set's games;
+    // gameNumber is this game's position; bo3WinsAfter is the winner's set-win
+    // count after this game. A set is COMPLETE once some game in the lobby has
+    // bo3WinsAfter ≥ 2 — used to filter stats to finished best-of-three matches.
+    lobbyId: text('lobby_id'),
+    gameNumber: integer('game_number'),
+    bo3WinsAfter: integer('bo3_wins_after'),
     result: text('result').notNull(), // decisive | draw | unknown
     durationMs: integer('duration_ms'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -456,6 +463,7 @@ export const matches = pgTable(
   (t) => ({
     replayIdx: index('matches_replay_idx').on(t.replaySlug),
     formatIdx: index('matches_format_idx').on(t.format),
+    lobbyIdx: index('matches_lobby_idx').on(t.lobbyId),
   })
 );
 

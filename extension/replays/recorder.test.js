@@ -121,6 +121,18 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
     expect(uploads[0].match.gamesToWinMode).toBe('bestOfThree');
   });
 
+  it('captures Bo3 win-history (game number + score-before-this-game) into payload.match', async () => {
+    const { uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    // Game 2 of a Bo3, score 1-0 going in (p1 won game 1).
+    ws.recv(sio('lobbystate', { gameFormat: 'premier', winHistory: { gamesToWinMode: 'bestOfThree', currentGameNumber: 2, winsPerPlayer: { p1: 1, p2: 0 }, setEndResult: null } }));
+    ws.recv(sio('gamestate', gs('g2', 'p1')));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gs('g2', i % 2 === 0 ? 'p2' : 'p1')));
+    ws.recv(sio('gamestate', gs('g2', 'p1', { gameOver: true })));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(uploads[0].match.winHistory).toEqual({ currentGameNumber: 2, winsPerPlayer: { p1: 1, p2: 0 }, setEndResult: null });
+  });
+
   it('fires a content-free drift beacon when karabast gamestate shape drifts', async () => {
     const { beacons } = setup();
     const ws = new window.WebSocket('wss://api.karabast.net/socket');

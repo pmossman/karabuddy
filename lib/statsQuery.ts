@@ -26,6 +26,7 @@ export interface StatsQueryOpts {
   scope: StatsScope;
   format?: string | null; // filter to one format; omit/null = all formats
   minGames?: number; // min sample size to surface a row (global privacy floor)
+  completeBo3?: boolean; // restrict to games from a COMPLETE best-of-three set
 }
 
 export interface LeaderStat {
@@ -96,6 +97,16 @@ function scopePredicate(scope: StatsScope) {
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
 
+// B104: restrict to games from a COMPLETE best-of-three set. A game qualifies
+// when it's Bo3, has a lobby, and some game in that lobby reached 2 set-wins
+// (bo3_wins_after ≥ 2) — i.e. the set was actually finished, not abandoned
+// mid-way. Correlated EXISTS over the lobby's games. Returns undefined (no-op)
+// unless the caller opts in.
+const bo3Cond = (opts: StatsQueryOpts) =>
+  opts.completeBo3
+    ? sql`${matches.bo3} = true and ${matches.lobbyId} is not null and exists (select 1 from ${matches} cm where cm.lobby_id = ${matches.lobbyId} and cm.bo3_wins_after >= 2)`
+    : undefined;
+
 // Attach the scope-specific join (team share / global opt-out) to a $dynamic
 // match_players query builder. Shared by every aggregation so scoping can't
 // drift between them.
@@ -120,7 +131,7 @@ export async function getLeaderStats(opts: StatsQueryOpts): Promise<LeaderStat[]
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
   const rows = await applyScopeJoins(base, opts.scope)
-    .where(and(isNotNull(matchPlayers.leader), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), fmtCond(opts.format), bo3Cond(opts), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -149,7 +160,7 @@ export async function getLeaderMatchups(opts: StatsQueryOpts): Promise<LeaderMat
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
   const rows = await applyScopeJoins(base, opts.scope)
-    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), fmtCond(opts.format), bo3Cond(opts), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, matchPlayers.opponentLeader)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -211,7 +222,7 @@ export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number
     .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
     .$dynamic();
   const rows = await applyScopeJoins(base, opts.scope)
-    .where(and(eq(matchPlayers.isRecorder, true), isNotNull(matchPlayers.resourceAvailable), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(eq(matchPlayers.isRecorder, true), isNotNull(matchPlayers.resourceAvailable), fmtCond(opts.format), bo3Cond(opts), scopePredicate(opts.scope)))
     .orderBy(sql`${replays.createdAt} desc`)
     .limit(opts.limit ?? 200);
   return rows.map((r: any) => ({
@@ -268,7 +279,7 @@ export async function getCardStats(
     .innerJoin(matches, eq(matches.gameId, cardEvents.gameId))
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
-  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, scopePredicate(opts.scope)];
+  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, bo3Cond(opts), scopePredicate(opts.scope)];
   if (opts.leader || opts.baseAspect || opts.baseId) {
     // Join the EVENT side's own match_players row (same game + player).
     base = base.innerJoin(matchPlayers, and(eq(matchPlayers.gameId, cardEvents.gameId), eq(matchPlayers.playerId, cardEvents.playerId)));
@@ -329,7 +340,7 @@ export async function getDecks(opts: StatsQueryOpts & { leader?: string | null }
     .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
     .$dynamic();
   const rows = await applyScopeJoins(base, opts.scope)
-    .where(and(isNotNull(matchPlayers.leader), opts.leader ? eq(matchPlayers.leader, opts.leader) : undefined, fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), opts.leader ? eq(matchPlayers.leader, opts.leader) : undefined, fmtCond(opts.format), bo3Cond(opts), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, idCols.baseId, idCols.baseAspect)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -369,7 +380,7 @@ export async function getDeckMatchups(opts: StatsQueryOpts): Promise<DeckMatchup
     .leftJoin(obc, eq(obc.cardId, matchPlayers.opponentBase))
     .$dynamic();
   const rows = await applyScopeJoins(base, opts.scope)
-    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), fmtCond(opts.format), bo3Cond(opts), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, self.baseId, self.baseAspect, matchPlayers.opponentLeader, opp.baseId, opp.baseAspect)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
