@@ -638,7 +638,9 @@ const GameCard: React.FC<IGameCardProps> = ({
         },
     }
     return (
-        <Box sx={styles.cardContainer}>
+        // B104: data-card-uuid lets the replay viewer's FrameAnimator measure a
+        // card's on-screen position by identity across frames (FLIP animation).
+        <Box sx={styles.cardContainer} data-card-uuid={card.uuid}>
             {cardStyle === CardStyle.InPlay && card.clonedCardId && (
                 <Box
                     sx={styles.cloneIcon}

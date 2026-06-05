@@ -7,6 +7,7 @@ import { CosmeticsProvider } from '@/app/_contexts/CosmeticsContext';
 import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
+import { FrameAnimator } from './FrameAnimator';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
@@ -19,6 +20,13 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSession } from 'next-auth/react';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { canMutateReplay } from '@/lib/replayPermissions';
+
+// B104: cadence of the action-mode multi-frame playback (ms between frames).
+// Tuned to ~the card-move animation length so consecutive transitions flow.
+const PLAYBACK_TICK_MS = 300;
+// If two action steps arrive within this window, the user is holding the arrow
+// (key-repeat ~30-50ms) — fly through instead of playing the choreography.
+const HELD_STEP_MS = 180;
 
 interface ReplayRow {
   slug: string;
@@ -104,8 +112,28 @@ function ViewerShell({ replay, initialTags }: Props) {
       return target;
     });
   }, []);
+  // B104: latest currentIndex for the action-playback driver (avoids stale
+  // closures), + the active playback (interval) handle.
+  const currentIndexRef = useRef(0);
+  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
+  const playRef = useRef<{ timer: number; target: number; dir: 1 | -1 } | null>(null);
+  const lastStepAt = useRef(0); // timestamp of the last action step (held vs deliberate)
+  const stopPlayback = useCallback(() => {
+    if (playRef.current) { window.clearTimeout(playRef.current.timer); playRef.current = null; }
+  }, []);
+  useEffect(() => () => stopPlayback(), [stopPlayback]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tagState, setTagState] = useState<TagRow[]>(initialTags);
+  // B104 (prototype): FLIP card-movement animation between frames. Toggle +
+  // board container ref for the overlay animator.
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [animate, setAnimate] = useState(true);
+  useEffect(() => {
+    try { const v = window.localStorage.getItem('karabuddy:animate'); if (v != null) setAnimate(v === '1'); } catch {}
+  }, []);
+  const toggleAnimate = useCallback(() => {
+    setAnimate((v) => { const next = !v; try { window.localStorage.setItem('karabuddy:animate', next ? '1' : '0'); } catch {} return next; });
+  }, []);
   // B44/B46: drawer state owned here so the gameboard overlay (FrameNavOverlay)
   // can shift in response. Starts closed on mobile so the first paint gives
   // the gameboard the full viewport.
@@ -253,24 +281,32 @@ function ViewerShell({ replay, initialTags }: Props) {
   // After every currentIndex change, mirror to the URL. Skip the first
   // render — searchParams is the source of truth on initial mount.
   const mountedRef = useRef(false);
+  const urlTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
       return;
     }
-    const params = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
-    // Mirror as an ORIGINAL index so the link round-trips and matches external
-    // deep-links (comments/decks) that point at original frame indices.
-    const human = collapsedToOriginal(currentIndex) + 1;
-    if (currentIndex === 0) params.delete('f');
-    else params.set('f', String(human));
-    const qs = params.toString();
-    const url = qs ? `?${qs}` : window.location.pathname;
-    router.replace(url, { scroll: false });
+    // B104: debounce the URL write. `router.replace` per step is expensive (a
+    // Next navigation); firing it 30×/s while holding the arrow tanks perf. We
+    // only need the final frame in the URL — write it once stepping settles.
+    if (urlTimerRef.current != null) window.clearTimeout(urlTimerRef.current);
+    urlTimerRef.current = window.setTimeout(() => {
+      const params = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
+      // Mirror as an ORIGINAL index so the link round-trips and matches external
+      // deep-links (comments/decks) that point at original frame indices.
+      const human = collapsedToOriginal(currentIndexRef.current) + 1;
+      if (currentIndexRef.current === 0) params.delete('f');
+      else params.set('f', String(human));
+      const qs = params.toString();
+      const url = qs ? `?${qs}` : window.location.pathname;
+      router.replace(url, { scroll: false });
+    }, 200);
     // Intentionally exclude searchParams + router from deps — replace runs
     // on every meaningful frame change, not on its own URL writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
+  useEffect(() => () => { if (urlTimerRef.current != null) window.clearTimeout(urlTimerRef.current); }, []);
   // Start at the server-safe default so SSR and the first client render agree;
   // hydrate the persisted choice in an effect after mount (mirrors the
   // sidebar-width pattern below). Reading localStorage in the useState
@@ -293,6 +329,24 @@ function ViewerShell({ replay, initialTags }: Props) {
 
   const frames = decoded?.frames || null;
   const activeByFrame = decoded?.activeByFrame || null;
+
+  // B104: how long action-playback should dwell on each frame before advancing
+  // — longer for frames with an attack, so the lunge→death→reflow choreography
+  // (in FrameAnimator) has time to play instead of being cut off.
+  const frameAnimMs = useMemo(() => {
+    const fr = decoded?.frames;
+    if (!fr) return [] as number[];
+    return fr.map((f: Frame) => {
+      const msgs = (f.state as any)?.newMessages;
+      const has = (re: RegExp) => Array.isArray(msgs) && msgs.some((m: any) =>
+        Array.isArray(m?.message) && m.message.some((p: any) => typeof p === 'string' && re.test(p)));
+      if (has(/attacks/i)) return 900;   // lunge → death → reflow choreography
+      if (has(/plays /i)) return 720;    // slide-in + flip reveal
+      return PLAYBACK_TICK_MS;
+    });
+  }, [decoded]);
+  const frameAnimMsRef = useRef<number[]>([]);
+  useEffect(() => { frameAnimMsRef.current = frameAnimMs; }, [frameAnimMs]);
 
   // B102: the viewer steps in COLLAPSED frame space (currentIndex), but the DB
   // and the shareable `?f=` URL stay in the recorder's ORIGINAL space so old
@@ -328,22 +382,62 @@ function ViewerShell({ replay, initialTags }: Props) {
     if (target !== 0) setCurrentIndex(target);
   }, [frames, setCurrentIndex, origToCollapsed]);
 
-  // Step delta — `dir` is +/-1. Action mode walks through frames until the
-  // active player changes (matches the extension's advanceByAction).
+  // B104: the next action-boundary frame from `from` in `dir` (active player
+  // changes). Same rule the action stepper always used.
+  const actionBoundary = useCallback((from: number, dir: 1 | -1) => {
+    if (!frames || !activeByFrame) return from;
+    const total = frames.length;
+    const cur = activeByFrame[from];
+    let n = from + dir;
+    while (n >= 0 && n < total && activeByFrame[n] === cur) n += dir;
+    if (n < 0 || n >= total) n = dir > 0 ? total - 1 : 0;
+    return n;
+  }, [frames, activeByFrame]);
+
+  // Step delta — `dir` is +/-1.
+  //  - Frame mode: one frame.
+  //  - Action mode: a DELIBERATE step plays through every frame to the next
+  //    action boundary so the intermediate moves/attacks animate (B104). But
+  //    HOLDING the arrow (rapid repeats) just jumps boundary-to-boundary so you
+  //    fly through — no cadence pacing, no animation.
   const step = useMemo(() => (dir: 1 | -1) => {
     if (!frames || frames.length === 0) return;
     if (mode === 'action' && activeByFrame) {
-      const total = frames.length;
-      const cur = activeByFrame[currentIndex];
-      let next = currentIndex + dir;
-      while (next >= 0 && next < total && activeByFrame[next] === cur) next += dir;
-      if (next < 0 || next >= total) next = dir > 0 ? total - 1 : 0;
-      if (next !== currentIndex) setCurrentIndex(next);
+      const now = performance.now();
+      const held = now - lastStepAt.current < HELD_STEP_MS;
+      lastStepAt.current = now;
+      if (held) {
+        // Held / rapid → fly: jump straight to the next boundary.
+        stopPlayback();
+        const target = actionBoundary(currentIndexRef.current, dir);
+        if (target !== currentIndexRef.current) setCurrentIndex(target);
+        return;
+      }
+      stopPlayback(); // deliberate single step → play through (choreography)
+      const start = currentIndexRef.current;
+      const target = actionBoundary(start, dir);
+      if (target === start) return;
+      const stepDir: 1 | -1 = target > start ? 1 : -1;
+      let pos = start;
+      // Recursive timer (not a fixed interval) so each frame can dwell for its
+      // own animation length (attack frames longer than the rest).
+      playRef.current = { timer: 0, target, dir };
+      const advance = () => {
+        pos += stepDir;
+        setCurrentIndex(pos);
+        if (pos === target) { stopPlayback(); return; }
+        if (!playRef.current) return;
+        const delay = frameAnimMsRef.current[pos] ?? PLAYBACK_TICK_MS;
+        playRef.current.timer = window.setTimeout(advance, delay);
+      };
+      advance(); // first frame immediately
     } else {
-      const next = Math.max(0, Math.min(frames.length - 1, currentIndex + dir));
-      if (next !== currentIndex) setCurrentIndex(next);
+      stopPlayback();
+      // Functional update — robust against a stale `currentIndex` closure while
+      // the arrow is held (rapid steps come faster than re-renders commit).
+      setCurrentIndex((cur) => Math.max(0, Math.min(frames.length - 1, cur + dir)));
     }
-  }, [frames, activeByFrame, currentIndex, mode]);
+  }, [frames, activeByFrame, mode, actionBoundary, stopPlayback, setCurrentIndex]);
 
   // B13: jump to the previous/next tagged frame. Lifted out of TagSidebar so
   // the keydown handler below can invoke it for `[` / `]` without DOM
@@ -354,8 +448,11 @@ function ViewerShell({ replay, initialTags }: Props) {
       dir > 0
         ? sorted.find((i) => i > currentIndex)
         : [...sorted].reverse().find((i) => i < currentIndex);
-    if (target != null) setCurrentIndex(target);
-  }, [displayTags, currentIndex, setCurrentIndex]);
+    if (target != null) { stopPlayback(); setCurrentIndex(target); }
+  }, [displayTags, currentIndex, setCurrentIndex, stopPlayback]);
+
+  // B104: a direct jump (slider, tag click) must cancel any action playback.
+  const jumpTo = useCallback((i: number) => { stopPlayback(); setCurrentIndex(i); }, [stopPlayback, setCurrentIndex]);
 
   // Fetch + decode the payload from Blob.
   useEffect(() => {
@@ -394,11 +491,22 @@ function ViewerShell({ replay, initialTags }: Props) {
   }, [replay.payloadBlobUrl, setConnectedPlayer]);
 
   // Push the current frame's state into the game context whenever we step.
+  // B104: coalesce via requestAnimationFrame. Rendering the (heavy) gameboard
+  // is the dominant per-step cost; while holding the arrow, currentIndex
+  // changes far faster than the board can paint. Collapsing to one render per
+  // frame — always for the LATEST index — lets the counter fly while the board
+  // keeps up at the paint rate (skipping intermediates), instead of crawling.
+  const boardRafRef = useRef<number | null>(null);
   useEffect(() => {
     if (!frames || frames.length === 0) return;
-    const i = Math.max(0, Math.min(frames.length - 1, currentIndex));
-    setGameState(frames[i].state);
+    if (boardRafRef.current != null) return; // already scheduled — coalesce
+    boardRafRef.current = requestAnimationFrame(() => {
+      boardRafRef.current = null;
+      const i = Math.max(0, Math.min(frames.length - 1, currentIndexRef.current));
+      setGameState(frames[i].state);
+    });
   }, [frames, currentIndex, setGameState]);
+  useEffect(() => () => { if (boardRafRef.current != null) cancelAnimationFrame(boardRafRef.current); }, []);
 
   // Keyboard nav. Shift+arrow temporarily flips mode (action↔frame).
   useEffect(() => {
@@ -429,10 +537,10 @@ function ViewerShell({ replay, initialTags }: Props) {
         }
       } else if (e.key === 'Home') {
         e.preventDefault();
-        setCurrentIndex(0);
+        jumpTo(0);
       } else if (e.key === 'End') {
         e.preventDefault();
-        setCurrentIndex((frames?.length || 1) - 1);
+        jumpTo((frames?.length || 1) - 1);
       } else if (e.key === '[' || e.key === ']') {
         // B13: prev/next tag — no-op when no tag exists in that direction.
         e.preventDefault();
@@ -441,7 +549,7 @@ function ViewerShell({ replay, initialTags }: Props) {
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [frames, activeByFrame, currentIndex, mode, step, jumpToAdjacentTag]);
+  }, [frames, activeByFrame, currentIndex, mode, step, jumpToAdjacentTag, jumpTo]);
 
   const playerUsernames = useMemo(() => {
     const set = new Set<string>();
@@ -465,9 +573,12 @@ function ViewerShell({ replay, initialTags }: Props) {
           the RIGHT (matches mobile drawer anchor). When the desktop
           sidebar is closed, TagSidebar unmounts its <aside>, so the
           gameboard's flex:1 reclaims the full width. */}
-      <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+      <div ref={boardRef} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
         {frames ? (
-          <Gameboard />
+          <>
+            <Gameboard />
+            <FrameAnimator containerRef={boardRef} enabled={animate} />
+          </>
         ) : (
           <div style={{ padding: 32, color: '#a0a8b8', fontFamily: 'var(--font-barlow), sans-serif' }}>
             Loading replay…
@@ -485,7 +596,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         currentIndex={currentIndex}
         lastTransition={lastTransition}
         onStep={step}
-        onJump={setCurrentIndex}
+        onJump={jumpTo}
         onJumpToAdjacentTag={jumpToAdjacentTag}
         tags={displayTags}
         setTags={setTagState}
@@ -557,6 +668,8 @@ function ViewerShell({ replay, initialTags }: Props) {
             <StepModeOverlay
               mode={mode}
               setMode={setMode}
+              animate={animate}
+              onToggleAnimate={toggleAnimate}
               landscape={!isMobile}
               drawerOpen={drawerOpen}
               drawerWidth={`${sidebarWidth}px`}

@@ -29,7 +29,15 @@ export function LabelsRow({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listId = useId();
 
+  // Re-sync from the prop when the replay's labels actually change. The caller
+  // passes a fresh array each render, so guard on CONTENT (via a ref) and only
+  // call setLabels on a real change — otherwise this loops under rapid parent
+  // re-renders (holding the step arrow): setState → render → new array → …
+  const syncedRef = useRef<string[]>(initialLabels);
   useEffect(() => {
+    const a = syncedRef.current;
+    if (a.length === initialLabels.length && a.every((v, i) => v === initialLabels[i])) return;
+    syncedRef.current = initialLabels;
     setLabels(initialLabels);
   }, [initialLabels]);
 

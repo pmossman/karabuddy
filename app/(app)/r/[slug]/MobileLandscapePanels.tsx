@@ -36,6 +36,8 @@ interface ReplayShape {
 export function StepModeOverlay({
   mode,
   setMode,
+  animate,
+  onToggleAnimate,
   landscape,
   drawerOpen,
   drawerWidth,
@@ -45,6 +47,11 @@ export function StepModeOverlay({
 }: {
   mode: 'action' | 'frame';
   setMode: (m: 'action' | 'frame') => void;
+  // B104: card-movement animation toggle lives in this same pill — it's the
+  // natural home alongside the step-mode control (both govern how stepping
+  // looks), instead of a separate top-level button cluttering the board.
+  animate: boolean;
+  onToggleAnimate: () => void;
   // Landscape (desktop or mobile-landscape) parks it directly LEFT of
   // the ☰ menu button — hugs the sidebar/drawer outer edge so it
   // tracks open/close + resize. Portrait can't share that corner with
@@ -114,6 +121,31 @@ export function StepModeOverlay({
         <ModeButton active={mode === 'action'} onClick={() => setMode('action')}>Action</ModeButton>
         <ModeButton active={mode === 'frame'} onClick={() => setMode('frame')}>Frame</ModeButton>
       </div>
+      <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 2px', background: 'rgba(77, 157, 255, 0.25)' }} />
+      <button
+        type="button"
+        onClick={onToggleAnimate}
+        aria-pressed={animate}
+        title={animate ? 'Card animation on — click to disable' : 'Card animation off — click to enable'}
+        style={{
+          background: animate ? 'rgba(77, 157, 255, 0.4)' : 'transparent',
+          color: animate ? '#fff' : '#6c7588',
+          border: 0,
+          padding: '4px 8px',
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          borderRadius: 4,
+          lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        <span style={{ fontSize: 11 }}>✦</span>
+        <span style={{ fontSize: 11 }}>Animate</span>
+      </button>
     </div>
   );
 }

@@ -883,9 +883,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
                 </IconBtn>
               )}
             >
-              <div>
-                <ModeSegmented mode={mode} setMode={setMode} />
-              </div>
+              <ModeSegmented mode={mode} setMode={setMode} />
             </Popover>
           </div>
         </section>

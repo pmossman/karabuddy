@@ -487,7 +487,14 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
     )
 
     return (
-        <Box sx={{ width: '100%' }}>
+        // B104: data-card-uuid so the replay FrameAnimator can locate the base
+        // (and an undeployed leader). When a leader is DEPLOYED it also renders
+        // as a unit in the arena (its own GameCard owns the uuid then), so skip
+        // it here to avoid a duplicate that the animator would mistakenly grab.
+        <Box
+            sx={{ width: '100%' }}
+            data-card-uuid={card.zone === 'groundArena' || card.zone === 'spaceArena' ? undefined : card.uuid}
+        >
             {capturedCards.length > 0 && isConnectedPlayer && capturedCardsDecoration}
             <Box
                 sx={isDeployed ? styles.deployedPlaceholder : styles.card}
