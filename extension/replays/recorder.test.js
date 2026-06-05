@@ -172,6 +172,50 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
   });
 });
 
+// B105: spectating a game must NOT record/upload it — it isn't ours.
+describe('spectator guard', () => {
+  // A spectator is sent BOTH players' hands unmasked (a player only sees their own).
+  const gsSpec = (id, active) => ({
+    id,
+    players: {
+      p1: { user: { username: 'Alice' }, cardPiles: { hand: [{ id: 'SOR_001', setId: { set: 'SOR', number: 1 } }] }, isActionPhaseActivePlayer: active === 'p1' },
+      p2: { user: { username: 'Bob' }, cardPiles: { hand: [{ id: 'SOR_002', setId: { set: 'SOR', number: 2 } }] }, isActionPhaseActivePlayer: active === 'p2' },
+    },
+  });
+
+  it('records nothing when the socket URL carries spectator=true', async () => {
+    const { R, uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/ws/?EIO=4&transport=websocket&spectator=true');
+    ws.recv(sio('gamestate', gs('g1', 'p1')));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gs('g1', i % 2 === 0 ? 'p2' : 'p1')));
+    ws.recv(sio('gamestate', gs('g1', 'p2', { gameOver: true, winners: ['Alice'] })));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(uploads).toHaveLength(0);
+    expect(R.isRecordingActive()).toBe(false);
+  });
+
+  it('falls back to discarding when both hands are visible and the URL flag was unreadable', async () => {
+    const { R, uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket'); // no spectator param
+    ws.recv(sio('gamestate', gsSpec('g1', 'p1'))); // both hands visible → spectator
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gsSpec('g1', i % 2 === 0 ? 'p2' : 'p1')));
+    ws.recv(sio('gamestate', gsSpec('g1', 'p2')));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(uploads).toHaveLength(0);
+    expect(R.isRecordingActive()).toBe(false);
+  });
+
+  it('still records a normal game when the socket says spectator=false', async () => {
+    const { uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/ws/?spectator=false');
+    ws.recv(sio('gamestate', gs('g1', 'p1')));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gs('g1', i % 2 === 0 ? 'p2' : 'p1')));
+    ws.recv(sio('gamestate', gs('g1', 'p2', { gameOver: true, winners: ['Alice'] })));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(uploads).toHaveLength(1);
+  });
+});
+
 // FORWARD CONTRACT (B98): a breaking recorder wire change must fail CI before
 // the extension is ever submitted to CWS. We drive the REAL recorder, then feed
 // its exact output to the REAL server decoder (lib/replayDecoder) and assert it
