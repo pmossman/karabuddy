@@ -40,6 +40,31 @@
 
     const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+    // B105: promptState is in PLAYER_NOISE (its raw form is large/volatile), but
+    // we re-add a SLIM form so replays can show the choice menus/prompts the
+    // recording player faced. Two rules keep it cheap + correct:
+    //   • only the renderable fields are kept; and
+    //   • the field set is ALWAYS emitted (the empty default when idle) so a
+    //     closing prompt diffs back to empty — the patch format overwrites keys
+    //     but can't delete them, so a conditionally-present prompt would stick.
+    // Only the LOCAL player's gamestate carries a real prompt (karabast never
+    // sends the opponent's), so this surfaces "the choices you faced".
+    const PROMPT_FIELDS = ['selectCardMode', 'selectOrder', 'distributeAmongTargets', 'dropdownListOptions', 'menuTitle', 'promptTitle', 'buttons', 'promptUuid', 'promptType', 'displayCards', 'perCardButtons', 'isOpponentEffect', 'playerIsNewlyActive'];
+    const isMeaningfulPrompt = (ps) => isPlainObject(ps) && (
+        (typeof ps.menuTitle === 'string' && ps.menuTitle.length > 0) ||
+        (Array.isArray(ps.buttons) && ps.buttons.length > 0) ||
+        (Array.isArray(ps.displayCards) && ps.displayCards.length > 0) ||
+        (Array.isArray(ps.dropdownListOptions) && ps.dropdownListOptions.length > 0) ||
+        (Array.isArray(ps.perCardButtons) && ps.perCardButtons.length > 0) ||
+        ps.selectCardMode === true ||
+        ps.distributeAmongTargets != null
+    );
+    const normalizePrompt = (ps) => {
+        const out = { ...EMPTY_PROMPT_STATE };
+        if (isMeaningfulPrompt(ps)) for (const k of PROMPT_FIELDS) if (k in ps) out[k] = ps[k];
+        return out;
+    };
+
     const normalizeGamestate = (gs) => {
         if (!isPlainObject(gs)) return gs;
         const out = {};
@@ -57,6 +82,8 @@
                     if (PLAYER_NOISE.has(k)) continue;
                     npp[k] = p[k];
                 }
+                // Re-add the slim prompt (PLAYER_NOISE stripped the raw one).
+                npp.promptState = normalizePrompt(p.promptState);
                 np[pid] = npp;
             }
             out.players = np;
@@ -296,9 +323,9 @@
     };
 
     // Karabast's React reads `players[X].promptState.promptTitle` (and friends)
-    // unconditionally; we strip promptState during recording to save bytes, so
-    // inject a well-formed empty default to keep the renderer happy. Spectator
-    // playback never wants a prompt, so empty is the right value.
+    // unconditionally. Current recordings keep a slim promptState (B105), but
+    // OLDER recordings stripped it entirely — inject a well-formed empty default
+    // wherever it's missing so the renderer never faults on a legacy replay.
     const EMPTY_PROMPT_STATE = Object.freeze({
         selectCardMode: false,
         selectOrder: false,

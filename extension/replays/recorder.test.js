@@ -202,4 +202,30 @@ describe('forward contract: server decodes the current recorder payload', () => 
     const finalState = decoded.frames[decoded.frames.length - 1].state;
     expect(extractWinners(finalState)).toContain('p1');
   });
+
+  it('a choice menu the recorder faced survives recorder → server decode (B105)', async () => {
+    const { uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    // Build frames where p1 (recorder) is shown a prompt on one of them.
+    const promptGs = (active, ps) => ({
+      id: 'g1',
+      players: {
+        p1: { user: { username: 'Alice' }, cardPiles: { hand: [{ id: 'SOR_001', setId: { set: 'SOR', number: 1 } }] }, isActionPhaseActivePlayer: active === 'p1', promptState: ps },
+        p2: { user: { username: 'Bob' }, cardPiles: { hand: [{ controllerId: 'p2' }] }, isActionPhaseActivePlayer: active === 'p2' },
+      },
+    });
+    ws.recv(sio('gamestate', promptGs('p1', null)));
+    ws.recv(sio('gamestate', promptGs('p1', { menuTitle: 'Choose a target', buttons: [{ text: 'Cancel', arg: 'cancel' }], displayCards: [{ id: 'SOR_050' }] })));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', promptGs(i % 2 === 0 ? 'p2' : 'p1', null)));
+    ws.recv(sio('gamestate', { id: 'g1', gameOver: true, winners: ['Alice'], players: promptGs('p2', null).players }));
+    await vi.advanceTimersByTimeAsync(1500);
+
+    const decoded = decodeReplay(uploads[0]);
+    const prompted = decoded.frames.find((f) => f.state.players?.p1?.promptState?.menuTitle === 'Choose a target');
+    expect(prompted).toBeTruthy();
+    expect(prompted.state.players.p1.promptState.buttons).toEqual([{ text: 'Cancel', arg: 'cancel' }]);
+    // And a later non-prompt frame has reset back to empty (no sticky prompt).
+    const last = decoded.frames[decoded.frames.length - 1].state;
+    expect(last.players.p1.promptState.menuTitle).toBe('');
+  });
 });

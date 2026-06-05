@@ -55,9 +55,10 @@ export function stripHiddenHandCards(state: any): any {
   return state;
 }
 
-// Karabast reads promptState.* unconditionally; we strip it during
-// recording to save bytes, so inject an empty well-formed default for
-// each player on every frame.
+// Karabast reads promptState.* unconditionally. Current recordings keep a slim
+// promptState (B105 — so the viewer can replay choice menus); older ones
+// stripped it. Inject an empty well-formed default only where it's MISSING, so
+// a captured prompt is preserved and a legacy frame still renders.
 const EMPTY_PROMPT_STATE = Object.freeze({
   selectCardMode: false,
   selectOrder: false,

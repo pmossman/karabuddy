@@ -77,6 +77,36 @@ describe('makePatch + applyPatch round-trip', () => {
   });
 });
 
+describe('normalizeGamestate — promptState capture (B105)', () => {
+  const withPrompt = (ps) => ({ players: { p1: { cardPiles: { hand: [] }, promptState: ps } }, phase: 'action' });
+
+  it('keeps a slim, renderable prompt when the player is actually being prompted', () => {
+    const norm = D.normalizeGamestate(withPrompt({
+      menuTitle: 'Choose a card to discard', buttons: [{ text: 'Done', arg: 'done' }],
+      displayCards: [{ id: 'SOR_010' }], selectCardMode: true,
+      someInternalNoise: 'dropped', // not a renderable field → not kept
+    }));
+    const ps = norm.players.p1.promptState;
+    expect(ps.menuTitle).toBe('Choose a card to discard');
+    expect(ps.buttons).toEqual([{ text: 'Done', arg: 'done' }]);
+    expect(ps.selectCardMode).toBe(true);
+    expect(ps).not.toHaveProperty('someInternalNoise');
+  });
+
+  it('emits the empty default for an idle prompt, so closing one diffs back to empty', () => {
+    const idle = D.normalizeGamestate(withPrompt({ menuTitle: '', buttons: [], displayCards: [], selectCardMode: false }));
+    expect(idle.players.p1.promptState.menuTitle).toBe('');
+    expect(idle.players.p1.promptState.buttons).toEqual([]);
+    // A prompt closing (real → idle) must reset every field via the patch, since
+    // makePatch can't delete keys — both states carry the full field set.
+    const open = D.normalizeGamestate(withPrompt({ menuTitle: 'Pick', buttons: [{ text: 'X' }] }));
+    const clone = JSON.parse(JSON.stringify(open));
+    D.applyPatch(clone, D.makePatch(open, idle));
+    expect(clone.players.p1.promptState.menuTitle).toBe('');
+    expect(clone.players.p1.promptState.buttons).toEqual([]);
+  });
+});
+
 describe('detectLocalPlayerId (B33 — POV via hand-visibility asymmetry)', () => {
   const visibleHand = [{ id: 'SOR_001', setId: { set: 'SOR', number: 1 } }];
   const stubHand = [{ controllerId: 'x' }]; // masked opponent hand (no id/setId)
