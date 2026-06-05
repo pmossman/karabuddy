@@ -8,6 +8,7 @@ import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
 import { FrameAnimator } from './FrameAnimator';
+import { actionBoundary as computeActionBoundary } from './actionBoundary';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
@@ -428,16 +429,16 @@ function ViewerShell({ replay, initialTags }: Props) {
     if (target !== 0) setCurrentIndex(target);
   }, [frames, setCurrentIndex, origToCollapsed]);
 
-  // B104: the next action-boundary frame from `from` in `dir` (active player
-  // changes). Same rule the action stepper always used.
+  // B104: the next action-boundary frame from `from` in `dir`. Actions are runs
+  // of frames sharing an active player; the canonical landing spot for an action
+  // is its FIRST frame (where it begins). Both directions snap to segment
+  // STARTS so a forward step then a back step are inverses — stepping forward
+  // once and back once returns you to where you started. (The naive "walk while
+  // the active player is unchanged" lands forward on the next segment's start
+  // but backward on the *previous* segment's end, which isn't symmetric.)
   const actionBoundary = useCallback((from: number, dir: 1 | -1) => {
     if (!frames || !activeByFrame) return from;
-    const total = frames.length;
-    const cur = activeByFrame[from];
-    let n = from + dir;
-    while (n >= 0 && n < total && activeByFrame[n] === cur) n += dir;
-    if (n < 0 || n >= total) n = dir > 0 ? total - 1 : 0;
-    return n;
+    return computeActionBoundary(activeByFrame, frames.length, from, dir);
   }, [frames, activeByFrame]);
 
   // Step delta — `dir` is +/-1.
@@ -602,11 +603,8 @@ function ViewerShell({ replay, initialTags }: Props) {
           const otherMode: StepMode = mode === 'action' ? 'frame' : 'action';
           if (!frames) return;
           if (otherMode === 'action' && activeByFrame) {
-            const total = frames.length;
-            const cur = activeByFrame[currentIndex];
-            let next = currentIndex + dir;
-            while (next >= 0 && next < total && activeByFrame[next] === cur) next += dir;
-            if (next < 0 || next >= total) next = dir > 0 ? total - 1 : 0;
+            // Same symmetric action-boundary rule as the buttons/arrows.
+            const next = actionBoundary(currentIndex, dir as 1 | -1);
             if (next !== currentIndex) setCurrentIndex(next);
           } else {
             const next = Math.max(0, Math.min(frames.length - 1, currentIndex + dir));
@@ -629,7 +627,7 @@ function ViewerShell({ replay, initialTags }: Props) {
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [frames, activeByFrame, currentIndex, mode, step, jumpToAdjacentTag, jumpTo, toggleAutoplay, stopAutoplay, setCurrentIndex]);
+  }, [frames, activeByFrame, currentIndex, mode, step, jumpToAdjacentTag, jumpTo, toggleAutoplay, stopAutoplay, setCurrentIndex, actionBoundary]);
 
   // Stop the auto-play timer on unmount so it can't fire into a dead component.
   useEffect(() => () => stopAutoplay(), [stopAutoplay]);
