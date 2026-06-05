@@ -77,7 +77,7 @@ describe('makePatch + applyPatch round-trip', () => {
   });
 });
 
-describe('normalizeGamestate — promptState capture (B105)', () => {
+describe('normalizeGamestate — promptState capture (B107)', () => {
   const withPrompt = (ps) => ({ players: { p1: { cardPiles: { hand: [] }, promptState: ps } }, phase: 'action' });
 
   it('keeps a slim, renderable prompt when the player is actually being prompted', () => {

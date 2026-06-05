@@ -449,7 +449,7 @@ export const matches = pgTable(
     format: text('format'), // premier | eternal | open | limited | null
     cardPool: text('card_pool'),
     bo3: boolean('bo3'),
-    // B104: Bo3 set linkage + completeness. lobbyId groups a set's games;
+    // B106: Bo3 set linkage + completeness. lobbyId groups a set's games;
     // gameNumber is this game's position; bo3WinsAfter is the winner's set-win
     // count after this game. A set is COMPLETE once some game in the lobby has
     // bo3WinsAfter ≥ 2 — used to filter stats to finished best-of-three matches.

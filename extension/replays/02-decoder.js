@@ -40,7 +40,7 @@
 
     const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-    // B105: promptState is in PLAYER_NOISE (its raw form is large/volatile), but
+    // B107: promptState is in PLAYER_NOISE (its raw form is large/volatile), but
     // we re-add a SLIM form so replays can show the choice menus/prompts the
     // recording player faced. Two rules keep it cheap + correct:
     //   • only the renderable fields are kept; and
@@ -339,7 +339,7 @@
     };
 
     // Karabast's React reads `players[X].promptState.promptTitle` (and friends)
-    // unconditionally. Current recordings keep a slim promptState (B105), but
+    // unconditionally. Current recordings keep a slim promptState (B107), but
     // OLDER recordings stripped it entirely — inject a well-formed empty default
     // wherever it's missing so the renderer never faults on a legacy replay.
     const EMPTY_PROMPT_STATE = Object.freeze({

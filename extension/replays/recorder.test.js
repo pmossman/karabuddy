@@ -247,7 +247,7 @@ describe('forward contract: server decodes the current recorder payload', () => 
     expect(extractWinners(finalState)).toContain('p1');
   });
 
-  it('a choice menu the recorder faced survives recorder → server decode (B105)', async () => {
+  it('a choice menu the recorder faced survives recorder → server decode (B107)', async () => {
     const { uploads } = setup();
     const ws = new window.WebSocket('wss://api.karabast.net/socket');
     // Build frames where p1 (recorder) is shown a prompt on one of them.

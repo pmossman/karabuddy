@@ -56,7 +56,7 @@ export function stripHiddenHandCards(state: any): any {
 }
 
 // Karabast reads promptState.* unconditionally. Current recordings keep a slim
-// promptState (B105 — so the viewer can replay choice menus); older ones
+// promptState (B107 — so the viewer can replay choice menus); older ones
 // stripped it. Inject an empty well-formed default only where it's MISSING, so
 // a captured prompt is preserved and a legacy frame still renders.
 const EMPTY_PROMPT_STATE = Object.freeze({
@@ -110,7 +110,7 @@ export interface MatchMeta {
   cardPool?: string | null; // 'current' | 'nextSet' | 'unlimited'
   gamesToWinMode?: string | null; // 'bestOfOne' | 'bestOfThree'
   isPrivate?: boolean;
-  // B104: Bo3 set progress (captured at game start — score BEFORE this game).
+  // B106: Bo3 set progress (captured at game start — score BEFORE this game).
   // Lets the server identify COMPLETE best-of-three matches. null on Bo1 / older
   // recordings that predate the capture.
   winHistory?: {

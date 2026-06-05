@@ -194,7 +194,7 @@
                 cardPool: lobbyState.cardPool || null,
                 gamesToWinMode: winHistory?.gamesToWinMode || null,
                 isPrivate: !!lobbyState.isPrivate,
-                // B104: Bo3 set progress, so the server can identify COMPLETE
+                // B106: Bo3 set progress, so the server can identify COMPLETE
                 // best-of-three matches (and exclude a set someone bailed on).
                 // Captured at game start, so currentGameNumber + winsPerPlayer are
                 // the score BEFORE this game; the server adds this game's winner

@@ -97,7 +97,7 @@ function scopePredicate(scope: StatsScope) {
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
 
-// B104: restrict to games from a COMPLETE best-of-three set. A game qualifies
+// B106: restrict to games from a COMPLETE best-of-three set. A game qualifies
 // when it's Bo3, has a lobby, and some game in that lobby reached 2 set-wins
 // (bo3_wins_after ≥ 2) — i.e. the set was actually finished, not abandoned
 // mid-way. Correlated EXISTS over the lobby's games. Returns undefined (no-op)

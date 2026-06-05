@@ -1,4 +1,4 @@
--- B104 (ADR 0007): Bo3 set linkage on matches, so stats can filter to COMPLETE
+-- B106 (ADR 0007): Bo3 set linkage on matches, so stats can filter to COMPLETE
 -- best-of-three matches. lobby_id groups a set's games; game_number is this
 -- game's position; bo3_wins_after is the winner's set-win count after this game
 -- (a set is complete once some game in the lobby reaches 2). All nullable /
