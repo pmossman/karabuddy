@@ -11,6 +11,8 @@ import { FrameAnimator } from './FrameAnimator';
 import { actionBoundary as computeActionBoundary } from './actionBoundary';
 import { EndGameSummary } from './EndGameSummary';
 import { computeEndGameStats } from '@/lib/endGameStats';
+import { JumpToMenu } from './JumpToMenu';
+import { computeChapters, type Chapter } from '@/lib/replayChapters';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
@@ -430,6 +432,20 @@ function ViewerShell({ replay, initialTags }: Props) {
     [tagState, origToCollapsed],
   );
 
+  // B106: "jump to a moment" chapters — structural beats (rounds, leader flips,
+  // start/end) from the frames, merged with the user's tags (in collapsed-frame
+  // space). Stable sort by frame keeps start first / end last at ties.
+  const chapters = useMemo<Chapter[]>(() => {
+    const structural = computeChapters(frames);
+    const tagChapters: Chapter[] = displayTags.map((t) => ({
+      frameIndex: t.frameIndex,
+      kind: 'tag',
+      label: (t.comment || 'Tag').slice(0, 48),
+      sublabel: t.authorName || undefined,
+    }));
+    return [...structural, ...tagChapters].sort((a, b) => a.frameIndex - b.frameIndex);
+  }, [frames, displayTags]);
+
   // B48: apply the URL-derived initial frame once frames are decoded.
   // Clamps to [0, total-1] in case the link points at a frame that no
   // longer exists (replay re-uploaded shorter, etc).
@@ -847,6 +863,27 @@ function ViewerShell({ replay, initialTags }: Props) {
                 <InfoIcon />
               </button>
             )}
+            {/* B106: "jump to a moment" navigator — stacked directly ABOVE the
+                ☰ review FAB so it joins the bottom-right control cluster. Tracks
+                the same right offset the ☰ uses (shifts past the docked desktop
+                sidebar / mobile-landscape sheet) and rides up with the portrait
+                sheet, sitting one FAB-height (38 + 8 gap) above it. */}
+            {(() => {
+              const menuEdgeR = 'max(12px, env(safe-area-inset-right, 12px))';
+              const menuRight = !isMobile
+                ? (drawerOpen ? `calc(${sidebarWidth}px + 12px)` : menuEdgeR)
+                : (mobileLandscape && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : menuEdgeR);
+              const menuBottom = mobilePortrait && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeB;
+              return (
+                <JumpToMenu
+                  chapters={chapters}
+                  currentIndex={currentIndex}
+                  onJump={jumpTo}
+                  bottom={`calc(${menuBottom} + 46px)`}
+                  right={menuRight}
+                />
+              );
+            })()}
           </>
         );
       })()}
