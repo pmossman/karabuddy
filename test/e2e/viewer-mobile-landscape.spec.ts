@@ -10,8 +10,14 @@ import { signInAsTestUser, uploadReplay, claimInstallToken } from './helpers';
 //        Top sheet in portrait, left sheet in landscape. Collapsed by default
 //        (rarely needed mid-replay). Also draggable.
 // The two are mutually exclusive on mobile (opening one closes the other) so
-// they never sandwich the board — that simultaneity was the old "mess". The
-// step-mode pill is a separate always-visible overlay; the prev/next chevrons
+// they never sandwich the board — that simultaneity was the old "mess".
+//
+// B104: the ⓘ matchup FAB moved to the TOP edge (top-right portrait /
+// top-left landscape — matching where its panel slides in). Playback controls
+// collapsed off the cramped bottom edge into a single joined capsule in the
+// bottom-right cluster: a one-tap play/pause fused to a "Playback settings"
+// opener that surfaces a bubble (Speed / Step by / Card animation). The
+// always-visible "Step by:" pill is desktop-only now. The prev/next chevrons
 // are pinned to the screen edges and don't move when a sheet opens.
 //
 // Portrait + landscape share the model now (the old portrait/landscape split
@@ -43,15 +49,18 @@ async function loadReplay(page: any, request: any) {
   return r;
 }
 
-test('mobile landscape: step-toggle overlay is always visible (sheets closed)', async ({ page, request }) => {
+test('mobile: playback capsule is always visible — one-tap play + a settings opener (sheets closed)', async ({ page, request }) => {
   await page.setViewportSize(MOBILE_LANDSCAPE);
   const r = await loadReplay(page, request);
   await page.goto(`/r/${r.slug}`);
-  // Both sheets are closed by default. The overlay should still render.
-  const overlay = page.getByTestId('step-mode-overlay');
-  await expect(overlay).toBeVisible();
-  await expect(overlay.getByRole('button', { name: /^Action$/ })).toBeVisible();
-  await expect(overlay.getByRole('button', { name: /^Frame$/ })).toBeVisible();
+  // Both sheets are closed by default. The playback capsule still renders:
+  // a one-tap play/pause (its own button, not buried in the bubble) fused to
+  // the settings opener that surfaces the finer controls.
+  await expect(page.getByRole('button', { name: /^Play$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Playback settings/i })).toBeVisible();
+  // The play control is NOT inside the (closed) settings bubble — it's always
+  // reachable in one tap. Opening settings is a separate affordance.
+  await expect(page.getByRole('dialog', { name: /Playback controls/i })).toHaveCount(0);
 });
 
 test('mobile: matchup is collapsed by default and opens via the ⓘ FAB (LEFT-anchored in landscape)', async ({ page, request }) => {
@@ -172,15 +181,22 @@ test('desktop: sidebar opens on the RIGHT and can be dismissed via ☰', async (
   await expect(drawer).toBeVisible();
 });
 
-test('step-mode overlay shows an explicit "Step by:" label (landscape + portrait)', async ({ page, request }) => {
-  await page.setViewportSize(MOBILE_LANDSCAPE);
-  const r = await loadReplay(page, request);
-  await page.goto(`/r/${r.slug}`);
-  await expect(page.getByTestId('step-mode-overlay').getByText(/Step by/i)).toBeVisible();
-
-  await page.setViewportSize(MOBILE_PORTRAIT);
-  // The overlay rerenders on resize via useMediaQuery — label still present.
-  await expect(page.getByTestId('step-mode-overlay').getByText(/Step by/i)).toBeVisible();
+test('mobile: playback-settings bubble exposes Speed + Step by (landscape + portrait)', async ({ page, request }) => {
+  for (const viewport of [MOBILE_LANDSCAPE, MOBILE_PORTRAIT]) {
+    await page.setViewportSize(viewport);
+    const r = await loadReplay(page, request);
+    await page.goto(`/r/${r.slug}`);
+    // The finer controls live behind the capsule's settings opener.
+    await page.getByRole('button', { name: /Playback settings/i }).click();
+    const bubble = page.getByRole('dialog', { name: /Playback controls/i });
+    await expect(bubble).toBeVisible();
+    await expect(bubble.getByText(/Step by/i)).toBeVisible();
+    await expect(bubble.getByRole('button', { name: /^Action$/ })).toBeVisible();
+    await expect(bubble.getByRole('button', { name: /^Frame$/ })).toBeVisible();
+    // Named speed tiers (no fake "1×" baseline).
+    await expect(bubble.getByText(/Speed/i)).toBeVisible();
+    await expect(bubble.getByRole('button', { name: /^Normal$/ })).toBeVisible();
+  }
 });
 
 test('mobile MatchupPanel exposes title-edit + add-label affordances (landscape + portrait)', async ({ page, request }) => {

@@ -787,10 +787,13 @@ function ViewerShell({ replay, initialTags }: Props) {
                 dragging={reviewDrag.dragging}
               />
             )}
-            {/* B100/B104: matchup info FAB lives TOP-RIGHT on mobile — the
-                matchup panel opens from the top edge (portrait), so the
-                affordance reads as "info, up there" instead of competing with
-                the bottom playback cluster. */}
+            {/* B100/B104: matchup info FAB moves to the TOP on mobile so it
+                points at where its panel slides in (and clears the bottom
+                playback cluster). Anchored to the same edge as the panel:
+                TOP-RIGHT in portrait (panel drops from the top), TOP-LEFT in
+                landscape (panel slides from the left — and the right edge is
+                where the review sheet's × close lives, so top-right would
+                collide with it). */}
             {isMobile && (
               <button
                 type="button"
@@ -800,7 +803,9 @@ function ViewerShell({ replay, initialTags }: Props) {
                 style={{
                   position: 'fixed',
                   top: 'max(10px, env(safe-area-inset-top, 10px))',
-                  right: 'max(10px, env(safe-area-inset-right, 10px))',
+                  ...(mobileLandscape
+                    ? { left: 'max(10px, env(safe-area-inset-left, 10px))' }
+                    : { right: 'max(10px, env(safe-area-inset-right, 10px))' }),
                   zIndex: 90,
                   width: 38,
                   height: 38,
