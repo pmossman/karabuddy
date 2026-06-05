@@ -9,6 +9,8 @@ import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
 import { FrameAnimator } from './FrameAnimator';
 import { actionBoundary as computeActionBoundary } from './actionBoundary';
+import { EndGameSummary } from './EndGameSummary';
+import { computeEndGameStats } from '@/lib/endGameStats';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
@@ -377,6 +379,19 @@ function ViewerShell({ replay, initialTags }: Props) {
   const frames = decoded?.frames || null;
   const activeByFrame = decoded?.activeByFrame || null;
 
+  // B104: end-of-game summary. Computed once from the decoded frames + the
+  // winner playerIds; surfaced when you reach the final frame, hidden the
+  // moment you step back (or dismiss it). `summaryDismissed` resets whenever
+  // you leave the last frame, so re-reaching the end re-shows it.
+  const endStats = useMemo(
+    () => computeEndGameStats(frames, (replay.winners as string[] | null) ?? null),
+    [frames, replay.winners],
+  );
+  const [summaryDismissed, setSummaryDismissed] = useState(false);
+  const atEnd = !!frames && frames.length > 1 && currentIndex >= frames.length - 1;
+  useEffect(() => { if (!atEnd) setSummaryDismissed(false); }, [atEnd]);
+  const showSummary = atEnd && !summaryDismissed && endStats != null;
+
   // B104: how long action-playback should dwell on each frame before advancing
   // — longer for frames with an attack, so the lunge→death→reflow choreography
   // (in FrameAnimator) has time to play instead of being cut off.
@@ -659,6 +674,14 @@ function ViewerShell({ replay, initialTags }: Props) {
           <>
             <Gameboard />
             <FrameAnimator containerRef={boardRef} enabled={animate} />
+            {showSummary && endStats && (
+              <EndGameSummary
+                stats={endStats}
+                players={(replay.players as any[]) || []}
+                localPlayerId={decoded?.meta.localPlayerId ?? null}
+                onClose={() => setSummaryDismissed(true)}
+              />
+            )}
           </>
         ) : (
           <div style={{ padding: 32, color: '#a0a8b8', fontFamily: 'var(--font-barlow), sans-serif' }}>
