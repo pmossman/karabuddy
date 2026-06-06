@@ -5,6 +5,9 @@ import { getDb } from '@/lib/db';
 import { replays, users } from '@/lib/schema';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
+import { orderPlayersOwnerFirst } from '@/lib/players';
+import { isSampleReplaySlug } from '@/lib/sampleReplays';
+import { anonymizeDecks, anonByIdFromPlayers } from '@/lib/anonymizeReplay';
 import type { DecksByUserId, UserDeck, DeckCardRef } from '@/lib/replayDecoder';
 
 export const dynamic = 'force-dynamic';
@@ -31,9 +34,18 @@ export default async function DeckPage({ params }: PageProps) {
     .where(eq(replays.slug, slug))
     .limit(1);
   if (rows.length === 0) notFound();
-  const { replay, ownerName } = rows[0];
+  const { replay, ownerName: rawOwnerName } = rows[0];
 
-  const decks = (replay.decks as DecksByUserId | null) || null;
+  // B107: a curated sample replay is anonymized everywhere — the deck's handle
+  // becomes "Player N", the user-authored deck title is dropped, and the
+  // uploader name is hidden. The decklist itself is kept (that's the point).
+  const anonymize = isSampleReplaySlug(slug);
+  const ownerName = anonymize ? null : rawOwnerName;
+  let decks = (replay.decks as DecksByUserId | null) || null;
+  if (anonymize && decks) {
+    const ordered = orderPlayersOwnerFirst((replay as any).players, (replay as any).ownerPlayerId);
+    decks = anonymizeDecks(decks, anonByIdFromPlayers(ordered as any[])) as DecksByUserId;
+  }
   const deck = decks?.[playerId] || null;
   if (!decks) {
     // The replay row exists but no deck snapshot was captured. Friendly

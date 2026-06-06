@@ -1,9 +1,11 @@
 import Link from 'next/link';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, inArray } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, replays } from '@/lib/schema';
 import { orderPlayersOwnerFirst } from '@/lib/players';
+import { getSampleReplaySlugs } from '@/lib/sampleReplays';
+import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
 import { HomeTeamActivity } from './HomeTeamActivity';
 import { HomeAnonymousReplays } from './HomeAnonymousReplays';
@@ -27,8 +29,32 @@ export default async function Home() {
   const userId: string | null = (session?.user as any)?.id || null;
 
   if (!userId) {
+    const samples = await loadSampleReplays();
     return (
       <Main>
+        {samples.length > 0 && (
+          <section style={{ marginBottom: 40 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>See it in action</h1>
+              <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, maxWidth: 640 }}>
+                KaraBuddy records your <a href="https://karabast.net" style={{ color: '#5db4ff' }}>karabast.net</a>{' '}
+                games so you can replay them frame-by-frame, tag key turns, and review matchups with
+                your team. Open a sample below — players are anonymized.
+              </p>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: 14,
+              }}
+            >
+              {samples.map((r) => (
+                <ReplayCard key={r.slug} replay={r as any} canManage={false} />
+              ))}
+            </div>
+          </section>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 24 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>Your replays</h1>
           <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5 }}>
@@ -96,6 +122,25 @@ export default async function Home() {
       </section>
     </Main>
   );
+}
+
+// B107: fetch the curated sample replays (by slug), preserve the curated
+// order, and anonymize the player handles for public display.
+async function loadSampleReplays() {
+  const slugs = getSampleReplaySlugs();
+  if (slugs.length === 0) return [];
+  const db = getDb();
+  const rows = await db.select().from(replays).where(inArray(replays.slug, slugs));
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
+  return slugs
+    .map((s) => bySlug.get(s))
+    .filter(Boolean)
+    .map((r) => {
+      const base = serializeRow(r);
+      // Null ownerPlayerId too: there's no "you" in an anonymized sample, so the
+      // decks modal shouldn't badge a deck "YOU".
+      return { ...base, players: anonymizePlayersSummary(base.players as any[]), displayName: null, ownerPlayerId: null };
+    });
 }
 
 function serializeRow(r: any) {

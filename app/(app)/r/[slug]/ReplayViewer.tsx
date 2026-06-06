@@ -13,6 +13,7 @@ import { EndGameSummary } from './EndGameSummary';
 import { computeEndGameStats } from '@/lib/endGameStats';
 import { JumpToMenu } from './JumpToMenu';
 import { computeChapters, type Chapter } from '@/lib/replayChapters';
+import { anonymizeFrames, anonByIdFromPlayers, anonymizeDecks } from '@/lib/anonymizeReplay';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
@@ -82,16 +83,19 @@ interface TagRow {
 interface Props {
   replay: ReplayRow;
   initialTags: TagRow[];
+  // B107: a curated sample shown publicly on the signed-out home — anonymize
+  // the board + game log and skip the (scoped) tag fetch.
+  anonymize?: boolean;
 }
 
-export function ReplayViewer({ replay, initialTags }: Props) {
+export function ReplayViewer({ replay, initialTags, anonymize }: Props) {
   return (
     <ThemeContextProvider>
       <UserProvider>
         <CosmeticsProvider>
           <PopupProvider>
             <GameProvider>
-              <ViewerShell replay={replay} initialTags={initialTags} />
+              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} />
             </GameProvider>
           </PopupProvider>
         </CosmeticsProvider>
@@ -114,7 +118,7 @@ function InfoIcon() {
   );
 }
 
-function ViewerShell({ replay, initialTags }: Props) {
+function ViewerShell({ replay, initialTags, anonymize }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
   const [currentIndex, setCurrentIndexRaw] = useState(0);
@@ -280,6 +284,9 @@ function ViewerShell({ replay, initialTags }: Props) {
   // when the install token resolves (identifies an anonymous author) or
   // the session changes (team membership).
   useEffect(() => {
+    // B107: a public sample replay never loads tags — their authors are real
+    // handles we don't want to surface, and the comment UI isn't the point.
+    if (anonymize) return;
     if (!installToken) return;
     let cancelled = false;
     (async () => {
@@ -296,7 +303,7 @@ function ViewerShell({ replay, initialTags }: Props) {
       }
     })();
     return () => { cancelled = true; };
-  }, [installToken, sessionUserId, replay.slug]);
+  }, [installToken, sessionUserId, replay.slug, anonymize]);
   const isOwner = canMutateReplay(
     { userId: replay.userId, ownerToken: replay.ownerToken },
     { sessionUserId, installToken: installToken || null },
@@ -446,6 +453,15 @@ function ViewerShell({ replay, initialTags }: Props) {
     return [...structural, ...tagChapters].sort((a, b) => a.frameIndex - b.frameIndex);
   }, [frames, displayTags]);
 
+  // B107: the deck snapshots shown in the matchup panel / decks modal also
+  // carry the player's handle + their (user-authored) deck title — anonymize
+  // both for sample replays. Falls back to the payload-embedded decks for older
+  // rows that lack the DB column.
+  const decksForView = useMemo(() => {
+    const d = replay.decks ?? decoded?.meta.decks ?? null;
+    return anonymize ? anonymizeDecks(d as any, anonByIdFromPlayers(replay.players as any[])) : d;
+  }, [replay.decks, replay.players, decoded, anonymize]);
+
   // B48: apply the URL-derived initial frame once frames are decoded.
   // Clamps to [0, total-1] in case the link points at a frame that no
   // longer exists (replay re-uploaded shorter, etc).
@@ -575,6 +591,11 @@ function ViewerShell({ replay, initialTags }: Props) {
         // path); the viewer renders the collapsed timeline.
         const result = collapseReplay(decodeReplay(parsed));
         if (cancelled) return;
+        // B107: sample replay → rewrite the board labels + game-log player
+        // names to "Player N" before the frames ever reach the game context.
+        // The id→label map comes from the (already-anonymized) players prop, so
+        // the board, log, and card all agree.
+        if (anonymize) anonymizeFrames(result.frames, anonByIdFromPlayers(replay.players as any[]));
         setDecoded(result);
         // Prefer the player ID captured by the recorder (the local karabast
         // user whose perspective this match was played from). Fall back to
@@ -595,7 +616,7 @@ function ViewerShell({ replay, initialTags }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [replay.payloadBlobUrl, setConnectedPlayer]);
+  }, [replay.payloadBlobUrl, setConnectedPlayer, anonymize, replay.players]);
 
   // Push the current frame's state into the game context whenever we step.
   // B104: coalesce via requestAnimationFrame. Rendering the (heavy) gameboard
@@ -694,7 +715,7 @@ function ViewerShell({ replay, initialTags }: Props) {
               <EndGameSummary
                 stats={endStats}
                 players={(replay.players as any[]) || []}
-                localPlayerId={decoded?.meta.localPlayerId ?? null}
+                localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
                 onClose={() => setSummaryDismissed(true)}
               />
             )}
@@ -739,8 +760,8 @@ function ViewerShell({ replay, initialTags }: Props) {
         // already populated server-side; fall back to decoder.meta if a
         // historical replay only has them embedded in the blob.
         matchMeta={replay.match ?? decoded?.meta.match ?? null}
-        decks={replay.decks ?? decoded?.meta.decks ?? null}
-        localPlayerId={decoded?.meta.localPlayerId ?? null}
+        decks={decksForView}
+        localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
         armedTeams={armedTeams}
         onArmedTeamsChange={setArmedTeams}
         onOpenResourcing={() => setResourcingOpen(true)}
@@ -750,7 +771,7 @@ function ViewerShell({ replay, initialTags }: Props) {
         open={resourcingOpen}
         onClose={() => setResourcingOpen(false)}
         frames={frames}
-        localPlayerId={decoded?.meta.localPlayerId ?? null}
+        localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
         onJump={setCurrentIndex}
       />
       {(() => {
@@ -914,8 +935,8 @@ function ViewerShell({ replay, initialTags }: Props) {
           anchor={isLandscape ? 'left' : 'top'}
           replay={replay}
           matchMeta={replay.match ?? decoded?.meta.match ?? null}
-          decks={replay.decks ?? decoded?.meta.decks ?? null}
-          localPlayerId={decoded?.meta.localPlayerId ?? null}
+          decks={decksForView}
+          localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
           frames={frames}
           installToken={installToken}
           isOwner={isOwner}

@@ -5,6 +5,9 @@ import { replays, tags } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { auth } from '@/auth';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
+import { orderPlayersOwnerFirst } from '@/lib/players';
+import { isSampleReplaySlug } from '@/lib/sampleReplays';
+import { anonymizePlayersSummary, anonymizeDecks, anonByIdFromPlayers } from '@/lib/anonymizeReplay';
 
 export const runtime = 'nodejs';
 
@@ -43,6 +46,30 @@ export async function GET(
       .from(tags)
       .where(eq(tags.replaySlug, slug))
       .orderBy(asc(tags.frameIndex));
+
+    // B107: a curated sample replay is anonymized for everyone — real handles →
+    // "Player N" on the players + decks, the user-authored deck/replay titles
+    // are dropped, and tags (their authors are real handles) are withheld. This
+    // is the source of truth for the lazy decks modal, so anonymizing here
+    // covers every client at once.
+    if (isSampleReplaySlug(slug)) {
+      const ordered = orderPlayersOwnerFirst((row as any).players, (row as any).ownerPlayerId);
+      const byId = anonByIdFromPlayers(ordered as any[]);
+      const data = {
+        ...row,
+        players: anonymizePlayersSummary(ordered as any[]),
+        decks: anonymizeDecks((row as any).decks, byId),
+        displayName: null,
+        tags: [],
+        // Don't expose owner identity / the mutate credential on a publicly
+        // featured sample.
+        ownerPlayerId: null,
+        userId: null,
+        ownerToken: '',
+      };
+      return NextResponse.json({ ok: true, data }, { headers });
+    }
+
     return NextResponse.json({ ok: true, data: { ...row, tags: tagRows } }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] GET /api/replays/:slug failed:', err);
