@@ -47,6 +47,7 @@ export function FrameAnimator({
   const active = useRef<Animation[]>([]);
   const hidden = useRef<HTMLElement[]>([]);
   const lastRun = useRef(0); // timestamp of the last frame change (rapid-step detection)
+  const zones = useRef<Map<string, string>>(new Map()); // uuid → zone, previous frame
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -86,6 +87,22 @@ export function FrameAnimator({
     const next = measure();
     const old = prev.current;
     prev.current = next;
+
+    // Zone per card this frame vs last — kept in sync with `prev` (built even
+    // when we bail below) so it never goes stale after rapid stepping. Lets the
+    // move loop tell a real cross-zone move (hand→resources/board, board→discard)
+    // from a SAME-ZONE reflow (hand re-centering when a sibling is resourced, or
+    // a card lifting as it's selected), which shouldn't animate — else the hand
+    // "bumps" on every resource/draw step.
+    const oldZones = zones.current;
+    const nextZones = new Map<string, string>();
+    for (const pid of Object.keys(gameState?.players || {})) {
+      const piles = gameState.players[pid]?.cardPiles || {};
+      for (const z of Object.keys(piles)) {
+        for (const c of piles[z] || []) if (c?.uuid) nextZones.set(c.uuid, c.zone || z);
+      }
+    }
+    zones.current = nextZones;
 
     if (!old) return;
 
@@ -154,6 +171,10 @@ export function FrameAnimator({
       if (attackers.has(uuid)) continue; // the lunge owns this card this frame
       const o = old.get(uuid);
       if (o) {
+        // Same-zone reflow (hand re-centering, a card lifting as it's selected)
+        // → snap, don't animate, so the hand doesn't bump on resource/draw steps.
+        const oz = oldZones.get(uuid), nz = nextZones.get(uuid);
+        if (oz && nz && oz === nz) continue;
         // MOVED — fly a clone of the (now-landed) card from old → new.
         const moved = Math.hypot(n.x - o.x, n.y - o.y) > MOVE_THRESHOLD;
         if (!moved) continue;

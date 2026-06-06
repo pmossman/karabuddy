@@ -8,7 +8,7 @@ import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
 import { FrameAnimator } from './FrameAnimator';
-import { actionBoundary as computeActionBoundary } from './actionBoundary';
+import { computeActionStops, nextActionStop } from './actionStops';
 import { EndGameSummary } from './EndGameSummary';
 import { computeEndGameStats } from '@/lib/endGameStats';
 import { JumpToMenu } from './JumpToMenu';
@@ -477,16 +477,15 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
   }, [frames, setCurrentIndex, origToCollapsed]);
 
   // B104: the next action-boundary frame from `from` in `dir`. Actions are runs
-  // of frames sharing an active player; the canonical landing spot for an action
-  // is its FIRST frame (where it begins). Both directions snap to segment
-  // STARTS so a forward step then a back step are inverses — stepping forward
-  // once and back once returns you to where you started. (The naive "walk while
-  // the active player is unchanged" lands forward on the next segment's start
-  // but backward on the *previous* segment's end, which isn't symmetric.)
-  const actionBoundary = useCallback((from: number, dir: 1 | -1) => {
-    if (!frames || !activeByFrame) return from;
-    return computeActionBoundary(activeByFrame, frames.length, from, dir);
-  }, [frames, activeByFrame]);
+  // of frames sharing an active player PLUS the regroup-phase beats (a player
+  // drawing / resourcing / discarding), so stepping by action stops on those
+  // instead of blowing through them. Both directions land on a stop, so a
+  // forward step then a back step are inverses. (B108)
+  const actionStops = useMemo(() => computeActionStops(frames, activeByFrame), [frames, activeByFrame]);
+  const actionBoundary = useCallback(
+    (from: number, dir: 1 | -1) => nextActionStop(actionStops, from, dir),
+    [actionStops],
+  );
 
   // Step delta — `dir` is +/-1.
   //  - Frame mode: one frame.
@@ -616,7 +615,16 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [replay.payloadBlobUrl, setConnectedPlayer, anonymize, replay.players]);
+    // Key ONLY on the payload URL — the stable identity of this replay. Stepping
+    // updates the ?f= URL, which re-renders the force-dynamic server page and
+    // hands down a NEW `replay` object (fresh `players` array) every step. If
+    // those were deps, this effect would re-fetch the whole 728KB payload and
+    // re-decode on EVERY step — producing a new `frames` array that re-pushed
+    // the current frame and re-fired one-shot animations (the double lunge), on
+    // top of being very wasteful. `anonymize` + `replay.players` are stable in
+    // content for a given payload URL, so reading them via closure is correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replay.payloadBlobUrl]);
 
   // Push the current frame's state into the game context whenever we step.
   // B104: coalesce via requestAnimationFrame. Rendering the (heavy) gameboard
@@ -625,15 +633,26 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
   // frame — always for the LATEST index — lets the counter fly while the board
   // keeps up at the paint rate (skipping intermediates), instead of crawling.
   const boardRafRef = useRef<number | null>(null);
+  const lastPushedIndexRef = useRef<number>(-1);
   useEffect(() => {
     if (!frames || frames.length === 0) return;
     if (boardRafRef.current != null) return; // already scheduled — coalesce
     boardRafRef.current = requestAnimationFrame(() => {
       boardRafRef.current = null;
       const i = Math.max(0, Math.min(frames.length - 1, currentIndexRef.current));
+      // B108: this effect can run more than once for a single step (a re-render
+      // lands on the same currentIndex), which would push the SAME frame's state
+      // twice — re-triggering the FrameAnimator and double-playing one-shot
+      // animations like the attack lunge. Dedupe: only push when the frame
+      // actually changed.
+      if (i === lastPushedIndexRef.current) return;
+      lastPushedIndexRef.current = i;
       setGameState(frames[i].state);
     });
   }, [frames, currentIndex, setGameState]);
+  // Re-decode (new frames array) must be allowed to re-push even at the same
+  // index, so reset the dedupe whenever the frames identity changes.
+  useEffect(() => { lastPushedIndexRef.current = -1; }, [frames]);
   useEffect(() => () => { if (boardRafRef.current != null) cancelAnimationFrame(boardRafRef.current); }, []);
 
   // Keyboard nav. Shift+arrow temporarily flips mode (action↔frame).
