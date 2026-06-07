@@ -729,7 +729,11 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
         {frames ? (
           <>
             <Gameboard />
-            <FrameAnimator containerRef={boardRef} enabled={animate} />
+            <FrameAnimator
+              containerRef={boardRef}
+              enabled={animate}
+              direction={lastTransition && lastTransition.to < lastTransition.from ? -1 : 1}
+            />
             {showSummary && endStats && (
               <EndGameSummary
                 stats={endStats}
