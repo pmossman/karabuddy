@@ -99,6 +99,14 @@
         getExtensionStatus: () =>
             companionRequest({ type: 'getExtensionStatus' }, 8000)
                 .catch(() => null),
+        // B111: number of open karabast.net tabs (the SW counts them). The
+        // bubble warns when >1 — karabast's single-socket-per-user behavior
+        // disconnects the playing window when another karabast window is open,
+        // so the recorder can't capture a complete match. Null on failure.
+        getKarabastTabCount: () =>
+            companionRequest({ type: 'countKarabastTabs' }, 4000)
+                .then((d) => (d && typeof d.count === 'number') ? d.count : null)
+                .catch(() => null),
         // B67: after a replay is uploaded, apply the user's persistent
         // "share with these teams" selection. Idempotent — safe to call
         // on every snapshot+final upload. Returns { ok, applied, errors[] }
