@@ -115,6 +115,48 @@ test('view switcher: clicking a view tab updates the URL', async ({ page, reques
   await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('by-leader');
 });
 
+// -- B117: All-replays hub — My replays + per-team tabs in one place --
+
+test('hub shows a My replays tab + a tab per team (linking into the hub)', async ({ page }) => {
+  await signInAsTestUser(page, { name: 'TeamJumper', email: 'tj@example.com' });
+  const { slug } = await createTeam(page, 'Jump Squad');
+  await page.goto('/replays');
+  await expect(page.getByRole('tab', { name: 'My replays' })).toHaveAttribute('aria-selected', 'true');
+  const teamTab = page.getByRole('tab', { name: 'Jump Squad' });
+  await expect(teamTab).toBeVisible();
+  await expect(teamTab).toHaveAttribute('href', `/replays?team=${slug}`);
+});
+
+test('hub switches to a team\'s replays in place, then back to My replays', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'HubUser', email: 'hub@example.com' });
+  const { slug: teamSlug } = await createTeam(page, 'Hub Team');
+  const { slug: replaySlug, installToken } = await uploadReplay(request, {
+    local: { username: 'HubUser', leaderName: 'Greef Karga' }, opponent: { username: 'Foe' },
+  });
+  await claimInstallToken(page, installToken);
+  await page.request.post(`/api/replays/${replaySlug}/team-shares`, {
+    data: { teamSlug }, headers: { 'X-Install-Token': installToken },
+  });
+
+  await page.goto('/replays');
+  await page.getByRole('tab', { name: 'Hub Team' }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get('team')).toBe(teamSlug);
+  await expect(page.getByRole('tab', { name: 'Hub Team' })).toHaveAttribute('aria-selected', 'true');
+  // The team-only "Uploaded by" filter is available on a team tab.
+  await page.getByRole('button', { name: 'Filters' }).click();
+  await expect(page.getByLabel('Uploaded by')).toBeVisible();
+
+  // One click back to My replays.
+  await page.getByRole('tab', { name: 'My replays' }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get('team')).toBeNull();
+});
+
+test('an unknown ?team falls back to My replays', async ({ page }) => {
+  await signInAsTestUser(page, { name: 'BogusTeam', email: 'bt@example.com' });
+  await page.goto('/replays?team=does-not-exist');
+  await expect(page.getByRole('tab', { name: 'My replays' })).toHaveAttribute('aria-selected', 'true');
+});
+
 // -- B116: leader filters (my leader / opponent leader), opponent-username gone --
 
 test('filters are by leader, not opponent username', async ({ page }) => {
