@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { put } from '@/lib/blob';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
+import { replays, replayAltPayload, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
+import { sharedTeam } from '@/lib/altPerspective';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
@@ -182,10 +183,39 @@ export async function POST(req: Request) {
             enriched = true;
           }
         }
+        // B112: double-sided replays. Retain the 2nd recording (this player's
+        // POV, with THEIR hand unmasked) as the alt perspective — but ONLY when
+        // both recorders are accounts on the SAME team (the privacy gate: a
+        // stranger who happens to record the same gameId never gets their hand
+        // stored as someone's alt). Stale-guard against the alt recorder's own
+        // periodic snapshots (it uploads periodic + finalize, like the canonical
+        // side). Served only via the auth-gated /perspective endpoint.
+        let altStored = false;
+        if (userId && replay.userId && (await sharedTeam(replay.userId, userId))) {
+          const incomingActionCount = parsed.actionCount || 0;
+          const [existingAlt] = await db
+            .select({ altActionCount: replayAltPayload.altActionCount })
+            .from(replayAltPayload)
+            .where(eq(replayAltPayload.replaySlug, replay.slug))
+            .limit(1);
+          if (!existingAlt || incomingActionCount >= existingAlt.altActionCount) {
+            const altValues = {
+              altUserId: userId,
+              altOwnerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
+              altActionCount: incomingActionCount,
+              payload: payloadText,
+            };
+            await db
+              .insert(replayAltPayload)
+              .values({ replaySlug: replay.slug, ...altValues })
+              .onConflictDoUpdate({ target: replayAltPayload.replaySlug, set: altValues });
+            altStored = true;
+          }
+        }
         // B84: the 2nd teammate is now a recorded participant (account-based
         // intra-team detection + the match shows in their library too).
         await recordParticipant(replay.slug, userId);
-        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched }, { headers });
+        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched, altStored }, { headers });
       }
 
       // Stale-snapshot guard: a finalize-upload can race with an in-flight

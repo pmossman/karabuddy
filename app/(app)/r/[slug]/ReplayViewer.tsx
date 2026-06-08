@@ -17,6 +17,7 @@ import { anonymizeFrames, anonByIdFromPlayers, anonymizeDecks } from '@/lib/anon
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
+import { mapFrameIndex } from '@/lib/replaySignature';
 import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MobileControlsFab, MatchupPanel } from './MobileLandscapePanels';
 import { ResourcingModal } from './ResourcingModal';
@@ -86,16 +87,19 @@ interface Props {
   // B107: a curated sample shown publicly on the signed-out home — anonymize
   // the board + game log and skip the (scoped) tag fetch.
   anonymize?: boolean;
+  // B112: this viewer is a team member entitled to the second player's
+  // perspective (computed server-side in page.tsx). Gates the Flip control.
+  canFlip?: boolean;
 }
 
-export function ReplayViewer({ replay, initialTags, anonymize }: Props) {
+export function ReplayViewer({ replay, initialTags, anonymize, canFlip }: Props) {
   return (
     <ThemeContextProvider>
       <UserProvider>
         <CosmeticsProvider>
           <PopupProvider>
             <GameProvider>
-              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} />
+              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} />
             </GameProvider>
           </PopupProvider>
         </CosmeticsProvider>
@@ -118,9 +122,15 @@ function InfoIcon() {
   );
 }
 
-function ViewerShell({ replay, initialTags, anonymize }: Props) {
+function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
+  // B112: double-sided replay. `decoded` is always the CANONICAL perspective
+  // (the public payload). When the viewer flips, we lazily fetch + decode the
+  // alt perspective from the auth-gated endpoint and drive the viewer off it.
+  const [pov, setPov] = useState<'canonical' | 'alt'>('canonical');
+  const [altDecoded, setAltDecoded] = useState<CollapsedReplay | null>(null);
+  const activeDecoded = pov === 'alt' && altDecoded ? altDecoded : decoded;
   const [currentIndex, setCurrentIndexRaw] = useState(0);
   // B11: track the most recent frame transition so FrameLog can highlight
   // the range of frames a single action stepped across. Null on initial
@@ -385,8 +395,8 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
     try { window.localStorage.setItem('karabuddy:stepMode', mode); } catch {}
   }, [mode]);
 
-  const frames = decoded?.frames || null;
-  const activeByFrame = decoded?.activeByFrame || null;
+  const frames = activeDecoded?.frames || null;
+  const activeByFrame = activeDecoded?.activeByFrame || null;
 
   // B104: end-of-game summary. Computed once from the decoded frames + the
   // winner playerIds; surfaced when you reach the final frame, hidden the
@@ -422,8 +432,8 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
   // B102: the viewer steps in COLLAPSED frame space (currentIndex), but the DB
   // and the shareable `?f=` URL stay in the recorder's ORIGINAL space so old
   // tags + external deep-links keep working. Convert at the boundary.
-  const frameRemap = decoded?.frameRemap || null;          // orig -> collapsed
-  const collapsedToOrig = decoded?.collapsedToOrig || null; // collapsed -> orig
+  const frameRemap = activeDecoded?.frameRemap || null;          // orig -> collapsed
+  const collapsedToOrig = activeDecoded?.collapsedToOrig || null; // collapsed -> orig
   const origToCollapsed = useCallback((i: number) => {
     if (!frameRemap || frameRemap.length === 0) return i;
     return frameRemap[Math.min(Math.max(i, 0), frameRemap.length - 1)] ?? 0;
@@ -458,9 +468,9 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
   // both for sample replays. Falls back to the payload-embedded decks for older
   // rows that lack the DB column.
   const decksForView = useMemo(() => {
-    const d = replay.decks ?? decoded?.meta.decks ?? null;
+    const d = replay.decks ?? activeDecoded?.meta.decks ?? null;
     return anonymize ? anonymizeDecks(d as any, anonByIdFromPlayers(replay.players as any[])) : d;
-  }, [replay.decks, replay.players, decoded, anonymize]);
+  }, [replay.decks, replay.players, activeDecoded, anonymize]);
 
   // B48: apply the URL-derived initial frame once frames are decoded.
   // Clamps to [0, total-1] in case the link points at a frame that no
@@ -597,16 +607,9 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
         if (anonymize) anonymizeFrames(result.frames, anonByIdFromPlayers(replay.players as any[]));
         setDecoded(result);
         // Prefer the player ID captured by the recorder (the local karabast
-        // user whose perspective this match was played from). Fall back to
-        // the first player key for older replays that predate the recorder
-        // embedding it.
-        const players = result.frames[0]?.state?.players;
-        const localId = result.meta.localPlayerId;
-        const connected =
-          (localId && players && Object.prototype.hasOwnProperty.call(players, localId))
-            ? localId
-            : players ? Object.keys(players)[0] : null;
-        if (connected) setConnectedPlayer(connected);
+        // Board orientation (connectedPlayer) is set by a dedicated effect that
+        // tracks the ACTIVE perspective (canonical or alt), so a flip re-orients
+        // without re-running this fetch. See below.
       } catch (err: any) {
         if (cancelled) return;
         setLoadError(err?.message || 'failed to load replay');
@@ -625,6 +628,61 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
     // content for a given payload URL, so reading them via closure is correct.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replay.payloadBlobUrl]);
+
+  // B112: board orientation follows the ACTIVE perspective. Prefer the recorder's
+  // captured localPlayerId; fall back to the first player key for older replays.
+  // Re-runs on flip (activeDecoded changes) → the flipped player drops to the
+  // bottom tray without re-fetching anything.
+  useEffect(() => {
+    const players = activeDecoded?.frames[0]?.state?.players;
+    if (!players) return;
+    const localId = activeDecoded?.meta.localPlayerId;
+    const connected = (localId && Object.prototype.hasOwnProperty.call(players, localId))
+      ? localId
+      : Object.keys(players)[0] ?? null;
+    if (connected) setConnectedPlayer(connected);
+  }, [activeDecoded, setConnectedPlayer]);
+
+  // B112: flip between the two players' recordings. Lazily fetch + decode the
+  // alt perspective from the auth-gated endpoint on first flip; map the current
+  // frame to the equivalent moment in the other timeline (best-effort, via a
+  // hand-independent board signature). Silently no-ops if not entitled.
+  const flipPov = useCallback(async () => {
+    if (!canFlip) return;
+    stopPlayback();
+    stopAutoplay();
+    if (pov === 'canonical') {
+      let alt = altDecoded;
+      if (!alt) {
+        try {
+          const res = await fetch(`/api/replays/${replay.slug}/perspective`, {
+            headers: installToken ? { 'X-Install-Token': installToken } : {},
+          });
+          if (!res.ok) return;
+          const body = await res.json();
+          if (!body?.ok || typeof body.payload !== 'string') return;
+          alt = collapseReplay(decodeReplay(JSON.parse(body.payload)));
+          setAltDecoded(alt);
+        } catch { return; }
+      }
+      const target = mapFrameIndex(decoded?.frames || [], currentIndexRef.current, alt.frames);
+      setPov('alt');
+      setCurrentIndex(target);
+    } else {
+      const target = mapFrameIndex(altDecoded?.frames || [], currentIndexRef.current, decoded?.frames || []);
+      setPov('canonical');
+      setCurrentIndex(target);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canFlip, pov, altDecoded, decoded, replay.slug, installToken, setCurrentIndex, stopPlayback, stopAutoplay]);
+
+  // B112: the handle of the player whose perspective is currently shown (for the
+  // Flip control's label). Falls back to a side label if the handle is unknown.
+  const viewingHandle = useMemo(() => {
+    const arr = (replay.players as any[]) || [];
+    const pid = activeDecoded?.meta.localPlayerId ?? null;
+    return (pid && arr.find((p) => p?.id === pid)?.username) || (pov === 'alt' ? 'Player 2' : 'Player 1');
+  }, [replay.players, activeDecoded, pov]);
 
   // Push the current frame's state into the game context whenever we step.
   // B104: coalesce via requestAnimationFrame. Rendering the (heavy) gameboard
@@ -738,7 +796,7 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
               <EndGameSummary
                 stats={endStats}
                 players={(replay.players as any[]) || []}
-                localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
+                localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
                 onClose={() => setSummaryDismissed(true)}
               />
             )}
@@ -768,7 +826,7 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
         playerUsernames={playerUsernames}
         mode={mode}
         setMode={setMode}
-        messagesByFrame={decoded?.messagesByFrame || null}
+        messagesByFrame={activeDecoded?.messagesByFrame || null}
         drawerOpen={drawerOpen}
         setDrawerOpen={setReviewOpen}
         isMobile={isMobile}
@@ -782,9 +840,9 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
         // B42: prefer DB columns (replay.match / replay.decks) since they're
         // already populated server-side; fall back to decoder.meta if a
         // historical replay only has them embedded in the blob.
-        matchMeta={replay.match ?? decoded?.meta.match ?? null}
+        matchMeta={replay.match ?? activeDecoded?.meta.match ?? null}
         decks={decksForView}
-        localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
+        localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
         armedTeams={armedTeams}
         onArmedTeamsChange={setArmedTeams}
         onOpenResourcing={() => setResourcingOpen(true)}
@@ -794,7 +852,7 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
         open={resourcingOpen}
         onClose={() => setResourcingOpen(false)}
         frames={frames}
-        localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
+        localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
         onJump={setCurrentIndex}
       />
       {(() => {
@@ -845,6 +903,9 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
                 drawerOpen={drawerOpen}
                 drawerWidth={`${sidebarWidth}px`}
                 dragging={reviewDrag.dragging}
+                canFlip={!!canFlip}
+                viewLabel={viewingHandle}
+                onFlip={flipPov}
               />
             )}
             {/* B104: mobile playback-controls bubble. A round FAB in the
@@ -866,6 +927,9 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
                 bottom={portraitLift ? `calc(${reviewDrag.size}px + 12px)` : edgeB}
                 right={`calc(${fabRight} + 50px)`}
                 dragging={reviewDrag.dragging}
+                canFlip={!!canFlip}
+                viewLabel={viewingHandle}
+                onFlip={flipPov}
               />
             )}
             {/* B100/B104: matchup info FAB moves to the TOP on mobile so it
@@ -957,9 +1021,9 @@ function ViewerShell({ replay, initialTags, anonymize }: Props) {
           onClose={() => setMatchupOpen(false)}
           anchor={isLandscape ? 'left' : 'top'}
           replay={replay}
-          matchMeta={replay.match ?? decoded?.meta.match ?? null}
+          matchMeta={replay.match ?? activeDecoded?.meta.match ?? null}
           decks={decksForView}
-          localPlayerId={anonymize ? null : (decoded?.meta.localPlayerId ?? null)}
+          localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
           frames={frames}
           installToken={installToken}
           isOwner={isOwner}

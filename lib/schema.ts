@@ -370,6 +370,35 @@ export const replayParticipants = pgTable(
   })
 );
 
+// B112: double-sided replays. When two teammates both record the same match,
+// the FIRST upload is canonical (its frames live in the public blob); the
+// SECOND recording — the OTHER player's perspective, with THEIR hand unmasked —
+// is kept here so the viewer can flip between perspectives. Stored in a side
+// table (not on `replays`) so the ≤8MB `payload` never rides along on the broad
+// `select()`s the replay lists do. PRIVATE: this row reveals a hidden hand, so
+// it's served ONLY through the auth-gated /perspective endpoint (no public
+// blob — @vercel/blob 0.27 has no private access). One alt per replay (SWU is
+// 2-player), keyed by slug. Forward-only: only populated for matches recorded
+// after B112 ships.
+export const replayAltPayload = pgTable('replay_alt_payload', {
+  replaySlug: text('replay_slug')
+    .primaryKey()
+    .references(() => replays.slug, { onDelete: 'cascade' }),
+  // The account that recorded this alt perspective. Drives the "both recorders
+  // are members of the shared team" authorization check; set null if they
+  // delete their account.
+  altUserId: text('alt_user_id').references(() => users.id, { onDelete: 'set null' }),
+  // The alt's localPlayerId — the player rendered at the bottom when flipped.
+  altOwnerPlayerId: text('alt_owner_player_id'),
+  // Stale-snapshot guard: the alt recorder uploads periodic + finalize snapshots;
+  // a later snapshot only wins if its actionCount is >= this.
+  altActionCount: integer('alt_action_count').notNull().default(0),
+  // The 2nd POV's raw payload JSON text (same encoding as the canonical blob).
+  payload: text('payload').notNull(),
+});
+
+export type ReplayAltPayload = typeof replayAltPayload.$inferSelect;
+
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 
