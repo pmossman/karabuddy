@@ -81,52 +81,59 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
         }
       : {};
 
-  await db.transaction(async (tx) => {
-    await tx.delete(matches).where(eq(matches.gameId, matchFact.gameId)); // cascades children
-    await tx.insert(matches).values({
-      gameId: matchFact.gameId,
-      replaySlug,
-      format: matchFact.format,
-      cardPool: matchFact.cardPool,
-      bo3: matchFact.bo3,
-      result: matchFact.result,
-      durationMs: matchFact.durationMs,
-    });
-    await tx.insert(matchPlayers).values(
-      players.map((p) => {
-        const opp = opponentOf(p.playerId);
-        return {
-          gameId: matchFact.gameId,
-          playerId: p.playerId,
-          username: p.username,
-          leader: p.leader,
-          base: p.base,
-          aspects: p.aspects,
-          isRecorder: p.isRecorder,
-          won: p.won,
-          opponentLeader: opp?.leader ?? null,
-          opponentBase: opp?.base ?? null,
-          format: matchFact.format,
-          ...ratingCols(p.playerId),
-        };
-      }),
-    );
-    if (events.length) {
-      await tx.insert(cardEvents).values(
-        events.map((e) => ({
-          gameId: e.gameId,
-          playerId: e.playerId,
-          isRecorder: e.isRecorder,
-          cardId: e.cardId,
-          event: e.event,
-          attribution: e.attribution,
-          frameIndex: e.frameIndex,
-          sideWon: e.sideWon,
-          format: matchFact.format,
-        })),
-      );
-    }
+  // Replace the match + its child facts. Deliberately NOT wrapped in an
+  // interactive db.transaction(): the prod Neon HTTP driver throws "No
+  // transactions support in neon-http driver", which silently broke ALL live
+  // stats persistence (every upload's write threw + was swallowed; the only
+  // facts that ever landed came from manual pg-driver backfill runs). These run
+  // sequentially instead — ordered so FKs hold (match before its children; the
+  // delete cascades the old children). The write is idempotent + replace-style,
+  // so the lost atomicity is harmless: a concurrent stats read might briefly see
+  // a match mid-rewrite, and the next upload/backfill re-writes it cleanly.
+  await db.delete(matches).where(eq(matches.gameId, matchFact.gameId)); // cascades children
+  await db.insert(matches).values({
+    gameId: matchFact.gameId,
+    replaySlug,
+    format: matchFact.format,
+    cardPool: matchFact.cardPool,
+    bo3: matchFact.bo3,
+    result: matchFact.result,
+    durationMs: matchFact.durationMs,
   });
+  await db.insert(matchPlayers).values(
+    players.map((p) => {
+      const opp = opponentOf(p.playerId);
+      return {
+        gameId: matchFact.gameId,
+        playerId: p.playerId,
+        username: p.username,
+        leader: p.leader,
+        base: p.base,
+        aspects: p.aspects,
+        isRecorder: p.isRecorder,
+        won: p.won,
+        opponentLeader: opp?.leader ?? null,
+        opponentBase: opp?.base ?? null,
+        format: matchFact.format,
+        ...ratingCols(p.playerId),
+      };
+    }),
+  );
+  if (events.length) {
+    await db.insert(cardEvents).values(
+      events.map((e) => ({
+        gameId: e.gameId,
+        playerId: e.playerId,
+        isRecorder: e.isRecorder,
+        cardId: e.cardId,
+        event: e.event,
+        attribution: e.attribution,
+        frameIndex: e.frameIndex,
+        sideWon: e.sideWon,
+        format: matchFact.format,
+      })),
+    );
+  }
 
   return { matchWritten: true, cardEvents: events.length };
 }
