@@ -122,7 +122,10 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
   if (events.length) {
     await db.insert(cardEvents).values(
       events.map((e) => ({
-        gameId: e.gameId,
+        // Always the match's resolved gameId — early frames can carry a null
+        // gamestate id, and a null here violates card_events.game_id NOT NULL
+        // (and they all belong to this one match anyway).
+        gameId: matchFact.gameId,
         playerId: e.playerId,
         isRecorder: e.isRecorder,
         cardId: e.cardId,
