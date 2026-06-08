@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { auth } from '@/auth';
 import { SessionMenu } from '@/app/_components/SessionMenu';
+import { NavLink } from '@/app/_components/NavLink';
 
 // Persistent header — KARA/buddy mark always links home, nav exposes
 // signed-in entry points, SessionMenu is the always-on avatar/sign-out.
@@ -23,10 +24,12 @@ export async function Header() {
     >
       <div
         style={{
+          // 3-column grid (1fr auto 1fr) keeps the primary nav centered
+          // regardless of the logo / avatar widths on either side.
           padding: '12px 28px',
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: 16,
         }}
       >
@@ -40,6 +43,7 @@ export async function Header() {
             gap: 6,
             lineHeight: 1,
             userSelect: 'none',
+            justifySelf: 'start',
           }}
         >
           <span
@@ -78,26 +82,19 @@ export async function Header() {
             buddy
           </span>
         </Link>
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+        {/* Centered primary nav: Replays / Stats / Teams. */}
+        <nav style={{ display: 'flex', alignItems: 'center', gap: 24, justifySelf: 'center' }}>
+          {signedIn && <NavLink href="/replays">Replays</NavLink>}
           <NavLink href="/stats">Stats</NavLink>
-          {signedIn && <NavLink href="/replays">My replays</NavLink>}
           {signedIn && <NavLink href="/teams">Teams</NavLink>}
-          {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
-          {/* Settings + Sign out now live in the avatar menu (SessionMenu). */}
-          <SessionMenu compact />
         </nav>
+        {/* Right cluster: Mentions inbox + the always-on avatar menu (Settings /
+            Sign out). Kept off the primary nav so the three centered items stay clean. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, justifySelf: 'end' }}>
+          {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
+          <SessionMenu compact />
+        </div>
       </div>
     </header>
-  );
-}
-
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      style={{ color: '#a0a8b8', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}
-    >
-      {children}
-    </Link>
   );
 }
