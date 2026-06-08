@@ -270,8 +270,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     authCtx,
   );
 
-  const copyLink = async () => {
-    const url = `${window.location.origin}/r/${replay.slug}`;
+  const copyToClipboard = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
     } catch {
@@ -283,8 +282,44 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       try { document.execCommand('copy'); } catch {}
       document.body.removeChild(ta);
     }
+  };
+
+  const copyLink = async () => {
+    await copyToClipboard(`${window.location.origin}/r/${replay.slug}`);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  // B113: share the CURRENT frame so the link unfurls into that board state.
+  const [momentCopied, setMomentCopied] = useState(false);
+  const shareMoment = async () => {
+    const f = toOriginalFrame(currentIndex) + 1; // 1-based original frame
+    const url = `${window.location.origin}/r/${replay.slug}${f > 1 ? `?f=${f}` : ''}`;
+    await copyToClipboard(url);
+    setMomentCopied(true);
+    window.setTimeout(() => setMomentCopied(false), 2000);
+  };
+
+  // B113: share a TAGGED moment — mint a signed token (server re-checks the
+  // caller can see this tag) so the unfurl may surface the tag text. Returns
+  // the URL (also copied) or null on failure.
+  const shareTag = async (tag: TagRow): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/replays/${replay.slug}/share-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(installToken ? { 'X-Install-Token': installToken } : {}) },
+        body: JSON.stringify({ frameIndex: tag.frameIndex, tagId: tag.id }),
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      const url: string | null = typeof body?.url === 'string'
+        ? body.url
+        : (body?.token ? `${window.location.origin}/r/${replay.slug}?f=${tag.frameIndex + 1}&t=${body.token}` : null);
+      if (url) await copyToClipboard(url);
+      return url;
+    } catch {
+      return null;
+    }
   };
 
   const playersArr = (replay.players as any[]) || [];
@@ -520,6 +555,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         ensureMentionData={ensureMentionData}
         onJumpTo={() => onJump(tag.frameIndex)}
         onDelete={() => deleteTag(tag.id)}
+        onShare={() => shareTag(tag)}
         onUpdate={(comment, teamSlugs, mentions) => updateComment(tag.id, comment, teamSlugs, mentions)}
       />
     );
@@ -813,9 +849,13 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
               <FooterBtn onClick={copyLink}>
                 {copied ? 'Copied!' : 'Copy link'}
               </FooterBtn>
+              {/* B113: copies a link to the CURRENT frame; the unfurl shows that board. */}
+              <FooterBtn onClick={shareMoment}>
+                {momentCopied ? 'Copied!' : 'Share this moment'}
+              </FooterBtn>
             </div>
             <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-              Anyone with the link can view. Share with a team below to surface it in their replays.
+              Anyone with the link can view. “Share this moment” links to the current frame — it unfurls into the board. Share with a team below to surface it in their replays.
             </div>
             {isOwner && (
               <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
@@ -1598,6 +1638,7 @@ function TagRowView({
   ensureMentionData,
   onJumpTo,
   onDelete,
+  onShare,
   onUpdate,
 }: {
   tag: TagRow;
@@ -1615,10 +1656,12 @@ function TagRowView({
   ensureMentionData: () => void;
   onJumpTo: () => void;
   onDelete: () => void;
+  onShare?: () => Promise<string | null> | void;
   onUpdate: (comment: string, teamSlugs?: string[], mentions?: { userIds: string[]; teamSlugs: string[] }) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tag.comment);
+  const [shared, setShared] = useState(false); // B113: brief "copied" flash on share
   // B55c: @-mentions on the in-progress edit (pre-filled from the tag).
   const [editMentions, setEditMentions] = useState<{ userIds: string[]; teamSlugs: string[] }>(
     tag.mentions ?? { userIds: [], teamSlugs: [] },
@@ -1751,6 +1794,22 @@ function TagRowView({
       </div>
       {(canEdit || canDelete) && !editing && (
         <div style={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+          {onShare && (
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation();
+                const url = await onShare();
+                if (url !== null) { setShared(true); window.setTimeout(() => setShared(false), 1800); }
+              }}
+              title="Copy a share link that unfurls into this moment + tag"
+              style={{ background: 'transparent', border: 0, color: shared ? '#46d27a' : '#6c7588', cursor: 'pointer', padding: '0 4px', fontSize: 13, lineHeight: 1 }}
+              onMouseEnter={(e) => { if (!shared) (e.currentTarget as HTMLButtonElement).style.color = '#a7d2ff'; }}
+              onMouseLeave={(e) => { if (!shared) (e.currentTarget as HTMLButtonElement).style.color = '#6c7588'; }}
+            >
+              {shared ? '✓' : '↗'}
+            </button>
+          )}
           {canEdit && (
             <button
               type="button"

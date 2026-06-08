@@ -22,6 +22,9 @@ const logoFont = Orbitron({
 });
 
 export const metadata: Metadata = {
+  // B113: lets relative OG image URLs (e.g. /api/replays/<slug>/og-image)
+  // resolve to absolute when unfurled. AUTH_URL is set in every environment.
+  metadataBase: new URL(process.env.AUTH_URL ?? 'https://karabuddy.app'),
   title: 'KaraBuddy',
   description: 'Replays, solo testing, and review tools for Star Wars Unlimited.',
 };

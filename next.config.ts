@@ -37,7 +37,9 @@ const config: NextConfig = {
   // load from node_modules at runtime. Prod build doesn't import them
   // (KARABUDDY_DB_DRIVER=pglite is test-only); listing them here is
   // free in production since they're never imported.
-  serverExternalPackages: ['@electric-sql/pglite'],
+  // 'sharp' (B113 OG-image webp→png) ships a native binary the bundler can't
+  // inline — keep it external so it loads from node_modules at runtime.
+  serverExternalPackages: ['@electric-sql/pglite', 'sharp'],
 };
 
 export default config;
