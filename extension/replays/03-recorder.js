@@ -17,6 +17,11 @@
     let gamestateCount = 0;          // anchor for "tag at this moment"
     let recordingStart = Date.now();
     let autoDownloadScheduled = false;
+    // B114: handle for the game-end auto-download timer (scheduleAutoDownload).
+    // Tracked so a new-game boundary can CANCEL it via resetRecording — without
+    // this, a Bo3's next game (started within the 1.5s window) inherits the
+    // previous game's pending timer, which then finalizes/wipes it.
+    let autoDownloadTimer = null;
     let prevNormalizedGamestate = null;
     let lastFullGamestate = null;    // most recent full snapshot, for author sniffing
     let currentGameId = null;
@@ -83,6 +88,7 @@
         recordingStart = Date.now();
         prevNormalizedGamestate = null;
         lastFullGamestate = null;
+        if (autoDownloadTimer) { clearTimeout(autoDownloadTimer); autoDownloadTimer = null; }
         autoDownloadScheduled = false;
         localPlayerId = null;
         // matchLobbySnapshot is per-match; clear so the next match's first
@@ -505,7 +511,7 @@
     const scheduleAutoDownload = () => {
         if (autoDownloadScheduled) return;
         autoDownloadScheduled = true;
-        setTimeout(() => download('auto'), 1500);
+        autoDownloadTimer = setTimeout(() => { autoDownloadTimer = null; download('auto'); }, 1500);
     };
 
     // ----- Tag API -----

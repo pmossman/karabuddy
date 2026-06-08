@@ -160,6 +160,42 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
   });
 });
 
+// B114: Bo3 / back-to-back games. A new game can start within the previous
+// game's 1.5s auto-finalize window (clicking straight through the results
+// screen). The previous game's auto-download timer must not survive the
+// new-game reset and clobber the next game's recording.
+describe('back-to-back games (Bo3)', () => {
+  it('records BOTH games when game 2 starts inside game 1\'s finalize window', async () => {
+    const { uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+
+    // Game 1, played in full, then game-end (arms the 1.5s auto-download).
+    ws.recv(sio('gamestate', gs('g1', 'p1')));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gs('g1', i % 2 === 0 ? 'p2' : 'p1')));
+    ws.recv(sio('gamestate', gs('g1', 'p2', { gameOver: true, winners: ['Alice'] })));
+
+    // Game 2 starts only 300ms later — INSIDE game 1's auto-download window.
+    // The new-game boundary finalizes game 1 and resets; the stale timer must
+    // be cancelled here (the bug: it isn't).
+    await vi.advanceTimersByTimeAsync(300);
+    ws.recv(sio('gamestate', gs('g2', 'p1')));
+
+    // Let game 1's original timer fire. With the bug it runs download('auto')
+    // against game 2's 1-frame recording, hits the sub-threshold skip branch,
+    // wipes it, and marks g2 as finalized → every later g2 frame is ignored.
+    await vi.advanceTimersByTimeAsync(1300);
+
+    // Game 2 plays out in full and ends.
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gs('g2', i % 2 === 0 ? 'p2' : 'p1')));
+    ws.recv(sio('gamestate', gs('g2', 'p1', { gameOver: true, winners: ['Bob'] })));
+    await vi.advanceTimersByTimeAsync(1500);
+
+    const gameIds = uploads.map((u) => u.events.find((e) => e.args?.[0]?.full)?.args[0].full.id);
+    expect(gameIds).toContain('g1');
+    expect(gameIds).toContain('g2'); // ← fails before the fix: game 2 was wiped by game 1's stale timer
+  });
+});
+
 // FORWARD CONTRACT (B98): a breaking recorder wire change must fail CI before
 // the extension is ever submitted to CWS. We drive the REAL recorder, then feed
 // its exact output to the REAL server decoder (lib/replayDecoder) and assert it
