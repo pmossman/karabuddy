@@ -14,7 +14,7 @@ export interface SyntheticReplayOpts {
   gameId?: string;
   // Local player's username + id. Their hand will have visible cards
   // (the signal POV detection uses).
-  local: { id?: string; username: string };
+  local: { id?: string; username: string; leaderName?: string };
   // Opponent's username. Hand stays empty (no visibility) so they're
   // not picked as POV. `seenCards` (optional) gets injected into the
   // opponent's groundArena so tests can exercise the "seen during play"
@@ -22,6 +22,7 @@ export interface SyntheticReplayOpts {
   opponent: {
     id?: string;
     username: string;
+    leaderName?: string;
     seenCards?: Array<{ set: string; number: number; uuid?: string }>;
   };
   // Optional tags to embed. B71: teamSlugs narrows a tag's audience
@@ -32,6 +33,9 @@ export interface SyntheticReplayOpts {
     gameFormat?: string;
     cardPool?: string;
     gamesToWinMode?: string;
+    // B116: stable across a Bo3's games — set the same value on multiple uploads
+    // to exercise series grouping in the replay browser.
+    lobbyId?: string;
   };
   // Optional winner playerId list (B59). When provided, the final
   // gamestate's `winners` field is populated so the upload route's
@@ -84,7 +88,7 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
       leader: {
         id: 'ASH_005',
         setId: { set: 'ASH', number: 5 },
-        name: 'Luke Skywalker',
+        name: opts.local.leaderName ?? 'Luke Skywalker',
         type: 'leader',
         uuid: 'leader-local',
       },
@@ -111,7 +115,7 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
       leader: {
         id: 'ASH_014',
         setId: { set: 'ASH', number: 14 },
-        name: 'The Mandalorian',
+        name: opts.opponent.leaderName ?? 'The Mandalorian',
         type: 'leader',
         uuid: 'leader-opp',
       },

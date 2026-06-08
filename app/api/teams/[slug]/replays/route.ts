@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, users, teamMembers, replayParticipants, tags, tagTeamScope } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
-import { orderPlayersOwnerFirst } from '@/lib/players';
+import { serializeReplayRow } from '@/lib/replayRow';
 
 export const runtime = 'nodejs';
 
@@ -70,20 +70,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     .orderBy(desc(replays.createdAt))
     .limit(200);
 
-  // Flatten {replay, ownerName} so TeamReplays sees the same shape it
-  // always has, with ownerName tacked on for the Member column. Players
-  // are reordered owner-first (B59-followup). `isMine` lets the owner manage
-  // their own replay (e.g. un-share) straight from the team grid.
-  const flat = rows.map(({ replay, ownerName }) => {
-    const players = orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId) as any[];
-    return {
-      ...replay,
-      players,
-      ownerName,
-      internal: (teammatesByReplay.get(replay.slug)?.size ?? 0) >= 2,
-      commentCount: commentCountBySlug.get(replay.slug) ?? 0,
-      isMine: !!replay.userId && replay.userId === userId,
-    };
-  });
+  // B116: serialize via the shared serializer (one wire shape with the personal
+  // library; also stops leaking ownerToken/payloadBlobUrl that the old `...replay`
+  // spread sent over the wire). Team perspective = the UPLOADER, so "my leader" /
+  // "opponent leader" filters read the canonical owner's side. `isMine` still
+  // lets the owner manage (un-share) their own replay from the team grid.
+  const flat = rows.map(({ replay, ownerName }) => serializeReplayRow(replay, {
+    ownerName,
+    viewerPlayerId: replay.ownerPlayerId ?? null,
+    internal: (teammatesByReplay.get(replay.slug)?.size ?? 0) >= 2,
+    commentCount: commentCountBySlug.get(replay.slug) ?? 0,
+    isMine: !!replay.userId && replay.userId === userId,
+  }));
   return NextResponse.json({ ok: true, data: flat });
 }

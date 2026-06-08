@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
@@ -50,6 +50,15 @@ interface Row {
   // B100: viewer owns this replay — lets the owner manage it (un-share) from
   // the team grid where the grid-wide canManage is false.
   isMine?: boolean;
+  // B116: perspective fields resolved server-side (lib/replayRow). `viewerPlayerId`
+  // is "which side is mine/the-uploader's" for this row; ownLeader/oppLeader are
+  // that side's vs the other side's leader. Drive the My-leader / Opponent-leader
+  // filters + the matchup display. Null when the perspective can't be resolved.
+  viewerPlayerId?: string | null;
+  ownLeader?: { name?: string | null; set?: string | null; number?: number | null } | null;
+  oppLeader?: { name?: string | null; set?: string | null; number?: number | null } | null;
+  // B116: stable across a Bo3's games — drives series grouping. Null = singleton.
+  lobbyId?: string | null;
 }
 
 type ResultFilter = '' | 'wins' | 'losses';
@@ -83,6 +92,7 @@ export function ReplayFilters({
   canManage,
   emptyState,
   showShareTabs = false,
+  showUploaderFilter = false,
 }: {
   rows: Row[];
   canManage: boolean;
@@ -92,13 +102,20 @@ export function ReplayFilters({
   // the team grid (everything there is shared with that team) and the
   // anonymous library (no account → no shares).
   showShareTabs?: boolean;
+  // B116: the "Uploaded by" (which team member) filter only makes sense on the
+  // team grid; on the personal library every row is yours.
+  showUploaderFilter?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [leader, setLeader] = useState(() => searchParams.get('leader') || '');
-  const [opp, setOpp] = useState(() => searchParams.get('opp') || '');
+  // B116: filter by the leader the viewer/uploader was playing (`mine`) and the
+  // leader played against (`vs`) — replaces the old single leader + opponent-
+  // username filters. `by` = which team member uploaded (team grid only).
+  const [myLeader, setMyLeader] = useState(() => searchParams.get('mine') || '');
+  const [vsLeader, setVsLeader] = useState(() => searchParams.get('vs') || '');
+  const [uploadedBy, setUploadedBy] = useState(() => searchParams.get('by') || '');
   const [since, setSince] = useState(() => searchParams.get('since') || '');
   const [format, setFormat] = useState(() => searchParams.get('format') || '');
   const [mode, setMode] = useState(() => searchParams.get('mode') || '');
@@ -115,7 +132,7 @@ export function ReplayFilters({
   // filters still show as removable chips when collapsed. Auto-open if the URL
   // arrives with filters applied (deep-link) so they're immediately visible.
   const [filtersOpen, setFiltersOpen] = useState(() =>
-    ['leader', 'opp', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
+    ['mine', 'vs', 'by', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
   );
 
   useEffect(() => {
@@ -124,8 +141,9 @@ export function ReplayFilters({
       if (val) params.set(key, val); else params.delete(key);
     };
     if (showShareTabs) setOrDelete('share', tab === 'all' ? '' : tab);
-    setOrDelete('leader', leader);
-    setOrDelete('opp', opp);
+    setOrDelete('mine', myLeader);
+    setOrDelete('vs', vsLeader);
+    setOrDelete('by', uploadedBy);
     setOrDelete('since', since);
     setOrDelete('format', format);
     setOrDelete('mode', mode);
@@ -136,32 +154,25 @@ export function ReplayFilters({
     if (next !== searchParams.toString()) {
       router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
     }
-  }, [showShareTabs, tab, leader, opp, since, format, mode, label, result, view, pathname, router, searchParams]);
+  }, [showShareTabs, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result, view, pathname, router, searchParams]);
 
-  const allLeaders = useMemo(() => {
+  // B116: leader options split by perspective — leaders the viewer/uploader
+  // played (`ownLeader`) vs leaders faced (`oppLeader`).
+  const ownLeaders = useMemo(() => {
     const set = new Set<string>();
-    for (const r of rows) {
-      const players = Array.isArray(r.players) ? r.players : [];
-      for (const p of players) {
-        const name = p?.leader?.name;
-        if (name) set.add(name);
-      }
-    }
+    for (const r of rows) if (r.ownLeader?.name) set.add(r.ownLeader.name);
+    return Array.from(set).sort();
+  }, [rows]);
+  const oppLeaders = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) if (r.oppLeader?.name) set.add(r.oppLeader.name);
     return Array.from(set).sort();
   }, [rows]);
 
-  // Opponent combobox suggestions — every username seen across the row set,
-  // skipping the "anonymous-XXX"-style autogenerated handles. Filter logic
-  // still uses substring match, so typing freely also works.
-  const allUsernames = useMemo(() => {
+  // B116: uploader options for the team grid's "Uploaded by" filter.
+  const uploaders = useMemo(() => {
     const set = new Set<string>();
-    for (const r of rows) {
-      const players = Array.isArray(r.players) ? r.players : [];
-      for (const p of players) {
-        const u: string | undefined = p?.username;
-        if (u && !/^anonymous\s/i.test(u)) set.add(u);
-      }
-    }
+    for (const r of rows) if (r.ownerName) set.add(r.ownerName);
     return Array.from(set).sort();
   }, [rows]);
 
@@ -185,16 +196,9 @@ export function ReplayFilters({
     return rows.filter((r) => {
       if (tab === 'shared' && !isShared(r)) return false;
       if (tab === 'unlisted' && isShared(r)) return false;
-      const players = Array.isArray(r.players) ? r.players : [];
-      if (leader) {
-        const matches = players.some((p: any) => p?.leader?.name === leader);
-        if (!matches) return false;
-      }
-      if (opp) {
-        const oppLower = opp.toLowerCase();
-        const matches = players.some((p: any) => (p?.username || '').toLowerCase().includes(oppLower));
-        if (!matches) return false;
-      }
+      if (myLeader && r.ownLeader?.name !== myLeader) return false;
+      if (vsLeader && r.oppLeader?.name !== vsLeader) return false;
+      if (uploadedBy && r.ownerName !== uploadedBy) return false;
       if (since) {
         const days = parseInt(since.replace('d', ''), 10);
         const cutoff = Date.now() - days * 86_400_000;
@@ -217,15 +221,16 @@ export function ReplayFilters({
       }
       return true;
     });
-  }, [rows, tab, leader, opp, since, format, mode, label, result]);
+  }, [rows, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result]);
 
   const clearAll = () => {
-    setLeader(''); setOpp(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
+    setMyLeader(''); setVsLeader(''); setUploadedBy(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
   };
 
   const activeChips: { key: string; label: string; onClear: () => void }[] = [];
-  if (leader) activeChips.push({ key: 'leader', label: `Leader: ${leader}`, onClear: () => setLeader('') });
-  if (opp) activeChips.push({ key: 'opp', label: `Opp: ${opp}`, onClear: () => setOpp('') });
+  if (myLeader) activeChips.push({ key: 'mine', label: `My leader: ${myLeader}`, onClear: () => setMyLeader('') });
+  if (vsLeader) activeChips.push({ key: 'vs', label: `Vs: ${vsLeader}`, onClear: () => setVsLeader('') });
+  if (uploadedBy) activeChips.push({ key: 'by', label: `By: ${uploadedBy}`, onClear: () => setUploadedBy('') });
   if (since) activeChips.push({ key: 'since', label: SINCE_OPTIONS.find((s) => s.value === since)?.label || since, onClear: () => setSince('') });
   if (format) activeChips.push({ key: 'fmt', label: FORMAT_LABEL[format] || format, onClear: () => setFormat('') });
   if (mode) activeChips.push({ key: 'mode', label: MODE_LABEL[mode] || mode, onClear: () => setMode('') });
@@ -267,10 +272,10 @@ export function ReplayFilters({
 
       {filtersOpen && (
         <FilterControls
-          leader={leader} setLeader={setLeader}
-          leaders={allLeaders}
-          opp={opp} setOpp={setOpp}
-          usernames={allUsernames}
+          myLeader={myLeader} setMyLeader={setMyLeader} ownLeaders={ownLeaders}
+          vsLeader={vsLeader} setVsLeader={setVsLeader} oppLeaders={oppLeaders}
+          uploadedBy={uploadedBy} setUploadedBy={setUploadedBy} uploaders={uploaders}
+          showUploaderFilter={showUploaderFilter}
           since={since} setSince={setSince}
           format={format} setFormat={setFormat}
           mode={mode} setMode={setMode}
@@ -291,13 +296,38 @@ export function ReplayFilters({
       ) : view === 'timeline' ? (
         <TimelineGroups rows={filtered} canManage={canManage} />
       ) : (
-        <CardGrid rows={filtered} canManage={canManage} />
+        <CardGrid rows={filtered} canManage={canManage} group />
       )}
     </>
   );
 }
 
-function CardGrid({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
+function CardGrid({ rows, canManage, group = false }: { rows: Row[]; canManage: boolean; group?: boolean }) {
+  // B116: when grouping is on (the flat Grid view), collapse Bo3 series into a
+  // bordered cluster with a header; singletons render as plain cards. By-leader
+  // / Timeline pass group=false (they already group by their own key).
+  if (group) {
+    const groups = buildSeriesGroups(rows).sort((a, b) =>
+      new Date(b.rows[b.rows.length - 1].createdAt).getTime() - new Date(a.rows[a.rows.length - 1].createdAt).getTime(),
+    );
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
+        {groups.map((g) => g.isSeries ? (
+          <div key={g.key} data-testid="series-group" style={{ border: '1px solid rgba(77,157,255,0.35)', borderRadius: 10, padding: 12, background: 'rgba(77,157,255,0.04)' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#a7d2ff', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ background: 'rgba(77,157,255,0.18)', border: '1px solid rgba(77,157,255,0.5)', borderRadius: 999, padding: '1px 8px', fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Series</span>
+              {seriesHeadline(g)}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
+              {g.rows.map((r) => <ReplayCard key={r.slug} replay={r as any} canManage={canManage} />)}
+            </div>
+          </div>
+        ) : (
+          <ReplayCard key={g.key} replay={g.rows[0] as any} canManage={canManage} />
+        ))}
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 16 }}>
       {rows.map((r) => (
@@ -311,8 +341,9 @@ function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
   const groups = useMemo(() => {
     const m = new Map<string, Row[]>();
     for (const r of rows) {
-      const players = Array.isArray(r.players) ? r.players : [];
-      const name = players[0]?.leader?.name || '(unknown leader)';
+      // B116: group by the viewer/uploader's OWN leader (perspective) so an
+      // alt-recorded game lands under my leader, not my opponent's.
+      const name = r.ownLeader?.name || '(unknown leader)';
       const arr = m.get(name);
       if (arr) arr.push(r); else m.set(name, [r]);
     }
@@ -367,6 +398,54 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
   );
 }
 
+// -- Bo3 / series grouping ----------------------------------------------------
+// B116: replays that belong to the same match share a stable match.lobbyId
+// (the lobby persists across a Bo3's games; quick games each get a unique one).
+// Group by lobbyId; rows with no lobbyId are singletons (keyed by slug so they
+// never collapse together). A group with 2+ games renders as a "series".
+
+interface SeriesGroup {
+  key: string;
+  rows: Row[];        // games in play order (createdAt asc)
+  isSeries: boolean;  // 2+ games sharing a lobby
+}
+
+function buildSeriesGroups(rows: Row[]): SeriesGroup[] {
+  const m = new Map<string, Row[]>();
+  for (const r of rows) {
+    const key = r.lobbyId || `__solo__${r.slug}`;
+    const arr = m.get(key);
+    if (arr) arr.push(r); else m.set(key, [r]);
+  }
+  return Array.from(m.entries()).map(([key, rs]) => ({
+    key,
+    rows: [...rs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+    isSeries: rs.length > 1,
+  }));
+}
+
+// W–L tally across a series from the viewer/uploader's perspective. Games with
+// no winner signal are ignored (not counted as a loss).
+function seriesRecord(group: SeriesGroup): { wins: number; losses: number } {
+  let wins = 0, losses = 0;
+  for (const r of group.rows) {
+    const winners = Array.isArray(r.winners) ? r.winners : null;
+    if (!winners || !r.viewerPlayerId) continue;
+    if (winners.includes(r.viewerPlayerId)) wins++; else losses++;
+  }
+  return { wins, losses };
+}
+
+function seriesHeadline(group: SeriesGroup): string {
+  const first = group.rows[0];
+  const own = first?.ownLeader?.name;
+  const opp = first?.oppLeader?.name;
+  const matchup = own || opp ? `${own || '?'} vs ${opp || '?'}` : matchupText(first);
+  const { wins, losses } = seriesRecord(group);
+  const rec = wins + losses > 0 ? ` · ${wins}–${losses}` : '';
+  return `Best of ${group.rows.length} · ${matchup}${rec}`;
+}
+
 // -- Table view --------------------------------------------------------------
 
 type SortKey = 'date' | 'replay' | 'leader' | 'format' | 'mode' | 'length' | 'member' | 'shared' | 'comments';
@@ -377,11 +456,17 @@ function sharedText(r: Row): string {
   return (r.sharedTeams || []).map((t) => t.name).join(', ').toLowerCase();
 }
 
+// B116: the matchup headline now leads with LEADERS (my leader vs opponent
+// leader), from the row's perspective — usernames are secondary (rendered small
+// below). A user-set displayName still wins.
 function matchupText(r: Row): string {
   if (r.displayName) return r.displayName;
+  const own = r.ownLeader?.name;
+  const opp = r.oppLeader?.name;
+  if (own || opp) return `${own || '?'} vs ${opp || '?'}`;
+  // No perspective resolved (pre-B59 / anonymous): fall back to usernames.
   const players = Array.isArray(r.players) ? r.players : [];
-  const [p1, p2] = players;
-  return `${nameText(p1)} vs ${nameText(p2)}`;
+  return `${nameText(players[0])} vs ${nameText(players[1])}`;
 }
 
 function nameText(p: any) {
@@ -390,9 +475,21 @@ function nameText(p: any) {
   return u;
 }
 
-function leaderText(r: Row): string {
+// Own/opponent players in PERSPECTIVE order (viewer/uploader first). Falls back
+// to the canonical owner-first order when no perspective is resolved.
+function perspectivePlayers(r: Row): [any, any] {
   const players = Array.isArray(r.players) ? r.players : [];
-  return players[0]?.leader?.name || '';
+  const vid = r.viewerPlayerId;
+  if (vid) {
+    const own = players.find((p: any) => p?.id === vid);
+    const opp = players.find((p: any) => p?.id !== vid);
+    if (own) return [own, opp];
+  }
+  return [players[0], players[1]];
+}
+
+function leaderText(r: Row): string {
+  return r.ownLeader?.name || '';
 }
 
 function formatChipText(match: Row['match']): string {
@@ -421,7 +518,10 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  const sorted = useMemo(() => {
+  // B116: group into Bo3 series (by lobbyId), then sort the GROUPS by the chosen
+  // key (using each group's most-recent game as its representative) so a series'
+  // games stay contiguous and in play order regardless of column sort.
+  const groups = useMemo(() => {
     const val = (r: Row): string | number => {
       switch (sortKey) {
         case 'date': return new Date(r.createdAt).getTime();
@@ -435,8 +535,9 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
         case 'comments': return r.commentCount ?? 0;
       }
     };
-    return [...rows].sort((a, b) => {
-      const va = val(a), vb = val(b);
+    const rep = (g: SeriesGroup) => g.rows[g.rows.length - 1]; // most recent game
+    return buildSeriesGroups(rows).sort((a, b) => {
+      const va = val(rep(a)), vb = val(rep(b));
       const cmp = va < vb ? -1 : va > vb ? 1 : 0;
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -449,6 +550,9 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
   // Comments column only where the count was fetched (personal library); the
   // reused team grid doesn't carry it → no empty column there.
   const showComments = rows.some((r) => r.commentCount !== undefined);
+  // Columns: Date, Replay, [Shared], Member, Format, Labels, Length, [Comments],
+  // actions = 7 fixed + the two optional ones. Used for the series header colSpan.
+  const colCount = 7 + (showShared ? 1 : 0) + (showComments ? 1 : 0);
 
   const onHeaderClick = (k: SortKey) => {
     if (sortKey === k) {
@@ -477,39 +581,53 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
           </tr>
         </thead>
         <tbody>
-          {sorted.map((r) => (
-            <tr key={r.slug} style={{ borderTop: '1px solid #2e333c' }}>
-              <td style={cellStyle}>{formatDateShort(r.createdAt)}</td>
-              <td style={cellStyle} data-testid="replay-cell">
-                <ReplayCellLink replay={r} />
-              </td>
-              {showShared && (
-                <td style={cellStyle} data-testid="shared-cell">
-                  <ShareBadge sharedTeams={r.sharedTeams} />
+          {groups.map((g) => {
+            const gameRow = (r: Row, inSeries: boolean) => (
+              <tr key={r.slug} style={{ borderTop: '1px solid #2e333c', ...(inSeries ? { boxShadow: 'inset 3px 0 0 rgba(77,157,255,0.5)' } : {}) }}>
+                <td style={cellStyle}>{formatDateShort(r.createdAt)}</td>
+                <td style={cellStyle} data-testid="replay-cell">
+                  <ReplayCellLink replay={r} />
                 </td>
-              )}
-              <td style={cellStyle} data-testid="member-cell">{r.ownerName || '—'}</td>
-              <td style={cellStyle}>{formatChipText(r.match) || '—'}</td>
-              <td style={cellStyle}>
-                {Array.isArray(r.labels) && r.labels.length > 0 ? (
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {r.labels.map((l) => (
-                      <span key={l} style={labelChipStyle}>{l}</span>
-                    ))}
-                  </div>
-                ) : '—'}
-              </td>
-              <td style={cellStyle}>{formatDuration(r.durationMs || 0)}</td>
-              {showComments && (
+                {showShared && (
+                  <td style={cellStyle} data-testid="shared-cell">
+                    <ShareBadge sharedTeams={r.sharedTeams} />
+                  </td>
+                )}
+                <td style={cellStyle} data-testid="member-cell">{r.ownerName || '—'}</td>
+                <td style={cellStyle}>{formatChipText(r.match) || '—'}</td>
                 <td style={cellStyle}>
-                  <CommentCountButton replay={r} variant="table" />
+                  {Array.isArray(r.labels) && r.labels.length > 0 ? (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {r.labels.map((l) => (
+                        <span key={l} style={labelChipStyle}>{l}</span>
+                      ))}
+                    </div>
+                  ) : '—'}
                 </td>
-              )}
-              <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                <RowActions replay={r} canManage={canManage} />
-              </td>
-            </tr>
-          ))}
+                <td style={cellStyle}>{formatDuration(r.durationMs || 0)}</td>
+                {showComments && (
+                  <td style={cellStyle}>
+                    <CommentCountButton replay={r} variant="table" />
+                  </td>
+                )}
+                <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <RowActions replay={r} canManage={canManage} />
+                </td>
+              </tr>
+            );
+            if (!g.isSeries) return gameRow(g.rows[0], false);
+            return (
+              <Fragment key={g.key}>
+                <tr data-testid="series-group" style={{ borderTop: '1px solid #2e333c', background: 'rgba(77,157,255,0.06)' }}>
+                  <td colSpan={colCount} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#a7d2ff' }}>
+                    <span style={{ background: 'rgba(77,157,255,0.18)', border: '1px solid rgba(77,157,255,0.5)', borderRadius: 999, padding: '1px 8px', fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', marginRight: 8 }}>Series</span>
+                    {seriesHeadline(g)}
+                  </td>
+                </tr>
+                {g.rows.map((r) => gameRow(r, true))}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -520,8 +638,8 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
 // "vs", with the matchup text below. Wrapped in <Link> so the whole cell
 // (text + thumbs) navigates to /r/<slug>.
 function ReplayCellLink({ replay }: { replay: Row }) {
-  const players = Array.isArray(replay.players) ? replay.players : [];
-  const [p1, p2] = players;
+  // Perspective order: my/the-uploader's side first, opponent second.
+  const [p1, p2] = perspectivePlayers(replay);
   return (
     <Link href={`/r/${replay.slug}`} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -534,6 +652,8 @@ function ReplayCellLink({ replay }: { replay: Row }) {
         <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
       </div>
+      {/* B116: usernames demoted to small secondary text. */}
+      <div style={{ fontSize: 10, color: '#6c7588' }}>{nameText(p1)} vs {nameText(p2)}</div>
     </Link>
   );
 }
@@ -764,24 +884,24 @@ function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode
 }
 
 function FilterControls({
-  leader, setLeader, leaders,
-  opp, setOpp, usernames,
+  myLeader, setMyLeader, ownLeaders,
+  vsLeader, setVsLeader, oppLeaders,
+  uploadedBy, setUploadedBy, uploaders, showUploaderFilter,
   since, setSince,
   format, setFormat,
   mode, setMode,
   label, setLabel, labels,
   result, setResult,
 }: {
-  leader: string; setLeader: (v: string) => void; leaders: string[];
-  opp: string; setOpp: (v: string) => void; usernames: string[];
+  myLeader: string; setMyLeader: (v: string) => void; ownLeaders: string[];
+  vsLeader: string; setVsLeader: (v: string) => void; oppLeaders: string[];
+  uploadedBy: string; setUploadedBy: (v: string) => void; uploaders: string[]; showUploaderFilter: boolean;
   since: string; setSince: (v: string) => void;
   format: string; setFormat: (v: string) => void;
   mode: string; setMode: (v: string) => void;
   label: string; setLabel: (v: string) => void; labels: string[];
   result: ResultFilter; setResult: (v: ResultFilter) => void;
 }) {
-  // Stable id for the <input list="..."> ↔ <datalist id="..."> pairing.
-  const oppListId = useId();
   return (
     <div
       style={{
@@ -795,40 +915,26 @@ function FilterControls({
         gap: 8,
       }}
     >
-      <Field label="Leader">
-        <select value={leader} onChange={(e) => setLeader(e.target.value)} style={selectStyle}>
+      <Field label="My leader">
+        <select value={myLeader} onChange={(e) => setMyLeader(e.target.value)} style={selectStyle}>
           <option value="">Any</option>
-          {leaders.map((l) => <option key={l} value={l}>{l}</option>)}
+          {ownLeaders.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
       </Field>
-      <Field label="Opponent (username)">
-        {/*
-          Combobox: native <datalist> lets the user pick from prior opponents
-          OR type freely to substring-filter. The autoComplete=off +
-          data-lpignore + data-form-type attrs suppress LastPass / 1Password
-          autofill icons — without them, password managers latch onto any
-          text input that looks remotely username-y.
-        */}
-        {/* type="search" (not text): password managers don't attach their
-            autofill icon to search fields — fixes LastPass latching onto this
-            field — and it's semantically a filter/search input anyway. The
-            data-* attrs stay as belt-and-suspenders for 1Password/LastPass. */}
-        <input
-          type="search"
-          value={opp}
-          onChange={(e) => setOpp(e.target.value)}
-          placeholder="contains…"
-          list={oppListId}
-          autoComplete="off"
-          data-lpignore="true"
-          data-1p-ignore="true"
-          data-form-type="other"
-          style={inputStyle}
-        />
-        <datalist id={oppListId}>
-          {usernames.map((u) => <option key={u} value={u} />)}
-        </datalist>
+      <Field label="Opponent leader">
+        <select value={vsLeader} onChange={(e) => setVsLeader(e.target.value)} style={selectStyle}>
+          <option value="">Any</option>
+          {oppLeaders.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
       </Field>
+      {showUploaderFilter && (
+        <Field label="Uploaded by">
+          <select value={uploadedBy} onChange={(e) => setUploadedBy(e.target.value)} style={selectStyle}>
+            <option value="">Any member</option>
+            {uploaders.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="Date">
         <select value={since} onChange={(e) => setSince(e.target.value)} style={selectStyle}>
           {SINCE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}

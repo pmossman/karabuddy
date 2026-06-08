@@ -50,29 +50,10 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
     );
   }
 
-  const normalized = rows.map((r) => ({
-    slug: r.slug,
-    gameId: r.gameId,
-    userId: r.userId,
-    players: r.players,
-    durationMs: r.durationMs,
-    actionCount: r.actionCount,
-    createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
-    match: r.match ?? null,
-    displayName: r.displayName ?? null,
-    labels: r.labels ?? null,
-    ownerName: r.ownerName ?? null,
-    winners: r.winners ?? null,
-    ownerPlayerId: r.ownerPlayerId ?? null,
-    internal: !!r.internal,
-    // B100: team-scoped comment count + per-row ownership (so the owner can
-    // manage/un-share their own replay from the team grid).
-    commentCount: r.commentCount ?? 0,
-    isMine: !!r.isMine,
-  }));
-
-  const internalCount = normalized.filter((r) => r.internal).length;
-  const shown = internalOnly ? normalized.filter((r) => r.internal) : normalized;
+  // B116: rows arrive already serialized by lib/replayRow (shared with the
+  // personal library) — no per-field remap needed here.
+  const internalCount = rows.filter((r) => r.internal).length;
+  const shown = internalOnly ? rows.filter((r) => r.internal) : rows;
 
   return (
     <>
@@ -98,6 +79,7 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
       <ReplayFilters
         rows={shown}
         canManage={false}
+        showUploaderFilter
         emptyState={
           <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
             {internalOnly

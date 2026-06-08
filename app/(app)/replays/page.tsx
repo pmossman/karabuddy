@@ -1,8 +1,8 @@
 import { eq, desc, inArray, count } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, replayTeamShares, teams, tags } from '@/lib/schema';
-import { orderPlayersOwnerFirst } from '@/lib/players';
+import { replays, users, replayTeamShares, replayParticipants, replayAltPayload, teams, tags } from '@/lib/schema';
+import { serializeReplayRow } from '@/lib/replayRow';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
 import { ReplayFilters } from './ReplayFilters';
@@ -24,15 +24,37 @@ export default async function ReplaysIndex() {
   // B100: per-replay comment count, surfaced in the browser so you can see
   // discussion activity at a glance without opening each replay.
   const commentCountBySlug = new Map<string, number>();
+  // B116: "My Replays" = every replay I RECORDED — not just ones the canonical
+  // row is attributed to me. A double-sided replay I recorded as player 2 lives
+  // under my teammate's userId (my POV is in replay_alt_payload), so union three
+  // signals: my own uploads, any replay I'm a participant of, and any alt I
+  // recorded. `altSideBySlug` carries my POV's playerId for the alt case so the
+  // serializer resolves "my leader" correctly.
+  const altSideBySlug = new Map<string, string | null>();
   if (userId) {
     const db = getDb();
-    rows = await db
-      .select({ replay: replays, ownerName: users.name })
-      .from(replays)
-      .leftJoin(users, eq(users.id, replays.userId))
-      .where(eq(replays.userId, userId))
-      .orderBy(desc(replays.createdAt))
-      .limit(100);
+    const [ownSlugRows, partSlugRows, altRows] = await Promise.all([
+      db.select({ slug: replays.slug }).from(replays).where(eq(replays.userId, userId)),
+      db.select({ slug: replayParticipants.replaySlug }).from(replayParticipants).where(eq(replayParticipants.userId, userId)),
+      db.select({ slug: replayAltPayload.replaySlug, altOwnerPlayerId: replayAltPayload.altOwnerPlayerId }).from(replayAltPayload).where(eq(replayAltPayload.altUserId, userId)),
+    ]);
+    for (const a of altRows) altSideBySlug.set(a.slug, a.altOwnerPlayerId);
+    const mineSlugs = Array.from(new Set([
+      ...ownSlugRows.map((r) => r.slug),
+      ...partSlugRows.map((r) => r.slug),
+      ...altRows.map((r) => r.slug),
+    ]));
+
+    // One ordered+limited fetch over the union (apply the limit ONCE, post-union).
+    rows = mineSlugs.length > 0
+      ? await db
+          .select({ replay: replays, ownerName: users.name })
+          .from(replays)
+          .leftJoin(users, eq(users.id, replays.userId))
+          .where(inArray(replays.slug, mineSlugs))
+          .orderBy(desc(replays.createdAt))
+          .limit(100)
+      : [];
 
     const slugs = rows.map((r) => r.replay.slug);
     if (slugs.length > 0) {
@@ -67,29 +89,20 @@ export default async function ReplaysIndex() {
         // MineEmpty (install pitch) if there's no extension.
         <MineAnonymous />
       ) : (
-        <ReplayFilters rows={rows.map((r) => serializeRow(r, sharesBySlug.get(r.replay.slug) ?? [], commentCountBySlug.get(r.replay.slug) ?? 0))} canManage showShareTabs emptyState={<MineEmpty />} />
+        <ReplayFilters
+          rows={rows.map(({ replay, ownerName }) => serializeReplayRow(replay, {
+            ownerName,
+            // Perspective = me: my own uploads use the canonical ownerPlayerId;
+            // a replay I recorded as the alt (2nd player) uses my alt POV side.
+            viewerPlayerId: replay.userId === userId ? replay.ownerPlayerId : (altSideBySlug.get(replay.slug) ?? null),
+            sharedTeams: sharesBySlug.get(replay.slug) ?? [],
+            commentCount: commentCountBySlug.get(replay.slug) ?? 0,
+          }))}
+          canManage
+          showShareTabs
+          emptyState={<MineEmpty />}
+        />
       )}
     </main>
   );
-}
-
-function serializeRow({ replay: r, ownerName }: { replay: any; ownerName: string | null }, sharedTeams: { slug: string; name: string }[], commentCount: number) {
-  return {
-    sharedTeams,
-    commentCount,
-    slug: r.slug,
-    gameId: r.gameId,
-    userId: r.userId,
-    // B59-followup: reorder so the recorder's POV is listed first.
-    players: orderPlayersOwnerFirst(r.players, r.ownerPlayerId),
-    durationMs: r.durationMs,
-    actionCount: r.actionCount,
-    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
-    match: r.match ?? null,
-    displayName: r.displayName ?? null,
-    labels: r.labels ?? null,
-    winners: r.winners ?? null,
-    ownerPlayerId: r.ownerPlayerId ?? null,
-    ownerName,
-  };
 }

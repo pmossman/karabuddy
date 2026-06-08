@@ -115,35 +115,57 @@ test('view switcher: clicking a view tab updates the URL', async ({ page, reques
   await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('by-leader');
 });
 
-// -- Opponent input: LastPass autofill suppression + datalist combobox --
+// -- B116: leader filters (my leader / opponent leader), opponent-username gone --
 
-test('opponent input is a search field + marked password-manager-ignore', async ({ page }) => {
-  await signInAsTestUser(page, { name: 'LPx', email: 'lpx@example.com' });
+test('filters are by leader, not opponent username', async ({ page }) => {
+  await signInAsTestUser(page, { name: 'LeadFilt', email: 'lf@example.com' });
   await page.goto('/replays?tab=mine');
   await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
-  const opp = page.getByLabel('Opponent (username)');
-  // type=search is the real fix — password managers don't attach to search fields.
-  await expect(opp).toHaveAttribute('type', 'search');
-  await expect(opp).toHaveAttribute('data-lpignore', 'true');
-  await expect(opp).toHaveAttribute('autocomplete', 'off');
-  await expect(opp).toHaveAttribute('data-form-type', 'other');
+  await expect(page.getByLabel('My leader')).toBeVisible();
+  await expect(page.getByLabel('Opponent leader')).toBeVisible();
+  // The old opponent-username filter is gone entirely.
+  await expect(page.getByLabel('Opponent (username)')).toHaveCount(0);
 });
 
-test('opponent input is a combobox of seen opponent usernames', async ({ page, request }) => {
-  await signInAsTestUser(page, { name: 'OppList', email: 'ol@example.com' });
-  for (const opp of ['Alice', 'Bob']) {
-    const r = await uploadReplay(request, { local: { username: 'OppList' }, opponent: { username: opp } });
+test('My leader / Opponent leader filters narrow the list', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'LeadNarrow', email: 'ln@example.com' });
+  // Two games: I play Greef vs Krennic, then Boba vs Krennic.
+  for (const mine of ['Greef Karga', 'Boba Fett']) {
+    const r = await uploadReplay(request, {
+      local: { username: 'LeadNarrow', leaderName: mine },
+      opponent: { username: 'Foe', leaderName: 'Director Krennic' },
+    });
     await claimInstallToken(page, r.installToken);
   }
+  // My leader = Greef → only the Greef game survives.
+  await page.goto('/replays?tab=mine&mine=' + encodeURIComponent('Greef Karga'));
+  await expect(page.getByTestId('replay-cell')).toHaveCount(1);
+  await expect(page.getByTestId('replay-cell').first()).toContainText('Greef Karga');
+  // Opponent leader = Director Krennic → both survive (shared opponent).
+  await page.goto('/replays?tab=mine&vs=' + encodeURIComponent('Director Krennic'));
+  await expect(page.getByTestId('replay-cell')).toHaveCount(2);
+});
+
+// -- B116: Bo3 series grouping (same lobbyId → one series block) --
+
+test('Bo3 games sharing a lobby render as a single series group', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'Bo3er', email: 'bo3@example.com' });
+  const lobbyId = 'lobby-' + Date.now();
+  for (let i = 0; i < 2; i++) {
+    const r = await uploadReplay(request, {
+      local: { username: 'Bo3er' },
+      opponent: { username: 'Rival' },
+      match: { gamesToWinMode: 'bestOfThree', lobbyId },
+    });
+    await claimInstallToken(page, r.installToken);
+  }
+  // A standalone game (its own lobby) stays a singleton.
+  const solo = await uploadReplay(request, { local: { username: 'Bo3er' }, opponent: { username: 'Solo' }, match: { lobbyId: 'lobby-solo-' + Date.now() } });
+  await claimInstallToken(page, solo.installToken);
+
   await page.goto('/replays?tab=mine');
-  await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
-  const opp = page.getByLabel('Opponent (username)');
-  const listId = await opp.getAttribute('list');
-  expect(listId).toBeTruthy();
-  const values = await page.locator(`#${listId} option`).evaluateAll(
-    (els) => els.map((e) => (e as HTMLOptionElement).value)
-  );
-  expect(values).toEqual(expect.arrayContaining(['Alice', 'Bob']));
+  await expect(page.getByTestId('series-group')).toHaveCount(1);
+  await expect(page.getByTestId('series-group').first()).toContainText(/Best of 2/);
 });
 
 // -- Default view = table (renamed Cards → Grid), table is sortable --
@@ -170,8 +192,9 @@ test('view switcher labels: Table / Grid / By leader / Timeline', async ({ page 
 
 test('table: clicking a sortable column header reorders rows', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'Sorter', email: 'sort@example.com' });
-  for (const opp of ['Charlie', 'Alpha', 'Bravo']) {
-    const r = await uploadReplay(request, { local: { username: 'Sorter' }, opponent: { username: opp } });
+  // B116: the Replay column now sorts by the leader matchup, so vary the leader.
+  for (const lead of ['Charlie Leader', 'Alpha Leader', 'Bravo Leader']) {
+    const r = await uploadReplay(request, { local: { username: 'Sorter', leaderName: lead }, opponent: { username: 'Foe' } });
     await claimInstallToken(page, r.installToken);
   }
   await page.goto('/replays?tab=mine');
@@ -247,8 +270,11 @@ test('team page renders the same filter controls', async ({ page, request }) => 
 
   await page.goto(`/teams/${teamSlug}?tab=replays`);
   await page.getByRole('button', { name: 'Filters' }).click(); // filters collapsed by default
-  // The Leader filter control should render on the team page too.
-  await expect(page.getByLabel('Leader')).toBeVisible();
+  // The leader filter controls render on the team page too — plus the team-only
+  // "Uploaded by" member filter (B116).
+  await expect(page.getByLabel('My leader')).toBeVisible();
+  await expect(page.getByLabel('Opponent leader')).toBeVisible();
+  await expect(page.getByLabel('Uploaded by')).toBeVisible();
 });
 
 test('team page filter selection writes to URL', async ({ page, request }) => {
