@@ -54,12 +54,12 @@ vercel env pull .env.local        # prod creds — used as the snapshot SOURCE o
 #   POSTGRES_URL_NON_POOLING=postgres://...localhost:5434/...
 npm run db:dev:up                 # Docker Postgres on :5434 (postgres:17, matches prod PG17)
 npm run db:pull-snapshot          # pg_dump prod → restore into the local container (read-only on prod)
-npm run dev                       # http://localhost:3000, now on the local DB
+npm run dev                       # http://localhost:3001, now on the local DB
 ```
 
 Env precedence: `.env.development.local` > `.env.local` (Next.js + `drizzle.config.ts` both load the former first), so the local DB override wins and `vercel env pull` never clobbers it. Full details in [docs/local-dev-db.md](./docs/local-dev-db.md). Blob payloads aren't copied — `payloadBlobUrl` keeps pointing at prod Blob and loads read-only.
 
-Point the extension at local: in DevTools on a karabast.net tab, `chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })`, then load `extension/` unpacked (`chrome://extensions` → Developer mode → Load unpacked) and reload after edits — **no build step**.
+Point the extension at local: in DevTools on a karabast.net tab, `chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3001' })`, then load `extension/` unpacked (`chrome://extensions` → Developer mode → Load unpacked) and reload after edits — **no build step**. (Dev runs on **:3001**, deliberately off **:3000** — the `karabuddy-bridge` content script only matches `localhost:3000`, so a dev profile on :3001 can't auto-pin the endpoint and hijack your real games' uploads to local. The flip side: no bridge on :3001 means no auto-claim there, so link install tokens explicitly for local recording tests.)
 
 ## Testing
 

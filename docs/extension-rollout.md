@@ -24,7 +24,7 @@ compatible — make it additive instead.
 1. **Develop** server + extension changes together on a branch.
 2. **Test the new combo locally.** Run local dev (Docker DB, see
    [local-dev-db.md](./local-dev-db.md)) and point a dev-unpacked extension at
-   it: `chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })`,
+   it: `chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3001' })`,
    reload a karabast.net tab, verify new-ext ↔ new-server. (Vercel preview
    deploys aren't used for this — they're SSO-protected and the bypass is
    Pro-only; the gated pipeline does the deployed-build verification instead.)

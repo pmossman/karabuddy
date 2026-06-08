@@ -7,7 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
 //
 // Run: `npm run test:e2e` (starts everything)
 // Or:  `npm run test:e2e:ui` for the Playwright inspector.
-const PORT = 3001; // separate from dev to avoid clashing with `npm run dev`
+const PORT = 3002; // separate from `npm run dev` (now on 3001 — kept off 3000 so the extension bridge can't re-pin uploads to local)
 const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({

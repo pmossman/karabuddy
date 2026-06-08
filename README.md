@@ -47,15 +47,15 @@ vercel env pull .env.local    # prod Neon + Blob + Auth secrets — used as the 
 # localhost:5434 POSTGRES_URL / POSTGRES_URL_NON_POOLING
 npm run db:dev:up             # Docker Postgres on :5434
 npm run db:pull-snapshot      # seed it from a read-only prod dump
-npm run dev                   # http://localhost:3000
+npm run dev                   # http://localhost:3001
 ```
 
 See [docs/local-dev-db.md](./docs/local-dev-db.md) for the full local-DB rationale and workflow.
 
-For the extension to upload to your local server instead of prod, set the override in DevTools on any karabast.net tab:
+For the extension to upload to your local server instead of prod, set the override in DevTools on any karabast.net tab (dev runs on :3001, off :3000 so the extension bridge can't auto-pin your real uploads to local):
 
 ```js
-chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3000' })
+chrome.storage.local.set({ karabuddyEndpoint: 'http://localhost:3001' })
 ```
 
 Then load `./extension/` unpacked at `chrome://extensions` (Developer mode on). Reload from `chrome://extensions` after editing extension files — no build step.
