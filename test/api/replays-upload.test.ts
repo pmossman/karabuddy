@@ -108,6 +108,35 @@ describe('POST /api/replays — upsert by gameId', () => {
   });
 });
 
+describe('POST /api/replays — B114 client metadata', () => {
+  it('stores sanitized clientMeta on insert and refreshes it on snapshot', async () => {
+    as(null);
+    await doUpload('kbx_cm', { gameId: 'gcm', actionCount: 5 }, { clientMeta: { extVersion: '0.5.12', browser: 'chrome', ua: 'UA1', evil: 'drop-me' } });
+    let [row] = await getDb().select().from(replays).where(eq(replays.gameId, 'gcm'));
+    expect(row.clientMeta).toEqual({ extVersion: '0.5.12', browser: 'chrome', ua: 'UA1' }); // unknown key dropped
+
+    // a later snapshot from a newer build refreshes it (latest wins)
+    await doUpload('kbx_cm', { gameId: 'gcm', actionCount: 12 }, { clientMeta: { extVersion: '0.5.13', browser: 'chrome', ua: 'UA1' } });
+    [row] = await getDb().select().from(replays).where(eq(replays.gameId, 'gcm'));
+    expect((row.clientMeta as any).extVersion).toBe('0.5.13');
+  });
+
+  it('does not null an existing clientMeta when an upload omits it', async () => {
+    as(null);
+    await doUpload('kbx_cm2', { gameId: 'gcm2', actionCount: 5 }, { clientMeta: { extVersion: '0.5.12' } });
+    await doUpload('kbx_cm2', { gameId: 'gcm2', actionCount: 9 }); // no clientMeta (e.g. older build)
+    const [row] = await getDb().select().from(replays).where(eq(replays.gameId, 'gcm2'));
+    expect((row.clientMeta as any).extVersion).toBe('0.5.12'); // preserved
+  });
+
+  it('leaves clientMeta null when none is sent', async () => {
+    as(null);
+    await doUpload('kbx_cm3', { gameId: 'gcm3' });
+    const [row] = await getDb().select().from(replays).where(eq(replays.gameId, 'gcm3'));
+    expect(row.clientMeta).toBeNull();
+  });
+});
+
 describe('POST /api/replays — armed shares + lifted-tag scope', () => {
   it('applies the bubble armed teams as shares and scopes lifted tags to them', async () => {
     const u = randomUUID();

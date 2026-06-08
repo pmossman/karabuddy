@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, replayAltPayload, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
 import { sharedTeam } from '@/lib/altPerspective';
+import { sanitizeClientMeta } from '@/lib/clientMeta';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
@@ -102,6 +103,9 @@ export async function POST(req: Request) {
     // B71: teams the bubble armed for this match. Applied as replay shares
     // (validated) and used as the default audience for lifted in-game tags.
     const shareTeamSlugs: unknown = body.shareTeamSlugs;
+    // B114: recorder/client metadata the extension SW attached (ext version,
+    // browser). Untrusted → whitelist + length-cap. Null for web / pre-B114.
+    const clientMeta = sanitizeClientMeta(body.clientMeta);
     if (!installToken) {
       return NextResponse.json({ ok: false, error: 'installToken required' }, { status: 400, headers });
     }
@@ -204,6 +208,10 @@ export async function POST(req: Request) {
               altOwnerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
               altActionCount: incomingActionCount,
               payload: payloadText,
+              // B114: the ALT recorder's ext version — so a double-sided replay
+              // records BOTH sides' clients. Only overwrite when present (don't
+              // null out a stored value from a client that didn't send it).
+              ...(clientMeta ? { altClientMeta: clientMeta } : {}),
             };
             await db
               .insert(replayAltPayload)
@@ -254,6 +262,9 @@ export async function POST(req: Request) {
       };
       if (parsed.match !== undefined) updates.match = parsed.match;
       if (!replay.decks && parsed.decks) updates.decks = parsed.decks;
+      // B114: refresh the recorder's client metadata (latest upload wins) —
+      // only when this upload carried it, so we don't null a stored value.
+      if (clientMeta) updates.clientMeta = clientMeta;
       // B59: only write winners on the upsert path if we actually
       // detected them THIS upload. A periodic snapshot before game-end
       // shouldn't clobber a previously-extracted winner.
@@ -332,6 +343,9 @@ export async function POST(req: Request) {
       // /replays?tab=mine knows which player was "me" without a per-
       // row karabast-username lookup.
       ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
+      // B114: recorder/client metadata (ext version, browser) — null for web
+      // uploads + pre-B114 extensions.
+      clientMeta,
     });
 
     // Lift tags embedded in the payload into the tags table so the viewer

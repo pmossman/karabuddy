@@ -162,6 +162,13 @@ export const replays = pgTable(
     // these tag the whole replay. Stored as text[]; client trims, dedupes,
     // and caps server-side.
     labels: jsonb('labels'),
+    // B114: recorder/client metadata attached by the EXTENSION'S service worker
+    // at upload time (the SW can read chrome.runtime.getManifest(); the MAIN-world
+    // recorder can't). A small bag — { extVersion, extVersionName, browser, os,
+    // ua } — so we can see which extension version produced a replay without
+    // asking the user (diagnosing recorder regressions, e.g. Bo3 capture gaps).
+    // Latest upload for a slug wins. Null on web uploads + pre-B114 extensions.
+    clientMeta: jsonb('client_meta'),
     // B85: the "public" concept was removed — replays are link-accessible
     // (anyone with /r/<slug>) and surface to teams via shares. No public list.
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -395,6 +402,9 @@ export const replayAltPayload = pgTable('replay_alt_payload', {
   altActionCount: integer('alt_action_count').notNull().default(0),
   // The 2nd POV's raw payload JSON text (same encoding as the canonical blob).
   payload: text('payload').notNull(),
+  // B114: client metadata for the ALT recorder (same shape as replays.clientMeta)
+  // so a double-sided replay records BOTH recorders' extension versions.
+  altClientMeta: jsonb('alt_client_meta'),
 });
 
 export type ReplayAltPayload = typeof replayAltPayload.$inferSelect;

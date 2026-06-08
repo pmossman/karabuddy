@@ -148,6 +148,13 @@
       "when": 1781136000000,
       "tag": "0020_double_sided_replay",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781222400000,
+      "tag": "0021_client_meta",
+      "breakpoints": true
     }
   ]
 }

@@ -24,9 +24,11 @@ function payload(gameId: string, opts: { localPlayerId?: string; actionCount?: n
     tags: [],
   });
 }
-const doUpload = (token: string, gameId: string, opts: { share?: string[]; localPlayerId?: string; actionCount?: number } = {}) =>
+const doUpload = (token: string, gameId: string, opts: { share?: string[]; localPlayerId?: string; actionCount?: number; clientMeta?: any } = {}) =>
   upload(new Request('http://t/api/replays', { method: 'POST', body: JSON.stringify({
-    installToken: token, payload: payload(gameId, opts), ...(opts.share ? { shareTeamSlugs: opts.share } : {}),
+    installToken: token, payload: payload(gameId, opts),
+    ...(opts.share ? { shareTeamSlugs: opts.share } : {}),
+    ...(opts.clientMeta ? { clientMeta: opts.clientMeta } : {}),
   }) }));
 
 async function seedUser() {
@@ -63,6 +65,18 @@ describe('B112 alt-perspective storage gating', () => {
     const row = await altRow(slug);
     expect(row).toMatchObject({ altUserId: b.id, altOwnerPlayerId: 'p2', altActionCount: 12 });
     expect(typeof row.payload).toBe('string');
+  });
+
+  it('B114: records each recorder\'s clientMeta — canonical + alt', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const team = await seedTeam(a.id, [a.id, b.id]);
+    as(a.id); const { slug } = await (await doUpload(a.token, 'g-cm', { share: [team], clientMeta: { extVersion: '0.5.12', browser: 'chrome' } })).json();
+    as(b.id); await doUpload(b.token, 'g-cm', { localPlayerId: 'p2', actionCount: 12, clientMeta: { extVersion: '0.5.10', browser: 'firefox' } });
+    const { replays } = await import('@/lib/schema');
+    const [rep] = await getDb().select().from(replays).where(eq(replays.slug, slug));
+    expect((rep.clientMeta as any)).toMatchObject({ extVersion: '0.5.12', browser: 'chrome' });
+    expect(((await altRow(slug)).altClientMeta as any)).toMatchObject({ extVersion: '0.5.10', browser: 'firefox' });
   });
 
   it('does NOT store the alt when the recorders share no team', async () => {

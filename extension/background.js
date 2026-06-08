@@ -59,6 +59,25 @@ const getShareTeamSlugs = async () => {
     }
 };
 
+// B114: recorder/client metadata stamped onto every upload. Built in the SW
+// because only it can read chrome.runtime.getManifest() (the MAIN-world recorder
+// can't). Lets us see which extension version + browser produced a replay
+// without asking the user — e.g. diagnosing recorder gaps like the Bo3 capture
+// miss. Server whitelists + length-caps these fields (lib/clientMeta.ts).
+const buildClientMeta = () => {
+    try {
+        const m = chrome.runtime.getManifest();
+        const ua = (self.navigator && self.navigator.userAgent) || '';
+        let browser = 'other';
+        if (/firefox/i.test(ua)) browser = 'firefox';
+        else if (/edg\//i.test(ua)) browser = 'edge';
+        else if (/chrome|chromium|crios/i.test(ua)) browser = 'chrome';
+        return { extVersion: m.version, extVersionName: m.version_name || m.version, browser, ua };
+    } catch {
+        return null;
+    }
+};
+
 const uploadReplayToKarabuddy = async (payloadText) => {
     const endpoint = await getKarabuddyEndpoint();
     const installToken = await getKarabuddyInstallToken();
@@ -75,6 +94,7 @@ const uploadReplayToKarabuddy = async (payloadText) => {
             installToken,
             payload: payloadText,
             ...(shareTeamSlugs.length ? { shareTeamSlugs } : {}),
+            ...(buildClientMeta() ? { clientMeta: buildClientMeta() } : {}),
         })
     });
     if (!res.ok) {
