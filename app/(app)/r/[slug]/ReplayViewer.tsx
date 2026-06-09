@@ -39,11 +39,12 @@ const HELD_STEP_MS = 180;
 // replay (frames aren't evenly spaced in wall-clock), so the UI labels these
 // qualitatively; `value` is the dwell divisor (higher = less time per frame).
 const PLAY_SPEEDS = [
-  { label: 'Slow', value: 0.5 },
-  { label: 'Normal', value: 1 },
-  { label: 'Fast', value: 2 },
-  { label: 'Fastest', value: 4 },
+  { label: 'Slow', value: 0.25 },
+  { label: 'Normal', value: 0.5 },
+  { label: 'Fast', value: 1 },
+  { label: 'Faster', value: 3 },
 ] as const;
+const PLAY_SPEED_DEFAULT = 0.5; // Normal
 const PLAY_SPEED_STORAGE_KEY = 'karabuddy:playSpeed';
 // Never dwell shorter than this regardless of speed — below it the board can't
 // keep up and frames just blur past without registering.
@@ -181,8 +182,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const autoplayTimerRef = useRef<number | null>(null);
-  const [speed, setSpeed] = useState<number>(1);
-  const speedRef = useRef(1);
+  const [speed, setSpeed] = useState<number>(PLAY_SPEED_DEFAULT);
+  const speedRef = useRef(PLAY_SPEED_DEFAULT);
   useEffect(() => {
     try {
       const v = Number(window.localStorage.getItem(PLAY_SPEED_STORAGE_KEY));
