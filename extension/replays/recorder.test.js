@@ -196,6 +196,64 @@ describe('back-to-back games (Bo3)', () => {
   });
 });
 
+// B120: per-frame merge key (totalMessages) + flush-on-socket-close, so a game
+// split across karabast tabs can be stitched server-side.
+describe('B120 merge key + socket-close flush', () => {
+  // gs() with a totalMessages so the recorder can capture the merge key.
+  const gsk = (id, active, key, extra = {}) => gs(id, active, { totalMessages: key, ...extra });
+
+  it('tags every gamestate event with the totalMessages merge key', async () => {
+    const { uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    ws.recv(sio('gamestate', gsk('g1', 'p1', 3)));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gsk('g1', i % 2 === 0 ? 'p2' : 'p1', 4 + i)));
+    ws.recv(sio('gamestate', gsk('g1', 'p2', 20, { gameOver: true, winners: ['Alice'] })));
+    await vi.advanceTimersByTimeAsync(1500);
+    const gsEvents = uploads[0].events.filter((e) => e.event === 'gamestate');
+    expect(gsEvents.every((e) => typeof e.key === 'number')).toBe(true);
+    expect(gsEvents[0].key).toBe(3); // first frame's totalMessages
+  });
+
+  it('flushes one upload on socket close (reason socketclose), throttled, without resetting', async () => {
+    const { R, uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    ws.recv(sio('gamestate', gsk('g1', 'p1', 1)));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gsk('g1', i % 2 === 0 ? 'p2' : 'p1', 2 + i)));
+    expect(uploads).toHaveLength(0); // no periodic, no game-end yet
+
+    ws.dispatchEvent(new Event('close'));
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0].reason).toBe('socketclose');
+
+    ws.dispatchEvent(new Event('close')); // within 12s → throttled
+    expect(uploads).toHaveLength(1);
+
+    // Recording is NOT reset — a reconnect (new socket) keeps appending the same game.
+    expect(R.isRecordingActive()).toBe(true);
+    const ws2 = new window.WebSocket('wss://api.karabast.net/socket');
+    ws2.recv(sio('gamestate', gsk('g1', 'p2', 13)));
+    ws2.recv(sio('gamestate', gsk('g1', 'p1', 14, { gameOver: true, winners: ['Alice'] })));
+    await vi.advanceTimersByTimeAsync(1500); // finalize
+    const finalize = uploads[uploads.length - 1];
+    const firstFull = finalize.events.find((e) => e.args?.[0]?.full);
+    expect(firstFull.args[0].full.id).toBe('g1'); // same game, continued through the reset
+    expect(finalize.events.filter((e) => e.event === 'gamestate').length).toBeGreaterThan(11);
+  });
+
+  it('stamps an in-game tag with the current frame key', async () => {
+    const { R, uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    ws.recv(sio('gamestate', gsk('g1', 'p1', 10)));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gsk('g1', i % 2 === 0 ? 'p2' : 'p1', 11 + i)));
+    R.addTag('here'); // anchored at the last frame, totalMessages 20
+    ws.recv(sio('gamestate', gsk('g1', 'p2', 30, { gameOver: true })));
+    await vi.advanceTimersByTimeAsync(1500);
+    const tag = uploads[0].tags[0];
+    expect(tag.comment).toBe('here');
+    expect(tag.key).toBe(20);
+  });
+});
+
 // B105: spectating a game must NOT record/upload it — it isn't ours.
 describe('spectator guard', () => {
   // A spectator is sent BOTH players' hands unmasked (a player only sees their own).

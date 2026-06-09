@@ -274,20 +274,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } else if (msg.type === 'openReplaysPage') {
                 await openReplaysPage({ tab: msg.tab });
                 sendResponse({ ok: true });
-            } else if (msg.type === 'countKarabastTabs') {
-                // B111: how many karabast.net windows/tabs are open. The page
-                // bubble warns when >1, because karabast binds each user to a
-                // SINGLE socket — opening a second window (even the home screen)
-                // makes karabast disconnect the playing window's game socket and
-                // rebind the lobby to the newest connection, so the recorder
-                // can't capture a complete match. Needs the "tabs" permission +
-                // the karabast host permission (both already granted).
-                try {
-                    const tabs = await chrome.tabs.query({ url: 'https://karabast.net/*' });
-                    sendResponse({ ok: true, data: { count: tabs.length } });
-                } catch (err) {
-                    sendResponse({ ok: false, error: err.message });
-                }
             } else if (msg.type === 'getEndpoint') {
                 // B69: tell the page-world bubble where karabuddy.app
                 // lives so it can open a sign-in popup at the right URL

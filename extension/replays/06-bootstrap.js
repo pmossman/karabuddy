@@ -82,30 +82,10 @@
         }).catch(() => {});
     };
 
-    // B111: karabast binds each user to a SINGLE game socket. Opening a second
-    // karabast window — even just the home screen — makes karabast disconnect
-    // the playing window's socket and rebind the lobby to the newest connection
-    // (server: Lobby.checkUpdateSocket). The recorder is per-window, so it can't
-    // capture a complete match while a second karabast window is open — the
-    // stream gets yanked away mid-game. We can't change karabast, so warn the
-    // user to close the extras. The SW counts karabast tabs; we re-check on
-    // mount, on focus, and on a light interval, and clear the toast once only
-    // one window remains.
-    const MULTI_TAB_KEY = 'multi-tab';
-    const checkMultiTab = async () => {
-        try {
-            const n = await NS.bridge?.getKarabastTabCount?.();
-            if (typeof n !== 'number') return; // bridge unavailable — leave as-is
-            if (n > 1) {
-                NS.toast?.show?.(
-                    'Multiple karabast tabs are open. Close the others — KaraBuddy can only record a match from a single karabast window.',
-                    { kind: 'warning', persistent: true, key: MULTI_TAB_KEY }
-                );
-            } else {
-                NS.toast?.dismiss?.(MULTI_TAB_KEY);
-            }
-        } catch {}
-    };
+    // B111 (the multi-tab warning) was removed in B120: recordings are now
+    // durable across the multi-tab socket rebind (the server stitches the
+    // per-tab slices back together by key), so "close your other karabast tab"
+    // is no longer true — we capture a complete replay either way.
 
     const mountAndWatch = () => {
         installKeyHandlers();
@@ -114,15 +94,6 @@
         Footer.installFooterStyles();
         Footer.installFooter();
         checkExtensionStatus();
-        checkMultiTab();
-        // Re-check when the tab regains focus (the user just came back from the
-        // other karabast window they opened) and periodically while visible (a
-        // second window opened mid-game; the interval also clears the warning
-        // once they close it). Gated on visibility so backgrounded tabs idle.
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') checkMultiTab();
-        });
-        setInterval(() => { if (document.visibilityState === 'visible') checkMultiTab(); }, 12000);
         const observer = new MutationObserver(() => {
             Footer.installFooter();
         });

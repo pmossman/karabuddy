@@ -21,6 +21,36 @@ export function applyPatch(state: any, patch: Record<string, unknown>): void {
   }
 }
 
+// B120: forward diff — the inverse of applyPatch. Ported byte-for-byte (modulo
+// TS syntax) from the extension recorder's makePatch (02-decoder.js) so the
+// server can RE-DIFF merged full states back into the compact {full}+{patch}
+// shape (slice-and-merge). Behavioral parity with the extension is guarded by
+// makepatch-parity.test.ts: applyPatch(clone(a), makePatch(a,b)) deep-equals b.
+// Produces slash-delimited paths (a/b/c → state.a.b.c). Recurses into plain
+// objects; arrays + scalars are replaced wholesale (matching applyPatch's leaf
+// semantics). Keys removed in newVal are NOT emitted (applyPatch can't delete —
+// karabast gamestates are additive/overwrite, never key-deleting).
+export function makePatch(oldVal: any, newVal: any, path = ''): Record<string, unknown> {
+  const patches: Record<string, unknown> = {};
+  if (!isPlainObject(oldVal) || !isPlainObject(newVal)) {
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) patches[path] = newVal;
+    return patches;
+  }
+  const keys = new Set([...Object.keys(oldVal), ...Object.keys(newVal)]);
+  for (const k of keys) {
+    const subPath = path ? `${path}/${k}` : k;
+    if (!(k in newVal)) continue;
+    if (!(k in oldVal)) { patches[subPath] = (newVal as any)[k]; continue; }
+    if (JSON.stringify((oldVal as any)[k]) === JSON.stringify((newVal as any)[k])) continue;
+    if (isPlainObject((oldVal as any)[k]) && isPlainObject((newVal as any)[k])) {
+      Object.assign(patches, makePatch((oldVal as any)[k], (newVal as any)[k], subPath));
+    } else {
+      patches[subPath] = (newVal as any)[k];
+    }
+  }
+  return patches;
+}
+
 // Player-perspective recordings strip opponent hand cards down to stubs
 // (no id/setId). Karabast's renderer would otherwise paint "UNKNOWN_EN
 // IMAGE NOT FOUND". Replace each stub with a sentinel card we can style

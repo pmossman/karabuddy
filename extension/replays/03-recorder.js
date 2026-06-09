@@ -24,6 +24,7 @@
     let autoDownloadTimer = null;
     let prevNormalizedGamestate = null;
     let lastFullGamestate = null;    // most recent full snapshot, for author sniffing
+    let lastFrameKey = null;         // B120: merge key (totalMessages) of the most recent frame, for tag anchoring
     let currentGameId = null;
     // Periodic snapshot uploads (B26): every 5 min during an active match the
     // recorder pushes the current payload to karabuddy.app. Server overwrites
@@ -95,6 +96,7 @@
         recordingStart = Date.now();
         prevNormalizedGamestate = null;
         lastFullGamestate = null;
+        lastFrameKey = null;
         if (autoDownloadTimer) { clearTimeout(autoDownloadTimer); autoDownloadTimer = null; }
         autoDownloadScheduled = false;
         localPlayerId = null;
@@ -225,6 +227,11 @@
         if (frame.event === 'gamestate') {
             const original = frame.args[0];
             const incomingId = original.id || null;
+            // B120: karabast's totalMessages is a global, monotonic, per-game
+            // count (same value across every socket at the same moment). Capture
+            // it BEFORE normalizeGamestate strips it — it's the cross-window key
+            // the server merges slices by when a game is split across tabs.
+            const msgKey = Number.isFinite(original.totalMessages) ? original.totalMessages : null;
 
             // Post-finalize cleanup events for the same gameId — ignore.
             // (If a new game starts, incomingId differs and we fall through
@@ -284,7 +291,7 @@
                 return;
             }
             if (prevNormalizedGamestate === null) {
-                recording.push({ t, dir, event: 'gamestate', args: [{ full: norm }] });
+                recording.push({ t, dir, key: msgKey, event: 'gamestate', args: [{ full: norm }] });
                 prevNormalizedGamestate = norm;
                 gamestateCount++;
                 // First gamestate of this recording — clear the prior match's
@@ -300,7 +307,7 @@
             } else {
                 const patch = d.makePatch(prevNormalizedGamestate, norm);
                 if (Object.keys(patch).length === 0) return;
-                recording.push({ t, dir, event: 'gamestate', args: [{ patch }] });
+                recording.push({ t, dir, key: msgKey, event: 'gamestate', args: [{ patch }] });
                 prevNormalizedGamestate = norm;
                 gamestateCount++;
             }
@@ -311,6 +318,8 @@
             if (localPlayerId === null) localPlayerId = D().detectLocalPlayerId(norm.players);
             // Keep a live full snapshot for author sniffing when a tag is added.
             lastFullGamestate = norm;
+            lastFrameKey = msgKey; // B120: anchor in-game tags to this frame's merge key
+
             if (d.looksLikeGameEnd(original)) scheduleAutoDownload();
         } else {
             const t = Date.now() - recordingStart;
@@ -565,6 +574,9 @@
             author,
             comment: String(comment || ''),
             createdAt: Date.now(),
+            // B120: anchor by merge key too, so a slice-merge can remap frameIndex
+            // (per-slice local) to the merged timeline. Omitted if the frame had no key.
+            ...(Number.isFinite(lastFrameKey) ? { key: lastFrameKey } : {}),
             ...(m && (m.userIds.length || m.teamSlugs.length) ? { mentions: m } : {}),
             ...(scope ? { teamSlugs: scope } : {})
         };
@@ -593,12 +605,36 @@
         return true;
     };
 
+    // B120: when karabast yanks our socket (the multi-tab rebind force-disconnects
+    // the playing tab's socket), flush the current slice immediately so it reaches
+    // the server before this tab's stream diverges from the other tab's — the
+    // server stitches slices back together by key. Throttled, because the rebind
+    // makes the two tabs flip-flop (many close→reconnect cycles). Does NOT reset
+    // the recording: the WebSocket proxy re-attaches on reconnect and frames keep
+    // appending (same-window reconnect is already seamless), and this never calls
+    // download(), so the finalize / autoDownload path is untouched.
+    let lastCloseFlushAt = 0;
+    const CLOSE_FLUSH_MIN_INTERVAL_MS = 12_000;
+    const flushOnSocketClose = () => {
+        if (spectatorParam === true) return;
+        if (gamestateCount === 0) return;
+        const now = Date.now();
+        if (now - lastCloseFlushAt < CLOSE_FLUSH_MIN_INTERVAL_MS) return;
+        const { actionCount, distinctActivePlayers, minPlayerActions } = analyzeRecording();
+        if (distinctActivePlayers < 2 || minPlayerActions < minUploadActions) return;
+        lastCloseFlushAt = now;
+        const durationMs = Date.now() - recordingStart;
+        B().uploadReplay(buildPayloadText('socketclose', durationMs, actionCount));
+    };
+
     // ----- attachInterceptor(ws): wire a real WebSocket up to the recorder. -----
     const attachInterceptor = (ws) => {
         ws.addEventListener('message', (e) => {
             const frame = D().parseEngineIoFrame(e.data);
             if (frame) record('in', frame);
         });
+        ws.addEventListener('close', flushOnSocketClose);
+        ws.addEventListener('error', flushOnSocketClose);
         const origSend = ws.send.bind(ws);
         ws.send = function (data) {
             const frame = D().parseEngineIoFrame(data);

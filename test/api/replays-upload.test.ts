@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { POST as upload } from '@/app/api/replays/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, tags, replayTeamShares, tagTeamScope } from '@/lib/schema';
+import { getMemoryBlob } from '@/lib/blob';
+import { decodeReplay } from '@/lib/replayDecoder';
 import { eq } from 'drizzle-orm';
 
 // B79: integration coverage for the upload + upsert path — the biggest
@@ -134,6 +136,78 @@ describe('POST /api/replays — B114 client metadata', () => {
     await doUpload('kbx_cm3', { gameId: 'gcm3' });
     const [row] = await getDb().select().from(replays).where(eq(replays.gameId, 'gcm3'));
     expect(row.clientMeta).toBeNull();
+  });
+});
+
+describe('POST /api/replays — B120 slice-and-merge', () => {
+  // A keyed slice: each frame a {full} carrying totalMessages as the event key.
+  const keyedSlice = (gameId: string, keys: number[], tags: any[] = []) => JSON.stringify({
+    version: 2, actionCount: keys.length, durationMs: 1000, localPlayerId: 'p1',
+    events: keys.map((k, i) => ({
+      t: i, dir: 'in', key: k, event: 'gamestate',
+      args: [{ full: {
+        id: gameId, totalMessages: k, pos: k,
+        players: {
+          p1: { user: { username: 'Alice' }, leader: { name: 'L', setId: { set: 'SOR', number: 1 } }, base: { name: 'B', setId: { set: 'SOR', number: 2 } }, isActionPhaseActivePlayer: i % 2 === 0 },
+          p2: { user: { username: 'Bob' }, isActionPhaseActivePlayer: i % 2 === 1 },
+        },
+      } }],
+    })),
+    tags,
+  });
+  const post = (installToken: string, payload: string) =>
+    upload(new Request('http://t/api/replays', { method: 'POST', body: JSON.stringify({ installToken, payload }) }));
+  const blobOf = (slug: string) => JSON.parse(getMemoryBlob(`replays/${slug}.json`)!);
+
+  // The route fetches the prior blob via fetch(payloadBlobUrl); in memory-blob
+  // mode that URL isn't a live server, so serve it from the in-memory store.
+  let realFetch: typeof fetch;
+  beforeEach(() => {
+    realFetch = global.fetch;
+    global.fetch = (async (url: any) => {
+      const m = String(url).match(/\/api\/test\/blob\/(.+)$/);
+      if (m) return { json: async () => JSON.parse(getMemoryBlob(decodeURIComponent(m[1]))!) } as any;
+      return realFetch(url);
+    }) as any;
+  });
+  afterEach(() => { global.fetch = realFetch; });
+
+  it('merges two keyed slices of the same game into the union of frames', async () => {
+    as(null);
+    const { slug } = await (await post('kbx_m', keyedSlice('g-merge', [1, 2, 3]))).json();
+    // Second slice overlaps + extends (frames 3,4,5) — flip-flop-style.
+    await post('kbx_m', keyedSlice('g-merge', [3, 4, 5]));
+    const merged = decodeReplay(blobOf(slug));
+    expect(merged.frames.map((f: any) => f.state.pos)).toEqual([1, 2, 3, 4, 5]); // union, ordered
+  });
+
+  it('remaps merged tag frame indices by key', async () => {
+    as(null);
+    const { slug } = await (await post('kbx_mt', keyedSlice('g-mtag', [0, 2, 4]))).json();
+    // tag stamped at key 3 arrives in the second slice; merged keys → [0,1,2,3,4], index of 3 = 3.
+    await post('kbx_mt', keyedSlice('g-mtag', [1, 3], [{ id: 'mt1', key: 3, frameIndex: 1, comment: 'nice', author: 'Alice' }]));
+    const [row] = await getDb().select().from(tags).where(eq(tags.id, 'mt1'));
+    expect(row.frameIndex).toBe(3);
+  });
+
+  it('falls back to last-write-wins when a slice has no keys', async () => {
+    as(null);
+    const { slug } = await (await post('kbx_f', keyedSlice('g-fb', [1, 2, 3]))).json();
+    // unkeyed second slice (old extension) → no merge → overwrite
+    await post('kbx_f', JSON.stringify({
+      version: 2, actionCount: 9, durationMs: 1, localPlayerId: 'p1',
+      events: [{ t: 0, dir: 'in', event: 'gamestate', args: [{ full: { id: 'g-fb', pos: 99, players: { p1: { user: { username: 'Alice' }, leader: { name: 'L', setId: { set: 'SOR', number: 1 } } }, p2: { user: { username: 'Bob' } } } } }] }],
+      tags: [],
+    }));
+    const stored = decodeReplay(blobOf(slug));
+    expect(stored.frames.map((f: any) => f.state.pos)).toEqual([99]); // overwritten, not merged
+  });
+
+  it('is idempotent: re-uploading the same keyed slice keeps the same frames', async () => {
+    as(null);
+    const { slug } = await (await post('kbx_i', keyedSlice('g-idem', [1, 2, 3]))).json();
+    await post('kbx_i', keyedSlice('g-idem', [1, 2, 3]));
+    expect(decodeReplay(blobOf(slug)).frames.map((f: any) => f.state.pos)).toEqual([1, 2, 3]);
   });
 });
 

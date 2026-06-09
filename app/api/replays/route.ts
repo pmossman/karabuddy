@@ -10,6 +10,7 @@ import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { decodeReplay, extractWinners, mergeDecks, reconstructFinalState } from '@/lib/replayDecoder';
+import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayFacts } from '@/lib/statsPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
@@ -99,7 +100,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const installToken: string = String(body.installToken || '').trim();
-    const payloadText: string = typeof body.payload === 'string' ? body.payload : '';
+    // `let`: the same-owner upsert may replace these with the slice-MERGED
+    // payload (B120) before writing the blob + metadata.
+    let payloadText: string = typeof body.payload === 'string' ? body.payload : '';
     // B71: teams the bubble armed for this match. Applied as replay shares
     // (validated) and used as the default audience for lifted in-game tags.
     const shareTeamSlugs: unknown = body.shareTeamSlugs;
@@ -155,7 +158,7 @@ export async function POST(req: Request) {
     // winner field. Reconstruction handles both the (rare) full-only
     // case AND the (common) full + N patches case.
     const finalSnapshot = reconstructFinalState(parsed);
-    const winners = extractWinners(finalSnapshot);
+    let winners = extractWinners(finalSnapshot);
 
     // Upsert by gameId. The recorder fires periodic snapshots during an
     // active match (B26) plus the final on game-end; each one overwrites the
@@ -226,12 +229,43 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched, altStored }, { headers });
       }
 
+      // B120: slice-and-merge. A game can be split across two karabast tabs
+      // (the server rebinds the single game socket → the tabs flip-flop), so
+      // each tab captures only part of the stream. If BOTH the incoming slice
+      // and the stored blob carry per-frame keys (new extension), stitch them by
+      // key into one complete timeline instead of last-write-wins clobbering.
+      // Any unkeyed payload (old extension) → fall through to the stale guard +
+      // overwrite below (no regression during rollout). Best-effort: a fetch /
+      // merge / size failure falls back too.
+      let mergedOk = false;
+      if (sliceHasKeys(parsed)) {
+        try {
+          const storedBlob = await (await fetch(replay.payloadBlobUrl)).json();
+          if (sliceHasKeys(storedBlob)) {
+            const merged = mergeSlices([storedBlob, parsed]);
+            const mergedText = merged ? JSON.stringify(merged) : '';
+            if (merged && mergedText.length <= MAX_PAYLOAD_BYTES) {
+              parsed = merged;
+              payloadText = mergedText;
+              winners = extractWinners(reconstructFinalState(parsed));
+              mergedOk = true;
+            } else if (merged) {
+              console.warn('[karabuddy] merged replay exceeds size cap; falling back', { gameId, bytes: mergedText.length });
+            }
+          }
+        } catch (err) {
+          console.warn('[karabuddy] slice merge failed; falling back to overwrite:', err);
+        }
+      }
+
       // Stale-snapshot guard: a finalize-upload can race with an in-flight
       // periodic snapshot. The recording array grows monotonically within a
       // single match, so a payload carrying fewer actions than the latest
-      // saved state is by definition older. Reject so finalize wins.
+      // saved state is by definition older. Reject so finalize wins. Skipped on
+      // the merged path — the key-union is order-independent, and a later slice
+      // can carry fewer total actions yet contribute unique keys.
       const incomingActionCount = parsed.actionCount || 0;
-      if (incomingActionCount < replay.actionCount) {
+      if (!mergedOk && incomingActionCount < replay.actionCount) {
         return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, staleSnapshot: true }, { headers });
       }
 
