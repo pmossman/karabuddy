@@ -127,6 +127,7 @@ const Resources: React.FC<IResourcesProps> = ({
     return (
         <Card
             ref={containerRef}
+            data-testid={connectedPlayer === trayPlayer ? 'my-resource-pile' : 'opp-resource-pile'}
             sx={styles.cardStyle}
             onClick={handleResourceToggle}
             elevation={0}

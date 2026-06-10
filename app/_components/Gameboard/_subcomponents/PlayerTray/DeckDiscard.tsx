@@ -261,9 +261,10 @@ const DeckDiscard: React.FC<IDeckDiscardProps> = ({ trayPlayer, cardback }) => {
         <Box sx={styles.containerStyle}>
             <Box
                 ref={discardRef}
+                data-testid={connectedPlayer === trayPlayer ? 'my-discard-pile' : 'opp-discard-pile'}
                 sx={styles.discard.discardCardStyle}
                 onMouseEnter={handlePreviewOpen}
-                onMouseLeave={handlePreviewClose} 
+                onMouseLeave={handlePreviewClose}
                 onClick={handleDiscardToggle}
             />
             <Popover

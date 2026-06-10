@@ -13,8 +13,9 @@ export interface SyntheticReplayOpts {
   // If provided, fixes the gameId (useful when testing snapshot upsert).
   gameId?: string;
   // Local player's username + id. Their hand will have visible cards
-  // (the signal POV detection uses).
-  local: { id?: string; username: string; leaderName?: string };
+  // (the signal POV detection uses). `discardCards` (optional) populates the
+  // local player's discard pile so tests can exercise the pile viewer.
+  local: { id?: string; username: string; leaderName?: string; discardCards?: Array<{ set: string; number: number }> };
   // Opponent's username. Hand stays empty (no visibility) so they're
   // not picked as POV. `seenCards` (optional) gets injected into the
   // opponent's groundArena so tests can exercise the "seen during play"
@@ -102,7 +103,13 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
       cardPiles: {
         hand: [localCard],
         deck: [],
-        discard: [],
+        discard: (opts.local.discardCards || []).map((c, i) => ({
+          id: `${c.set}_${String(c.number).padStart(3, '0')}`,
+          setId: { set: c.set, number: c.number },
+          name: `${c.set} ${c.number}`,
+          type: 'unit',
+          uuid: `local-discard-${i}`,
+        })),
         resources: [],
         groundArena: [],
         spaceArena: [],

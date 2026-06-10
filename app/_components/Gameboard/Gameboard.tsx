@@ -20,6 +20,7 @@ import { Box, Grid2 as Grid } from '@mui/material';
 import OpponentCardTray from './OpponentCardTray/OpponentCardTray';
 import Board from './Board/Board';
 import PlayerCardTray from './PlayerCardTray/PlayerCardTray';
+import PileViewer from './_subcomponents/PileViewer';
 import { useGame } from '@/app/_contexts/Game.context';
 import { useCosmetics } from '@/app/_contexts/CosmeticsContext';
 
@@ -87,6 +88,9 @@ const Gameboard: React.FC = () => {
                         />
                     )}
                 </Box>
+                {/* karabuddy: renders the discard / resource pile popups the lifted
+                    trays already trigger on click (upstream's <PopupShell/> stand-in). */}
+                {playerExists && <PileViewer />}
             </Box>
         </Grid>
     );
