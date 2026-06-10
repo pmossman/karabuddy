@@ -488,6 +488,9 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
   }, [items]);
 
   const [open, setOpen] = useState<string | null>(null);
+  // The calendar is opt-in behind a small icon toggle — collapsed by default so
+  // it doesn't push the day list down on first load.
+  const [showCalendar, setShowCalendar] = useState(false);
   const rowId = (key: string) => `kb-day-${key}`;
   const pick = (day: string) => {
     setOpen(day);
@@ -497,7 +500,26 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
 
   return (
     <>
-      <TimelineCalendar countByDay={countByDay} activeDay={open} onPick={pick} />
+      <div style={{ marginTop: 16 }}>
+        <button
+          type="button"
+          onClick={() => setShowCalendar((v) => !v)}
+          aria-expanded={showCalendar}
+          aria-label={showCalendar ? 'Hide calendar' : 'Show calendar'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px',
+            background: showCalendar ? 'rgba(77,157,255,0.12)' : 'transparent',
+            border: `1px solid ${showCalendar ? 'rgba(77,157,255,0.5)' : '#2e333c'}`,
+            borderRadius: 6, color: showCalendar ? '#e6e6e6' : '#a0a8b8',
+            fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+          }}
+        >
+          <CalendarIcon />
+          Calendar
+          <span aria-hidden style={{ fontSize: 9 }}>{showCalendar ? '▴' : '▾'}</span>
+        </button>
+      </div>
+      {showCalendar && <TimelineCalendar countByDay={countByDay} activeDay={open} onPick={pick} />}
       <AccordionGroups
         items={items}
         canManage={canManage}
@@ -507,6 +529,17 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
         rowId={rowId}
       />
     </>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+    </svg>
   );
 }
 
@@ -552,7 +585,7 @@ function TimelineCalendar({
   ];
 
   return (
-    <div style={{ marginTop: 16, border: '1px solid #2e333c', borderRadius: 10, padding: 12, maxWidth: 420 }}>
+    <div style={{ marginTop: 8, border: '1px solid #2e333c', borderRadius: 10, padding: 12, maxWidth: 420 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <CalNavButton dir="prev" disabled={atMin} onClick={() => step(-1)} />
         <span style={{ fontSize: 13, fontWeight: 700, color: '#e6e6e6' }}>{monthLabel}</span>

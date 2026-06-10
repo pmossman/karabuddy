@@ -125,6 +125,10 @@ test('timeline calendar: a populated day cell shows a count + opens that day', a
   await claimInstallToken(page, r1.installToken);
 
   await page.goto('/replays?tab=mine&view=timeline');
+  // B123-followup: the calendar is collapsed behind a Calendar toggle by default.
+  await expect(page.getByTestId('calendar-day')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show calendar' }).click();
+
   const cell = page.getByTestId('calendar-day').first();
   await expect(cell).toBeVisible();
   await expect(cell).toContainText('1'); // the day's replay count
