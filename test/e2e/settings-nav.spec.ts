@@ -7,7 +7,7 @@ import { signInAsTestUser } from './helpers';
 test('header avatar menu holds Settings + Sign out (hidden until opened)', async ({ page }) => {
   await signInAsTestUser(page, { name: 'MenuUser', email: 'menu@example.com' });
   await page.goto('/');
-  const trigger = page.locator('button[aria-haspopup="menu"]');
+  const trigger = page.getByRole('button', { name: 'Account menu' });
   await expect(trigger).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Sign out' })).toHaveCount(0); // closed
   await trigger.click();

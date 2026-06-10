@@ -43,6 +43,7 @@ export function SessionMenu({ compact = false }: { compact?: boolean }) {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="Account menu"
         title={label}
         style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: '50%', background: u.image ? 'transparent' : '#2e333c', border: open ? '2px solid #5db4ff' : '2px solid transparent', padding: 0, cursor: 'pointer', overflow: 'hidden' }}
       >
