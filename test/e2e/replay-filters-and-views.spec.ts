@@ -77,17 +77,25 @@ test('filter URL survives reload', async ({ page, request }) => {
 
 // -- View switcher --
 
-test('view switcher: by-leader groups replays under leader heading', async ({ page, request }) => {
+test('view switcher: by-leader lists leaders + counts, tap drills into replays', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'GroupBy', email: 'groupby@example.com' });
   const r1 = await uploadReplay(request, {
-    local: { username: 'GroupBy' },
+    local: { username: 'GroupBy', leaderName: 'Luke Skywalker' },
     opponent: { username: 'X' },
   });
   await claimInstallToken(page, r1.installToken);
 
   await page.goto('/replays?tab=mine&view=by-leader');
-  // The leader-section heading is data-tagged so it survives styling tweaks.
-  await expect(page.getByTestId('leader-group-heading').first()).toContainText(/Luke Skywalker/);
+  // B123-followup: collapsed leader rows (name + count); the replays live behind
+  // a tap, not pre-expanded.
+  const leaderRow = page.getByTestId('leader-group-heading').first();
+  await expect(leaderRow).toContainText(/Luke Skywalker/);
+  await expect(leaderRow).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator(`a[href="/r/${r1.slug}"]`)).toHaveCount(0); // collapsed → hidden
+
+  await leaderRow.click();
+  await expect(leaderRow).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator(`a[href="/r/${r1.slug}"]`).first()).toBeVisible(); // drilled in
 });
 
 test('view switcher: timeline groups replays under date heading', async ({ page, request }) => {

@@ -348,6 +348,10 @@ function CardGrid({ rows, canManage, group = false }: { rows: Row[]; canManage: 
   );
 }
 
+// B123-followup: By-leader is a drill-down, not a long pre-expanded scroll.
+// Leaders list as collapsible rows (leader art + name + replay count); tapping
+// one opens its replays. Single-open accordion keeps the list compact on mobile
+// (the old all-expanded layout ran off-screen). Sorted most-played first.
 function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
   const groups = useMemo(() => {
     const m = new Map<string, Row[]>();
@@ -358,25 +362,66 @@ function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
       const arr = m.get(name);
       if (arr) arr.push(r); else m.set(name, [r]);
     }
-    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
   }, [rows]);
 
+  const [open, setOpen] = useState<string | null>(null);
+
   return (
-    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {groups.map(([leaderName, group]) => (
-        <section key={leaderName}>
-          <h2
-            data-testid="leader-group-heading"
-            style={{ fontSize: 14, fontWeight: 600, color: '#e6e6e6', margin: '0 0 10px', display: 'flex', gap: 8, alignItems: 'baseline' }}
+    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {groups.map(([leaderName, group]) => {
+        const isOpen = open === leaderName;
+        const rep = group[0]?.ownLeader;
+        const art = rep?.name ? cardImageUrl({ set: rep.set ?? undefined, number: rep.number ?? undefined }, true) : null;
+        return (
+          <div
+            key={leaderName}
+            style={{
+              border: `1px solid ${isOpen ? 'rgba(77,157,255,0.4)' : '#2e333c'}`,
+              borderRadius: 10,
+              background: isOpen ? 'rgba(77,157,255,0.04)' : 'transparent',
+              overflow: 'hidden',
+            }}
           >
-            {leaderName}
-            <span style={{ fontSize: 11, color: '#6c7588', fontWeight: 400 }}>{group.length}</span>
-          </h2>
-          <CardGrid rows={group} canManage={canManage} />
-        </section>
-      ))}
+            <button
+              type="button"
+              data-testid="leader-group-heading"
+              onClick={() => setOpen(isOpen ? null : leaderName)}
+              aria-expanded={isOpen}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 12px', background: 'transparent', border: 0, cursor: 'pointer',
+                color: '#e6e6e6', fontFamily: 'inherit', textAlign: 'left',
+              }}
+            >
+              <LeaderThumb src={art} alt={leaderName} />
+              <span style={{ fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {leaderName}
+              </span>
+              <span style={{ fontSize: 12, color: '#a7d2ff', fontWeight: 700, background: 'rgba(77,157,255,0.12)', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 999, padding: '1px 9px' }}>
+                {group.length}
+              </span>
+              <span aria-hidden style={{ fontSize: 10, color: '#6c7588', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▼</span>
+            </button>
+            {isOpen && (
+              <div style={{ padding: '0 12px 14px' }}>
+                <CardGrid rows={group} canManage={canManage} />
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+// Small landscape leader thumbnail for the by-leader accordion rows.
+function LeaderThumb({ src, alt }: { src: string | null; alt: string }) {
+  if (!src) {
+    return <div style={{ width: 48, height: 34, borderRadius: 4, background: '#0a0c10', border: '1px solid #2e333c', flex: '0 0 auto' }} title={alt} />;
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" loading="lazy" style={{ width: 48, height: 34, objectFit: 'cover', borderRadius: 4, background: '#0a0c10', flex: '0 0 auto' }} />;
 }
 
 function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
