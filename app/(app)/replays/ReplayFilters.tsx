@@ -348,34 +348,35 @@ function CardGrid({ rows, canManage, group = false }: { rows: Row[]; canManage: 
   );
 }
 
-// B123-followup: By-leader is a drill-down, not a long pre-expanded scroll.
-// Leaders list as collapsible rows (leader art + name + replay count); tapping
-// one opens its replays. Single-open accordion keeps the list compact on mobile
-// (the old all-expanded layout ran off-screen). Sorted most-played first.
-function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
-  const groups = useMemo(() => {
-    const m = new Map<string, Row[]>();
-    for (const r of rows) {
-      // B116: group by the viewer/uploader's OWN leader (perspective) so an
-      // alt-recorded game lands under my leader, not my opponent's.
-      const name = r.ownLeader?.name || '(unknown leader)';
-      const arr = m.get(name);
-      if (arr) arr.push(r); else m.set(name, [r]);
-    }
-    return Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-  }, [rows]);
+// B123-followup: By-leader / Timeline are drill-downs, not long pre-expanded
+// scrolls. Each group lists as a collapsible row (label + replay count, plus a
+// leader thumbnail for by-leader); tapping one opens its replays. Single-open
+// accordion keeps the list compact on mobile (the old all-expanded layout ran
+// off-screen).
+interface AccordionItem {
+  key: string;
+  label: string;
+  rows: Row[];
+  adornment?: React.ReactNode;
+}
 
+function AccordionGroups({
+  items,
+  canManage,
+  testid,
+}: {
+  items: AccordionItem[];
+  canManage: boolean;
+  testid: string;
+}) {
   const [open, setOpen] = useState<string | null>(null);
-
   return (
     <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {groups.map(([leaderName, group]) => {
-        const isOpen = open === leaderName;
-        const rep = group[0]?.ownLeader;
-        const art = rep?.name ? cardImageUrl({ set: rep.set ?? undefined, number: rep.number ?? undefined }, true) : null;
+      {items.map((it) => {
+        const isOpen = open === it.key;
         return (
           <div
-            key={leaderName}
+            key={it.key}
             style={{
               border: `1px solid ${isOpen ? 'rgba(77,157,255,0.4)' : '#2e333c'}`,
               borderRadius: 10,
@@ -385,8 +386,8 @@ function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
           >
             <button
               type="button"
-              data-testid="leader-group-heading"
-              onClick={() => setOpen(isOpen ? null : leaderName)}
+              data-testid={testid}
+              onClick={() => setOpen(isOpen ? null : it.key)}
               aria-expanded={isOpen}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 12,
@@ -394,18 +395,18 @@ function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
                 color: '#e6e6e6', fontFamily: 'inherit', textAlign: 'left',
               }}
             >
-              <LeaderThumb src={art} alt={leaderName} />
+              {it.adornment}
               <span style={{ fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {leaderName}
+                {it.label}
               </span>
               <span style={{ fontSize: 12, color: '#a7d2ff', fontWeight: 700, background: 'rgba(77,157,255,0.12)', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 999, padding: '1px 9px' }}>
-                {group.length}
+                {it.rows.length}
               </span>
               <span aria-hidden style={{ fontSize: 10, color: '#6c7588', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▼</span>
             </button>
             {isOpen && (
               <div style={{ padding: '0 12px 14px' }}>
-                <CardGrid rows={group} canManage={canManage} />
+                <CardGrid rows={it.rows} canManage={canManage} />
               </div>
             )}
           </div>
@@ -413,6 +414,29 @@ function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
       })}
     </div>
   );
+}
+
+function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
+  const items = useMemo<AccordionItem[]>(() => {
+    const m = new Map<string, Row[]>();
+    for (const r of rows) {
+      // B116: group by the viewer/uploader's OWN leader (perspective) so an
+      // alt-recorded game lands under my leader, not my opponent's.
+      const name = r.ownLeader?.name || '(unknown leader)';
+      const arr = m.get(name);
+      if (arr) arr.push(r); else m.set(name, [r]);
+    }
+    // Most-played first, then alphabetical.
+    return Array.from(m.entries())
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([name, rs]) => {
+        const rep = rs[0]?.ownLeader;
+        const art = rep?.name ? cardImageUrl({ set: rep.set ?? undefined, number: rep.number ?? undefined }, true) : null;
+        return { key: name, label: name, rows: rs, adornment: <LeaderThumb src={art} alt={name} /> };
+      });
+  }, [rows]);
+
+  return <AccordionGroups items={items} canManage={canManage} testid="leader-group-heading" />;
 }
 
 // Small landscape leader thumbnail for the by-leader accordion rows.
@@ -425,7 +449,7 @@ function LeaderThumb({ src, alt }: { src: string | null; alt: string }) {
 }
 
 function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
-  const groups = useMemo(() => {
+  const items = useMemo<AccordionItem[]>(() => {
     const m = new Map<string, Row[]>();
     for (const r of rows) {
       const d = new Date(r.createdAt);
@@ -433,25 +457,12 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
       const arr = m.get(key);
       if (arr) arr.push(r); else m.set(key, [r]);
     }
-    return Array.from(m.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+    return Array.from(m.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1)) // newest day first
+      .map(([day, rs]) => ({ key: day, label: day, rows: rs }));
   }, [rows]);
 
-  return (
-    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {groups.map(([day, group]) => (
-        <section key={day}>
-          <h2
-            data-testid="timeline-day-heading"
-            style={{ fontSize: 14, fontWeight: 600, color: '#e6e6e6', margin: '0 0 10px', display: 'flex', gap: 8, alignItems: 'baseline' }}
-          >
-            {day}
-            <span style={{ fontSize: 11, color: '#6c7588', fontWeight: 400 }}>{group.length}</span>
-          </h2>
-          <CardGrid rows={group} canManage={canManage} />
-        </section>
-      ))}
-    </div>
-  );
+  return <AccordionGroups items={items} canManage={canManage} testid="timeline-day-heading" />;
 }
 
 // -- Bo3 / series grouping ----------------------------------------------------

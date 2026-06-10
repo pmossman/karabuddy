@@ -98,7 +98,7 @@ test('view switcher: by-leader lists leaders + counts, tap drills into replays',
   await expect(page.locator(`a[href="/r/${r1.slug}"]`).first()).toBeVisible(); // drilled in
 });
 
-test('view switcher: timeline groups replays under date heading', async ({ page, request }) => {
+test('view switcher: timeline lists day rows + counts, tap drills into replays', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'Timeliner', email: 'tl@example.com' });
   const r1 = await uploadReplay(request, {
     local: { username: 'Timeliner' },
@@ -107,7 +107,16 @@ test('view switcher: timeline groups replays under date heading', async ({ page,
   await claimInstallToken(page, r1.installToken);
 
   await page.goto('/replays?tab=mine&view=timeline');
-  await expect(page.getByTestId('timeline-day-heading').first()).toBeVisible();
+  // B123-followup: same drill-down as by-leader — collapsed day rows, replays
+  // behind a tap.
+  const dayRow = page.getByTestId('timeline-day-heading').first();
+  await expect(dayRow).toBeVisible();
+  await expect(dayRow).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator(`a[href="/r/${r1.slug}"]`)).toHaveCount(0);
+
+  await dayRow.click();
+  await expect(dayRow).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator(`a[href="/r/${r1.slug}"]`).first()).toBeVisible();
 });
 
 test('view switcher: clicking a view tab updates the URL', async ({ page, request }) => {
