@@ -223,13 +223,23 @@ test('default view is table with column headers', async ({ page, request }) => {
   await expect(page.getByRole('columnheader', { name: /Replay/i })).toBeVisible();
 });
 
-test('view switcher labels: Table / Grid / By leader / Timeline', async ({ page }) => {
+test('view switcher labels: Replays / By leader / Timeline', async ({ page }) => {
   await signInAsTestUser(page, { name: 'Labels', email: 'labels@example.com' });
   await page.goto('/replays?tab=mine');
-  await expect(page.getByRole('button', { name: 'Table' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Grid' })).toBeVisible();
+  // B123-followup: Table + Grid merged into one adaptive "Replays" view.
+  await expect(page.getByRole('button', { name: 'Replays' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Grid' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'By leader' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible();
+});
+
+test('legacy ?view=grid resolves to the adaptive Replays view (table on desktop)', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'LegacyGrid', email: 'lg@example.com' });
+  const r = await uploadReplay(request, { local: { username: 'LegacyGrid' }, opponent: { username: 'Opp' } });
+  await claimInstallToken(page, r.installToken);
+  await page.goto('/replays?tab=mine&view=grid');
+  // Maps to the default 'replays' view → on desktop that's the table.
+  await expect(page.getByRole('table')).toBeVisible();
 });
 
 test('table: clicking a sortable column header reorders rows', async ({ page, request }) => {

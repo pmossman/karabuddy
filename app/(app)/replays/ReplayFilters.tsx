@@ -13,14 +13,10 @@ import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
-// + by-leader / timeline views + reuse on /teams/[slug]. This pass:
-//   - Renamed "Cards" → "Grid".
-//   - New **Table** view, now the default — info-dense, sortable headers,
-//     scales better than the grid as libraries grow.
-//   - Opponent input is now a `<datalist>` combobox (type-to-filter over
-//     usernames seen in the row set), and explicitly opts out of LastPass
-//     / 1Password autofill so password managers don't render their icon
-//     over the field.
+// + by-leader / timeline views + reuse on /teams/[slug]. B123-followup merged
+// the old Table + Grid buttons into one adaptive **Replays** view (dense
+// sortable table on desktop, cards on phones) so the two no longer read as
+// redundant; the grouping views (By leader / Timeline) are unchanged.
 
 interface Row {
   slug: string;
@@ -73,9 +69,14 @@ const parseTab = (raw: string | null): ShareTab =>
   SHARE_TABS.includes(raw as ShareTab) ? (raw as ShareTab) : 'all';
 const isShared = (r: Row): boolean => (r.sharedTeams?.length ?? 0) > 0;
 
-type ViewMode = 'table' | 'grid' | 'by-leader' | 'timeline';
-const VIEW_MODES: readonly ViewMode[] = ['table', 'grid', 'by-leader', 'timeline'] as const;
-const DEFAULT_VIEW: ViewMode = 'table';
+// B123-followup: "Table" and "Grid" were the same data at two densities, which
+// read as redundant (the table even collapses to cards on mobile). Merged into
+// one adaptive `replays` view — the dense sortable table on desktop, cards on
+// phones — alongside the two grouping views. Legacy ?view=table / ?view=grid map
+// to `replays` for back-compat.
+type ViewMode = 'replays' | 'by-leader' | 'timeline';
+const VIEW_MODES: readonly ViewMode[] = ['replays', 'by-leader', 'timeline'] as const;
+const DEFAULT_VIEW: ViewMode = 'replays';
 
 const SINCE_OPTIONS = [
   { value: '', label: 'All time' },
@@ -85,7 +86,10 @@ const SINCE_OPTIONS = [
 ];
 
 function parseView(raw: string | null): ViewMode {
-  return VIEW_MODES.includes(raw as ViewMode) ? (raw as ViewMode) : DEFAULT_VIEW;
+  if (raw === 'by-leader' || raw === 'timeline') return raw;
+  // Everything else — incl. the legacy 'table' / 'grid' / 'card' values and any
+  // unknown/empty param — resolves to the adaptive default.
+  return DEFAULT_VIEW;
 }
 
 export function ReplayFilters({
@@ -294,17 +298,16 @@ export function ReplayFilters({
         <div style={{ marginTop: 16 }}>
           {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
         </div>
-      ) : view === 'table' ? (
-        // B123: the table degrades to cards on phones (no horizontal scroll).
-        isNarrow
-          ? <CardGrid rows={filtered} canManage={canManage} group />
-          : <TableView rows={filtered} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
       ) : view === 'by-leader' ? (
         <ByLeaderGroups rows={filtered} canManage={canManage} />
       ) : view === 'timeline' ? (
         <TimelineGroups rows={filtered} canManage={canManage} />
       ) : (
-        <CardGrid rows={filtered} canManage={canManage} group />
+        // 'replays' — the dense sortable table on desktop, cards on phones (the
+        // table can't fit a narrow viewport without horizontal scroll).
+        isNarrow
+          ? <CardGrid rows={filtered} canManage={canManage} group />
+          : <TableView rows={filtered} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
       )}
     </>
   );
@@ -883,8 +886,7 @@ function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode
   );
   return (
     <div role="group" style={{ display: 'flex', gap: 4 }}>
-      {item('table', 'Table')}
-      {item('grid', 'Grid')}
+      {item('replays', 'Replays')}
       {item('by-leader', 'By leader')}
       {item('timeline', 'Timeline')}
     </div>
