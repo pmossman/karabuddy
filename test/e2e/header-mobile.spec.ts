@@ -20,8 +20,14 @@ test('mobile: nav collapses into a hamburger menu', async ({ page }) => {
   await expect(menu.getByRole('menuitem', { name: 'Stats' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Teams' })).toBeVisible();
 
-  // Navigating from the menu closes it.
-  await menu.getByRole('menuitem', { name: 'Stats' }).click();
+  // Clicking the toggle again (now an X) closes it and does NOT immediately
+  // reopen (the outside-click vs toggle race).
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+
+  // Re-open, then navigate from the menu — navigation also closes it.
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Stats' }).click();
   await expect(page).toHaveURL(/\/stats/);
   await expect(page.getByRole('menu')).toHaveCount(0);
 });

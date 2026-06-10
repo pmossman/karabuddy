@@ -21,7 +21,10 @@ export function HeaderBar({
   hasLinkedExtension: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  // Ref spans BOTH the hamburger button and its dropdown so a click on the
+  // toggle counts as "inside" — otherwise the outside-click handler closes the
+  // menu and the button's onClick immediately reopens it (flicker).
+  const menuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
   // Close the menu on navigation (the header persists across client nav).
@@ -30,7 +33,7 @@ export function HeaderBar({
   // Dismiss on outside-click / Escape (mirrors SessionMenu).
   useEffect(() => {
     if (!open) return;
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onClick = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', onClick);
     document.addEventListener('keydown', onKey);
@@ -42,11 +45,14 @@ export function HeaderBar({
   return (
     <div
       style={{
+        // flex space-between guarantees the logo sits hard-left and the cluster
+        // hard-right; the centered nav is taken out of flow (absolutely centered)
+        // so it never shifts the cluster off the right edge.
         position: 'relative',
         padding: '12px 28px',
-        display: 'grid',
-        gridTemplateColumns: '1fr auto 1fr',
+        display: 'flex',
         alignItems: 'center',
+        justifyContent: 'space-between',
         gap: 16,
       }}
     >
@@ -66,7 +72,7 @@ export function HeaderBar({
         href="/"
         style={{
           textDecoration: 'none', color: 'inherit', display: 'inline-flex',
-          alignItems: 'baseline', gap: 6, lineHeight: 1, userSelect: 'none', justifySelf: 'start',
+          alignItems: 'baseline', gap: 6, lineHeight: 1, userSelect: 'none',
         }}
       >
         <span style={{ fontFamily: 'var(--font-barlow), -apple-system, sans-serif', fontWeight: 400, fontSize: 22, letterSpacing: 0, textTransform: 'uppercase', color: '#e6e6e6' }}>
@@ -84,8 +90,15 @@ export function HeaderBar({
         </span>
       </Link>
 
-      {/* Centered primary nav — desktop only. */}
-      <nav className="kb-desktop-nav" style={{ alignItems: 'center', gap: 24, justifySelf: 'center' }}>
+      {/* Centered primary nav — desktop only, taken out of flow so it's centered
+          on the bar regardless of the logo / cluster widths. */}
+      <nav
+        className="kb-desktop-nav"
+        style={{
+          position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+          alignItems: 'center', gap: 24,
+        }}
+      >
         {signedIn && <NavLink href="/replays">Replays</NavLink>}
         <NavLink href="/stats">Stats</NavLink>
         {signedIn && <NavLink href="/teams">Teams</NavLink>}
@@ -93,67 +106,68 @@ export function HeaderBar({
 
       {/* Right cluster. The avatar is always visible; secondary links collapse
           into the hamburger on mobile. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifySelf: 'end' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <span className="kb-desktop-cluster" style={{ alignItems: 'center', gap: 14 }}>
           {showInstall && <InstallExtensionCta variant="header" />}
           {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
         </span>
         <SessionMenu compact />
-        <button
-          type="button"
-          className="kb-hamburger"
-          aria-label="Menu"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          style={{
-            alignItems: 'center', justifyContent: 'center', width: 32, height: 32,
-            background: 'transparent', border: '1px solid #2e333c', borderRadius: 8,
-            color: '#e6e6e6', cursor: 'pointer', padding: 0,
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            {open ? (
-              <>
-                <line x1="6" y1="6" x2="18" y2="18" />
-                <line x1="18" y1="6" x2="6" y2="18" />
-              </>
-            ) : (
-              <>
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </>
-            )}
-          </svg>
-        </button>
-      </div>
 
-      {/* Mobile dropdown — only mounts (and renders the hamburger contents) when
-          open. The CSS breakpoint hides the trigger on desktop so this never
-          appears there. */}
-      {open && (
-        <div
-          ref={ref}
-          role="menu"
-          style={{
-            position: 'absolute', top: 'calc(100% + 8px)', right: 16, minWidth: 200,
-            background: '#11141a', border: '1px solid #2e333c', borderRadius: 10,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.5)', padding: 8, zIndex: 60,
-            display: 'flex', flexDirection: 'column', gap: 4,
-          }}
-        >
-          {signedIn && <MenuLink href="/replays">Replays</MenuLink>}
-          <MenuLink href="/stats">Stats</MenuLink>
-          {signedIn && <MenuLink href="/teams">Teams</MenuLink>}
-          {signedIn && <MenuLink href="/mentions">Mentions</MenuLink>}
-          {showInstall && (
-            <div style={{ paddingTop: 4, marginTop: 4, borderTop: '1px solid #2e333c' }}>
-              <InstallExtensionCta variant="header" />
+        {/* Hamburger + its dropdown share one ref'd, relatively-positioned wrapper
+            so clicking the toggle isn't treated as an outside-click. */}
+        <div ref={menuRef} className="kb-hamburger" style={{ position: 'relative' }}>
+          <button
+            type="button"
+            aria-label="Menu"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32,
+              background: open ? 'rgba(77,157,255,0.12)' : 'transparent',
+              border: `1px solid ${open ? '#4d9dff' : '#2e333c'}`, borderRadius: 8,
+              color: '#e6e6e6', cursor: 'pointer', padding: 0,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              {open ? (
+                <>
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </>
+              )}
+            </svg>
+          </button>
+
+          {open && (
+            <div
+              role="menu"
+              style={{
+                position: 'absolute', top: 'calc(100% + 10px)', right: 0, minWidth: 200,
+                background: '#11141a', border: '1px solid #2e333c', borderRadius: 10,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.5)', padding: 8, zIndex: 60,
+                display: 'flex', flexDirection: 'column', gap: 4,
+              }}
+            >
+              {signedIn && <MenuLink href="/replays">Replays</MenuLink>}
+              <MenuLink href="/stats">Stats</MenuLink>
+              {signedIn && <MenuLink href="/teams">Teams</MenuLink>}
+              {signedIn && <MenuLink href="/mentions">Mentions</MenuLink>}
+              {showInstall && (
+                <div style={{ paddingTop: 4, marginTop: 4, borderTop: '1px solid #2e333c' }}>
+                  <InstallExtensionCta variant="header" />
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
