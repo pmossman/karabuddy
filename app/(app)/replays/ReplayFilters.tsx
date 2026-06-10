@@ -364,12 +364,23 @@ function AccordionGroups({
   items,
   canManage,
   testid,
+  open: openProp,
+  onOpenChange,
+  rowId,
 }: {
   items: AccordionItem[];
   canManage: boolean;
   testid: string;
+  // Optional controlled mode: when onOpenChange is supplied the parent owns the
+  // open key (e.g. the timeline calendar drives it); otherwise it's self-managed.
+  open?: string | null;
+  onOpenChange?: (key: string | null) => void;
+  rowId?: (key: string) => string;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
+  const [openState, setOpenState] = useState<string | null>(null);
+  const controlled = onOpenChange !== undefined;
+  const open = controlled ? openProp ?? null : openState;
+  const setOpen = (k: string | null) => { if (controlled) onOpenChange!(k); else setOpenState(k); };
   return (
     <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
       {items.map((it) => {
@@ -377,11 +388,13 @@ function AccordionGroups({
         return (
           <div
             key={it.key}
+            id={rowId?.(it.key)}
             style={{
               border: `1px solid ${isOpen ? 'rgba(77,157,255,0.4)' : '#2e333c'}`,
               borderRadius: 10,
               background: isOpen ? 'rgba(77,157,255,0.04)' : 'transparent',
               overflow: 'hidden',
+              scrollMarginTop: 12,
             }}
           >
             <button
@@ -448,12 +461,18 @@ function LeaderThumb({ src, alt }: { src: string | null; alt: string }) {
   return <img src={src} alt="" loading="lazy" style={{ width: 48, height: 34, objectFit: 'cover', borderRadius: 4, background: '#0a0c10', flex: '0 0 auto' }} />;
 }
 
+function dayKeyOf(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const fmtDayKey = (y: number, m0: number, d: number) =>
+  `${y}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
 function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
   const items = useMemo<AccordionItem[]>(() => {
     const m = new Map<string, Row[]>();
     for (const r of rows) {
-      const d = new Date(r.createdAt);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const key = dayKeyOf(r.createdAt);
       const arr = m.get(key);
       if (arr) arr.push(r); else m.set(key, [r]);
     }
@@ -462,7 +481,141 @@ function TimelineGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
       .map(([day, rs]) => ({ key: day, label: day, rows: rs }));
   }, [rows]);
 
-  return <AccordionGroups items={items} canManage={canManage} testid="timeline-day-heading" />;
+  const countByDay = useMemo(() => {
+    const o: Record<string, number> = {};
+    for (const it of items) o[it.key] = it.rows.length;
+    return o;
+  }, [items]);
+
+  const [open, setOpen] = useState<string | null>(null);
+  const rowId = (key: string) => `kb-day-${key}`;
+  const pick = (day: string) => {
+    setOpen(day);
+    // Let the row mount/expand, then bring it just below the calendar.
+    requestAnimationFrame(() => document.getElementById(rowId(day))?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  return (
+    <>
+      <TimelineCalendar countByDay={countByDay} activeDay={open} onPick={pick} />
+      <AccordionGroups
+        items={items}
+        canManage={canManage}
+        testid="timeline-day-heading"
+        open={open}
+        onOpenChange={setOpen}
+        rowId={rowId}
+      />
+    </>
+  );
+}
+
+// B123-followup: a month calendar above the day list — each cell shows that
+// day's replay count, and tapping a populated day opens it in the list below.
+// A quick visual "when did I play" overview that scales better than scrolling
+// the day list. Month nav is clamped to the range that actually has replays.
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function TimelineCalendar({
+  countByDay,
+  activeDay,
+  onPick,
+}: {
+  countByDay: Record<string, number>;
+  activeDay: string | null;
+  onPick: (day: string) => void;
+}) {
+  // Data range (string sort works for YYYY-MM-DD). Default to the latest month.
+  const { minYM, maxYM } = useMemo(() => {
+    const keys = Object.keys(countByDay).sort();
+    const toYM = (k: string) => { const [y, m] = k.split('-').map(Number); return { y, m: m - 1 }; };
+    const now = new Date();
+    if (keys.length === 0) return { minYM: { y: now.getFullYear(), m: now.getMonth() }, maxYM: { y: now.getFullYear(), m: now.getMonth() } };
+    return { minYM: toYM(keys[0]), maxYM: toYM(keys[keys.length - 1]) };
+  }, [countByDay]);
+
+  const [ym, setYm] = useState(maxYM);
+  const ymIndex = (v: { y: number; m: number }) => v.y * 12 + v.m;
+  const atMin = ymIndex(ym) <= ymIndex(minYM);
+  const atMax = ymIndex(ym) >= ymIndex(maxYM);
+  const step = (delta: number) => {
+    const idx = ymIndex(ym) + delta;
+    setYm({ y: Math.floor(idx / 12), m: ((idx % 12) + 12) % 12 });
+  };
+
+  const monthLabel = new Date(ym.y, ym.m, 1).toLocaleString([], { month: 'long', year: 'numeric' });
+  const startWeekday = new Date(ym.y, ym.m, 1).getDay();
+  const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array.from({ length: startWeekday }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  return (
+    <div style={{ marginTop: 16, border: '1px solid #2e333c', borderRadius: 10, padding: 12, maxWidth: 420 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <CalNavButton dir="prev" disabled={atMin} onClick={() => step(-1)} />
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#e6e6e6' }}>{monthLabel}</span>
+        <CalNavButton dir="next" disabled={atMax} onClick={() => step(1)} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        {WEEKDAYS.map((w, i) => (
+          <div key={i} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#6c7588', padding: '2px 0' }}>{w}</div>
+        ))}
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`b${i}`} />;
+          const key = fmtDayKey(ym.y, ym.m, day);
+          const count = countByDay[key] || 0;
+          const isActive = activeDay === key;
+          if (count === 0) {
+            return (
+              <div key={key} style={{ aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#4a4e56' }}>
+                {day}
+              </div>
+            );
+          }
+          return (
+            <button
+              key={key}
+              type="button"
+              data-testid="calendar-day"
+              aria-label={`${key}: ${count} replay${count === 1 ? '' : 's'}`}
+              aria-pressed={isActive}
+              onClick={() => onPick(key)}
+              style={{
+                aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
+                borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+                background: isActive ? 'rgba(77,157,255,0.28)' : 'rgba(77,157,255,0.12)',
+                border: `1px solid ${isActive ? '#4d9dff' : 'rgba(77,157,255,0.3)'}`,
+                color: '#e6e6e6',
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1 }}>{day}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#a7d2ff', lineHeight: 1 }}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CalNavButton({ dir, disabled, onClick }: { dir: 'prev' | 'next'; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={dir === 'prev' ? 'Previous month' : 'Next month'}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        background: 'transparent', border: '1px solid #2e333c', borderRadius: 6,
+        color: disabled ? '#3a3e46' : '#a0a8b8', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12,
+      }}
+    >
+      {dir === 'prev' ? '‹' : '›'}
+    </button>
+  );
 }
 
 // -- Bo3 / series grouping ----------------------------------------------------

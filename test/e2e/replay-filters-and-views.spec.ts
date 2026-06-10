@@ -119,6 +119,21 @@ test('view switcher: timeline lists day rows + counts, tap drills into replays',
   await expect(page.locator(`a[href="/r/${r1.slug}"]`).first()).toBeVisible();
 });
 
+test('timeline calendar: a populated day cell shows a count + opens that day', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'CalUser', email: 'cal@example.com' });
+  const r1 = await uploadReplay(request, { local: { username: 'CalUser' }, opponent: { username: 'X' } });
+  await claimInstallToken(page, r1.installToken);
+
+  await page.goto('/replays?tab=mine&view=timeline');
+  const cell = page.getByTestId('calendar-day').first();
+  await expect(cell).toBeVisible();
+  await expect(cell).toContainText('1'); // the day's replay count
+  await expect(page.locator(`a[href="/r/${r1.slug}"]`)).toHaveCount(0); // list still collapsed
+
+  await cell.click();
+  await expect(page.locator(`a[href="/r/${r1.slug}"]`).first()).toBeVisible();
+});
+
 test('view switcher: clicking a view tab updates the URL', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'Switcher', email: 'sw@example.com' });
   const r1 = await uploadReplay(request, {
