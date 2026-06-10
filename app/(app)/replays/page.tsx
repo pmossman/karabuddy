@@ -1,11 +1,11 @@
 import { eq, desc, inArray, count, asc } from 'drizzle-orm';
-import Link from 'next/link';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, users, replayTeamShares, replayParticipants, replayAltPayload, teamMembers, teams, tags } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
+import { LibraryTabs } from './LibraryTabs';
 import { ReplayFilters } from './ReplayFilters';
 import { TeamReplays } from '@/app/(app)/teams/[slug]/TeamReplays';
 
@@ -126,74 +126,3 @@ async function MyReplays({ userId }: { userId: string }) {
   );
 }
 
-// -- The hub tab strip -------------------------------------------------------
-// My replays + a tab per team. Beyond INLINE_TEAMS, extras collapse into a
-// no-JS `More ▾` disclosure (<details>) so it scales to many teams without
-// overflowing. The active team is always surfaced inline.
-const INLINE_TEAMS = 4;
-
-function LibraryTabs({ teams: myTeams, activeSlug }: { teams: { slug: string; name: string }[]; activeSlug: string | null }) {
-  let visible = myTeams.slice(0, INLINE_TEAMS);
-  let overflow = myTeams.slice(INLINE_TEAMS);
-  // Keep the active team visible: if it's hiding in the overflow, swap it into
-  // the last inline slot (the displaced team moves to the front of overflow).
-  if (activeSlug && overflow.some((t) => t.slug === activeSlug)) {
-    const active = overflow.find((t) => t.slug === activeSlug)!;
-    const displaced = visible[visible.length - 1];
-    overflow = [displaced, ...overflow.filter((t) => t.slug !== activeSlug)];
-    visible = [...visible.slice(0, INLINE_TEAMS - 1), active];
-  }
-
-  return (
-    <>
-      {/* Strip the default <details> disclosure triangle so `More ▾` reads as a tab. */}
-      <style>{'summary.kb-more-tab{list-style:none}summary.kb-more-tab::-webkit-details-marker{display:none}'}</style>
-      <div role="tablist" style={{ display: 'flex', alignItems: 'flex-end', gap: 4, borderBottom: '1px solid #2e333c', flexWrap: 'wrap' }}>
-        <HubTab href="/replays" active={!activeSlug}>My replays</HubTab>
-        {visible.map((t) => (
-          <HubTab key={t.slug} href={`/replays?team=${t.slug}`} active={activeSlug === t.slug}>{t.name}</HubTab>
-        ))}
-        {overflow.length > 0 && (
-          <details style={{ position: 'relative' }}>
-            <summary className="kb-more-tab" style={hubTabStyle(false)}>More ▾</summary>
-            <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, marginTop: 4, minWidth: 180, background: '#11141a', border: '1px solid #2e333c', borderRadius: 8, padding: 6, display: 'flex', flexDirection: 'column', gap: 2, boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }}>
-              {overflow.map((t) => (
-                <Link
-                  key={t.slug}
-                  href={`/replays?team=${t.slug}`}
-                  style={{ padding: '6px 10px', fontSize: 13, fontWeight: 600, color: activeSlug === t.slug ? '#fff' : '#a0a8b8', textDecoration: 'none', borderRadius: 6 }}
-                >
-                  {t.name}
-                </Link>
-              ))}
-            </div>
-          </details>
-        )}
-      </div>
-    </>
-  );
-}
-
-function hubTabStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: '8px 14px',
-    fontSize: 14,
-    fontWeight: 600,
-    color: active ? '#e6e6e6' : '#828b99',
-    textDecoration: 'none',
-    borderBottom: `2px solid ${active ? '#4d9dff' : 'transparent'}`,
-    marginBottom: -1,
-    cursor: 'pointer',
-    background: active ? 'rgba(77,157,255,0.10)' : 'transparent',
-    borderRadius: '4px 4px 0 0',
-    whiteSpace: 'nowrap',
-  };
-}
-
-function HubTab({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link role="tab" aria-selected={active} href={href} style={hubTabStyle(active)}>
-      {children}
-    </Link>
-  );
-}

@@ -10,6 +10,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
 import { ShareBadge } from './ShareBadge';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
 // + by-leader / timeline views + reuse on /teams/[slug]. This pass:
@@ -109,6 +110,10 @@ export function ReplayFilters({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // B123: a wide table can't fit a phone — below this width the Table view
+  // degrades to the (already mobile-friendly) card layout so nothing is hidden
+  // behind a horizontal scroll. SSR-safe: false on the server + first tick.
+  const isNarrow = useMediaQuery('(max-width: 720px)');
 
   // B116: filter by the leader the viewer/uploader was playing (`mine`) and the
   // leader played against (`vs`) — replaces the old single leader + opponent-
@@ -290,7 +295,10 @@ export function ReplayFilters({
           {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
         </div>
       ) : view === 'table' ? (
-        <TableView rows={filtered} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
+        // B123: the table degrades to cards on phones (no horizontal scroll).
+        isNarrow
+          ? <CardGrid rows={filtered} canManage={canManage} group />
+          : <TableView rows={filtered} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
       ) : view === 'by-leader' ? (
         <ByLeaderGroups rows={filtered} canManage={canManage} />
       ) : view === 'timeline' ? (
