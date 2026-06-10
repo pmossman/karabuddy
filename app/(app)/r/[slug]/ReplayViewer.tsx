@@ -20,6 +20,7 @@ import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '
 import { mapFrameIndex } from '@/lib/replaySignature';
 import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MobileControlsFab, MatchupPanel } from './MobileLandscapePanels';
+import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import { ResourcingModal } from './ResourcingModal';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import { useDragSize } from './useDragSize';
@@ -182,6 +183,13 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const autoplayTimerRef = useRef<number | null>(null);
+  // B121: pulse the Play button to cue first-time viewers; cleared the first
+  // time they press play, remembered across visits. Initialized in an effect
+  // (not the useState initializer) to avoid an SSR/hydration mismatch.
+  const [pulsePlay, setPulsePlay] = useState(false);
+  useEffect(() => {
+    try { if (!window.localStorage.getItem('karabuddy:hasPlayedReplay')) setPulsePlay(true); } catch {}
+  }, []);
   const [speed, setSpeed] = useState<number>(PLAY_SPEED_DEFAULT);
   const speedRef = useRef(PLAY_SPEED_DEFAULT);
   useEffect(() => {
@@ -554,6 +562,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
     if (pos >= frames.length - 1) { pos = 0; setCurrentIndex(0); }
     playingRef.current = true;
     setPlaying(true);
+    // B121: they've now used Play — stop the first-time pulse for good.
+    setPulsePlay(false);
+    try { window.localStorage.setItem('karabuddy:hasPlayedReplay', '1'); } catch {}
     const tick = () => {
       if (!playingRef.current || !frames) return;
       if (pos >= frames.length - 1) { stopAutoplay(); return; }
@@ -779,7 +790,13 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
   }
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - var(--kb-header-h, 0px))', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--kb-header-h, 0px))', overflow: 'hidden' }}>
+      {/* B121: pulse keyframes for the first-time Play cue. */}
+      <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 0 0 rgba(77,210,255,0)}50%{box-shadow:0 0 16px 4px rgba(77,210,255,0.75)}}'}</style>
+      {/* B121: onboarding CTA for visitors without the extension (the viewer has
+          no global header). Renders nothing for extension users / once dismissed. */}
+      <InstallExtensionCta variant="banner" />
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       {/* B66b: gameboard first, sidebar second — sidebar now lives on
           the RIGHT (matches mobile drawer anchor). When the desktop
           sidebar is closed, TagSidebar unmounts its <aside>, so the
@@ -907,6 +924,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
                 canFlip={!!canFlip}
                 viewLabel={viewingHandle}
                 onFlip={flipPov}
+                pulse={pulsePlay}
               />
             )}
             {/* B104: mobile playback-controls bubble. A round FAB in the
@@ -931,6 +949,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
                 canFlip={!!canFlip}
                 viewLabel={viewingHandle}
                 onFlip={flipPov}
+                pulse={pulsePlay}
               />
             )}
             {/* B100/B104: matchup info FAB moves to the TOP on mobile so it
@@ -1030,6 +1049,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
           isOwner={isOwner}
         />
       )}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { auth } from '@/auth';
 import { SessionMenu } from '@/app/_components/SessionMenu';
 import { NavLink } from '@/app/_components/NavLink';
+import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 
 // Persistent header — KARA/buddy mark always links home, nav exposes
 // signed-in entry points, SessionMenu is the always-on avatar/sign-out.
@@ -90,7 +91,9 @@ export async function Header() {
         </nav>
         {/* Right cluster: Mentions inbox + the always-on avatar menu (Settings /
             Sign out). Kept off the primary nav so the three centered items stay clean. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18, justifySelf: 'end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifySelf: 'end' }}>
+          {/* B121: onboarding CTA — shows only for visitors without the extension. */}
+          <InstallExtensionCta variant="header" />
           {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
           <SessionMenu compact />
         </div>

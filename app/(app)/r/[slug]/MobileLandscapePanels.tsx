@@ -52,6 +52,7 @@ export function StepModeOverlay({
   canFlip,
   viewLabel,
   onFlip,
+  pulse,
 }: {
   mode: 'action' | 'frame';
   setMode: (m: 'action' | 'frame') => void;
@@ -90,6 +91,9 @@ export function StepModeOverlay({
   canFlip?: boolean;
   viewLabel?: string;
   onFlip?: () => void;
+  // B121: glow/pulse the Play button to cue first-time viewers; cleared once
+  // they press play (remembered across visits in the viewer).
+  pulse?: boolean;
 }) {
   const positionStyle: React.CSSProperties = landscape
     ? {
@@ -141,13 +145,14 @@ export function StepModeOverlay({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: playing ? 'rgba(77, 157, 255, 0.55)' : 'rgba(77, 157, 255, 0.25)',
+          background: pulse ? 'rgba(77, 157, 255, 0.8)' : playing ? 'rgba(77, 157, 255, 0.55)' : 'rgba(77, 157, 255, 0.25)',
           color: '#fff',
           border: 0,
           borderRadius: '50%',
           padding: 0,
           cursor: 'pointer',
           flex: '0 0 auto',
+          ...(pulse ? { animation: 'kb-play-pulse 1.6s ease-in-out infinite' } : {}),
         }}
       >
         {playing ? <PauseGlyph /> : <PlayGlyph />}
@@ -382,7 +387,7 @@ export function MobileControlsFab({
   mode, setMode, animate, onToggleAnimate,
   playing, onTogglePlay, speed, speeds, onSetSpeed,
   bottom, right, dragging,
-  canFlip, viewLabel, onFlip,
+  canFlip, viewLabel, onFlip, pulse,
 }: {
   mode: 'action' | 'frame';
   setMode: (m: 'action' | 'frame') => void;
@@ -400,6 +405,8 @@ export function MobileControlsFab({
   canFlip?: boolean;
   viewLabel?: string;
   onFlip?: () => void;
+  // B121: pulse the Play button for first-time viewers (cleared on first play).
+  pulse?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -521,9 +528,10 @@ export function MobileControlsFab({
           title={playing ? 'Pause' : 'Play'}
           style={{
             width: 44, border: 0, padding: 0, cursor: 'pointer',
-            background: playing ? 'rgba(77, 157, 255, 0.5)' : 'transparent',
+            background: pulse ? 'rgba(77, 157, 255, 0.7)' : playing ? 'rgba(77, 157, 255, 0.5)' : 'transparent',
             color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
             transition: 'background 160ms ease',
+            ...(pulse ? { animation: 'kb-play-pulse 1.6s ease-in-out infinite' } : {}),
           }}
         >
           {playing ? <PauseGlyph /> : <PlayGlyph />}
