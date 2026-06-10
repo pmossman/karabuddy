@@ -17,11 +17,20 @@ import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
 
 const BANNER_DISMISS_KEY = 'karabuddy:installCtaDismissed';
 
-export function InstallExtensionCta({ variant }: { variant: 'header' | 'banner' }) {
+export function InstallExtensionCta({
+  variant,
+  // Server-known signal: the signed-in viewer already has a linked extension, so
+  // they've onboarded — never show the CTA (skip the per-browser probe entirely).
+  alreadyLinked = false,
+}: {
+  variant: 'header' | 'banner';
+  alreadyLinked?: boolean;
+}) {
   const [show, setShow] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    if (alreadyLinked) return;
     if (variant === 'banner') {
       try { if (localStorage.getItem(BANNER_DISMISS_KEY)) { setDismissed(true); return; } } catch {}
     }
@@ -30,7 +39,7 @@ export function InstallExtensionCta({ variant }: { variant: 'header' | 'banner' 
       if (alive && !token) setShow(true); // no extension in this browser → onboard
     });
     return () => { alive = false; };
-  }, [variant]);
+  }, [variant, alreadyLinked]);
 
   if (!show || dismissed) return null;
 

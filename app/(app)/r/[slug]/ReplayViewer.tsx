@@ -92,16 +92,19 @@ interface Props {
   // B112: this viewer is a team member entitled to the second player's
   // perspective (computed server-side in page.tsx). Gates the Flip control.
   canFlip?: boolean;
+  // B121-followup: signed-in viewer already has a linked extension (server-known)
+  // → suppress the install-onboarding banner regardless of the browser probe.
+  hasLinkedExtension?: boolean;
 }
 
-export function ReplayViewer({ replay, initialTags, anonymize, canFlip }: Props) {
+export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension }: Props) {
   return (
     <ThemeContextProvider>
       <UserProvider>
         <CosmeticsProvider>
           <PopupProvider>
             <GameProvider>
-              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} />
+              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} />
             </GameProvider>
           </PopupProvider>
         </CosmeticsProvider>
@@ -124,7 +127,7 @@ function InfoIcon() {
   );
 }
 
-function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
+function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
   // B112: double-sided replay. `decoded` is always the CANONICAL perspective
@@ -804,7 +807,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
       <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 0 0 rgba(77,210,255,0)}50%{box-shadow:0 0 16px 4px rgba(77,210,255,0.75)}}'}</style>
       {/* B121: onboarding CTA for visitors without the extension (the viewer has
           no global header). Renders nothing for extension users / once dismissed. */}
-      <InstallExtensionCta variant="banner" />
+      <InstallExtensionCta variant="banner" alreadyLinked={hasLinkedExtension} />
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       {/* B66b: gameboard first, sidebar second — sidebar now lives on
           the RIGHT (matches mobile drawer anchor). When the desktop

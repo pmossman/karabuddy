@@ -7,6 +7,7 @@ import { replays, tags } from '@/lib/schema';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
+import { userHasLinkedExtension } from '@/lib/userResolution';
 import { auth } from '@/auth';
 import { canViewAltPerspective, canViewReplayIdentities } from '@/lib/altPerspective';
 import { verifyMoment } from '@/lib/shareToken';
@@ -99,6 +100,10 @@ export default async function ReplayPage({ params }: PageProps) {
   // B112: Flip control only for a viewer entitled to the 2nd perspective.
   const canFlip = !anonymize && (await canViewAltPerspective(slug, viewerUserId));
 
+  // B121-followup: suppress the install banner for a signed-in viewer who already
+  // has a linked extension (the viewer has no global header, so it's gated here).
+  const hasLinkedExtension = await userHasLinkedExtension(viewerUserId);
+
   const replay = {
     ...row,
     createdAt: row.createdAt.toISOString(),
@@ -115,5 +120,5 @@ export default async function ReplayPage({ params }: PageProps) {
   // GET /api/replays/[slug]/tags so the server can scope them to the
   // viewer (own + team-scoped only). SSR'ing all tags would leak other
   // teams' / others' personal comments into the initial HTML.
-  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} />;
+  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} />;
 }

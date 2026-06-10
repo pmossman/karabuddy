@@ -22,6 +22,20 @@ export async function resolveUserIdFromRequest(req: Request): Promise<string | n
   return resolveUserId({ installToken: req.headers.get('x-install-token') });
 }
 
+// Does this account already have ≥1 linked extension install? Used to suppress
+// the "Install extension" onboarding CTA for users who've clearly onboarded —
+// a more reliable signal than the per-browser bridge probe (which doesn't run
+// on the :3001 dev origin and can race the extension's document_idle injection).
+export async function userHasLinkedExtension(userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const [linked] = await getDb()
+    .select({ token: extensionTokens.token })
+    .from(extensionTokens)
+    .where(eq(extensionTokens.userId, userId))
+    .limit(1);
+  return !!linked;
+}
+
 export async function resolveUserId(opts: {
   installToken?: string | null;
 }): Promise<string | null> {

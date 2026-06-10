@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { auth } from '@/auth';
+import { userHasLinkedExtension } from '@/lib/userResolution';
 import { SessionMenu } from '@/app/_components/SessionMenu';
 import { NavLink } from '@/app/_components/NavLink';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
@@ -11,6 +12,13 @@ import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 export async function Header() {
   const session = await auth();
   const signedIn = !!session?.user;
+
+  // B121-followup: a signed-in user who already has ≥1 linked extension has
+  // obviously onboarded — suppress the install CTA server-side, regardless of
+  // the per-browser bridge probe (which doesn't run on the :3001 dev origin and
+  // can race the extension's document_idle injection on prod). Genuinely
+  // un-onboarded visitors still fall through to the client probe.
+  const hasLinkedExtension = await userHasLinkedExtension((session?.user as any)?.id ?? null);
   return (
     <header
       data-kb-header=""
@@ -92,8 +100,9 @@ export async function Header() {
         {/* Right cluster: Mentions inbox + the always-on avatar menu (Settings /
             Sign out). Kept off the primary nav so the three centered items stay clean. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifySelf: 'end' }}>
-          {/* B121: onboarding CTA — shows only for visitors without the extension. */}
-          <InstallExtensionCta variant="header" />
+          {/* B121: onboarding CTA — shows only for visitors without the extension.
+              Hidden outright once an account has a linked install (already onboarded). */}
+          {!hasLinkedExtension && <InstallExtensionCta variant="header" />}
           {signedIn && <NavLink href="/mentions">Mentions</NavLink>}
           <SessionMenu compact />
         </div>
