@@ -71,15 +71,18 @@ async function buildModel(slug: string, fParam: string | null, tParam: string | 
   const decoded = decodeReplay(payload);
   const frameIndex = Math.max(0, (parseInt(fParam || '1', 10) || 1) - 1);
 
-  const anonymize = isSampleReplaySlug(slug);
+  // B122: the moment card is a PUBLIC link unfurl — a crawler/unfurl bot has no
+  // viewer identity, so it must NEVER carry karabast handles. Always anonymize
+  // the player labels (the card leads with leaders/bases anyway). The B113
+  // signed tag token is independent — the sharer authorized that one tag.
   const ownerPlayerId = (row.ownerPlayerId as string | null) ?? decoded.meta?.localPlayerId ?? null;
   const ordered = orderPlayersOwnerFirst(row.players as any[], ownerPlayerId);
-  const players = anonymize ? anonymizePlayersSummary(ordered as any[]) : ordered;
-  const anonById = anonymize ? anonByIdFromPlayers(ordered as any[]) : null;
+  const players = anonymizePlayersSummary(ordered as any[]);
+  const anonById = anonByIdFromPlayers(ordered as any[]);
 
-  // tag is opt-in (signed token) and never shown for anonymized samples.
+  // tag is opt-in (signed token); samples never have real tags.
   let tagComment: string | null = null;
-  if (tParam && !anonymize) {
+  if (tParam && !isSampleReplaySlug(slug)) {
     const claim = verifyMoment(tParam);
     if (claim && claim.slug === slug && claim.frameIndex === frameIndex) {
       const [tag] = await db.select().from(tags).where(eq(tags.id, claim.tagId)).limit(1);

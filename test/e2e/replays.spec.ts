@@ -19,6 +19,7 @@ test('owner can rename their replay + add labels', async ({ page, request }) => 
     local: { username: 'Editor' },
     opponent: { username: 'Other' },
   });
+  await claimInstallToken(page, installToken); // B122: claimed owner sees real identities
   const patchRes = await page.request.patch(`/api/replays/${slug}`, {
     data: { displayName: 'Tournament Game 3', labels: ['tournament', 'meta-tier'] },
     headers: { 'X-Install-Token': installToken },
@@ -40,6 +41,7 @@ test('tag CRUD: add, edit, delete', async ({ page, request }) => {
     local: { username: 'Tagger' },
     opponent: { username: 'Other' },
   });
+  await claimInstallToken(page, installToken); // B122: claimed owner sees real identities + their tags
   const addRes = await page.request.post(`/api/replays/${slug}/tags`, {
     data: { installToken, authorName: 'Tagger', frameIndex: 0, comment: 'first tag' },
   });

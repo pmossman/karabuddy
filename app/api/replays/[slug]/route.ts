@@ -5,6 +5,7 @@ import { replays, tags } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { auth } from '@/auth';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
+import { canViewReplayIdentities } from '@/lib/altPerspective';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary, anonymizeDecks, anonByIdFromPlayers } from '@/lib/anonymizeReplay';
@@ -47,22 +48,28 @@ export async function GET(
       .where(eq(tags.replaySlug, slug))
       .orderBy(asc(tags.frameIndex));
 
-    // B107: a curated sample replay is anonymized for everyone — real handles →
-    // "Player N" on the players + decks, the user-authored deck/replay titles
-    // are dropped, and tags (their authors are real handles) are withheld. This
-    // is the source of truth for the lazy decks modal, so anonymizing here
-    // covers every client at once.
-    if (isSampleReplaySlug(slug)) {
+    // B122: this route is unauthenticated. Real karabast handles + full deck
+    // lists go ONLY to the uploader or a teammate; everyone else (and curated
+    // samples) gets anonymized players, NO full decklists, the anon title, and
+    // no tags (tag authors are real handles). Samples keep an anonymized demo
+    // decklist; real-but-unauthorized callers get no decks at all.
+    const isSample = isSampleReplaySlug(slug);
+    const session = await auth();
+    const sessionUserId: string | null = (session?.user as any)?.id || null;
+    const canView = isSample
+      ? false
+      : await canViewReplayIdentities(row, authContextFromRequest(req, sessionUserId));
+
+    if (isSample || !canView) {
       const ordered = orderPlayersOwnerFirst((row as any).players, (row as any).ownerPlayerId);
       const byId = anonByIdFromPlayers(ordered as any[]);
       const data = {
         ...row,
         players: anonymizePlayersSummary(ordered as any[]),
-        decks: anonymizeDecks((row as any).decks, byId),
-        displayName: null,
+        decks: isSample ? anonymizeDecks((row as any).decks, byId) : null,
+        // A user-set title always shows (user-chosen, not a leaked handle).
+        displayName: (row as any).displayName ?? null,
         tags: [],
-        // Don't expose owner identity / the mutate credential on a publicly
-        // featured sample.
         ownerPlayerId: null,
         userId: null,
         ownerToken: '',

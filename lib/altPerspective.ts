@@ -11,6 +11,7 @@ import { getDb } from './db';
 import { replays, replayAltPayload, replayTeamShares, teamMembers } from './schema';
 import { getMyTeamSlugs } from './teamSurface';
 import { isSampleReplaySlug } from './sampleReplays';
+import { canMutateReplay, type AuthContext } from './replayPermissions';
 
 // Do these two accounts share at least one team? Used at upload time to decide
 // whether to RETAIN the 2nd recording as an alt (the storage-side privacy gate).
@@ -28,6 +29,20 @@ export async function sharedTeam(userIdA: string, userIdB: string): Promise<bool
     .where(and(eq(teamMembers.userId, userIdB), inArray(teamMembers.teamSlug, aTeams.map((r) => r.t))))
     .limit(1);
   return !!row;
+}
+
+// B122: may the caller see this replay's REAL identities (karabast usernames,
+// full deck lists, username-based title)? True iff they OWN the replay (account
+// or install token) OR share a team with the uploader. Otherwise the viewer /
+// API / OG card anonymizes (Player vs Opponent, leader-matchup title). The
+// privacy boundary for public replay links — keep it the single source of truth.
+export async function canViewReplayIdentities(
+  replay: { userId?: string | null; ownerToken: string },
+  ctx: AuthContext,
+): Promise<boolean> {
+  if (canMutateReplay(replay, ctx)) return true; // the uploader
+  if (ctx.sessionUserId && replay.userId && (await sharedTeam(replay.userId, ctx.sessionUserId))) return true; // a teammate
+  return false;
 }
 
 // Is `viewerUserId` allowed to see the alt perspective of `slug`?

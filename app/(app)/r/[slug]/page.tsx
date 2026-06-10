@@ -8,7 +8,7 @@ import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { auth } from '@/auth';
-import { canViewAltPerspective } from '@/lib/altPerspective';
+import { canViewAltPerspective, canViewReplayIdentities } from '@/lib/altPerspective';
 import { verifyMoment } from '@/lib/shareToken';
 import { ReplayViewer } from './ReplayViewer';
 
@@ -38,15 +38,24 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   const row = await loadReplay(slug);
   if (!row) return { title: 'KaraBuddy' };
 
-  const anonymize = isSampleReplaySlug(slug);
-  const ordered = orderPlayersOwnerFirst(row.players, row.ownerPlayerId);
-  const shown = (anonymize ? anonymizePlayersSummary(ordered as any[]) : ordered) as any[];
+  // B122: only the uploader / a teammate sees real karabast handles. Everyone
+  // else (incl. anonymous link visitors + crawlers) gets the leader matchup. A
+  // user-set displayName is always safe to show (it's user-chosen).
+  const session = await auth();
+  const viewerUserId = (session?.user as any)?.id ?? null;
+  const anonymize = isSampleReplaySlug(slug)
+    || !(await canViewReplayIdentities(row, { sessionUserId: viewerUserId, installToken: null }));
+  const ordered = orderPlayersOwnerFirst(row.players, row.ownerPlayerId) as any[];
   const nameOf = (p: any) => (p?.username ?? 'Player') + (p?.leader?.name ? ` (${p.leader.name})` : '');
-  const matchup = `${nameOf(shown[0])} vs ${nameOf(shown[1])}`;
+  const leaderMatchup = `${ordered[0]?.leader?.name ?? 'Unknown'} vs ${ordered[1]?.leader?.name ?? 'Unknown'}`;
+  const matchup = (row as any).displayName
+    ? (row as any).displayName
+    : anonymize ? leaderMatchup : `${nameOf(ordered[0])} vs ${nameOf(ordered[1])}`;
 
-  // Opt-in tag in the description (signed token; never for samples).
+  // Opt-in tag in the description (B113 signed token; never for samples, but OK
+  // for an anonymized viewer — the sharer explicitly authorized this tag).
   let tagLine: string | null = null;
-  if (t && !anonymize) {
+  if (t && !isSampleReplaySlug(slug)) {
     const frameIndex = Math.max(0, (parseInt(f || '1', 10) || 1) - 1);
     const claim = verifyMoment(t);
     if (claim && claim.slug === slug && claim.frameIndex === frameIndex) {
@@ -77,26 +86,29 @@ export default async function ReplayPage({ params }: PageProps) {
   // key sort.
   const players = orderPlayersOwnerFirst(row.players, row.ownerPlayerId);
 
-  // B107: a curated SAMPLE replay (surfaced publicly on the signed-out home)
-  // is anonymized — real handles → "Player N" on the matchup/title here, and
-  // the viewer rewrites the board + game log to match (and skips the tag
-  // fetch). Order is preserved, so the labels line up with the card.
-  const anonymize = isSampleReplaySlug(slug);
-
-  // B112: double-sided replay. Offer the Flip control only to a signed-in viewer
-  // who is entitled to the second player's perspective (same predicate the
-  // serving endpoint enforces). Never for anonymized samples.
+  // B122: real karabast handles + deck lists are visible ONLY to the uploader
+  // or a teammate of the uploader. Everyone else (anonymous link visitors, other
+  // players) gets "Player N" handles, the leader-matchup title, and no full deck
+  // lists (the viewer still derives "seen" cards from the frames). Curated SAMPLE
+  // replays (B107) stay force-anonymized. Order is preserved so labels line up.
   const session = await auth();
   const viewerUserId = (session?.user as any)?.id ?? null;
+  const anonymize = isSampleReplaySlug(slug)
+    || !(await canViewReplayIdentities(row, { sessionUserId: viewerUserId, installToken: null }));
+
+  // B112: Flip control only for a viewer entitled to the 2nd perspective.
   const canFlip = !anonymize && (await canViewAltPerspective(slug, viewerUserId));
 
   const replay = {
     ...row,
     createdAt: row.createdAt.toISOString(),
     players: anonymize ? anonymizePlayersSummary(players as any[]) : players,
-    // Don't leak a real handle through a custom title — fall back to the
-    // anonymized "Player 1 vs Player 2" default.
-    displayName: anonymize ? null : (row as any).displayName,
+    // A user-set title is always shown (it's user-chosen — never a leaked karabast
+    // handle); only the AUTO default differs (leader matchup for anon viewers).
+    // Full deck lists are dropped for unauthorized viewers (uploader/teammate-only)
+    // — the DecksModal shows only the "seen" cards instead.
+    displayName: (row as any).displayName,
+    decks: anonymize ? null : (row as any).decks,
   };
 
   // B71: tags are no longer SSR'd — the viewer fetches them from

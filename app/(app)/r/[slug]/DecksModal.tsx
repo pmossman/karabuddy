@@ -20,9 +20,12 @@ interface Props {
   // opponent tab (karabast only shares the local player's full deck;
   // we infer opponent cards from what hit their visible zones).
   frames: Frame[] | null;
+  // B122: anonymized viewer (non-uploader/teammate) — hide the dedicated
+  // deck-page link (decklists are uploader/teammate-only; only "seen" cards show).
+  anonymize?: boolean;
 }
 
-export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, frames }: Props) {
+export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, frames, anonymize }: Props) {
   // Local-player tab is the default; otherwise fall back to first id in
   // the decks object.
   const orderedIds = useMemo(() => {
@@ -160,7 +163,7 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
             })}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {activeId && (
+            {activeId && !anonymize && (
               <Link
                 href={`/r/${replaySlug}/deck/${activeId}`}
                 style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none', fontWeight: 600 }}

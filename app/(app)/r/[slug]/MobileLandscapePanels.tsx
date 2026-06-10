@@ -581,6 +581,7 @@ export function MatchupPanel({
   frames,
   installToken,
   isOwner,
+  anonymize,
 }: {
   open: boolean;
   onClose: () => void;
@@ -597,6 +598,8 @@ export function MatchupPanel({
   // bouncing out of the panel. Owner-gated client-side; server enforces.
   installToken: string;
   isOwner: boolean;
+  // B122: anonymized viewer — leader-matchup default title + hide deck-page link.
+  anonymize?: boolean;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
   const players = (replay.players as any[]) || [];
@@ -687,7 +690,7 @@ export function MatchupPanel({
             replaySlug={replay.slug}
             installToken={installToken}
             initialDisplayName={replay.displayName ?? null}
-            defaultText={defaultTitleFor(replay)}
+            defaultText={defaultTitleFor(replay, anonymize)}
             canEdit={isOwner}
           />
         </div>
@@ -746,6 +749,7 @@ export function MatchupPanel({
           localPlayerId={localPlayerId}
           replaySlug={replay.slug}
           frames={frames}
+          anonymize={anonymize}
         />
       )}
     </>
@@ -786,10 +790,15 @@ function playerUsername(p: any): string {
 
 // Mirrors TagSidebar's defaultTitleFor — the same string the replay
 // browser uses when no display name has been set.
-function defaultTitleFor(replay: ReplayShape): string {
+function defaultTitleFor(replay: ReplayShape, anonymize?: boolean): string {
   const players = Array.isArray(replay.players) ? replay.players : [];
   const [p1, p2] = players;
   if (!p1 && !p2) return 'Replay';
+  // B122: anonymized viewers identify the replay by leader matchup, not handles.
+  if (anonymize) {
+    const lead = (p: any) => p?.leader?.name || 'Unknown';
+    return `${lead(p1)} vs ${lead(p2)}`;
+  }
   return `${playerUsername(p1)} vs ${playerUsername(p2)}`;
 }
 

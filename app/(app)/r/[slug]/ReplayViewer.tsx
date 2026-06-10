@@ -478,7 +478,16 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
   // rows that lack the DB column.
   const decksForView = useMemo(() => {
     const d = replay.decks ?? activeDecoded?.meta.decks ?? null;
-    return anonymize ? anonymizeDecks(d as any, anonByIdFromPlayers(replay.players as any[])) : d;
+    if (!anonymize) return d;
+    // B122: anonymized viewers (non-uploader, non-teammate) don't get full
+    // decklists — keep leader/base for the card thumbnails, drop the deck +
+    // sideboard lists and the deck name. The DecksModal shows the "seen during
+    // play" cards (derived from frames) instead.
+    const anon = anonymizeDecks(d as any, anonByIdFromPlayers(replay.players as any[]));
+    if (!anon) return null;
+    const out: Record<string, any> = {};
+    for (const [pid, deck] of Object.entries(anon)) out[pid] = { ...(deck as any), deck: null, sideboard: null };
+    return out;
   }, [replay.decks, replay.players, activeDecoded, anonymize]);
 
   // B48: apply the URL-derived initial frame once frames are decoded.
@@ -864,6 +873,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
         armedTeams={armedTeams}
         onArmedTeamsChange={setArmedTeams}
         onOpenResourcing={() => setResourcingOpen(true)}
+        anonymize={anonymize}
       />
       </KaraBuddyThemeProvider>
       <ResourcingModal
@@ -1047,6 +1057,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip }: Props) {
           frames={frames}
           installToken={installToken}
           isOwner={isOwner}
+          anonymize={anonymize}
         />
       )}
       </div>

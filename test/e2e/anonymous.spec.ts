@@ -6,19 +6,19 @@ import { uploadReplay } from './helpers';
 // - /teams redirects/prompts for sign-in (account-gated)
 // (B85 removed the public replay browser.)
 
-test('anonymous can view a replay by direct URL', async ({ page, request }) => {
+test('anonymous can view a replay by direct URL — but identities are anonymized', async ({ page, request }) => {
   const { slug } = await uploadReplay(request, {
-    local: { username: 'OwnerA' },
-    opponent: { username: 'OppB' },
+    local: { username: 'OwnerA', leaderName: 'Luke Skywalker' },
+    opponent: { username: 'OppB', leaderName: 'Grand Admiral Thrawn' },
     match: { gameFormat: 'premier', gamesToWinMode: 'bestOfOne' },
   });
   await page.goto(`/r/${slug}`);
-  // The viewer's sidebar uses MatchupRow that exposes the player's
-  // username; check both are visible somewhere on the page. Both names
-  // now appear twice (default title "OwnerA vs OppB" + MatchupRow
-  // username), so .first() is enough — we just want presence.
-  await expect(page.getByText('OwnerA').first()).toBeVisible();
-  await expect(page.getByText('OppB').first()).toBeVisible();
+  // B122: a stranger (no session, no extension) sees the replay but NOT the real
+  // karabast handles — players read "Player N". The page must load (anon label
+  // present) and the real usernames must appear nowhere.
+  await expect(page.getByText(/Player\s*1/).first()).toBeVisible();
+  await expect(page.getByText('OwnerA')).toHaveCount(0);
+  await expect(page.getByText('OppB')).toHaveCount(0);
 });
 
 test('/teams shows a sign-in prompt for anonymous users', async ({ page }) => {

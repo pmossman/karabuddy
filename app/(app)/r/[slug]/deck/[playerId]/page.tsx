@@ -8,6 +8,8 @@ import { matchChips } from '@/lib/matchMetadata';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizeDecks, anonByIdFromPlayers } from '@/lib/anonymizeReplay';
+import { auth } from '@/auth';
+import { canViewReplayIdentities } from '@/lib/altPerspective';
 import type { DecksByUserId, UserDeck, DeckCardRef } from '@/lib/replayDecoder';
 
 export const dynamic = 'force-dynamic';
@@ -36,10 +38,27 @@ export default async function DeckPage({ params }: PageProps) {
   if (rows.length === 0) notFound();
   const { replay, ownerName: rawOwnerName } = rows[0];
 
-  // B107: a curated sample replay is anonymized everywhere — the deck's handle
-  // becomes "Player N", the user-authored deck title is dropped, and the
-  // uploader name is hidden. The decklist itself is kept (that's the point).
-  const anonymize = isSampleReplaySlug(slug);
+  // B122: full deck lists are private — only the uploader or a teammate may see
+  // them. Curated samples (B107) are anonymized but keep the demo decklist.
+  const isSample = isSampleReplaySlug(slug);
+  const session = await auth();
+  const viewerUserId = (session?.user as any)?.id ?? null;
+  const canView = isSample ? false : await canViewReplayIdentities(replay as any, { sessionUserId: viewerUserId, installToken: null });
+  if (!isSample && !canView) {
+    return (
+      <main style={mainStyle}>
+        <BackLink slug={slug} />
+        <h1 style={h1Style}>Deck list is private</h1>
+        <p style={{ fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, marginTop: 8 }}>
+          Deck lists are only visible to the player who recorded this replay and
+          their teammates. You can still <Link href={`/r/${slug}`} style={{ color: '#5db4ff', textDecoration: 'none' }}>watch the replay →</Link>
+        </p>
+      </main>
+    );
+  }
+
+  // identity anonymization: samples → "Player N" + drop deck title + uploader name.
+  const anonymize = isSample; // authorized viewers see real names; samples stay anon.
   const ownerName = anonymize ? null : rawOwnerName;
   let decks = (replay.decks as DecksByUserId | null) || null;
   if (anonymize && decks) {

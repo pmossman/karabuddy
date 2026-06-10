@@ -109,6 +109,8 @@ interface Props {
   // for older replays uploaded before B42 landed.
   matchMeta: MatchMeta | null;
   decks: DecksByUserId | null;
+  // B122: anonymized viewer — propagates to the decks modal (hide deck-page link).
+  anonymize?: boolean;
   localPlayerId: string | null;
   // B71: teams the comment author can scope a tag to here = teams they're
   // in that this replay is shared with (audience ⊆ shares). Drives the
@@ -153,7 +155,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, anonymize }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -1094,6 +1096,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           localPlayerId={localPlayerId}
           replaySlug={replay.slug}
           frames={frames}
+          anonymize={anonymize}
         />
       )}
 
@@ -1330,15 +1333,21 @@ function renderMessage(msg: any, playerColor: Map<string, string>): React.ReactN
 // B66c: default replay title — mirrors what the replay browser shows
 // ("<username> vs <username>") so the title row never reads as blank
 // when no custom displayName is set.
-function defaultTitleFor(replay: { players: any }): string {
+function defaultTitleFor(replay: { players: any }, anonymize?: boolean): string {
   const players = Array.isArray(replay.players) ? replay.players : [];
   const [p1, p2] = players;
+  if (!p1 && !p2) return 'Replay';
+  // B122: anonymized viewers never see a karabast handle in the title — identify
+  // the replay by the leader matchup instead.
+  if (anonymize) {
+    const lead = (p: any) => p?.leader?.name || 'Unknown';
+    return `${lead(p1)} vs ${lead(p2)}`;
+  }
   const name = (p: any) => {
     const u: string | undefined = p?.username;
     if (!u || /^anonymous\s/i.test(u)) return 'anon';
     return u;
   };
-  if (!p1 && !p2) return 'Replay';
   return `${name(p1)} vs ${name(p2)}`;
 }
 
