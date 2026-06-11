@@ -109,3 +109,11 @@ for the decisions behind the model.
   the organizer confirms it through the normal report endpoint. A
   single-recorder replay infers the opponent from pairing context (unverified —
   that's why confirmation is mandatory).
+- **Tournament invite (B126)** — a shareable capability (`tournaments.invite_code`,
+  organizer-minted lazily) behind `/tournaments/join?code=…`, a PUBLIC page:
+  signed-out guests self-register with a name + optional decklist link; a
+  signed-in non-member registers account-linked. Each guest entrant carries a
+  single-use **claim token** (`tournament_entrants.claim_token`, organizer can
+  copy the guest's personal claim link): claiming with a signed-in account links
+  the entry (userId + account name) AND joins the team — the guest→member
+  upgrade. Decklists are never shown on the public page.

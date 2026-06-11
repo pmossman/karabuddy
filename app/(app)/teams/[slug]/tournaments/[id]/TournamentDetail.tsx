@@ -19,6 +19,7 @@ export interface DetailEntrant {
   deckName: string | null;
   hasDeck: boolean;
   deckVisible: boolean;
+  claimToken: string | null; // organizer-only; guest's account-claim secret
 }
 export interface DetailGame { winner: string | null; replaySlug?: string }
 export interface DetailMatch {
@@ -63,6 +64,7 @@ export interface Detail {
     decklistVisibility: string;
     plannedRounds: number | null;
     suggestedRounds: number;
+    inviteCode: string | null; // organizer-only
     createdAt: string;
   };
   viewer: { userId: string; isOrganizer: boolean; entrantId: string | null };
@@ -353,6 +355,29 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   const [deckLink, setDeckLink] = useState('');
   // null = closed; 'add' = new-guest modal; an entrant = editing that guest.
   const [guestModal, setGuestModal] = useState<'add' | DetailEntrant | null>(null);
+  const [copied, setCopied] = useState<string | null>(null); // feedback label
+
+  // B126: get-or-create the invite code, then copy a link to the clipboard.
+  // `claimToken` appends a guest's personal claim secret to the same link.
+  const copyInviteLink = async (label: string, claimToken?: string) => {
+    setActionError(null);
+    try {
+      let code = t.inviteCode;
+      if (!code) {
+        const res = await fetch(`${base}/invite`, { method: 'POST' });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.ok === false) { setActionError(body.error || 'could not create invite'); return; }
+        code = body.code;
+        await onChanged(); // refresh so t.inviteCode is set for next time
+      }
+      const url = `${window.location.origin}/tournaments/join?code=${code}${claimToken ? `&claim=${claimToken}` : ''}`;
+      await navigator.clipboard.writeText(url);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setActionError('could not copy — clipboard unavailable');
+    }
+  };
   const inSetup = t.status === 'setup';
   const myEntrant = entrants.find((e) => e.id === viewer.entrantId) ?? null;
 
@@ -426,6 +451,13 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
             {viewer.isOrganizer && !e.userId && t.status !== 'complete' && (
               <button type="button" onClick={() => setGuestModal(e)} style={miniGhostStyle}>Edit</button>
             )}
+            {/* B126: the guest's personal claim link — send it to them so
+                creating an account converts this entry + joins the team. */}
+            {viewer.isOrganizer && !e.userId && e.claimToken && t.status !== 'complete' && (
+              <button type="button" onClick={() => copyInviteLink(`claim:${e.id}`, e.claimToken!)} style={miniGhostStyle}>
+                {copied === `claim:${e.id}` ? 'Copied!' : 'Claim link'}
+              </button>
+            )}
             {/* Drop controls during an active tournament: self-drop for the
                 viewer's own entry; organizer can drop/undrop anyone. */}
             {t.status === 'active' && !e.dropped && e.id === viewer.entrantId && (
@@ -471,12 +503,17 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
           </div>
 
           {viewer.isOrganizer && (
-            <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setGuestModal('add')} style={ghostButtonStyle}>
                 + Add guest player
               </button>
-              <span style={{ fontSize: 11, color: '#6c7588', marginLeft: 10 }}>
-                for players without a karabuddy account — you manage their deck + results
+              {/* B126: shareable registration link — guests fill in their own
+                  name + deck, no account needed. */}
+              <button type="button" data-testid="copy-invite-link" onClick={() => copyInviteLink('invite')} style={ghostButtonStyle}>
+                {copied === 'invite' ? 'Copied!' : '🔗 Copy invite link'}
+              </button>
+              <span style={{ fontSize: 11, color: '#6c7588' }}>
+                guests register themselves via the link — you manage their results
               </span>
             </div>
           )}

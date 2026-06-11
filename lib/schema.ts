@@ -625,12 +625,19 @@ export const tournaments = pgTable(
     //   'private'            — entrant-self + organizer always
     decklistVisibility: text('decklist_visibility').notNull().default('hidden-until-start'),
     plannedRounds: integer('planned_rounds'), // null → UI suggests ceil(log2(n))
+    // B126: shareable invite capability — anyone with the code can view the
+    // public registration page + self-register as a GUEST while status=setup.
+    // Minted lazily by the organizer (null until first requested).
+    inviteCode: text('invite_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (t) => ({
     teamIdx: index('tournaments_team_slug_idx').on(t.teamSlug),
+    inviteUnique: uniqueIndex('tournaments_invite_code_idx')
+      .on(t.inviteCode)
+      .where(sql`invite_code IS NOT NULL`),
   })
 );
 
@@ -649,6 +656,10 @@ export const tournamentEntrants = pgTable(
     deckName: text('deck_name'),
     deck: jsonb('deck').$type<TournamentDeck | null>(),
     dropped: boolean('dropped').notNull().default(false),
+    // B126: per-GUEST-entrant claim secret. A guest who later creates a
+    // karabuddy account claims their entry with it — sets userId, renames to
+    // the account, and joins the team. Null for linked entrants.
+    claimToken: text('claim_token'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

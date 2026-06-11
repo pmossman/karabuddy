@@ -71,6 +71,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       tournamentId: id,
       userId: entrantUserId,
       displayName,
+      // B126: guests get a claim secret so they can later link an account
+      // (the organizer can hand them their personal claim link).
+      claimToken: entrantUserId === null ? generateSlug('tc_', 14) : null,
       ...(deckFields ?? {}),
     });
   } catch (err: any) {

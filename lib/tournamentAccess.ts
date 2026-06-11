@@ -40,18 +40,22 @@ export function canSeeDeck(opts: {
 
 // Serialize an entrant for the GET detail response, dropping the decklist
 // when the viewer isn't allowed to see it (deckName/link stay hidden too —
-// a deck name like "R2D2 ramp" leaks the archetype).
+// a deck name like "R2D2 ramp" leaks the archetype). The B126 claimToken is
+// a per-guest secret: ORGANIZER-ONLY (they hand the guest their personal
+// claim link); never serialized to regular members.
 export function serializeEntrant(
   e: TournamentEntrant,
-  visible: boolean
-): Omit<TournamentEntrant, 'deck' | 'deckLink' | 'deckName'> & {
+  visible: boolean,
+  opts: { includeClaimToken?: boolean } = {}
+): Omit<TournamentEntrant, 'deck' | 'deckLink' | 'deckName' | 'claimToken'> & {
   deck: TournamentDeck | null;
   deckLink: string | null;
   deckName: string | null;
   hasDeck: boolean;
   deckVisible: boolean;
+  claimToken: string | null;
 } {
-  const { deck, deckLink, deckName, ...rest } = e;
+  const { deck, deckLink, deckName, claimToken, ...rest } = e;
   return {
     ...rest,
     deck: visible ? (deck as TournamentDeck | null) : null,
@@ -59,6 +63,7 @@ export function serializeEntrant(
     deckName: visible ? deckName : null,
     hasDeck: !!deck,
     deckVisible: visible,
+    claimToken: opts.includeClaimToken ? claimToken : null,
   };
 }
 

@@ -133,6 +133,42 @@ test('a recorded replay drives a result suggestion the organizer confirms', asyn
   await expect(page.getByTestId('suggestion-banner')).toHaveCount(0);
 });
 
+test('invite link: signed-out guest self-registers, then claims with a new account', async ({ page, browser }) => {
+  // Organizer creates the tournament + mints the invite link.
+  await signInAsTestUser(page, { name: 'InviteTO', email: 'invite-to@example.com' });
+  const { slug } = await createTeam(page, 'Invite League');
+  const createRes = await page.request.post(`/api/teams/${slug}/tournaments`, { data: { name: 'Open Night' } });
+  const { id } = await createRes.json();
+  const mint = await (await page.request.post(`/api/teams/${slug}/tournaments/${id}/invite`)).json();
+  expect(mint.ok).toBe(true);
+
+  // A SIGNED-OUT guest opens the link and registers with just a name.
+  const guestCtx = await browser.newContext();
+  const guestPage = await guestCtx.newPage();
+  await guestPage.goto(`/tournaments/join?code=${mint.code}`);
+  await expect(guestPage.getByText('Open Night')).toBeVisible();
+  await guestPage.getByPlaceholder(/How should pairings show you/).fill('Walk-in Wanda');
+  await guestPage.getByRole('button', { name: 'Register', exact: true }).click();
+  await expect(guestPage.getByText(/You're registered!/)).toBeVisible();
+  await expect(guestPage.getByText('Walk-in Wanda')).toBeVisible(); // entrant chip
+
+  // The guest creates an account (same browser → stored claim token) and
+  // claims: entry links to the account + they join the team.
+  await signInAsTestUser(guestPage, { name: 'Wanda Real', email: 'wanda@example.com' });
+  await guestPage.goto(`/tournaments/join?code=${mint.code}`);
+  await guestPage.getByRole('button', { name: /Claim my registration/ }).click();
+  await guestPage.waitForURL(new RegExp(`/teams/${slug}/tournaments/${id}`));
+  await expect(guestPage.getByText('Wanda Real')).toBeVisible(); // renamed to account
+  await guestCtx.close();
+
+  // Organizer's view: one entrant, linked (no Guest badge), now a teammate.
+  await page.goto(`/teams/${slug}/tournaments/${id}`);
+  await expect(page.getByTestId('entrant-row')).toHaveCount(1);
+  await expect(page.getByText('Guest', { exact: true })).toHaveCount(0);
+  await page.goto(`/teams/${slug}?tab=members`);
+  await expect(page.getByText('Wanda Real')).toBeVisible();
+});
+
 test('unregister removes the entrant while in setup', async ({ page }) => {
   await signInAsTestUser(page, { name: 'Leaver' });
   const { slug } = await createTeam(page, 'Leavers');

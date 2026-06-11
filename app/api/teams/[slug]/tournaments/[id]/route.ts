@@ -71,6 +71,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
         decklistVisibility: t.decklistVisibility,
         plannedRounds: t.plannedRounds,
         suggestedRounds: suggestedRoundCount(entrants.filter((e) => !e.dropped).length),
+        // B126: the public invite capability — organizer-only (it's a secret).
+        inviteCode: organizer ? t.inviteCode : null,
         createdAt: t.createdAt.toISOString(),
         startedAt: t.startedAt?.toISOString() ?? null,
         completedAt: t.completedAt?.toISOString() ?? null,
@@ -89,7 +91,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
             viewerUserId: userId,
             viewerIsOrganizer: organizer,
             roundCount: rounds.length,
-          })
+          }),
+          { includeClaimToken: organizer }
         )
       ),
       rounds: rounds.map((r) => ({
