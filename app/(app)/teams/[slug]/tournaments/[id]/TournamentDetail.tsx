@@ -386,6 +386,12 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
     fetch(`${base}/entrants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName: guestName.trim() }) }),
     () => setGuestName('')
   );
+  const dropSelf = () => act(() =>
+    fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dropped: true }) })
+  );
+  const setDropped = (entrantId: string, dropped: boolean) => act(() =>
+    fetch(`${base}/entrants/${entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dropped }) })
+  );
 
   return (
     <section style={panelStyle}>
@@ -417,6 +423,16 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
               )
             ) : (
               <span style={{ fontSize: 11, color: '#4a4e56' }}>no deck</span>
+            )}
+            {/* Drop controls during an active tournament: self-drop for the
+                viewer's own entry; organizer can drop/undrop anyone. */}
+            {t.status === 'active' && !e.dropped && e.id === viewer.entrantId && (
+              <button type="button" onClick={dropSelf} disabled={busy} style={dangerMiniStyle}>Drop</button>
+            )}
+            {t.status === 'active' && viewer.isOrganizer && e.id !== viewer.entrantId && (
+              <button type="button" onClick={() => setDropped(e.id, !e.dropped)} disabled={busy} style={dangerMiniStyle}>
+                {e.dropped ? 'Undrop' : 'Drop'}
+              </button>
             )}
           </div>
         ))}
@@ -569,6 +585,17 @@ const ghostButtonStyle: React.CSSProperties = {
   fontWeight: 600,
   padding: '7px 14px',
   borderRadius: 6,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+const dangerMiniStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid rgba(255,138,138,0.35)',
+  color: '#ff8a8a',
+  fontSize: 10,
+  fontWeight: 700,
+  padding: '2px 8px',
+  borderRadius: 5,
   cursor: 'pointer',
   fontFamily: 'inherit',
 };

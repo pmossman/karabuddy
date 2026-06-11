@@ -249,6 +249,74 @@ describe('rounds + finish', () => {
     expect(d.suggestions[match.id]).toBeUndefined(); // no longer pending
   });
 
+  it('hidden-until-start decks flip to team-visible once round 1 exists; self decklist edits lock', async () => {
+    const owner = await seedUser('owner');
+    const m1 = await seedUser('m1');
+    const slug = await seedTeam([owner, m1]);
+    as(owner);
+    const { POST: createT } = await import('@/app/api/teams/[slug]/tournaments/route');
+    const { PATCH: patchEntrant } = await import('@/app/api/teams/[slug]/tournaments/[id]/entrants/[entrantId]/route');
+    const id = (await (await createT(jreq({ name: 'Flip', decklistVisibility: 'hidden-until-start' }), p(slug))).json()).id as string;
+
+    // m1 registers WITH a deck (stub the upstream site).
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      metadata: { name: 'Hidden Deck' },
+      leader: { id: 'SOR_010', count: 1 }, base: { id: 'SOR_030', count: 1 },
+      deck: [{ id: 'SOR_100', count: 3 }], sideboard: [],
+    }), { status: 200 })));
+    as(m1);
+    const m1Entrant = (await (await addEntrant(jreq({ deckLink: 'https://swubase.com/decks/x' }), p(slug, { id }))).json()).entrantId as string;
+    as(owner);
+    await addEntrant(jreq({}), p(slug, { id }));
+    vi.unstubAllGlobals();
+
+    // Pre-start: the OWNER is the organizer so sees it — but check as a third
+    // member... here owner IS organizer; assert m1's deck hidden from a plain
+    // member by adding one.
+    const m2 = await seedUser('m2');
+    await getDb().insert(teamMembers).values({ teamSlug: slug, userId: m2, role: 'member' });
+    as(m2);
+    let d = await detail(slug, id);
+    expect(d.entrants.find((e: any) => e.id === m1Entrant).deck).toBeNull();
+
+    as(owner);
+    await startTournament(noBody(), p(slug, { id }));
+
+    // Post-start: the same member now sees it.
+    as(m2);
+    d = await detail(slug, id);
+    expect(d.entrants.find((e: any) => e.id === m1Entrant).deck).not.toBeNull();
+
+    // Post-start: m1 can no longer change their own deck; the organizer can.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      metadata: { name: 'Late Swap' },
+      leader: { id: 'SOR_011', count: 1 }, base: { id: 'SOR_031', count: 1 },
+      deck: [{ id: 'SOR_101', count: 3 }], sideboard: [],
+    }), { status: 200 })));
+    as(m1);
+    expect((await patchEntrant(jreq({ deckLink: 'https://swubase.com/decks/y' }), p(slug, { id, entrantId: m1Entrant }))).status).toBe(403);
+    as(owner);
+    expect((await patchEntrant(jreq({ deckLink: 'https://swubase.com/decks/y' }), p(slug, { id, entrantId: m1Entrant }))).status).toBe(200);
+    vi.unstubAllGlobals();
+  });
+
+  it('a dropped entrant is excluded from the next round pairing', async () => {
+    const { slug, id, owner, entrants } = await seedStartedTournament();
+    const { PATCH: patchEntrant } = await import('@/app/api/teams/[slug]/tournaments/[id]/entrants/[entrantId]/route');
+    await reportAll(slug, id, owner);
+    as(owner);
+    expect((await patchEntrant(jreq({ dropped: true }), p(slug, { id, entrantId: entrants.guest }))).status).toBe(200);
+    await nextRound(noBody(), p(slug, { id }));
+    const d = await detail(slug, id);
+    const r2 = d.rounds[1];
+    const r2Entrants = r2.matches.flatMap((m: any) => [m.entrant1Id, m.entrant2Id]).filter(Boolean);
+    expect(r2Entrants).not.toContain(entrants.guest);
+    // 3 remaining actives → 1 pairing + 1 bye.
+    expect(r2.matches).toHaveLength(2);
+    // The dropped guest keeps their standings row, flagged.
+    expect(d.standings.find((s: any) => s.entrantId === entrants.guest).dropped).toBe(true);
+  });
+
   it('guest matches are organizer-reported and count in standings', async () => {
     const { slug, id, owner, entrants } = await seedStartedTournament();
     as(owner);

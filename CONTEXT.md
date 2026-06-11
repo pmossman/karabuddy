@@ -79,3 +79,33 @@ for the decisions behind the model.
   fully working; `block` = break-glass for a dangerous version, and even then
   keeps buffering recordings locally (a stopped recording is a permanently lost
   game).
+
+## Tournaments (B124)
+
+- **Tournament** — an async, internal team event (`tournaments` row, belongs to
+  one team). Swiss pairings + Bo3 matches in v1. Lifecycle:
+  `setup` (registration) → `active` (rounds) → `complete`. Standings are
+  derived on read (`lib/swiss.ts`), never stored.
+- **Organizer** — the tournament's creator or any team owner. Can adjust
+  everything: settings, guests, decklists, results, drops, round pacing.
+- **Entrant** — a participant (`tournament_entrants`). `userId` is OPTIONAL:
+  null = a **guest** who isn't a karabuddy user, managed fully manually by the
+  organizer (name, decklist, results). All automation (self-registration,
+  self-reporting, replay suggestions) applies only to account-linked entrants.
+- **Decklist snapshot** — imported server-side from a deck-site link
+  (`lib/deckImport.ts` via `/api/swudbdeck`) and FROZEN on the entrant row at
+  registration. Per-tournament visibility: `open` | `hidden-until-start` |
+  `private` (enforced in the GET serializer; the deck NAME hides with the list).
+- **Round / match / bye** — `tournament_rounds` (with a stored `pairingSeed`
+  for reproducibility; `createdAt` doubles as the replay-detection lower bound)
+  and `tournament_matches` (per-game results in `games` jsonb, each
+  `{winner, replaySlug?}`). A bye is a match row with `entrant2Id` null, stored
+  pre-confirmed 2-0. Match status: `pending` → `reported` (paired player) →
+  `confirmed` (organizer lock; organizer reports land confirmed directly).
+- **Suggestion** — a replay-derived score for a pending linked-vs-linked match
+  (`lib/tournamentResults.ts`): replays since the round was paired, uploaded by
+  or participant-linked to the paired entrants, grouped by `match.lobbyId`.
+  Computed on read, never stored, and NEVER auto-committed — a paired player or
+  the organizer confirms it through the normal report endpoint. A
+  single-recorder replay infers the opponent from pairing context (unverified —
+  that's why confirmation is mandatory).
