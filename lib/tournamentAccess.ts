@@ -7,6 +7,7 @@
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { tournaments, tournamentEntrants, type Tournament, type TournamentEntrant, type TournamentDeck } from '@/lib/schema';
+import { getTeamMembership } from '@/lib/teamSurface';
 
 export async function loadTournament(teamSlug: string, id: string): Promise<Tournament | null> {
   const [row] = await getDb()
@@ -19,6 +20,46 @@ export async function loadTournament(teamSlug: string, id: string): Promise<Tour
 
 export function isOrganizer(t: Tournament, userId: string, role: string): boolean {
   return t.createdBy === userId || role === 'owner';
+}
+
+// B127: tournament access is decoupled from team membership. A LINKED ENTRANT
+// who isn't a team member (registered/claimed via the public invite link) gets
+// TOURNAMENT-SCOPED access: this tournament's page, pairings/standings, their
+// own match reporting + registration — and nothing else team-side. Team
+// membership remains owner-controlled via normal team invites.
+export interface TournamentAccess {
+  tournament: Tournament;
+  isMember: boolean;
+  role: string | null; // team role when a member
+  myEntrant: TournamentEntrant | null; // the viewer's linked entrant, if any
+  organizer: boolean;
+  canView: boolean; // member OR linked entrant
+}
+
+export async function getTournamentAccess(
+  teamSlug: string,
+  tournamentId: string,
+  userId: string
+): Promise<TournamentAccess | null> {
+  const t = await loadTournament(teamSlug, tournamentId);
+  if (!t) return null;
+  const [membership, [entrant]] = await Promise.all([
+    getTeamMembership(teamSlug, userId),
+    getDb()
+      .select()
+      .from(tournamentEntrants)
+      .where(and(eq(tournamentEntrants.tournamentId, tournamentId), eq(tournamentEntrants.userId, userId)))
+      .limit(1),
+  ]);
+  const isMember = !!membership;
+  return {
+    tournament: t,
+    isMember,
+    role: membership?.role ?? null,
+    myEntrant: entrant ?? null,
+    organizer: isMember && isOrganizer(t, userId, membership!.role),
+    canView: isMember || !!entrant,
+  };
 }
 
 // Decklist visibility per tournament setting. `roundCount` answers "has the

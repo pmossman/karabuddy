@@ -10,7 +10,9 @@ import { POST as mintInvite } from '@/app/api/teams/[slug]/tournaments/[id]/invi
 import { GET as inviteInfo } from '@/app/api/tournaments/invite/[code]/route';
 import { POST as inviteRegister } from '@/app/api/tournaments/invite/[code]/register/route';
 import { POST as inviteClaim } from '@/app/api/tournaments/invite/[code]/claim/route';
-import { POST as inviteJoin } from '@/app/api/tournaments/invite/[code]/join/route';
+import { PATCH as patchTournament } from '@/app/api/teams/[slug]/tournaments/[id]/route';
+import { GET as listTournaments } from '@/app/api/teams/[slug]/tournaments/route';
+import { POST as reportMatch } from '@/app/api/teams/[slug]/tournaments/[id]/matches/[matchId]/report/route';
 import { getTeamMembership } from '@/lib/teamSurface';
 
 // B126: public tournament invite links — guest self-registration + the
@@ -110,6 +112,50 @@ describe('public invite info + registration', () => {
     expect((await inviteRegister(jreq({}), p({ code }))).status).toBe(409); // owner is a member
   });
 
+  it('B127: a linked entrant gets TOURNAMENT-scoped access — not team access', async () => {
+    const { owner, slug, id, code } = await setup();
+    as(owner);
+    await addEntrant(jreq({}), p({ slug, id })); // owner registers too
+    const outsider = await seedUser('outsider');
+    as(outsider);
+    await inviteRegister(jreq({}), p({ code }));
+
+    // Detail page payload: visible, flagged non-member, no organizer secrets.
+    const d = await (await getDetail(new Request('http://t'), p({ slug, id }))).json();
+    expect(d.ok).toBe(true);
+    expect(d.data.viewer).toMatchObject({ isMember: false, isOrganizer: false });
+    expect(d.data.tournament.inviteCode).toBeNull();
+
+    // Their own registration is manageable (decklist PATCH path is exercised in
+    // the entrants suite); tournament SETTINGS are not.
+    expect((await patchTournament(jreq({ name: 'Hijacked' }), p({ slug, id }))).status).toBe(403);
+    // The team's tournament LIST stays member-only.
+    expect((await listTournaments(new Request('http://t'), p({ slug }))).status).toBe(403);
+    // And they never became a team member.
+    expect(await getTeamMembership(slug, outsider)).toBeNull();
+  });
+
+  it('B127: a linked entrant can report their own match after the tournament starts', async () => {
+    const { owner, slug, id, code } = await setup();
+    as(owner);
+    await addEntrant(jreq({}), p({ slug, id }));
+    const outsider = await seedUser('outsider');
+    as(outsider);
+    await inviteRegister(jreq({}), p({ code }));
+    as(owner);
+    await startTournament(noBody(), p({ slug, id }));
+
+    as(outsider);
+    const d = await (await getDetail(new Request('http://t'), p({ slug, id }))).json();
+    const myEntrantId = d.data.viewer.entrantId;
+    const match = d.data.rounds[0].matches.find((m: any) => [m.entrant1Id, m.entrant2Id].includes(myEntrantId));
+    const rep = await reportMatch(
+      jreq({ games: [{ winner: myEntrantId }, { winner: myEntrantId }] }),
+      p({ slug, id, matchId: match.id })
+    );
+    expect((await rep.json()).status).toBe('reported'); // player report, not organizer
+  });
+
   it('registration closes when the tournament starts', async () => {
     const { owner, slug, id, code } = await setup();
     as(null);
@@ -122,8 +168,8 @@ describe('public invite info + registration', () => {
   });
 });
 
-describe('claim + join', () => {
-  it('claim links the entrant to the account, renames it, joins the team, and burns the token', async () => {
+describe('claim', () => {
+  it('claim links the entrant to the account + renames it + burns the token — WITHOUT joining the team (B127)', async () => {
     const { owner, slug, id, code } = await setup();
     as(null);
     const reg = await (await inviteRegister(jreq({ displayName: 'Guesty' }), p({ code }))).json();
@@ -131,8 +177,13 @@ describe('claim + join', () => {
     const newUser = await seedUser('fresh');
     as(newUser);
     const claim = await (await inviteClaim(jreq({ claimToken: reg.claimToken }), p({ code }))).json();
-    expect(claim).toMatchObject({ ok: true, teamSlug: slug, tournamentId: id, joinedTeam: true });
-    expect(await getTeamMembership(slug, newUser)).toMatchObject({ role: 'member' });
+    expect(claim).toMatchObject({ ok: true, teamSlug: slug, tournamentId: id });
+    // Decoupled: claiming grants TOURNAMENT access, never team membership.
+    expect(await getTeamMembership(slug, newUser)).toBeNull();
+    // …but the tournament page now opens for them.
+    const mine = await (await getDetail(new Request('http://t'), p({ slug, id }))).json();
+    expect(mine.ok).toBe(true);
+    expect(mine.data.viewer.isMember).toBe(false);
 
     as(owner);
     const d = await (await getDetail(new Request('http://t'), p({ slug, id }))).json();
@@ -159,17 +210,10 @@ describe('claim + join', () => {
     expect((await inviteClaim(jreq({ claimToken: 'tc_bogus' }), p({ code }))).status).toBe(404);
   });
 
-  it('join adds a linked entrant to the team; bystanders are refused', async () => {
-    const { slug, code } = await setup();
-    const outsider = await seedUser('outsider');
-    as(outsider);
-    await inviteRegister(jreq({}), p({ code })); // linked registration
-    const join = await (await inviteJoin(noBody(), p({ code }))).json();
-    expect(join.ok).toBe(true);
-    expect(await getTeamMembership(slug, outsider)).toMatchObject({ role: 'member' });
-
+  it('a signed-in NON-entrant non-member still cannot view the tournament', async () => {
+    const { slug, id } = await setup();
     const bystander = await seedUser('bystander');
     as(bystander);
-    expect((await inviteJoin(noBody(), p({ code }))).status).toBe(403);
+    expect((await getDetail(new Request('http://t'), p({ slug, id }))).status).toBe(403);
   });
 });

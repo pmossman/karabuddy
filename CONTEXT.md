@@ -115,5 +115,12 @@ for the decisions behind the model.
   signed-in non-member registers account-linked. Each guest entrant carries a
   single-use **claim token** (`tournament_entrants.claim_token`, organizer can
   copy the guest's personal claim link): claiming with a signed-in account links
-  the entry (userId + account name) AND joins the team — the guest→member
-  upgrade. Decklists are never shown on the public page.
+  the entry (userId + account name). Decklists are never shown on the public page.
+- **Entrant-scoped access (B127)** — tournament access is DECOUPLED from team
+  membership: a linked entrant who isn't a team member (came in via the invite
+  link) can view THAT tournament's page, see pairings/standings + decks per the
+  visibility setting, report their own matches, and manage their own
+  registration — and nothing else team-side (`getTournamentAccess` in
+  lib/tournamentAccess: `canView = member OR linked entrant`). Claiming never
+  joins the team; team membership stays owner-controlled via normal team
+  invites. Organizer powers always require membership.

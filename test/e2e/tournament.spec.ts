@@ -153,20 +153,24 @@ test('invite link: signed-out guest self-registers, then claims with a new accou
   await expect(guestPage.getByText('Walk-in Wanda')).toBeVisible(); // entrant chip
 
   // The guest creates an account (same browser → stored claim token) and
-  // claims: entry links to the account + they join the team.
+  // claims: the entry links to the account and the TOURNAMENT page opens for
+  // them — but they do NOT join the team (B127: decoupled).
   await signInAsTestUser(guestPage, { name: 'Wanda Real', email: 'wanda@example.com' });
   await guestPage.goto(`/tournaments/join?code=${mint.code}`);
   await guestPage.getByRole('button', { name: /Claim my registration/ }).click();
   await guestPage.waitForURL(new RegExp(`/teams/${slug}/tournaments/${id}`));
   await expect(guestPage.getByText('Wanda Real')).toBeVisible(); // renamed to account
+  await expect(guestPage.getByTestId('entrant-row')).toHaveCount(1); // entrant-scoped view works
+  // No team back-link for an entrant-only viewer.
+  await expect(guestPage.getByText('← Tournaments')).toHaveCount(0);
   await guestCtx.close();
 
-  // Organizer's view: one entrant, linked (no Guest badge), now a teammate.
+  // Organizer's view: one entrant, linked (no Guest badge) — but NOT a teammate.
   await page.goto(`/teams/${slug}/tournaments/${id}`);
   await expect(page.getByTestId('entrant-row')).toHaveCount(1);
   await expect(page.getByText('Guest', { exact: true })).toHaveCount(0);
   await page.goto(`/teams/${slug}?tab=members`);
-  await expect(page.getByText('Wanda Real')).toBeVisible();
+  await expect(page.getByText('Wanda Real')).toHaveCount(0); // decoupled: no team join
 });
 
 test('unregister removes the entrant while in setup', async ({ page }) => {

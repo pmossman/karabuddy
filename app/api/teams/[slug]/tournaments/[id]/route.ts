@@ -8,7 +8,7 @@ import {
   type TournamentEntrant, type TournamentRound, type TournamentMatch,
 } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
-import { loadTournament, isOrganizer, canSeeDeck, serializeEntrant } from '@/lib/tournamentAccess';
+import { loadTournament, isOrganizer, canSeeDeck, serializeEntrant, getTournamentAccess } from '@/lib/tournamentAccess';
 import { computeStandings, suggestedRoundCount, type SwissMatch } from '@/lib/swiss';
 import { suggestResult, type CandidateReplay, type ResultSuggestion } from '@/lib/tournamentResults';
 
@@ -19,17 +19,19 @@ const VISIBILITIES = ['open', 'hidden-until-start', 'private'] as const;
 // GET /api/teams/[slug]/tournaments/[id] — the one detail payload the
 // tournament page renders from: tournament, entrants (decks filtered per the
 // visibility setting), rounds + matches, computed standings, viewer flags.
+// B127: viewable by team members OR linked entrants (tournament-scoped access
+// for players who came in via the public invite link).
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const session = await auth();
   const userId: string | null = (session?.user as any)?.id || null;
   if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
 
-  const t = await loadTournament(slug, id);
-  if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
-  const organizer = isOrganizer(t, userId, me.role);
+  const access = await getTournamentAccess(slug, id, userId);
+  if (!access) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  if (!access.canView) return NextResponse.json({ ok: false, error: 'not a member or entrant' }, { status: 403 });
+  const t = access.tournament;
+  const organizer = access.organizer;
 
   const db = getDb();
   const [entrants, rounds, matches] = await Promise.all([
@@ -80,6 +82,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
       viewer: {
         userId,
         isOrganizer: organizer,
+        isMember: access.isMember,
         entrantId: myEntrant?.id ?? null,
       },
       entrants: entrants.map((e) =>

@@ -93,20 +93,6 @@ export function TournamentInvite({ code, claimToken: claimFromUrl }: { code: str
     }
   };
 
-  const joinTeam = async () => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/tournaments/invite/${encodeURIComponent(code)}/join`, { method: 'POST' });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || body.ok === false) { setError(body.error || `failed (${res.status})`); return; }
-      router.push(`/teams/${body.teamSlug}/tournaments/${body.tournamentId}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (error && !info) return <p style={{ fontSize: 13, color: '#ff8a8a' }}>{error}</p>;
   if (!info) return <p style={{ fontSize: 13, color: '#6c7588' }}>Loading…</p>;
 
@@ -140,14 +126,17 @@ export function TournamentInvite({ code, claimToken: claimFromUrl }: { code: str
 
       {error && <div style={{ color: '#ff8a8a', fontSize: 12 }}>{error}</div>}
 
-      {/* Claim flow: a guest entry waiting + a signed-in account → upgrade. */}
+      {/* Claim flow: a guest entry waiting + a signed-in account → upgrade.
+          B127: claiming links the entry to the account (tournament access);
+          team membership is separate, via a normal team invite. */}
       {viewer.signedIn && !viewer.registered && claimable && info.tournament.status !== 'complete' && (
         <section style={panelStyle}>
           <p style={{ margin: '0 0 10px', fontSize: 13, color: '#d6d6d6' }}>
-            You have a guest registration waiting. Claim it to link it to your account and join <strong>{info.team.name}</strong>.
+            You have a guest registration waiting. Claim it to link it to your
+            account — you&apos;ll see pairings and report your own results.
           </p>
           <button type="button" onClick={claim} disabled={busy} style={primaryButtonStyle}>
-            {busy ? 'Working…' : 'Claim my registration + join the team'}
+            {busy ? 'Working…' : 'Claim my registration'}
           </button>
         </section>
       )}
@@ -162,11 +151,13 @@ export function TournamentInvite({ code, claimToken: claimFromUrl }: { code: str
       ) : viewer.registered ? (
         <section style={panelStyle}>
           <p style={{ margin: '0 0 10px', fontSize: 13, color: '#d6d6d6' }}>
-            You&apos;re registered. Join <strong>{info.team.name}</strong> to see pairings, report results, and use replay-powered scoring.
+            You&apos;re registered — open the tournament to see pairings, report
+            your results, and follow the standings.
           </p>
-          <button type="button" onClick={joinTeam} disabled={busy} style={primaryButtonStyle}>
-            {busy ? 'Working…' : `Join ${info.team.name}`}
-          </button>
+          <a href={tournamentUrl} style={{ ...primaryButtonStyle, display: 'inline-block', textDecoration: 'none' }}>Open the tournament →</a>
+          <p style={{ margin: '10px 0 0', fontSize: 11, color: '#6c7588' }}>
+            Want to join {info.team.name} itself (replays, discussion, stats)? Ask the organizer for a team invite.
+          </p>
         </section>
       ) : registeredAsGuest ? (
         <section style={panelStyle}>

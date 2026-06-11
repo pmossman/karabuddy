@@ -3,8 +3,7 @@ import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { tournamentEntrants } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
-import { loadTournament, isOrganizer, loadEntrant } from '@/lib/tournamentAccess';
+import { getTournamentAccess, loadEntrant } from '@/lib/tournamentAccess';
 import { importDeck } from '@/lib/deckImport';
 
 export const runtime = 'nodejs';
@@ -22,14 +21,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   const session = await auth();
   const userId: string | null = (session?.user as any)?.id || null;
   if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  const t = await loadTournament(slug, id);
-  if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  // B127: member OR linked entrant (invite-link players manage their own entry).
+  const access = await getTournamentAccess(slug, id, userId);
+  if (!access) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  if (!access.canView) return NextResponse.json({ ok: false, error: 'not a member or entrant' }, { status: 403 });
+  const t = access.tournament;
   const entrant = await loadEntrant(id, entrantId);
   if (!entrant) return NextResponse.json({ ok: false, error: 'entrant not found' }, { status: 404 });
 
-  const organizer = isOrganizer(t, userId, me.role);
+  const organizer = access.organizer;
   const isSelf = !!entrant.userId && entrant.userId === userId;
   const body = await req.json().catch(() => ({}));
   const update: Record<string, unknown> = {};
@@ -81,17 +81,17 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ slug
   const session = await auth();
   const userId: string | null = (session?.user as any)?.id || null;
   if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  const t = await loadTournament(slug, id);
-  if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  const access = await getTournamentAccess(slug, id, userId);
+  if (!access) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  if (!access.canView) return NextResponse.json({ ok: false, error: 'not a member or entrant' }, { status: 403 });
+  const t = access.tournament;
   const entrant = await loadEntrant(id, entrantId);
   if (!entrant) return NextResponse.json({ ok: false, error: 'entrant not found' }, { status: 404 });
 
   if (t.status !== 'setup') {
     return NextResponse.json({ ok: false, error: 'tournament started — drop instead of unregistering' }, { status: 409 });
   }
-  const organizer = isOrganizer(t, userId, me.role);
+  const organizer = access.organizer;
   const isSelf = !!entrant.userId && entrant.userId === userId;
   if (!organizer && !isSelf) {
     return NextResponse.json({ ok: false, error: 'not your registration' }, { status: 403 });

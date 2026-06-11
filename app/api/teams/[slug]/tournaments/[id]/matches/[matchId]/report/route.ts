@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { tournamentMatches, tournamentEntrants, type TournamentGame } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
-import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
+import { tournamentMatches, type TournamentGame } from '@/lib/schema';
+import { getTournamentAccess } from '@/lib/tournamentAccess';
 
 export const runtime = 'nodejs';
 
@@ -13,17 +12,18 @@ export const runtime = 'nodejs';
 //
 // Who: the ORGANIZER (always — their report lands directly as 'confirmed'),
 // or a PAIRED LINKED PLAYER while the match isn't confirmed (lands as
-// 'reported'). Guests can't self-report (no account) — their opponent or the
-// organizer enters the score; for guest-vs-guest it's organizer-only.
+// 'reported') — B127: including linked entrants who aren't team members
+// (invite-link players). Guests can't self-report (no account) — their
+// opponent or the organizer enters the score.
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string; id: string; matchId: string }> }) {
   const { slug, id, matchId } = await params;
   const session = await auth();
   const userId: string | null = (session?.user as any)?.id || null;
   if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  const t = await loadTournament(slug, id);
-  if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  const access = await getTournamentAccess(slug, id, userId);
+  if (!access) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  if (!access.canView) return NextResponse.json({ ok: false, error: 'not a member or entrant' }, { status: 403 });
+  const t = access.tournament;
   if (t.status !== 'active') {
     return NextResponse.json({ ok: false, error: 'tournament is not active' }, { status: 409 });
   }
@@ -39,14 +39,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     return NextResponse.json({ ok: false, error: 'byes are automatic' }, { status: 400 });
   }
 
-  const organizer = isOrganizer(t, userId, me.role);
+  const organizer = access.organizer;
   if (!organizer) {
     // A paired linked player may report until the organizer locks it.
-    const pairedEntrants = await db
-      .select({ id: tournamentEntrants.id, userId: tournamentEntrants.userId })
-      .from(tournamentEntrants)
-      .where(eq(tournamentEntrants.tournamentId, id));
-    const mine = pairedEntrants.find((e) => e.userId === userId);
+    const mine = access.myEntrant;
     const isPaired = !!mine && (mine.id === match.entrant1Id || mine.id === match.entrant2Id);
     if (!isPaired) {
       return NextResponse.json({ ok: false, error: 'only the paired players or the organizer can report' }, { status: 403 });

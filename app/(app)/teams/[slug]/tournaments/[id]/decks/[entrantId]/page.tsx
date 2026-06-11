@@ -4,8 +4,7 @@ import { count, eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { tournamentRounds, type TournamentDeck } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
-import { loadTournament, loadEntrant, isOrganizer, canSeeDeck } from '@/lib/tournamentAccess';
+import { getTournamentAccess, loadEntrant, canSeeDeck } from '@/lib/tournamentAccess';
 import { DeckList, BigCard, sumCounts } from '@/app/_components/DeckGrid';
 
 export const dynamic = 'force-dynamic';
@@ -19,10 +18,11 @@ export default async function TournamentDeckPage({ params }: { params: Promise<{
   const userId: string | null = (session?.user as any)?.id || null;
   if (!userId) redirect(`/signin?callbackUrl=/teams/${slug}/tournaments/${id}`);
 
-  const me = await getTeamMembership(slug, userId);
-  if (!me) notFound();
-  const t = await loadTournament(slug, id);
-  if (!t) notFound();
+  // B127: member OR linked entrant — a tournament participant sees other
+  // entrants' decks under the same visibility rules as members.
+  const access = await getTournamentAccess(slug, id, userId);
+  if (!access || !access.canView) notFound();
+  const t = access.tournament;
   const entrant = await loadEntrant(id, entrantId);
   if (!entrant) notFound();
 
@@ -35,7 +35,7 @@ export default async function TournamentDeckPage({ params }: { params: Promise<{
     visibility: t.decklistVisibility,
     entrant,
     viewerUserId: userId,
-    viewerIsOrganizer: isOrganizer(t, userId, me.role),
+    viewerIsOrganizer: access.organizer,
     roundCount: Number(roundCount),
   });
 
