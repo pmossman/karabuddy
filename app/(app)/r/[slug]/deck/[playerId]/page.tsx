@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, users } from '@/lib/schema';
-import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
+import { DeckList, BigCard, sumCounts } from '@/app/_components/DeckGrid';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizeDecks, anonByIdFromPlayers } from '@/lib/anonymizeReplay';
@@ -145,84 +145,6 @@ function BackLink({ slug }: { slug: string }) {
       </Link>
     </div>
   );
-}
-
-function DeckList({ title, cards }: { title: string; cards: DeckCardRef[] }) {
-  const sorted = [...cards].sort((a, b) => {
-    const ac = a.cost ?? 99;
-    const bc = b.cost ?? 99;
-    if (ac !== bc) return ac - bc;
-    return a.id.localeCompare(b.id);
-  });
-  return (
-    <section style={{ marginTop: 28 }}>
-      <h2 style={{ fontSize: 13, fontWeight: 700, color: '#e6e6e6', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {title}
-      </h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-        {sorted.map((c, i) => (
-          <BigCard key={`${c.id}-${i}`} card={c} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function BigCard({ card, isLeader = false }: { card: DeckCardRef; isLeader?: boolean }) {
-  const setId = parseSetId(card.id);
-  const url = setId ? cardImageUrl({ set: setId.set, number: setId.number }, isLeader) : null;
-  return (
-    <a
-      href={`https://swudb.com/card/${card.id}`}
-      target="_blank"
-      rel="noreferrer"
-      title={card.id + (card.cost != null ? ` · cost ${card.cost}` : '')}
-      style={{
-        position: 'relative',
-        aspectRatio: isLeader ? '1.4' : '0.71',
-        background: '#0b0b12',
-        border: '1px solid #2e333c',
-        borderRadius: 6,
-        backgroundImage: url ? `url(${url})` : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        display: 'block',
-        textDecoration: 'none',
-        color: '#e6e6e6',
-        minHeight: 100,
-      }}
-    >
-      {card.count > 1 && (
-        <span
-          style={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            background: 'rgba(0,0,0,0.78)',
-            color: '#fff',
-            fontSize: 12,
-            fontWeight: 700,
-            padding: '2px 6px',
-            borderRadius: 4,
-          }}
-        >
-          ×{card.count}
-        </span>
-      )}
-    </a>
-  );
-}
-
-function sumCounts(cards: DeckCardRef[]): number {
-  return cards.reduce((acc, c) => acc + (c.count || 0), 0);
-}
-
-function parseSetId(id: string): { set: string; number: number } | null {
-  const m = /^([A-Z]+)_?(\d+)$/.exec(id);
-  if (!m) return null;
-  const n = parseInt(m[2], 10);
-  if (!Number.isFinite(n)) return null;
-  return { set: m[1], number: n };
 }
 
 const mainStyle: React.CSSProperties = {
