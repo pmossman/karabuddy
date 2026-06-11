@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   text,
@@ -565,3 +566,154 @@ export type Card = typeof cards.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
 export type MatchPlayerRow = typeof matchPlayers.$inferSelect;
 export type CardEventRow = typeof cardEvents.$inferSelect;
+
+// ----- B124: Team tournaments (Swiss / Bo3, async)
+//
+// A tournament belongs to ONE team. Entrants are their own entity — userId is
+// OPTIONAL (null = a GUEST the organizer manages fully manually: name, deck,
+// results). All automation (self-registration, self-reporting, replay-derived
+// suggestions) applies only to account-linked entrants and degrades to
+// organizer-manual for guests.
+//
+// Standings are DERIVED on read (lib/swiss.ts computeStandings) — no standings
+// table. Per-game results live in `games` jsonb on the match row: each game is
+// tiny, always read/written with its match, and never queried independently.
+// A bye is a match row with entrant2Id = null (pre-confirmed 2-0) so "every
+// active entrant appears in every round" holds and bye history falls out of
+// the same matches query.
+
+// Registered decklist snapshot — IDeckData-shaped (app/_utils/fetchDeckData),
+// card refs as {id: 'SET_NNN', count}. Frozen at registration: the link can
+// drift after, the snapshot is what was registered.
+export interface TournamentDeckCard {
+  id: string;
+  count: number;
+}
+export interface TournamentDeck {
+  leader: TournamentDeckCard | null;
+  secondleader?: TournamentDeckCard | null;
+  base: TournamentDeckCard | null;
+  deck: TournamentDeckCard[];
+  sideboard: TournamentDeckCard[];
+}
+
+// One game of a Bo3 (or longer) series. winner = entrantId, null = draw /
+// unfinished. replaySlug links the recorded evidence when the result came from
+// a replay (no FK — replay deletion leaves a dangling slug the UI renders as
+// plain text).
+export interface TournamentGame {
+  winner: string | null;
+  replaySlug?: string;
+}
+
+export const tournaments = pgTable(
+  'tournaments',
+  {
+    id: text('id').primaryKey(), // generateSlug('tn_', 8)
+    teamSlug: text('team_slug')
+      .notNull()
+      .references(() => teams.slug, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('setup'), // 'setup' | 'active' | 'complete'
+    // Future-proofing only — v1 implements exactly swiss + bo3.
+    pairingFormat: text('pairing_format').notNull().default('swiss'),
+    matchFormat: text('match_format').notNull().default('bo3'),
+    // Organizer-configurable decklist visibility:
+    //   'open'               — team-visible from submission
+    //   'hidden-until-start' — entrant-self + organizer until round 1 exists, then team
+    //   'private'            — entrant-self + organizer always
+    decklistVisibility: text('decklist_visibility').notNull().default('hidden-until-start'),
+    plannedRounds: integer('planned_rounds'), // null → UI suggests ceil(log2(n))
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    teamIdx: index('tournaments_team_slug_idx').on(t.teamSlug),
+  })
+);
+
+export const tournamentEntrants = pgTable(
+  'tournament_entrants',
+  {
+    id: text('id').primaryKey(), // generateSlug('te_', 8)
+    tournamentId: text('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    // NULL = guest (not a karabuddy user). set-null on user deletion turns a
+    // linked entrant into a guest, preserving tournament history.
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    displayName: text('display_name').notNull(), // snapshot; organizer-entered for guests
+    deckLink: text('deck_link'),
+    deckName: text('deck_name'),
+    deck: jsonb('deck').$type<TournamentDeck | null>(),
+    dropped: boolean('dropped').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tournamentIdx: index('tournament_entrants_tournament_idx').on(t.tournamentId),
+    // One registration per ACCOUNT per tournament; guests (null userId) are
+    // exempt — the organizer can add any number of them.
+    userUnique: uniqueIndex('tournament_entrants_tournament_user_idx')
+      .on(t.tournamentId, t.userId)
+      .where(sql`user_id IS NOT NULL`),
+  })
+);
+
+export const tournamentRounds = pgTable(
+  'tournament_rounds',
+  {
+    id: text('id').primaryKey(), // generateSlug('tr_', 8)
+    tournamentId: text('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    number: integer('number').notNull(), // 1-based
+    status: text('status').notNull().default('active'), // 'active' | 'complete'
+    // Seed for the pairing shuffle — stored so a round's pairings are
+    // reproducible from (entrants, prior matches, seed) in tests/audits.
+    pairingSeed: text('pairing_seed').notNull(),
+    // Also the lower bound for replay→result detection in this round.
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    numberUnique: uniqueIndex('tournament_rounds_tournament_number_idx').on(t.tournamentId, t.number),
+  })
+);
+
+export const tournamentMatches = pgTable(
+  'tournament_matches',
+  {
+    id: text('id').primaryKey(), // generateSlug('tm_', 8)
+    roundId: text('round_id')
+      .notNull()
+      .references(() => tournamentRounds.id, { onDelete: 'cascade' }),
+    // Denormalized so standings are one query over the tournament's matches.
+    tournamentId: text('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    tableNumber: integer('table_number').notNull(),
+    entrant1Id: text('entrant1_id')
+      .notNull()
+      .references(() => tournamentEntrants.id, { onDelete: 'cascade' }),
+    // NULL = bye for entrant1.
+    entrant2Id: text('entrant2_id').references(() => tournamentEntrants.id, { onDelete: 'cascade' }),
+    games: jsonb('games').$type<TournamentGame[]>().notNull().default([]),
+    // 'pending' → no result yet; 'reported' → a paired linked player (or a
+    // confirmed replay suggestion) entered a score; 'confirmed' → organizer
+    // locked it (players can no longer change it; the organizer always can).
+    status: text('status').notNull().default('pending'),
+    resultSource: text('result_source'), // 'manual' | 'replays' | null
+    reportedBy: text('reported_by'), // userId of the last reporter (audit)
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    roundIdx: index('tournament_matches_round_idx').on(t.roundId),
+    tournamentIdx: index('tournament_matches_tournament_idx').on(t.tournamentId),
+  })
+);
+
+export type Tournament = typeof tournaments.$inferSelect;
+export type TournamentEntrant = typeof tournamentEntrants.$inferSelect;
+export type TournamentRound = typeof tournamentRounds.$inferSelect;
+export type TournamentMatch = typeof tournamentMatches.$inferSelect;
