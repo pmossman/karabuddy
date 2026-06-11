@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, gte, inArray, or, and } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { tournaments, tournamentEntrants, tournamentRounds, tournamentMatches } from '@/lib/schema';
+import {
+  tournaments, tournamentEntrants, tournamentRounds, tournamentMatches,
+  replays, replayParticipants, replayAltPayload, replayTeamShares,
+  type TournamentEntrant, type TournamentRound, type TournamentMatch,
+} from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer, canSeeDeck, serializeEntrant } from '@/lib/tournamentAccess';
 import { computeStandings, suggestedRoundCount, type SwissMatch } from '@/lib/swiss';
+import { suggestResult, type CandidateReplay, type ResultSuggestion } from '@/lib/tournamentResults';
 
 export const runtime = 'nodejs';
 
@@ -45,6 +50,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   );
 
   const myEntrant = entrants.find((e) => e.userId === userId) ?? null;
+
+  // B124/P4: replay-derived result SUGGESTIONS for the active round's pending
+  // matches where both entrants are account-linked. Computed on read, never
+  // stored — confirming one goes through the normal report endpoint.
+  const suggestions = t.status === 'active'
+    ? await computeSuggestions(slug, entrants, rounds, matches)
+    : {};
 
   return NextResponse.json({
     ok: true,
@@ -98,8 +110,108 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
           })),
       })),
       standings,
+      suggestions,
     },
   });
+}
+
+// Gather candidate replays for the active round's pending linked-vs-linked
+// matches and run the pure derivation. One pass of queries for ALL such
+// matches (team-scale fields keep this cheap).
+async function computeSuggestions(
+  teamSlug: string,
+  entrants: TournamentEntrant[],
+  rounds: TournamentRound[],
+  matches: TournamentMatch[]
+): Promise<Record<string, ResultSuggestion>> {
+  const current = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+  if (!current || current.status !== 'active') return {};
+
+  const entrantById = new Map(entrants.map((e) => [e.id, e]));
+  const targets = matches.filter((m) => {
+    if (m.roundId !== current.id || m.status !== 'pending' || m.entrant2Id === null) return false;
+    return !!entrantById.get(m.entrant1Id)?.userId && !!entrantById.get(m.entrant2Id)?.userId;
+  });
+  if (targets.length === 0) return {};
+
+  const userIds = Array.from(
+    new Set(targets.flatMap((m) => [entrantById.get(m.entrant1Id)!.userId!, entrantById.get(m.entrant2Id!)!.userId!]))
+  );
+
+  const db = getDb();
+  // Replays since the round was paired, uploaded by OR participated-in by any
+  // paired user.
+  const partRows = await db
+    .select({ slug: replayParticipants.replaySlug, userId: replayParticipants.userId })
+    .from(replayParticipants)
+    .where(inArray(replayParticipants.userId, userIds));
+  const partSlugs = Array.from(new Set(partRows.map((r) => r.slug)));
+
+  const candidateRows = await db
+    .select({
+      slug: replays.slug,
+      createdAt: replays.createdAt,
+      userId: replays.userId,
+      ownerPlayerId: replays.ownerPlayerId,
+      winners: replays.winners,
+      match: replays.match,
+    })
+    .from(replays)
+    .where(
+      and(
+        gte(replays.createdAt, current.createdAt),
+        partSlugs.length > 0
+          ? or(inArray(replays.userId, userIds), inArray(replays.slug, partSlugs))
+          : inArray(replays.userId, userIds)
+      )
+    );
+  if (candidateRows.length === 0) return {};
+
+  const slugs = candidateRows.map((r) => r.slug);
+  const [shareRows, altRows] = await Promise.all([
+    db
+      .select({ slug: replayTeamShares.replaySlug })
+      .from(replayTeamShares)
+      .where(and(eq(replayTeamShares.teamSlug, teamSlug), inArray(replayTeamShares.replaySlug, slugs))),
+    db
+      .select({ slug: replayAltPayload.replaySlug, altUserId: replayAltPayload.altUserId, altOwnerPlayerId: replayAltPayload.altOwnerPlayerId })
+      .from(replayAltPayload)
+      .where(inArray(replayAltPayload.replaySlug, slugs)),
+  ]);
+  const shared = new Set(shareRows.map((r) => r.slug));
+  const altBySlug = new Map(altRows.map((r) => [r.slug, r]));
+  const participantsBySlug = new Map<string, string[]>();
+  for (const r of partRows) {
+    const arr = participantsBySlug.get(r.slug);
+    if (arr) arr.push(r.userId);
+    else participantsBySlug.set(r.slug, [r.userId]);
+  }
+
+  const candidates: CandidateReplay[] = candidateRows.map((r) => ({
+    slug: r.slug,
+    createdAt: r.createdAt,
+    uploaderUserId: r.userId,
+    participantUserIds: participantsBySlug.get(r.slug) ?? [],
+    ownerPlayerId: r.ownerPlayerId,
+    altOwnerPlayerId: altBySlug.get(r.slug)?.altOwnerPlayerId ?? null,
+    winners: Array.isArray(r.winners) ? (r.winners as string[]) : null,
+    lobbyId: (r.match as any)?.lobbyId && typeof (r.match as any).lobbyId === 'string' ? (r.match as any).lobbyId : null,
+    sharedToTeam: shared.has(r.slug),
+  }));
+
+  const out: Record<string, ResultSuggestion> = {};
+  for (const m of targets) {
+    const e1 = entrantById.get(m.entrant1Id)!;
+    const e2 = entrantById.get(m.entrant2Id!)!;
+    const suggestion = suggestResult({
+      entrant1: { id: e1.id, userId: e1.userId! },
+      entrant2: { id: e2.id, userId: e2.userId! },
+      roundStartedAt: current.createdAt,
+      replays: candidates,
+    });
+    if (suggestion) out[m.id] = suggestion;
+  }
+  return out;
 }
 
 // PATCH — organizer edits settings: { name?, decklistVisibility?, plannedRounds? }

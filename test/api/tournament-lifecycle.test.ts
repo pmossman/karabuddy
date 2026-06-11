@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers } from '@/lib/schema';
+import { users, teams, teamMembers, replays } from '@/lib/schema';
 import { POST as createTournament } from '@/app/api/teams/[slug]/tournaments/route';
 import { GET as getDetail } from '@/app/api/teams/[slug]/tournaments/[id]/route';
 import { POST as addEntrant, } from '@/app/api/teams/[slug]/tournaments/[id]/entrants/route';
@@ -198,6 +198,55 @@ describe('rounds + finish', () => {
     expect(d.standings[0].points).toBeGreaterThanOrEqual(3);
     // Everything is locked now.
     expect((await nextRound(noBody(), p(slug, { id }))).status).toBe(409);
+  });
+
+  it('replay-derived suggestions appear for linked pairings and confirm via report', async () => {
+    const { slug, id, owner, entrants } = await seedStartedTournament();
+    as(owner);
+    let d = await detail(slug, id);
+    // Find a linked-vs-linked pending match (owner/m1/m2 are linked; guest is not).
+    const linked = new Set([entrants.owner, entrants.m1, entrants.m2]);
+    const match = d.rounds[0].matches.find(
+      (m: any) => m.entrant2Id && linked.has(m.entrant1Id) && linked.has(m.entrant2Id)
+    );
+    expect(match).toBeTruthy();
+    expect(d.suggestions[match.id]).toBeUndefined(); // no replays yet
+
+    // entrantId → account: the detail payload carries each entrant's userId.
+    const userByEntrant: Record<string, string> = Object.fromEntries(
+      d.entrants.map((e: any) => [e.id, e.userId])
+    );
+
+    // Insert two replays uploaded by entrant1's account: win then loss → 1-1.
+    const lobby = 'lobby-' + randomUUID().slice(0, 6);
+    for (const [i, winSide] of [['a', 'p1'], ['b', 'p2']] as const) {
+      await getDb().insert(replays).values({
+        slug: `r_sugg${randomUUID().slice(0, 4)}${i}`,
+        gameId: randomUUID(),
+        userId: userByEntrant[match.entrant1Id],
+        ownerToken: 'kbx_test',
+        players: [{ id: 'p1', username: 'A' }, { id: 'p2', username: 'B' }],
+        payloadBlobUrl: 'https://blob.test/x.json',
+        ownerPlayerId: 'p1',
+        winners: [winSide],
+        match: { lobbyId: lobby },
+      });
+    }
+
+    d = await detail(slug, id);
+    const suggestion = d.suggestions[match.id];
+    expect(suggestion).toBeTruthy();
+    expect(suggestion.score).toBe('1-1');
+    expect(suggestion.games).toHaveLength(2);
+    expect(suggestion.games[0].replaySlug).toMatch(/^r_sugg/);
+
+    // Confirm the suggestion through the normal report endpoint.
+    const rep = await reportMatch(jreq({ games: suggestion.games, source: 'replays' }), p(slug, { id, matchId: match.id }));
+    expect((await rep.json()).ok).toBe(true);
+    d = await detail(slug, id);
+    const after = d.rounds[0].matches.find((m: any) => m.id === match.id);
+    expect(after.resultSource).toBe('replays');
+    expect(d.suggestions[match.id]).toBeUndefined(); // no longer pending
   });
 
   it('guest matches are organizer-reported and count in standings', async () => {

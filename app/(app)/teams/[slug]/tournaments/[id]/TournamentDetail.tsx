@@ -49,6 +49,11 @@ export interface DetailStanding {
   ogwp: number;
   dropped: boolean;
 }
+export interface DetailSuggestion {
+  games: { winner: string | null; replaySlug: string }[];
+  score: string;
+  confidence: 'high' | 'low';
+}
 export interface Detail {
   tournament: {
     id: string;
@@ -64,6 +69,8 @@ export interface Detail {
   entrants: DetailEntrant[];
   rounds: DetailRound[];
   standings: DetailStanding[];
+  // matchId → replay-derived suggestion for the active round's pending matches.
+  suggestions: Record<string, DetailSuggestion>;
 }
 
 const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -228,19 +235,15 @@ function MatchCard({
     (viewer.isOrganizer || (isPaired && m.status !== 'confirmed'));
   const showButtons = canReport && (m.status === 'pending' || editing);
 
-  const report = async (wins1: number, wins2: number) => {
+  const postReport = async (games: { winner: string | null; replaySlug?: string }[], source: 'manual' | 'replays') => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      const games = [
-        ...Array.from({ length: wins1 }, () => ({ winner: m.entrant1Id })),
-        ...Array.from({ length: wins2 }, () => ({ winner: m.entrant2Id })),
-      ];
       const res = await fetch(`/api/teams/${teamSlug}/tournaments/${t.id}/matches/${m.id}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ games, source: 'manual' }),
+        body: JSON.stringify({ games, source }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body.ok === false) { setError(body.error || `failed (${res.status})`); return; }
@@ -250,6 +253,15 @@ function MatchCard({
       setBusy(false);
     }
   };
+
+  const report = (wins1: number, wins2: number) =>
+    postReport(
+      [
+        ...Array.from({ length: wins1 }, () => ({ winner: m.entrant1Id })),
+        ...Array.from({ length: wins2 }, () => ({ winner: m.entrant2Id })),
+      ],
+      'manual'
+    );
 
   const confirm = async () => {
     if (busy) return;
@@ -288,6 +300,31 @@ function MatchCard({
           <button type="button" onClick={() => setEditing(true)} style={miniButtonStyle}>Edit</button>
         )}
       </div>
+      {/* B124/P4: replay-derived suggestion — confirm posts the suggested games
+          through the normal report endpoint (source 'replays'). */}
+      {m.status === 'pending' && detail.suggestions[m.id] && (
+        <div data-testid="suggestion-banner" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, padding: '6px 10px', background: 'rgba(107,217,104,0.08)', border: '1px solid rgba(107,217,104,0.3)', borderRadius: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: '#7fd97f' }}>
+            🎬 Detected <strong>{detail.suggestions[m.id].score}</strong> from recorded replays
+            {detail.suggestions[m.id].confidence === 'low' ? ' (incomplete — check before confirming)' : ''}
+          </span>
+          {detail.suggestions[m.id].games.map((g, i) => (
+            <a key={i} href={`/r/${g.replaySlug}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#5db4ff', textDecoration: 'none' }}>
+              game {i + 1} ↗
+            </a>
+          ))}
+          {canReport && (
+            <button
+              type="button"
+              onClick={() => postReport(detail.suggestions[m.id].games, 'replays')}
+              disabled={busy}
+              style={{ ...miniButtonStyle, background: 'rgba(107,217,104,0.15)', borderColor: 'rgba(107,217,104,0.5)', color: '#7fd97f' }}
+            >
+              Confirm {detail.suggestions[m.id].score}
+            </button>
+          )}
+        </div>
+      )}
       {showButtons && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: '#6c7588' }}>Report ({name1} first):</span>
