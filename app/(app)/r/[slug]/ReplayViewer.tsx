@@ -713,29 +713,39 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     if (next) void ensureAlt(); // prefetch so the first handoff doesn't stall
   }, [ensureAlt]);
 
-  // Curtain choreography: fade the BOARD to black (the sidebar + controls stay
-  // up), HOLD on "<name>'s turn" long enough to actually read it, swap behind
-  // the black, then reveal. `resumeIfPlaying` restarts playback on the NEW
-  // timeline afterwards (auto-flip); manual flips leave it paused.
-  const CURTAIN_FADE_MS = 280;
-  const CURTAIN_HOLD_MS = 750;
-  const runCurtainSwap = useCallback((opts: { resumeIfPlaying: boolean }) => {
+  // Curtain choreography — two profiles over the BOARD only (sidebar +
+  // controls stay up):
+  //   'cinematic' (manual Flip): slow fade, HOLD on "<name>'s turn" long
+  //     enough to read, swap behind the black, slow reveal.
+  //   'cut' (auto-flip): a quick ~250ms dip — SWU alternates actions every
+  //     frame or two, so auto-flips fire like camera cuts between seats; a
+  //     slow curtain per action would be wall-to-wall black.
+  // `resumeIfPlaying` restarts playback on the NEW timeline (auto-flip);
+  // manual flips leave it paused.
+  const PROFILES = {
+    cinematic: { fade: 280, hold: 750, label: true },
+    cut: { fade: 130, hold: 60, label: false },
+  } as const;
+  const [curtainFadeMs, setCurtainFadeMs] = useState<number>(PROFILES.cinematic.fade);
+  const runCurtainSwap = useCallback((opts: { resumeIfPlaying: boolean; profile: keyof typeof PROFILES }) => {
     if (handoffBusyRef.current) return;
     const shown = pov === 'canonical' ? decoded : altDecodedRef.current;
     const other = pov === 'canonical' ? altDecodedRef.current : decoded;
     if (!shown || !other) return;
 
+    const { fade, hold, label } = PROFILES[opts.profile];
     handoffBusyRef.current = true;
     const wasPlaying = playingRef.current;
     stopAutoplay();
     stopPlayback();
     const otherName = ((replay.players as any[]) || []).find((p) => p?.id === other.meta.localPlayerId)?.username
       || (pov === 'canonical' ? 'Player 2' : 'Player 1');
-    setHandoffName(otherName);
+    setHandoffName(label ? otherName : ''); // cuts are too fast for a readable label
+    setCurtainFadeMs(fade);
     setCurtain(true);
     window.setTimeout(() => {
-      // Fully black: swap behind the curtain, then hold so the turn label is
-      // readable (the swap render itself is invisible).
+      // Fully black: swap behind the curtain, then hold (cinematic) / settle
+      // one paint (cut) before revealing.
       skipAnimRef.current = true; // the swap render must snap, not FLIP-animate
       const target = mapFrameIndex(shown.frames, currentIndexRef.current, other.frames);
       setPov(pov === 'canonical' ? 'alt' : 'canonical');
@@ -746,56 +756,39 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           handoffBusyRef.current = false;
           setSettleTick((n) => n + 1);
           if (opts.resumeIfPlaying && wasPlaying) setResumeTick((n) => n + 1);
-        }, CURTAIN_FADE_MS);
-      }, CURTAIN_HOLD_MS);
-    }, CURTAIN_FADE_MS);
+        }, fade);
+      }, hold);
+    }, fade);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pov, decoded, replay.players, stopAutoplay, stopPlayback, setCurrentIndex]);
 
-  // B112: manual flip between the two players' recordings — now with the same
-  // curtain as auto-flip. Lazily fetches the alt perspective on first use;
-  // silently no-ops if not entitled.
+  // B112: manual flip between the two players' recordings — cinematic curtain
+  // (slow fade + readable "<name>'s turn" hold). Lazily fetches the alt
+  // perspective on first use; silently no-ops if not entitled.
   const flipPov = useCallback(async () => {
     if (!canFlip || handoffBusyRef.current) return;
     if (pov === 'canonical' && !(await ensureAlt())) return;
-    runCurtainSwap({ resumeIfPlaying: false });
+    runCurtainSwap({ resumeIfPlaying: false, profile: 'cinematic' });
   }, [canFlip, pov, ensureAlt, runCurtainSwap]);
 
-  // Auto-flip: follow the ACTIVE player — when the action passes to the other
-  // side, hand off to that player's recording. NOT instantly: dwell for a beat
-  // first so the final action of the outgoing turn lands before the fade
-  // starts. The timer is anchored to when the handoff FIRST became desired —
-  // continued playback ticks must not keep resetting it — and cancels if the
-  // viewer scrubs somewhere the handoff is no longer wanted.
-  const HANDOFF_DWELL_MS = 800;
-  const pendingHandoffRef = useRef<number | null>(null);
+  // Auto-flip: follow the actor. Attribution is LAGGED one frame — frame N's
+  // visuals belong to the flag of frame N−1 (actorOfFrameVisuals; karabast
+  // advances the flag to the next actor as soon as an action resolves), so the
+  // cut lands exactly when that player's action appears on screen. Fires as a
+  // quick cut; the busy guard + settle tick pace consecutive alternations.
   useEffect(() => {
-    const clearPending = () => {
-      if (pendingHandoffRef.current != null) {
-        window.clearTimeout(pendingHandoffRef.current);
-        pendingHandoffRef.current = null;
-      }
-    };
-    if (!autoPov || !canFlip) { clearPending(); return; }
+    if (!autoPov || !canFlip || handoffBusyRef.current) return;
     const shown = activeDecoded;
     const other = pov === 'canonical' ? altDecoded : decoded;
     if (!shown || !other) return; // alt still loading — effect re-runs when it lands
-    const desired = shouldHandoff({
-      frame: shown.frames[currentIndex],
+    if (!shouldHandoff({
+      frames: shown.frames,
+      index: currentIndex,
       shownLocalId: shown.meta.localPlayerId,
       otherLocalId: other.meta.localPlayerId,
-    });
-    if (!desired) { clearPending(); return; }
-    if (handoffBusyRef.current || pendingHandoffRef.current != null) return; // already in flight / scheduled
-    pendingHandoffRef.current = window.setTimeout(() => {
-      pendingHandoffRef.current = null;
-      runCurtainSwap({ resumeIfPlaying: true });
-    }, HANDOFF_DWELL_MS);
+    })) return;
+    runCurtainSwap({ resumeIfPlaying: true, profile: 'cut' });
   }, [autoPov, canFlip, currentIndex, pov, activeDecoded, altDecoded, decoded, runCurtainSwap, settleTick]);
-  // Clear any scheduled handoff on unmount.
-  useEffect(() => () => {
-    if (pendingHandoffRef.current != null) window.clearTimeout(pendingHandoffRef.current);
-  }, []);
 
   // Resume playback AFTER the pov swap re-renders, so startAutoplay's closure
   // captures the NEW timeline's frames.
@@ -953,23 +946,27 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 justifyContent: 'center',
                 opacity: curtain ? 1 : 0,
                 pointerEvents: curtain ? 'auto' : 'none',
-                transition: 'opacity 280ms ease',
+                transition: `opacity ${curtainFadeMs}ms ease`,
               }}
             >
-              <span
-                style={{
-                  fontFamily: 'var(--font-barlow), sans-serif',
-                  fontSize: 17,
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: '#a7d2ff',
-                  opacity: curtain ? 1 : 0,
-                  transition: 'opacity 220ms ease 80ms',
-                }}
-              >
-                ⇄ {handoffName}&apos;s turn
-              </span>
+              {/* Label only on cinematic (manual) flips — auto cuts are far too
+                  fast for text to read. */}
+              {handoffName && (
+                <span
+                  style={{
+                    fontFamily: 'var(--font-barlow), sans-serif',
+                    fontSize: 17,
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    color: '#a7d2ff',
+                    opacity: curtain ? 1 : 0,
+                    transition: 'opacity 220ms ease 80ms',
+                  }}
+                >
+                  ⇄ {handoffName}&apos;s turn
+                </span>
+              )}
             </div>
           </>
         ) : (

@@ -14,17 +14,32 @@ export function frameActivePlayerId(frame: { state?: { players?: Record<string, 
   return null;
 }
 
-// Flip only when the frame's active player is EXACTLY the other recording's
-// side. Requiring the match (instead of just "≠ shown") means a malformed /
-// missing active flag, or an id that belongs to neither recording, can never
-// cause a flip loop.
+// The actor whose action frame N's VISUALS show. karabast advances
+// `isActionPhaseActivePlayer` to the NEXT actor the moment an action resolves,
+// so frame N's own flag is one action AHEAD of what's on screen — the actor of
+// frame N's visuals is the flag of frame N−1 (verified against real replays:
+// the attack log lines of frame N always match frame N−1's flag). Frame 0 has
+// no predecessor — its own flag (the game's first actor) is the right answer.
+export function actorOfFrameVisuals(
+  frames: ({ state?: { players?: Record<string, any> } } | null | undefined)[],
+  index: number
+): string | null {
+  return frameActivePlayerId(frames[Math.max(0, index - 1)] ?? null);
+}
+
+// Flip only when the CURRENT FRAME'S VISUALS belong to the other recording's
+// side (lagged attribution via actorOfFrameVisuals). Requiring the actor to be
+// EXACTLY the other side (instead of just "≠ shown") means a malformed /
+// missing flag, or an id that belongs to neither recording, can never cause a
+// flip loop.
 export function shouldHandoff(opts: {
-  frame: { state?: { players?: Record<string, any> } } | null | undefined;
+  frames: ({ state?: { players?: Record<string, any> } } | null | undefined)[];
+  index: number; // current frame index in `frames`
   shownLocalId: string | null | undefined; // localPlayerId of the POV on screen
   otherLocalId: string | null | undefined; // localPlayerId of the other recording
 }): boolean {
-  const { frame, shownLocalId, otherLocalId } = opts;
+  const { frames, index, shownLocalId, otherLocalId } = opts;
   if (!shownLocalId || !otherLocalId || shownLocalId === otherLocalId) return false;
-  const active = frameActivePlayerId(frame);
-  return active !== null && active !== shownLocalId && active === otherLocalId;
+  const actor = actorOfFrameVisuals(frames, index);
+  return actor !== null && actor !== shownLocalId && actor === otherLocalId;
 }
