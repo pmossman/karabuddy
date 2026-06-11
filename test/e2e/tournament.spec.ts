@@ -29,12 +29,21 @@ test('create a tournament, self-register, and add a guest entrant', async ({ pag
   await expect(page.getByTestId('entrant-row')).toHaveCount(1);
   await expect(page.getByText('You', { exact: true })).toBeVisible();
 
-  // Organizer adds a guest (player without a karabuddy account).
-  await page.getByPlaceholder(/Guest name/).fill('Manual Mike');
-  await page.getByRole('button', { name: '+ Add guest' }).click();
+  // Organizer adds a guest (player without a karabuddy account) via the modal.
+  await page.getByRole('button', { name: '+ Add guest player' }).click();
+  await expect(page.getByTestId('guest-modal')).toBeVisible();
+  await page.getByPlaceholder('e.g. Mando Mike').fill('Manual Mike');
+  await page.getByTestId('guest-modal').getByRole('button', { name: 'Add guest' }).click();
+  await expect(page.getByTestId('guest-modal')).toHaveCount(0); // closes on save
   await expect(page.getByTestId('entrant-row')).toHaveCount(2);
   await expect(page.getByText('Manual Mike')).toBeVisible();
   await expect(page.getByText('Guest', { exact: true })).toBeVisible();
+
+  // The organizer can reopen the modal to edit the guest (rename).
+  await page.getByTestId('entrant-row').filter({ hasText: 'Manual Mike' }).getByRole('button', { name: 'Edit' }).click();
+  await page.getByPlaceholder('e.g. Mando Mike').fill('Manual Michael');
+  await page.getByTestId('guest-modal').getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Manual Michael')).toBeVisible();
 });
 
 test('full lifecycle: start (bye) → report → standings → round 2 → finish', async ({ page }) => {
@@ -49,8 +58,9 @@ test('full lifecycle: start (bye) → report → standings → round 2 → finis
   // 3 entrants: the organizer + two guests → odd field, one bye.
   await page.getByRole('button', { name: 'Register', exact: true }).click();
   for (const g of ['Guest Alpha', 'Guest Beta']) {
-    await page.getByPlaceholder(/Guest name/).fill(g);
-    await page.getByRole('button', { name: '+ Add guest' }).click();
+    await page.getByRole('button', { name: '+ Add guest player' }).click();
+    await page.getByPlaceholder('e.g. Mando Mike').fill(g);
+    await page.getByTestId('guest-modal').getByRole('button', { name: 'Add guest' }).click();
     await expect(page.getByText(g)).toBeVisible();
   }
 

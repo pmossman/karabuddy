@@ -156,6 +156,27 @@ describe('entrants', () => {
     expect((await patchEntrant(jreq({ displayName: 'No' }), p(slug, { id, entrantId: self.entrantId }))).status).toBe(400);
   });
 
+  it('guests register with a deck link too, and the organizer can replace it later', async () => {
+    const owner = await seedUser();
+    const slug = await seedTeam([owner]);
+    as(owner);
+    const id = await createT(slug, { decklistVisibility: 'open' });
+
+    stubFetch();
+    const guest = await (await addEntrant(jreq({ displayName: 'Deck Guest', deckLink: 'https://swubase.com/decks/g1' }), p(slug, { id }))).json();
+    expect(guest.ok).toBe(true);
+    let detail = await (await getDetail(new Request('http://t'), p(slug, { id }))).json();
+    expect(detail.data.entrants[0].deckName).toBe('Test Deck');
+
+    // Organizer replaces the guest's deck via PATCH (new import).
+    vi.unstubAllGlobals();
+    stubFetch(200, { ...upstreamDeck, metadata: { name: 'Swapped Deck' } });
+    const patch = await patchEntrant(jreq({ deckLink: 'https://swubase.com/decks/g2' }), p(slug, { id, entrantId: guest.entrantId }));
+    expect(patch.status).toBe(200);
+    detail = await (await getDetail(new Request('http://t'), p(slug, { id }))).json();
+    expect(detail.data.entrants[0].deckName).toBe('Swapped Deck');
+  });
+
   it('registers with a deck link — imported + snapshotted', async () => {
     const owner = await seedUser();
     const slug = await seedTeam([owner]);

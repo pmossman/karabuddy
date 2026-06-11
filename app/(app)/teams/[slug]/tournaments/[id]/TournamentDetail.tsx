@@ -351,7 +351,8 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deckLink, setDeckLink] = useState('');
-  const [guestName, setGuestName] = useState('');
+  // null = closed; 'add' = new-guest modal; an entrant = editing that guest.
+  const [guestModal, setGuestModal] = useState<'add' | DetailEntrant | null>(null);
   const inSetup = t.status === 'setup';
   const myEntrant = entrants.find((e) => e.id === viewer.entrantId) ?? null;
 
@@ -381,10 +382,6 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   const submitDeck = () => act(() =>
     fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deckLink: deckLink.trim() }) }),
     () => setDeckLink('')
-  );
-  const addGuest = () => act(() =>
-    fetch(`${base}/entrants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName: guestName.trim() }) }),
-    () => setGuestName('')
   );
   const dropSelf = () => act(() =>
     fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dropped: true }) })
@@ -424,6 +421,11 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
             ) : (
               <span style={{ fontSize: 11, color: '#4a4e56' }}>no deck</span>
             )}
+            {/* Organizer manages a guest's name + decklist via the modal —
+                anytime (guests can't fix their own list). */}
+            {viewer.isOrganizer && !e.userId && t.status !== 'complete' && (
+              <button type="button" onClick={() => setGuestModal(e)} style={miniGhostStyle}>Edit</button>
+            )}
             {/* Drop controls during an active tournament: self-drop for the
                 viewer's own entry; organizer can drop/undrop anyone. */}
             {t.status === 'active' && !e.dropped && e.id === viewer.entrantId && (
@@ -440,7 +442,8 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
 
       {actionError && <div style={{ color: '#ff8a8a', fontSize: 12, marginTop: 10 }}>{actionError}</div>}
 
-      {/* Self-registration / decklist controls (members, while setup). */}
+      {/* Self-registration / decklist controls (members, while setup). Guests
+          are added via a separate modal so the two flows never read as one form. */}
       {inSetup && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -448,7 +451,7 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
               type="url"
               value={deckLink}
               onChange={(e) => setDeckLink(e.target.value)}
-              placeholder="Decklist link (swubase, swustats, my-swu, …) — optional"
+              placeholder="Your decklist link (swubase, swustats, my-swu, …) — optional"
               style={{ ...inputStyle, flex: 1, minWidth: 240 }}
             />
             {!myEntrant ? (
@@ -468,24 +471,144 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
           </div>
 
           {viewer.isOrganizer && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: '1px solid #2e333c', paddingTop: 10 }}>
-              <input
-                type="text"
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') addGuest(); }}
-                placeholder="Guest name (player without a karabuddy account)"
-                maxLength={80}
-                style={{ ...inputStyle, flex: 1, minWidth: 240 }}
-              />
-              <button type="button" onClick={addGuest} disabled={busy || !guestName.trim()} style={ghostButtonStyle}>
-                + Add guest
+            <div>
+              <button type="button" onClick={() => setGuestModal('add')} style={ghostButtonStyle}>
+                + Add guest player
               </button>
+              <span style={{ fontSize: 11, color: '#6c7588', marginLeft: 10 }}>
+                for players without a karabuddy account — you manage their deck + results
+              </span>
             </div>
           )}
         </div>
       )}
+
+      {guestModal && (
+        <GuestModal
+          base={base}
+          entrant={guestModal === 'add' ? null : guestModal}
+          onClose={() => setGuestModal(null)}
+          onSaved={async () => { setGuestModal(null); await onChanged(); }}
+        />
+      )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+// B124-followup: guests get a dedicated modal (add + edit) with name AND
+// decklist link — guests need tracked decklists too, and the old inline
+// stacked-forms layout read as one confusing blob.
+function GuestModal({
+  base, entrant, onClose, onSaved,
+}: {
+  base: string;
+  entrant: DetailEntrant | null; // null = add mode
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [name, setName] = useState(entrant?.displayName ?? '');
+  const [link, setLink] = useState(entrant?.deckLink ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (busy || !name.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let res: Response;
+      if (entrant === null) {
+        res = await fetch(`${base}/entrants`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName: name.trim(), ...(link.trim() ? { deckLink: link.trim() } : {}) }),
+        });
+      } else {
+        // PATCH only what changed — a deckLink triggers a fresh import.
+        const payload: Record<string, string> = {};
+        if (name.trim() !== entrant.displayName) payload.displayName = name.trim();
+        if (link.trim() && link.trim() !== (entrant.deckLink ?? '')) payload.deckLink = link.trim();
+        if (Object.keys(payload).length === 0) { onClose(); return; }
+        res = await fetch(`${base}/entrants/${entrant.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) { setError(body.error || `failed (${res.status})`); return; }
+      await onSaved();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      data-testid="guest-modal-overlay"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', padding: 16,
+      }}
+    >
+      <div
+        data-testid="guest-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#11141a', border: '1px solid #2e333c', borderRadius: 12,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', width: 'min(480px, 100%)',
+          padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>
+            {entrant ? `Edit ${entrant.displayName}` : 'Add guest player'}
+          </h3>
+          <button type="button" aria-label="Close" onClick={onClose} style={{ background: 'transparent', border: 0, color: '#a0a8b8', fontSize: 16, cursor: 'pointer', padding: 4 }}>✕</button>
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: '#6c7588', lineHeight: 1.4 }}>
+          A guest is a player without a karabuddy account. You enter their name,
+          decklist, and match results on their behalf.
+        </p>
+        <label style={modalLabelStyle}>
+          Name
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Mando Mike"
+            maxLength={80}
+            style={inputStyle}
+            autoFocus={!entrant}
+          />
+        </label>
+        <label style={modalLabelStyle}>
+          Decklist link <span style={{ color: '#4a4e56', textTransform: 'none', letterSpacing: 0 }}>(optional — swubase, swustats, my-swu, …)</span>
+          <input
+            type="url"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+            placeholder={entrant?.hasDeck ? 'Paste a new link to replace the registered deck' : 'https://…'}
+            style={inputStyle}
+          />
+        </label>
+        {entrant?.hasDeck && !link.trim() && (
+          <span style={{ fontSize: 11, color: '#6c7588' }}>Current deck: {entrant.deckName || 'registered'} (kept unless you paste a new link)</span>
+        )}
+        {error && <div style={{ color: '#ff8a8a', fontSize: 12 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} style={ghostButtonStyle}>Cancel</button>
+          <button type="button" onClick={save} disabled={busy || !name.trim()} style={primaryButtonStyle}>
+            {busy ? 'Saving…' : entrant ? 'Save changes' : 'Add guest'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -585,6 +708,27 @@ const ghostButtonStyle: React.CSSProperties = {
   fontWeight: 600,
   padding: '7px 14px',
   borderRadius: 6,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+const modalLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  fontSize: 10,
+  color: '#6c7588',
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+  fontWeight: 600,
+};
+const miniGhostStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid #2e333c',
+  color: '#a0a8b8',
+  fontSize: 10,
+  fontWeight: 700,
+  padding: '2px 8px',
+  borderRadius: 5,
   cursor: 'pointer',
   fontFamily: 'inherit',
 };
