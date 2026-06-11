@@ -6,6 +6,7 @@ import { tournamentMatches, tournamentRounds } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
 import { createRound, loadEntrantsAndMatches } from '@/lib/tournamentLifecycle';
+import { notifyRoundPaired } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
 
@@ -51,5 +52,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
 
   const result = await createRound(id, current.number + 1, entrants, matches);
   if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+
+  // B125: post the new round's pairings to the team's Discord channel.
+  await notifyRoundPaired(slug, id, result.roundId);
   return NextResponse.json({ ok: true, round: result });
 }

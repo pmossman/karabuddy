@@ -6,6 +6,7 @@ import { tournaments, tournamentMatches, tournamentRounds } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
 import { loadEntrantsAndMatches } from '@/lib/tournamentLifecycle';
+import { notifyTournamentFinished } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
 
@@ -48,5 +49,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
   }
 
   await db.update(tournaments).set({ status: 'complete', completedAt: new Date() }).where(eq(tournaments.id, id));
+
+  // B125: post the podium to the team's Discord channel (best-effort).
+  await notifyTournamentFinished(slug, id);
   return NextResponse.json({ ok: true });
 }

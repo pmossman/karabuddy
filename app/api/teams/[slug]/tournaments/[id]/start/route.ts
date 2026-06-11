@@ -6,6 +6,7 @@ import { tournaments } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
 import { createRound, loadEntrantsAndMatches } from '@/lib/tournamentLifecycle';
+import { notifyRoundPaired } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
 
@@ -35,5 +36,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
     .update(tournaments)
     .set({ status: 'active', startedAt: new Date() })
     .where(eq(tournaments.id, id));
+
+  // B125: post the round-1 pairings to the team's Discord channel (best-effort
+  // — same never-fail posture as notifyMentions on tag writes).
+  await notifyRoundPaired(slug, id, result.roundId);
   return NextResponse.json({ ok: true, round: result });
 }
