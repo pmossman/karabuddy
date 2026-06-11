@@ -727,6 +727,13 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     cut: { fade: 130, hold: 60, label: false },
   } as const;
   const [curtainFadeMs, setCurtainFadeMs] = useState<number>(PROFILES.cinematic.fade);
+  // Where the last swap LANDED (pov + frame index). The auto-flip effect must
+  // not fire while we're sitting exactly there: the two recordings collapse
+  // differently, so the mapped landing frame's own (lagged) attribution can
+  // disagree and point straight back — without this guard that's a stationary
+  // flip loop (cut A→B→A→… on the same frame pair, play/pause thrashing).
+  // A real step/tick moves currentIndex off the landing spot and re-arms.
+  const lastSwapLandingRef = useRef<{ pov: 'canonical' | 'alt'; index: number } | null>(null);
   const runCurtainSwap = useCallback((opts: { resumeIfPlaying: boolean; profile: keyof typeof PROFILES }) => {
     if (handoffBusyRef.current) return;
     const shown = pov === 'canonical' ? decoded : altDecodedRef.current;
@@ -748,7 +755,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       // one paint (cut) before revealing.
       skipAnimRef.current = true; // the swap render must snap, not FLIP-animate
       const target = mapFrameIndex(shown.frames, currentIndexRef.current, other.frames);
-      setPov(pov === 'canonical' ? 'alt' : 'canonical');
+      const newPov = pov === 'canonical' ? 'alt' : 'canonical';
+      lastSwapLandingRef.current = { pov: newPov, index: target };
+      setPov(newPov);
       setCurrentIndex(target);
       window.setTimeout(() => {
         setCurtain(false);
@@ -778,6 +787,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // quick cut; the busy guard + settle tick pace consecutive alternations.
   useEffect(() => {
     if (!autoPov || !canFlip || handoffBusyRef.current) return;
+    // Loop breaker: still parked exactly where the last swap landed → hold
+    // until playback/stepping moves the index (see lastSwapLandingRef).
+    const landing = lastSwapLandingRef.current;
+    if (landing && landing.pov === pov && landing.index === currentIndex) return;
     const shown = activeDecoded;
     const other = pov === 'canonical' ? altDecoded : decoded;
     if (!shown || !other) return; // alt still loading — effect re-runs when it lands

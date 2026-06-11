@@ -73,19 +73,23 @@ test('double-sided: bubble appears; manual flip + auto-switch handoff work', asy
       return el && parseFloat(getComputedStyle(el).opacity) > 0.1;
     });
 
-  // Manual flip → the other recording's POV, THROUGH the fade-to-black curtain
-  // (every swap uses it — the mirroring is jarring without it).
-  await panel.getByRole('button', { name: /Flip/ }).click();
-  await curtainShown();
-  await expect(panel).toContainText('Viewing UserB', { timeout: 5000 });
-  await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
-  await panel.getByRole('button', { name: /Flip/ }).click();
-  await expect(panel).toContainText('Viewing UserA', { timeout: 5000 });
-
-  // Auto-flip: A's recording says it's B's turn → fade-to-black handoff to
-  // B's recording, then the curtain lifts. (Toggling while the previous swap is
-  // still settling must still fire once it settles — the settle-tick re-check.)
+  // Auto-flip FIRST (before any manual swap — the loop-breaker parks auto-flip
+  // at a swap's landing frame until the index moves, and this single-frame
+  // fixture never moves): A's recording attributes the frame to B → quick cut
+  // to B's recording, curtain lifts.
   await panel.getByRole('checkbox', { name: 'Auto-flip' }).click();
   await expect(panel).toContainText('Viewing UserB', { timeout: 5000 });
   await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
+  // …and it does NOT bounce back: the landing guard holds until a real step.
+  await page.waitForTimeout(600);
+  await expect(panel).toContainText('Viewing UserB');
+  await panel.getByRole('checkbox', { name: 'Auto-flip' }).click(); // off
+
+  // Manual flips → cinematic fade-to-black curtain, both directions.
+  await panel.getByRole('button', { name: /Flip/ }).click();
+  await curtainShown();
+  await expect(panel).toContainText('Viewing UserA', { timeout: 5000 });
+  await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
+  await panel.getByRole('button', { name: /Flip/ }).click();
+  await expect(panel).toContainText('Viewing UserB', { timeout: 5000 });
 });
