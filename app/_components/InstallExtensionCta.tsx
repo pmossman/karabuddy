@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
 // B121: onboarding CTA for visitors WITHOUT the karabuddy extension — most often
 // someone whose first experience is a shared replay link. We detect the
@@ -28,9 +29,14 @@ export function InstallExtensionCta({
 }) {
   const [show, setShow] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  // Mobile browsers don't support extensions at all, so the onboarding CTA is
+  // pointless there — suppress it on touch-primary devices (phones/tablets). The
+  // hover/pointer query stays true on touch laptops only for the touch input, so
+  // a desktop with a mouse still sees it. SSR-safe (false on the first tick).
+  const isTouchDevice = useMediaQuery('(hover: none) and (pointer: coarse)');
 
   useEffect(() => {
-    if (alreadyLinked) return;
+    if (alreadyLinked || isTouchDevice) return;
     if (variant === 'banner') {
       try { if (localStorage.getItem(BANNER_DISMISS_KEY)) { setDismissed(true); return; } } catch {}
     }
@@ -39,9 +45,9 @@ export function InstallExtensionCta({
       if (alive && !token) setShow(true); // no extension in this browser → onboard
     });
     return () => { alive = false; };
-  }, [variant, alreadyLinked]);
+  }, [variant, alreadyLinked, isTouchDevice]);
 
-  if (!show || dismissed) return null;
+  if (!show || dismissed || isTouchDevice) return null;
 
   if (variant === 'header') {
     return (
