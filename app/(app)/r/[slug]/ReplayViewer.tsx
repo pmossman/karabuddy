@@ -713,10 +713,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     if (next) void ensureAlt(); // prefetch so the first handoff doesn't stall
   }, [ensureAlt]);
 
-  const CURTAIN_MS = 260;
-  // Curtain → swap to the other recording at the equivalent frame (board-
-  // signature mapping) → reveal. `resumeIfPlaying` restarts playback on the
-  // NEW timeline afterwards (auto-flip); manual flips leave it paused.
+  // Curtain choreography: fade the BOARD to black (the sidebar + controls stay
+  // up), HOLD on "<name>'s turn" long enough to actually read it, swap behind
+  // the black, then reveal. `resumeIfPlaying` restarts playback on the NEW
+  // timeline afterwards (auto-flip); manual flips leave it paused.
+  const CURTAIN_FADE_MS = 280;
+  const CURTAIN_HOLD_MS = 750;
   const runCurtainSwap = useCallback((opts: { resumeIfPlaying: boolean }) => {
     if (handoffBusyRef.current) return;
     const shown = pov === 'canonical' ? decoded : altDecodedRef.current;
@@ -732,20 +734,21 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     setHandoffName(otherName);
     setCurtain(true);
     window.setTimeout(() => {
+      // Fully black: swap behind the curtain, then hold so the turn label is
+      // readable (the swap render itself is invisible).
       skipAnimRef.current = true; // the swap render must snap, not FLIP-animate
       const target = mapFrameIndex(shown.frames, currentIndexRef.current, other.frames);
       setPov(pov === 'canonical' ? 'alt' : 'canonical');
       setCurrentIndex(target);
-      // Let the swapped board paint behind the curtain, then reveal.
       window.setTimeout(() => {
         setCurtain(false);
         window.setTimeout(() => {
           handoffBusyRef.current = false;
           setSettleTick((n) => n + 1);
           if (opts.resumeIfPlaying && wasPlaying) setResumeTick((n) => n + 1);
-        }, CURTAIN_MS);
-      }, 80);
-    }, CURTAIN_MS);
+        }, CURTAIN_FADE_MS);
+      }, CURTAIN_HOLD_MS);
+    }, CURTAIN_FADE_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pov, decoded, replay.players, stopAutoplay, stopPlayback, setCurrentIndex]);
 
@@ -759,19 +762,40 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   }, [canFlip, pov, ensureAlt, runCurtainSwap]);
 
   // Auto-flip: follow the ACTIVE player — when the action passes to the other
-  // side, hand off to that player's recording.
+  // side, hand off to that player's recording. NOT instantly: dwell for a beat
+  // first so the final action of the outgoing turn lands before the fade
+  // starts. The timer is anchored to when the handoff FIRST became desired —
+  // continued playback ticks must not keep resetting it — and cancels if the
+  // viewer scrubs somewhere the handoff is no longer wanted.
+  const HANDOFF_DWELL_MS = 800;
+  const pendingHandoffRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!autoPov || !canFlip || handoffBusyRef.current) return;
+    const clearPending = () => {
+      if (pendingHandoffRef.current != null) {
+        window.clearTimeout(pendingHandoffRef.current);
+        pendingHandoffRef.current = null;
+      }
+    };
+    if (!autoPov || !canFlip) { clearPending(); return; }
     const shown = activeDecoded;
     const other = pov === 'canonical' ? altDecoded : decoded;
     if (!shown || !other) return; // alt still loading — effect re-runs when it lands
-    if (!shouldHandoff({
+    const desired = shouldHandoff({
       frame: shown.frames[currentIndex],
       shownLocalId: shown.meta.localPlayerId,
       otherLocalId: other.meta.localPlayerId,
-    })) return;
-    runCurtainSwap({ resumeIfPlaying: true });
+    });
+    if (!desired) { clearPending(); return; }
+    if (handoffBusyRef.current || pendingHandoffRef.current != null) return; // already in flight / scheduled
+    pendingHandoffRef.current = window.setTimeout(() => {
+      pendingHandoffRef.current = null;
+      runCurtainSwap({ resumeIfPlaying: true });
+    }, HANDOFF_DWELL_MS);
   }, [autoPov, canFlip, currentIndex, pov, activeDecoded, altDecoded, decoded, runCurtainSwap, settleTick]);
+  // Clear any scheduled handoff on unmount.
+  useEffect(() => () => {
+    if (pendingHandoffRef.current != null) window.clearTimeout(pendingHandoffRef.current);
+  }, []);
 
   // Resume playback AFTER the pov swap re-renders, so startAutoplay's closure
   // captures the NEW timeline's frames.
@@ -911,6 +935,42 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 onClose={() => setSummaryDismissed(true)}
               />
             )}
+            {/* B128: the handoff curtain — fades ONLY the gameboard to black
+                while the POV swaps (the sidebar + floating controls stay up),
+                holding on the turn label long enough to read, then reveals the
+                other player's seat. Lives inside the board container so the
+                label centers over the board, not the whole screen. */}
+            <div
+              data-testid="pov-curtain"
+              aria-hidden={!curtain}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 60,
+                background: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: curtain ? 1 : 0,
+                pointerEvents: curtain ? 'auto' : 'none',
+                transition: 'opacity 280ms ease',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'var(--font-barlow), sans-serif',
+                  fontSize: 17,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: '#a7d2ff',
+                  opacity: curtain ? 1 : 0,
+                  transition: 'opacity 220ms ease 80ms',
+                }}
+              >
+                ⇄ {handoffName}&apos;s turn
+              </span>
+            </div>
           </>
         ) : (
           <div style={{ padding: 32, color: '#a0a8b8', fontFamily: 'var(--font-barlow), sans-serif' }}>
@@ -1115,39 +1175,6 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 </>
               );
             })()}
-            {/* B128: the handoff curtain — fades the board to black while the
-                POV swaps, then reveals the other player's seat. */}
-            <div
-              data-testid="pov-curtain"
-              aria-hidden={!curtain}
-              style={{
-                position: 'fixed',
-                inset: 0,
-                zIndex: 120,
-                background: '#000',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: curtain ? 1 : 0,
-                pointerEvents: curtain ? 'auto' : 'none',
-                transition: 'opacity 260ms ease',
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: 'var(--font-barlow), sans-serif',
-                  fontSize: 15,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: '#a7d2ff',
-                  opacity: curtain ? 1 : 0,
-                  transition: 'opacity 200ms ease 60ms',
-                }}
-              >
-                ⇄ {handoffName}&apos;s turn
-              </span>
-            </div>
           </>
         );
       })()}
