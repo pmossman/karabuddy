@@ -29,6 +29,10 @@ export interface SyntheticReplayOpts {
   // Optional tags to embed. B71: teamSlugs narrows a tag's audience
   // (subset of the armed shareTeamSlugs); omitted → defaults to the shares.
   tags?: Array<{ id?: string; frameIndex?: number; author?: string; comment?: string; mentions?: { userIds: string[]; teamSlugs: string[] }; teamSlugs?: string[] }>;
+  // B128: which side the (single) gamestate marks as the action-phase active
+  // player. Default 'local'. 'opponent' lets tests exercise the hotseat
+  // auto-switch (shown POV ≠ active player → fade-to-black handoff).
+  activePlayer?: 'local' | 'opponent';
   // Optional match metadata (B42).
   match?: {
     gameFormat?: string;
@@ -115,7 +119,7 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
         spaceArena: [],
         capturedZone: [],
       },
-      isActionPhaseActivePlayer: true,
+      isActionPhaseActivePlayer: opts.activePlayer !== 'opponent',
     },
     [opponentPlayerId]: {
       user: { username: opts.opponent.username },
@@ -149,7 +153,7 @@ export function syntheticReplayPayload(opts: SyntheticReplayOpts): {
         spaceArena: [],
         capturedZone: [],
       },
-      isActionPhaseActivePlayer: false,
+      isActionPhaseActivePlayer: opts.activePlayer === 'opponent',
     },
   };
 

@@ -124,3 +124,12 @@ for the decisions behind the model.
   lib/tournamentAccess: `canView = member OR linked entrant`). Claiming never
   joins the team; team membership stays owner-controlled via normal team
   invites. Organizer powers always require membership.
+- **POV bubble / hotseat auto-switch (B128)** — double-sided replays (B112) get
+  a dedicated ⇄ controls bubble on the board (only when `canFlip`): the manual
+  Flip control (relocated from the playback pill/bubble) + an **auto-switch**
+  toggle. Auto-switch follows the ACTIVE player: when the action passes to the
+  other side, the board fades to black ("⇄ <name>'s turn") and comes back from
+  that player's recording at the equivalent frame; playback pauses for the
+  handoff and resumes on the new timeline. Pure decision logic in
+  `app/(app)/r/[slug]/povHandoff.ts` — flips only when the frame's active id is
+  EXACTLY the other recording's side (malformed signals can never flip-loop).

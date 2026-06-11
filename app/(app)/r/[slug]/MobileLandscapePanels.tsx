@@ -49,9 +49,6 @@ export function StepModeOverlay({
   portraitDrawerOpen,
   portraitBottom,
   dragging,
-  canFlip,
-  viewLabel,
-  onFlip,
   pulse,
 }: {
   mode: 'action' | 'frame';
@@ -85,12 +82,6 @@ export function StepModeOverlay({
   portraitDrawerOpen?: boolean;
   portraitBottom?: string;
   dragging?: boolean;
-  // B112: double-sided replay. When the viewer is entitled to the second
-  // player's perspective, render a Flip control labelled with the player
-  // whose POV is currently shown.
-  canFlip?: boolean;
-  viewLabel?: string;
-  onFlip?: () => void;
   // B121: glow/pulse the Play button to cue first-time viewers; cleared once
   // they press play (remembered across visits in the viewer).
   pulse?: boolean;
@@ -201,39 +192,8 @@ export function StepModeOverlay({
         <span style={{ fontSize: 12 }}>✦</span>
         {landscape && <span style={{ fontSize: 11 }}>Animate</span>}
       </button>
-      {canFlip && onFlip && (
-        <>
-          <span aria-hidden="true" style={{ width: 1, alignSelf: 'stretch', margin: '2px 2px', background: 'rgba(77, 157, 255, 0.25)', flex: '0 0 auto' }} />
-          <button
-            type="button"
-            onClick={onFlip}
-            title={`Flip perspective — showing ${viewLabel ?? ''}`}
-            aria-label={`Flip perspective — showing ${viewLabel ?? ''}`}
-            style={{
-              background: 'transparent',
-              color: '#a7d2ff',
-              border: 0,
-              padding: '4px 8px',
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              borderRadius: 4,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              flex: '0 0 auto',
-              maxWidth: landscape ? 140 : undefined,
-            }}
-          >
-            <span style={{ fontSize: 13 }}>⇄</span>
-            {landscape && (
-              <span style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewLabel}</span>
-            )}
-          </button>
-        </>
-      )}
+      {/* B128: the Flip control moved to the dedicated double-sided bubble
+          (PovBubble) alongside the auto-switch toggle. */}
     </div>
   );
 }
@@ -386,8 +346,7 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
 export function MobileControlsFab({
   mode, setMode, animate, onToggleAnimate,
   playing, onTogglePlay, speed, speeds, onSetSpeed,
-  bottom, right, dragging,
-  canFlip, viewLabel, onFlip, pulse,
+  bottom, right, dragging, pulse,
 }: {
   mode: 'action' | 'frame';
   setMode: (m: 'action' | 'frame') => void;
@@ -401,10 +360,6 @@ export function MobileControlsFab({
   bottom: string;
   right: string;
   dragging?: boolean;
-  // B112: double-sided replay flip control (only when entitled).
-  canFlip?: boolean;
-  viewLabel?: string;
-  onFlip?: () => void;
   // B121: pulse the Play button for first-time viewers (cleared on first play).
   pulse?: boolean;
 }) {
@@ -491,23 +446,8 @@ export function MobileControlsFab({
             <span style={{ fontSize: 11, opacity: 0.9 }}>{animate ? 'On' : 'Off'}</span>
           </button>
 
-          {canFlip && onFlip && (
-            <button
-              type="button"
-              onClick={() => { onFlip(); setOpen(false); }}
-              title={`Flip perspective — showing ${viewLabel ?? ''}`}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                width: '100%', padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                border: '1px solid rgba(77, 157, 255, 0.5)', background: 'rgba(77, 157, 255, 0.18)',
-                color: '#d6e7ff', fontSize: 12, fontWeight: 700,
-                fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 13 }}>⇄</span> Perspective</span>
-              <span style={{ fontSize: 11, opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{viewLabel}</span>
-            </button>
-          )}
+          {/* B128: the Perspective control moved to the dedicated double-sided
+              bubble (PovBubble) alongside the auto-switch toggle. */}
         </div>
       )}
       {/* Joined capsule: play/pause (always one tap) fused to the controls

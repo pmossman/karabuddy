@@ -12,6 +12,8 @@ import { computeActionStops, nextActionStop } from './actionStops';
 import { EndGameSummary } from './EndGameSummary';
 import { computeEndGameStats } from '@/lib/endGameStats';
 import { JumpToMenu } from './JumpToMenu';
+import { PovBubble } from './PovBubble';
+import { shouldHandoff } from './povHandoff';
 import { computeChapters, type Chapter } from '@/lib/replayChapters';
 import { anonymizeFrames, anonByIdFromPlayers, anonymizeDecks } from '@/lib/anonymizeReplay';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
@@ -667,28 +669,38 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     if (connected) setConnectedPlayer(connected);
   }, [activeDecoded, setConnectedPlayer]);
 
-  // B112: flip between the two players' recordings. Lazily fetch + decode the
-  // alt perspective from the auth-gated endpoint on first flip; map the current
-  // frame to the equivalent moment in the other timeline (best-effort, via a
+  // B112: lazily fetch + decode the alt perspective from the auth-gated
+  // endpoint (first flip / enabling auto-switch). Null when not entitled.
+  const altDecodedRef = useRef<CollapsedReplay | null>(null);
+  altDecodedRef.current = altDecoded;
+  const ensureAlt = useCallback(async (): Promise<CollapsedReplay | null> => {
+    if (altDecodedRef.current) return altDecodedRef.current;
+    try {
+      const res = await fetch(`/api/replays/${replay.slug}/perspective`, {
+        headers: installToken ? { 'X-Install-Token': installToken } : {},
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      if (!body?.ok || typeof body.payload !== 'string') return null;
+      const alt = collapseReplay(decodeReplay(JSON.parse(body.payload)));
+      altDecodedRef.current = alt;
+      setAltDecoded(alt);
+      return alt;
+    } catch {
+      return null;
+    }
+  }, [replay.slug, installToken]);
+
+  // B112: flip between the two players' recordings; map the current frame to
+  // the equivalent moment in the other timeline (best-effort, via a
   // hand-independent board signature). Silently no-ops if not entitled.
   const flipPov = useCallback(async () => {
     if (!canFlip) return;
     stopPlayback();
     stopAutoplay();
     if (pov === 'canonical') {
-      let alt = altDecoded;
-      if (!alt) {
-        try {
-          const res = await fetch(`/api/replays/${replay.slug}/perspective`, {
-            headers: installToken ? { 'X-Install-Token': installToken } : {},
-          });
-          if (!res.ok) return;
-          const body = await res.json();
-          if (!body?.ok || typeof body.payload !== 'string') return;
-          alt = collapseReplay(decodeReplay(JSON.parse(body.payload)));
-          setAltDecoded(alt);
-        } catch { return; }
-      }
+      const alt = await ensureAlt();
+      if (!alt) return;
       const target = mapFrameIndex(decoded?.frames || [], currentIndexRef.current, alt.frames);
       setPov('alt');
       setCurrentIndex(target);
@@ -698,7 +710,67 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       setCurrentIndex(target);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canFlip, pov, altDecoded, decoded, replay.slug, installToken, setCurrentIndex, stopPlayback, stopAutoplay]);
+  }, [canFlip, pov, altDecoded, decoded, replay.slug, ensureAlt, setCurrentIndex, stopPlayback, stopAutoplay]);
+
+  // B128: "auto-switch" (hotseat) mode — follow the ACTIVE player. When the
+  // action passes to the other side, fade the board to black, swap to that
+  // player's recording at the equivalent frame, and fade back in. Playback
+  // pauses for the handoff and resumes on the new timeline.
+  const [autoPov, setAutoPov] = useState(false);
+  const [curtain, setCurtain] = useState(false);
+  const [handoffName, setHandoffName] = useState('');
+  const handoffBusyRef = useRef(false);
+  const [resumeTick, setResumeTick] = useState(0);
+
+  const setAutoPovChecked = useCallback((next: boolean) => {
+    setAutoPov(next);
+    if (next) void ensureAlt(); // prefetch so the first handoff doesn't stall
+  }, [ensureAlt]);
+
+  const CURTAIN_MS = 260;
+  useEffect(() => {
+    if (!autoPov || !canFlip || handoffBusyRef.current) return;
+    const shown = activeDecoded;
+    const other = pov === 'canonical' ? altDecoded : decoded;
+    if (!shown || !other) return; // alt still loading — effect re-runs when it lands
+    const frame = shown.frames[currentIndex];
+    if (!shouldHandoff({
+      frame,
+      shownLocalId: shown.meta.localPlayerId,
+      otherLocalId: other.meta.localPlayerId,
+    })) return;
+
+    handoffBusyRef.current = true;
+    const wasPlaying = playingRef.current;
+    stopAutoplay();
+    stopPlayback();
+    const otherName = ((replay.players as any[]) || []).find((p) => p?.id === other.meta.localPlayerId)?.username
+      || (pov === 'canonical' ? 'Player 2' : 'Player 1');
+    setHandoffName(otherName);
+    setCurtain(true);
+    const t = window.setTimeout(() => {
+      const target = mapFrameIndex(shown.frames, currentIndexRef.current, other.frames);
+      setPov(pov === 'canonical' ? 'alt' : 'canonical');
+      setCurrentIndex(target);
+      // Let the swapped board paint behind the curtain, then reveal.
+      window.setTimeout(() => {
+        setCurtain(false);
+        window.setTimeout(() => {
+          handoffBusyRef.current = false;
+          if (wasPlaying) setResumeTick((n) => n + 1);
+        }, CURTAIN_MS);
+      }, 80);
+    }, CURTAIN_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPov, canFlip, currentIndex, pov, activeDecoded, altDecoded, decoded]);
+
+  // Resume playback AFTER the pov swap re-renders, so startAutoplay's closure
+  // captures the NEW timeline's frames.
+  useEffect(() => {
+    if (resumeTick > 0) startAutoplay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeTick]);
 
   // B112: the handle of the player whose perspective is currently shown (for the
   // Flip control's label). Falls back to a side label if the handle is unknown.
@@ -934,9 +1006,6 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 drawerOpen={drawerOpen}
                 drawerWidth={`${sidebarWidth}px`}
                 dragging={reviewDrag.dragging}
-                canFlip={!!canFlip}
-                viewLabel={viewingHandle}
-                onFlip={flipPov}
                 pulse={pulsePlay}
               />
             )}
@@ -959,9 +1028,6 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 bottom={portraitLift ? `calc(${reviewDrag.size}px + 12px)` : edgeB}
                 right={`calc(${fabRight} + 50px)`}
                 dragging={reviewDrag.dragging}
-                canFlip={!!canFlip}
-                viewLabel={viewingHandle}
-                onFlip={flipPov}
                 pulse={pulsePlay}
               />
             )}
@@ -1016,15 +1082,63 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 : (mobileLandscape && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : menuEdgeR);
               const menuBottom = mobilePortrait && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeB;
               return (
-                <JumpToMenu
-                  chapters={chapters}
-                  currentIndex={currentIndex}
-                  onJump={jumpTo}
-                  bottom={`calc(${menuBottom} + 46px)`}
-                  right={menuRight}
-                />
+                <>
+                  <JumpToMenu
+                    chapters={chapters}
+                    currentIndex={currentIndex}
+                    onJump={jumpTo}
+                    bottom={`calc(${menuBottom} + 46px)`}
+                    right={menuRight}
+                  />
+                  {/* B128: double-sided controls bubble — only when both
+                      teammates' recordings exist. Stacked one FAB above the
+                      Jump-to-moment bubble in the same right-edge cluster. */}
+                  {canFlip && (
+                    <PovBubble
+                      viewLabel={viewingHandle}
+                      onFlip={flipPov}
+                      autoPov={autoPov}
+                      onAutoPovChange={setAutoPovChecked}
+                      bottom={`calc(${menuBottom} + 92px)`}
+                      right={menuRight}
+                    />
+                  )}
+                </>
               );
             })()}
+            {/* B128: the handoff curtain — fades the board to black while the
+                POV swaps, then reveals the other player's seat. */}
+            <div
+              data-testid="pov-curtain"
+              aria-hidden={!curtain}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 120,
+                background: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: curtain ? 1 : 0,
+                pointerEvents: curtain ? 'auto' : 'none',
+                transition: 'opacity 260ms ease',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'var(--font-barlow), sans-serif',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: '#a7d2ff',
+                  opacity: curtain ? 1 : 0,
+                  transition: 'opacity 200ms ease 60ms',
+                }}
+              >
+                ⇄ {handoffName}&apos;s turn
+              </span>
+            </div>
           </>
         );
       })()}
