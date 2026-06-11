@@ -89,7 +89,7 @@ export function TournamentDetail({ teamSlug, tournamentId }: { teamSlug: string;
   if (error) return <div style={{ color: '#ff8a8a', fontSize: 13 }}>{error}</div>;
   if (!detail) return <div style={{ color: '#6c7588', fontSize: 13 }}>Loading…</div>;
 
-  const { tournament: t, viewer } = detail;
+  const { tournament: t } = detail;
   const status = STATUS_STYLE[t.status] ?? STATUS_STYLE.setup;
 
   return (
@@ -101,9 +101,207 @@ export function TournamentDetail({ teamSlug, tournamentId }: { teamSlug: string;
         </span>
       </header>
 
-      <RegistrationPanel teamSlug={teamSlug} detail={detail} onChanged={load} />
+      <OrganizerControls teamSlug={teamSlug} detail={detail} onChanged={load} />
 
       {detail.rounds.length > 0 && <StandingsTable detail={detail} />}
+      {detail.rounds.length > 0 && <RoundsList teamSlug={teamSlug} detail={detail} onChanged={load} />}
+
+      <RegistrationPanel teamSlug={teamSlug} detail={detail} onChanged={load} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function OrganizerControls({ teamSlug, detail, onChanged }: { teamSlug: string; detail: Detail; onChanged: () => Promise<void> }) {
+  const { tournament: t, viewer, entrants } = detail;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const base = `/api/teams/${teamSlug}/tournaments/${t.id}`;
+  if (!viewer.isOrganizer || t.status === 'complete') return null;
+
+  const post = async (path: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${base}/${path}`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) { setError(body.error || `failed (${res.status})`); return; }
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const activeEntrants = entrants.filter((e) => !e.dropped).length;
+  const currentRound = detail.rounds.length > 0 ? detail.rounds[detail.rounds.length - 1] : null;
+  const reachedPlanned = t.plannedRounds != null && (currentRound?.number ?? 0) >= t.plannedRounds;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {t.status === 'setup' && (
+        <button type="button" onClick={() => post('start')} disabled={busy || activeEntrants < 2} style={primaryButtonStyle} title={activeEntrants < 2 ? 'Need at least 2 entrants' : undefined}>
+          {busy ? 'Working…' : `Start tournament (pair round 1)`}
+        </button>
+      )}
+      {t.status === 'active' && (
+        <>
+          <button type="button" onClick={() => post('rounds')} disabled={busy} style={reachedPlanned ? ghostButtonStyle : primaryButtonStyle}>
+            {busy ? 'Working…' : `Pair round ${(currentRound?.number ?? 0) + 1}`}
+          </button>
+          <button type="button" onClick={() => post('finish')} disabled={busy} style={reachedPlanned ? primaryButtonStyle : ghostButtonStyle}>
+            Finish tournament
+          </button>
+          {t.plannedRounds != null && (
+            <span style={{ fontSize: 11, color: '#6c7588' }}>
+              round {currentRound?.number ?? 0} of {t.plannedRounds} planned
+            </span>
+          )}
+        </>
+      )}
+      {error && <span style={{ color: '#ff8a8a', fontSize: 12 }}>{error}</span>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function RoundsList({ teamSlug, detail, onChanged }: { teamSlug: string; detail: Detail; onChanged: () => Promise<void> }) {
+  const nameOf = new Map(detail.entrants.map((e) => [e.id, e.displayName]));
+  // Latest round first — it's the one being played.
+  const rounds = [...detail.rounds].reverse();
+  return (
+    <section style={panelStyle}>
+      <h2 style={sectionTitleStyle}>Rounds</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {rounds.map((r) => (
+          <div key={r.id} data-testid={`round-${r.number}`}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#a7d2ff', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Round {r.number}
+              <span style={{ marginLeft: 8, fontWeight: 400, color: '#6c7588', textTransform: 'none', letterSpacing: 0 }}>
+                {r.status === 'complete' ? 'complete' : 'in progress'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {r.matches.map((m) => (
+                <MatchCard key={m.id} teamSlug={teamSlug} detail={detail} match={m} nameOf={nameOf} onChanged={onChanged} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function scoreText(m: DetailMatch): string {
+  if (m.entrant2Id === null) return 'BYE';
+  if (m.games.length === 0) return '—';
+  let a = 0, b = 0;
+  for (const g of m.games) {
+    if (g.winner === m.entrant1Id) a++;
+    else if (g.winner === m.entrant2Id) b++;
+  }
+  return `${a}–${b}`;
+}
+
+function MatchCard({
+  teamSlug, detail, match: m, nameOf, onChanged,
+}: {
+  teamSlug: string;
+  detail: Detail;
+  match: DetailMatch;
+  nameOf: Map<string, string>;
+  onChanged: () => Promise<void>;
+}) {
+  const { tournament: t, viewer, entrants } = detail;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  const myEntrant = entrants.find((e) => e.id === viewer.entrantId);
+  const isPaired = !!myEntrant && (m.entrant1Id === myEntrant.id || m.entrant2Id === myEntrant.id);
+  const isBye = m.entrant2Id === null;
+  const canReport =
+    t.status === 'active' && !isBye &&
+    (viewer.isOrganizer || (isPaired && m.status !== 'confirmed'));
+  const showButtons = canReport && (m.status === 'pending' || editing);
+
+  const report = async (wins1: number, wins2: number) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const games = [
+        ...Array.from({ length: wins1 }, () => ({ winner: m.entrant1Id })),
+        ...Array.from({ length: wins2 }, () => ({ winner: m.entrant2Id })),
+      ];
+      const res = await fetch(`/api/teams/${teamSlug}/tournaments/${t.id}/matches/${m.id}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ games, source: 'manual' }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) { setError(body.error || `failed (${res.status})`); return; }
+      setEditing(false);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/teams/${teamSlug}/tournaments/${t.id}/matches/${m.id}/confirm`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) { setError(body.error || `failed (${res.status})`); return; }
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const name1 = nameOf.get(m.entrant1Id) ?? '?';
+  const name2 = isBye ? null : nameOf.get(m.entrant2Id!) ?? '?';
+
+  return (
+    <div data-testid="match-card" style={{ padding: '8px 12px', background: 'rgba(17,20,26,0.5)', border: '1px solid #2e333c', borderRadius: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700 }}>T{m.tableNumber}</span>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>
+          {name1}
+          {!isBye && <span style={{ color: '#6c7588', fontWeight: 400 }}> vs </span>}
+          {name2}
+          {isBye && <span style={{ color: '#6c7588', fontWeight: 400 }}> — bye</span>}
+        </span>
+        <span data-testid="match-score" style={{ fontSize: 14, fontWeight: 700, color: '#a7d2ff' }}>{scoreText(m)}</span>
+        <span style={{ flex: 1 }} />
+        {m.status === 'confirmed' && !isBye && <Badge color="#6bd968">Final</Badge>}
+        {m.status === 'reported' && <Badge color="#e0c64a">Reported</Badge>}
+        {m.status === 'reported' && viewer.isOrganizer && (
+          <button type="button" onClick={confirm} disabled={busy} style={miniButtonStyle}>Confirm</button>
+        )}
+        {canReport && m.status !== 'pending' && !editing && (
+          <button type="button" onClick={() => setEditing(true)} style={miniButtonStyle}>Edit</button>
+        )}
+      </div>
+      {showButtons && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#6c7588' }}>Report ({name1} first):</span>
+          {[[2, 0], [2, 1], [1, 2], [0, 2]].map(([w1, w2]) => (
+            <button key={`${w1}-${w2}`} type="button" onClick={() => report(w1, w2)} disabled={busy} style={miniButtonStyle}>
+              {w1}–{w2}
+            </button>
+          ))}
+          {editing && (
+            <button type="button" onClick={() => setEditing(false)} style={{ ...miniButtonStyle, color: '#6c7588' }}>Cancel</button>
+          )}
+        </div>
+      )}
+      {error && <div style={{ color: '#ff8a8a', fontSize: 12, marginTop: 6 }}>{error}</div>}
     </div>
   );
 }
@@ -120,7 +318,10 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   const inSetup = t.status === 'setup';
   const myEntrant = entrants.find((e) => e.id === viewer.entrantId) ?? null;
 
-  const act = async (fn: () => Promise<Response>) => {
+  // `onDone` clears only the field the ACTION consumed — clearing both would
+  // wipe whatever the user is typing into the OTHER input while this request
+  // is in flight (register completing must not eat a half-typed guest name).
+  const act = async (fn: () => Promise<Response>, onDone?: () => void) => {
     if (busy) return;
     setBusy(true);
     setActionError(null);
@@ -128,8 +329,7 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
       const res = await fn();
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body.ok === false) { setActionError(body.error || `failed (${res.status})`); return; }
-      setDeckLink('');
-      setGuestName('');
+      onDone?.();
       await onChanged();
     } finally {
       setBusy(false);
@@ -137,14 +337,17 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   };
 
   const join = () => act(() =>
-    fetch(`${base}/entrants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deckLink.trim() ? { deckLink: deckLink.trim() } : {}) })
+    fetch(`${base}/entrants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deckLink.trim() ? { deckLink: deckLink.trim() } : {}) }),
+    () => setDeckLink('')
   );
   const leave = () => act(() => fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'DELETE' }));
   const submitDeck = () => act(() =>
-    fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deckLink: deckLink.trim() }) })
+    fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deckLink: deckLink.trim() }) }),
+    () => setDeckLink('')
   );
   const addGuest = () => act(() =>
-    fetch(`${base}/entrants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName: guestName.trim() }) })
+    fetch(`${base}/entrants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName: guestName.trim() }) }),
+    () => setGuestName('')
   );
 
   return (
@@ -329,6 +532,17 @@ const ghostButtonStyle: React.CSSProperties = {
   fontWeight: 600,
   padding: '7px 14px',
   borderRadius: 6,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+const miniButtonStyle: React.CSSProperties = {
+  background: 'rgba(77,157,255,0.12)',
+  border: '1px solid rgba(77,157,255,0.4)',
+  color: '#a7d2ff',
+  fontSize: 11,
+  fontWeight: 700,
+  padding: '3px 10px',
+  borderRadius: 5,
   cursor: 'pointer',
   fontFamily: 'inherit',
 };
