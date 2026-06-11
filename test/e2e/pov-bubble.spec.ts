@@ -65,16 +65,27 @@ test('double-sided: bubble appears; manual flip + auto-switch handoff work', asy
   const panel = page.getByTestId('pov-bubble-panel');
   await expect(panel).toContainText('Viewing UserA');
 
-  // Manual flip → the other recording's POV.
-  await panel.getByRole('button', { name: /Flip/ }).click();
-  await expect(panel).toContainText('Viewing UserB');
-  await panel.getByRole('button', { name: /Flip/ }).click();
-  await expect(panel).toContainText('Viewing UserA');
+  // The curtain is always mounted (opacity-driven), so assert the OPACITY —
+  // toBeVisible passes at opacity 0 and proves nothing.
+  const curtainShown = () =>
+    page.waitForFunction(() => {
+      const el = document.querySelector('[data-testid="pov-curtain"]');
+      return el && parseFloat(getComputedStyle(el).opacity) > 0.1;
+    });
 
-  // Auto-switch: A's recording says it's B's turn → fade-to-black handoff to
-  // B's recording, then the curtain lifts.
-  await panel.getByRole('checkbox', { name: /Auto-switch/ }).click();
-  await expect(page.getByTestId('pov-curtain')).toBeVisible();
+  // Manual flip → the other recording's POV, THROUGH the fade-to-black curtain
+  // (every swap uses it — the mirroring is jarring without it).
+  await panel.getByRole('button', { name: /Flip/ }).click();
+  await curtainShown();
+  await expect(panel).toContainText('Viewing UserB', { timeout: 5000 });
+  await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
+  await panel.getByRole('button', { name: /Flip/ }).click();
+  await expect(panel).toContainText('Viewing UserA', { timeout: 5000 });
+
+  // Auto-flip: A's recording says it's B's turn → fade-to-black handoff to
+  // B's recording, then the curtain lifts. (Toggling while the previous swap is
+  // still settling must still fire once it settles — the settle-tick re-check.)
+  await panel.getByRole('checkbox', { name: 'Auto-flip' }).click();
   await expect(panel).toContainText('Viewing UserB', { timeout: 5000 });
   await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
 });

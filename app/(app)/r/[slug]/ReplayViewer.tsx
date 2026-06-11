@@ -691,36 +691,22 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     }
   }, [replay.slug, installToken]);
 
-  // B112: flip between the two players' recordings; map the current frame to
-  // the equivalent moment in the other timeline (best-effort, via a
-  // hand-independent board signature). Silently no-ops if not entitled.
-  const flipPov = useCallback(async () => {
-    if (!canFlip) return;
-    stopPlayback();
-    stopAutoplay();
-    if (pov === 'canonical') {
-      const alt = await ensureAlt();
-      if (!alt) return;
-      const target = mapFrameIndex(decoded?.frames || [], currentIndexRef.current, alt.frames);
-      setPov('alt');
-      setCurrentIndex(target);
-    } else {
-      const target = mapFrameIndex(altDecoded?.frames || [], currentIndexRef.current, decoded?.frames || []);
-      setPov('canonical');
-      setCurrentIndex(target);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canFlip, pov, altDecoded, decoded, replay.slug, ensureAlt, setCurrentIndex, stopPlayback, stopAutoplay]);
-
-  // B128: "auto-switch" (hotseat) mode — follow the ACTIVE player. When the
-  // action passes to the other side, fade the board to black, swap to that
-  // player's recording at the equivalent frame, and fade back in. Playback
-  // pauses for the handoff and resumes on the new timeline.
+  // B128: every POV swap — manual Flip AND auto-flip — goes through the same
+  // fade-to-black curtain (the whole point is to make the board mirroring less
+  // jarring). The swap render also tells the FrameAnimator to SKIP its next
+  // FLIP pass: the swapped board re-renders the same card uuids at mirrored
+  // positions, which would otherwise animate bases/leaders flying across the
+  // board (and outliving the curtain).
   const [autoPov, setAutoPov] = useState(false);
   const [curtain, setCurtain] = useState(false);
   const [handoffName, setHandoffName] = useState('');
   const handoffBusyRef = useRef(false);
+  const skipAnimRef = useRef(false);
   const [resumeTick, setResumeTick] = useState(0);
+  // Bumped when a handoff fully settles (busy ref cleared) — the auto-flip
+  // effect depends on it so a check that early-returned while a swap was in
+  // flight re-evaluates afterwards (refs don't re-trigger effects).
+  const [settleTick, setSettleTick] = useState(0);
 
   const setAutoPovChecked = useCallback((next: boolean) => {
     setAutoPov(next);
@@ -728,17 +714,14 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   }, [ensureAlt]);
 
   const CURTAIN_MS = 260;
-  useEffect(() => {
-    if (!autoPov || !canFlip || handoffBusyRef.current) return;
-    const shown = activeDecoded;
-    const other = pov === 'canonical' ? altDecoded : decoded;
-    if (!shown || !other) return; // alt still loading — effect re-runs when it lands
-    const frame = shown.frames[currentIndex];
-    if (!shouldHandoff({
-      frame,
-      shownLocalId: shown.meta.localPlayerId,
-      otherLocalId: other.meta.localPlayerId,
-    })) return;
+  // Curtain → swap to the other recording at the equivalent frame (board-
+  // signature mapping) → reveal. `resumeIfPlaying` restarts playback on the
+  // NEW timeline afterwards (auto-flip); manual flips leave it paused.
+  const runCurtainSwap = useCallback((opts: { resumeIfPlaying: boolean }) => {
+    if (handoffBusyRef.current) return;
+    const shown = pov === 'canonical' ? decoded : altDecodedRef.current;
+    const other = pov === 'canonical' ? altDecodedRef.current : decoded;
+    if (!shown || !other) return;
 
     handoffBusyRef.current = true;
     const wasPlaying = playingRef.current;
@@ -748,7 +731,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       || (pov === 'canonical' ? 'Player 2' : 'Player 1');
     setHandoffName(otherName);
     setCurtain(true);
-    const t = window.setTimeout(() => {
+    window.setTimeout(() => {
+      skipAnimRef.current = true; // the swap render must snap, not FLIP-animate
       const target = mapFrameIndex(shown.frames, currentIndexRef.current, other.frames);
       setPov(pov === 'canonical' ? 'alt' : 'canonical');
       setCurrentIndex(target);
@@ -757,13 +741,37 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         setCurtain(false);
         window.setTimeout(() => {
           handoffBusyRef.current = false;
-          if (wasPlaying) setResumeTick((n) => n + 1);
+          setSettleTick((n) => n + 1);
+          if (opts.resumeIfPlaying && wasPlaying) setResumeTick((n) => n + 1);
         }, CURTAIN_MS);
       }, 80);
     }, CURTAIN_MS);
-    return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPov, canFlip, currentIndex, pov, activeDecoded, altDecoded, decoded]);
+  }, [pov, decoded, replay.players, stopAutoplay, stopPlayback, setCurrentIndex]);
+
+  // B112: manual flip between the two players' recordings — now with the same
+  // curtain as auto-flip. Lazily fetches the alt perspective on first use;
+  // silently no-ops if not entitled.
+  const flipPov = useCallback(async () => {
+    if (!canFlip || handoffBusyRef.current) return;
+    if (pov === 'canonical' && !(await ensureAlt())) return;
+    runCurtainSwap({ resumeIfPlaying: false });
+  }, [canFlip, pov, ensureAlt, runCurtainSwap]);
+
+  // Auto-flip: follow the ACTIVE player — when the action passes to the other
+  // side, hand off to that player's recording.
+  useEffect(() => {
+    if (!autoPov || !canFlip || handoffBusyRef.current) return;
+    const shown = activeDecoded;
+    const other = pov === 'canonical' ? altDecoded : decoded;
+    if (!shown || !other) return; // alt still loading — effect re-runs when it lands
+    if (!shouldHandoff({
+      frame: shown.frames[currentIndex],
+      shownLocalId: shown.meta.localPlayerId,
+      otherLocalId: other.meta.localPlayerId,
+    })) return;
+    runCurtainSwap({ resumeIfPlaying: true });
+  }, [autoPov, canFlip, currentIndex, pov, activeDecoded, altDecoded, decoded, runCurtainSwap, settleTick]);
 
   // Resume playback AFTER the pov swap re-renders, so startAutoplay's closure
   // captures the NEW timeline's frames.
@@ -893,6 +901,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               containerRef={boardRef}
               enabled={animate}
               direction={lastTransition && lastTransition.to < lastTransition.from ? -1 : 1}
+              skipNextRef={skipAnimRef}
             />
             {showSummary && endStats && (
               <EndGameSummary

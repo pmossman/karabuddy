@@ -85,7 +85,7 @@ export function PovBubble({
           <LedToggle
             checked={autoPov}
             onChange={onAutoPovChange}
-            label="Auto-switch on turn change"
+            label="Auto-flip"
           />
           <div style={{ fontSize: 10.5, color: '#6c7588', lineHeight: 1.4 }}>
             Follows whoever is acting — the board fades to black and comes back

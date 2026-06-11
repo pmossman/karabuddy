@@ -31,6 +31,7 @@ export function FrameAnimator({
   containerRef,
   enabled,
   direction,
+  skipNextRef,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   enabled: boolean;
@@ -40,6 +41,11 @@ export function FrameAnimator({
   // layout also can't be measured reliably mid-rewind (a re-entering card reflows
   // the row after we read it). See the backward branch in the effect.
   direction: number;
+  // B128: one-shot suppression. The POV-swap (flip) render re-renders the SAME
+  // card uuids at mirrored positions — FLIPping that would animate bases/leaders
+  // flying across the board (outliving the handoff curtain). The viewer sets
+  // this just before swapping; we consume it and snap instead.
+  skipNextRef?: React.MutableRefObject<boolean>;
 }) {
   const { gameState } = useGame();
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -85,6 +91,9 @@ export function FrameAnimator({
     const now = performance.now();
     const dt = now - lastRun.current;
     lastRun.current = now;
+    // B128: a POV swap render — snap, exactly like the rapid-step path (the
+    // next real step re-measures from the settled mirrored layout).
+    if (skipNextRef?.current) { skipNextRef.current = false; prev.current = null; return; }
     if (!enabled || dt < RAPID_STEP_MS) { prev.current = null; return; }
 
     const next = measure();
