@@ -65,6 +65,15 @@ for the decisions behind the model.
   personal-scoped and were invisible to the very person they reviewed.
   Applied in the tags GET + share-token routes via
   `tagVisibleToViewer(..., { isReplayOwner })`.
+- **Public replay (B133)** — the owner published the replay
+  (`replays.public_at`, Share-popover toggle). It lists on the 🌐 Public tab
+  (/replays, signed-out included) + the signed-out home showcase, and ALL its
+  tag comments become readable by anyone: non-identity-entitled viewers get
+  the **redacted** wire form (`lib/publicTags.ts` — authors aliased to
+  Player1/Player2/Reviewer N, @mentions stripped from text, no
+  userId/authorToken/mentions fields). Entitled viewers keep their normal
+  reads. Unlisted (null) remains the default; unpublishing locks strangers
+  out again.
 - **Narrowing rule** — how a draft's scope is computed from @-mentions
   (`lib/commentScope.scopeFromMentions`): 0 mentions → all armed teams
   (broadcast); ≥1 mention → union of mentioned people's teams ∩ armed. Shared

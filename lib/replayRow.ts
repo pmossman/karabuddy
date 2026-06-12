@@ -50,6 +50,9 @@ export interface SerializedReplayRow {
   // B128: both players' recordings exist (replay_alt_payload row) — the viewer
   // can show both hands face up / flip seats.
   doubleSided?: boolean;
+  // B133: the owner published this replay (public browser + redacted public
+  // comment reads). Only present on owner-facing surfaces.
+  isPublic?: boolean;
 }
 
 export function serializeReplayRow(
@@ -64,6 +67,7 @@ export function serializeReplayRow(
     internal?: boolean;
     isMine?: boolean;
     doubleSided?: boolean;
+    isPublic?: boolean;
   },
 ): SerializedReplayRow {
   // Order owner-first off the CANONICAL ownerPlayerId (not the viewer) so
@@ -99,5 +103,6 @@ export function serializeReplayRow(
   if (opts.internal !== undefined) out.internal = opts.internal;
   if (opts.isMine !== undefined) out.isMine = opts.isMine;
   if (opts.doubleSided !== undefined) out.doubleSided = opts.doubleSided;
+  if (opts.isPublic !== undefined) out.isPublic = opts.isPublic;
   return out;
 }

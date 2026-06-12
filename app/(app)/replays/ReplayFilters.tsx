@@ -59,6 +59,8 @@ interface Row {
   // B128: both players' recordings exist — the viewer can show both hands
   // face up / flip seats. Drives the "⇄ both POVs" badge.
   doubleSided?: boolean;
+  // B133: owner published this replay (drives the Public share badge).
+  isPublic?: boolean;
 }
 
 type ResultFilter = '' | 'wins' | 'losses';
@@ -846,7 +848,7 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
                 </td>
                 {showShared && (
                   <td style={cellStyle} data-testid="shared-cell">
-                    <ShareBadge sharedTeams={r.sharedTeams} />
+                    <ShareBadge sharedTeams={r.sharedTeams} isPublic={r.isPublic} />
                   </td>
                 )}
                 <td style={cellStyle} data-testid="member-cell">{r.ownerName || '—'}</td>

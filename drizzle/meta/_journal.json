@@ -169,6 +169,13 @@
       "when": 1781395200000,
       "tag": "0023_tournament_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781481600000,
+      "tag": "0024_public_replays",
+      "breakpoints": true
     }
   ]
 }

@@ -109,7 +109,10 @@ export default function PrivacyPage() {
       <section style={section}>
         <h2 style={h2}>Replay visibility</h2>
         <p style={p}>
-          Replays are <strong style={{ color: '#e6e6e6' }}>link-accessible</strong>: reachable only via the direct <code style={codeStyle}>/r/&lt;slug&gt;</code> URL (the slug is short but unguessable). There is no public browse list. You can also share a replay with a <strong style={{ color: '#e6e6e6' }}>team</strong> you&apos;re in, which surfaces it in that team&apos;s replay grid for its members.
+          Replays are <strong style={{ color: '#e6e6e6' }}>link-accessible</strong> by default: reachable only via the direct <code style={codeStyle}>/r/&lt;slug&gt;</code> URL (the slug is short but unguessable). You can also share a replay with a <strong style={{ color: '#e6e6e6' }}>team</strong> you&apos;re in, which surfaces it in that team&apos;s replay grid for its members.
+        </p>
+        <p style={p}>
+          The uploader can additionally mark a replay <strong style={{ color: '#e6e6e6' }}>Public</strong> from its Share menu. A public replay is listed in the signed-in public browser, and its tag comments become readable by anyone — with author names replaced by anonymous aliases and @-mentions redacted for viewers outside the uploader&apos;s teams. Player handles stay anonymized for those viewers as usual. The uploader can unpublish at any time.
         </p>
         <p style={muted}>
           Anyone with the link can view a replay&apos;s full content (deck contents, chat, frame-by-frame state). Treat the link like a shareable Google Doc link — if you don&apos;t want others seeing it, don&apos;t share the URL.

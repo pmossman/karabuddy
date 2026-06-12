@@ -170,8 +170,13 @@ export const replays = pgTable(
     // asking the user (diagnosing recorder regressions, e.g. Bo3 capture gaps).
     // Latest upload for a slug wins. Null on web uploads + pre-B114 extensions.
     clientMeta: jsonb('client_meta'),
-    // B85: the "public" concept was removed — replays are link-accessible
-    // (anyone with /r/<slug>) and surface to teams via shares. No public list.
+    // B133: owner-controlled public sharing. (B85 removed the old always-on
+    // "visibility" concept; this is the deliberate per-replay opt-in.) NULL =
+    // unlisted (link-accessible + team shares only — the default). Set = the
+    // owner made it public: it appears in the public browser and ALL its tag
+    // comments become visible to non-entitled viewers in REDACTED form
+    // (aliased authors, mentions stripped — lib/publicTags.ts).
+    publicAt: timestamp('public_at'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

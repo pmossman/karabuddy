@@ -13,6 +13,8 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 // opens a menu of every scope. Scales to any number of teams.
 type Scope = { slug: string; name: string };
 
+// B133: activeSlug additionally accepts the sentinel 'public' (the ?tab=public
+// discovery scope — not a team).
 export function LibraryTabs({ teams, activeSlug }: { teams: Scope[]; activeSlug: string | null }) {
   // SSR-safe: false on the server + first tick → desktop strip renders first,
   // then flips to the picker on mobile (no hydration mismatch).
@@ -30,6 +32,7 @@ function ScopeStrip({ teams, activeSlug }: { teams: Scope[]; activeSlug: string 
       {teams.map((t) => (
         <Tab key={t.slug} href={`/replays?team=${t.slug}`} active={activeSlug === t.slug}>{t.name}</Tab>
       ))}
+      <Tab href="/replays?tab=public" active={activeSlug === 'public'}>🌐 Public</Tab>
     </div>
   );
 }
@@ -65,7 +68,9 @@ function ScopePicker({ teams, activeSlug }: { teams: Scope[]; activeSlug: string
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const activeName = activeSlug ? (teams.find((t) => t.slug === activeSlug)?.name ?? 'My replays') : 'My replays';
+  const activeName = activeSlug === 'public'
+    ? '🌐 Public'
+    : activeSlug ? (teams.find((t) => t.slug === activeSlug)?.name ?? 'My replays') : 'My replays';
 
   // Close on navigation (the component persists across client nav) + outside
   // click / Escape.
@@ -112,6 +117,7 @@ function ScopePicker({ teams, activeSlug }: { teams: Scope[]; activeSlug: string
               {t.name}
             </ScopeMenuItem>
           ))}
+          <ScopeMenuItem href="/replays?tab=public" active={activeSlug === 'public'} onSelect={() => setOpen(false)}>🌐 Public</ScopeMenuItem>
         </div>
       )}
     </div>

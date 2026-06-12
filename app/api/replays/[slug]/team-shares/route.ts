@@ -61,7 +61,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const scopedTagCounts: Record<string, number> = {};
   for (const r of scopeCountRows) scopedTagCounts[r.teamSlug] = Number(r.n);
 
-  return NextResponse.json({ ok: true, shares, ownerTeams, scopedTagCounts });
+  // B133: the Share popover's Public toggle reads its initial state here.
+  return NextResponse.json({ ok: true, shares, ownerTeams, scopedTagCounts, isPublic: !!replay.publicAt });
 }
 
 // POST /api/replays/[slug]/team-shares  body: { teamSlug }

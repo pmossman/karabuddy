@@ -7,6 +7,7 @@ import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
 import { LibraryTabs } from './LibraryTabs';
 import { ReplayFilters } from './ReplayFilters';
+import { PublicReplays } from './PublicReplays';
 import { TeamReplays } from '@/app/(app)/teams/[slug]/TeamReplays';
 
 export const dynamic = 'force-dynamic';
@@ -16,19 +17,25 @@ const PAGE_STYLE: React.CSSProperties = { maxWidth: 1100, margin: '0 auto', padd
 // B117: "/replays" is the All-Replays hub — a tab strip switches between MY
 // replays (default) and each team I'm on, in place via `?team=<slug>`. Signed-in
 // only; anonymous visitors still see their own extension-token library.
-export default async function ReplaysIndex({ searchParams }: { searchParams: Promise<{ team?: string }> }) {
-  const { team: teamParam } = await searchParams;
+export default async function ReplaysIndex({ searchParams }: { searchParams: Promise<{ team?: string; tab?: string }> }) {
+  const { team: teamParam, tab: tabParam } = await searchParams;
   const session = await auth();
   const userId: string | null = (session?.user as any)?.id || null;
 
   if (!userId) {
     // B54: anonymous viewers still see THEIR OWN replays via the extension's
     // install token; MineAnonymous probes the bridge and falls through to
-    // MineEmpty (install pitch) if there's no extension. No team tabs.
+    // MineEmpty (install pitch) if there's no extension. No team tabs —
+    // but B133: the 🌐 Public tab IS here, signed-out: published replays are
+    // the shop window that shows what the app does.
+    const publicTab = tabParam === 'public';
     return (
       <main style={PAGE_STYLE}>
-        <h1 style={{ margin: '0 0 20px', fontSize: 24, fontWeight: 700 }}>Your replays</h1>
-        <MineAnonymous />
+        <h1 style={{ margin: '0 0 14px', fontSize: 24, fontWeight: 700 }}>Replays</h1>
+        <LibraryTabs teams={[]} activeSlug={publicTab ? 'public' : null} />
+        <div style={{ marginTop: 18 }}>
+          {publicTab ? <PublicReplays /> : <MineAnonymous />}
+        </div>
       </main>
     );
   }
@@ -43,13 +50,15 @@ export default async function ReplaysIndex({ searchParams }: { searchParams: Pro
 
   // An unknown / non-member ?team falls back to My replays (tab reads as such).
   const activeTeam = teamParam && myTeams.some((t) => t.slug === teamParam) ? teamParam : null;
+  // B133: the public discovery scope (?tab=public) — not a team.
+  const publicTab = !activeTeam && tabParam === 'public';
 
   return (
     <main style={PAGE_STYLE}>
       <h1 style={{ margin: '0 0 14px', fontSize: 24, fontWeight: 700 }}>Replays</h1>
-      <LibraryTabs teams={myTeams} activeSlug={activeTeam} />
+      <LibraryTabs teams={myTeams} activeSlug={publicTab ? 'public' : activeTeam} />
       <div style={{ marginTop: 18 }}>
-        {activeTeam ? <TeamReplays teamSlug={activeTeam} /> : <MyReplays userId={userId} />}
+        {publicTab ? <PublicReplays /> : activeTeam ? <TeamReplays teamSlug={activeTeam} /> : <MyReplays userId={userId} />}
       </div>
     </main>
   );
@@ -127,6 +136,7 @@ async function MyReplays({ userId }: { userId: string }) {
         sharedTeams: sharesBySlug.get(replay.slug) ?? [],
         commentCount: commentCountBySlug.get(replay.slug) ?? 0,
         doubleSided: doubleSidedSlugs.has(replay.slug),
+        isPublic: !!replay.publicAt,
       }))}
       canManage
       showShareTabs

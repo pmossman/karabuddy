@@ -86,10 +86,12 @@ export async function GET(
 
 // PATCH /api/replays/:slug
 //   body: {
-//     visibility?: 'unlisted' | 'public'
 //     displayName?: string | null   // B53: rename. Pass null/'' to clear.
 //     labels?: string[]             // B53: free-form labels; trimmed +
 //                                     deduped + capped server-side.
+//     public?: boolean              // B133: owner publishes/unpublishes —
+//                                     sets/clears publicAt (public browser
+//                                     listing + redacted comment reads).
 //   }
 export async function PATCH(
   req: Request,
@@ -129,6 +131,11 @@ export async function PATCH(
         if (cleaned.length >= 20) break;
       }
       update.labels = cleaned.length > 0 ? cleaned : null;
+    }
+    if (body.public !== undefined) {
+      // B133: idempotent — re-publishing keeps the original publicAt (the
+      // public browser sorts by it).
+      update.publicAt = body.public ? (row.publicAt ?? new Date()) : null;
     }
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400, headers });

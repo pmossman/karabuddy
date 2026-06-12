@@ -18,8 +18,29 @@ const teamPillStyle: React.CSSProperties = {
   maxWidth: '100%',
 };
 
-export function ShareBadge({ sharedTeams }: { sharedTeams?: { slug: string; name: string }[] }) {
+// B133: published replays get a distinct globe pill ahead of the team pills.
+const publicPillStyle: React.CSSProperties = {
+  background: 'rgba(77, 157, 255, 0.12)',
+  border: '1px solid rgba(77, 157, 255, 0.45)',
+  color: '#7db8ff',
+  fontSize: 10,
+  fontWeight: 700,
+  padding: '1px 8px',
+  borderRadius: 999,
+  letterSpacing: '0.03em',
+  textTransform: 'uppercase',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+};
+
+export function ShareBadge({ sharedTeams, isPublic }: { sharedTeams?: { slug: string; name: string }[]; isPublic?: boolean }) {
   if (sharedTeams === undefined) return null;
+  const publicPill = isPublic ? (
+    <span data-testid="public-badge" title="Public — listed in the public browser; comments visible (anonymized) to anyone" style={publicPillStyle}>
+      <span aria-hidden>🌐</span>Public
+    </span>
+  ) : null;
   if (sharedTeams.length > 0) {
     // B123: show at most two team pills, then collapse the rest into a "+N" pill,
     // so a replay shared with many teams stays compact in a narrow table cell.
@@ -29,6 +50,7 @@ export function ShareBadge({ sharedTeams }: { sharedTeams?: { slug: string; name
     const extraNames = sharedTeams.slice(MAX).map((t) => t.name).join(', ');
     return (
       <div data-testid="share-badge" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+        {publicPill}
         {shown.map((t) => (
           <span key={t.slug} title={t.name} style={teamPillStyle}>
             <span aria-hidden>👥</span>
@@ -44,6 +66,11 @@ export function ShareBadge({ sharedTeams }: { sharedTeams?: { slug: string; name
         )}
       </div>
     );
+  }
+  // B133: a public replay with no team shares still shows the globe instead
+  // of the (now-wrong) Unlisted lock.
+  if (isPublic) {
+    return <div data-testid="share-badge">{publicPill}</div>;
   }
   return (
     <div data-testid="share-badge">

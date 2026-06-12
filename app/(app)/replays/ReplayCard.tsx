@@ -107,7 +107,7 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
             ))}
           </div>
         )}
-        <ShareBadge sharedTeams={replay.sharedTeams} />
+        <ShareBadge sharedTeams={replay.sharedTeams} isPublic={(replay as any).isPublic} />
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {/* B129: position within the Bo3 series (rendered inside series groups). */}
           {gameNumber != null && (

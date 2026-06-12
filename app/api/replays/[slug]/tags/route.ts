@@ -9,6 +9,11 @@ import { auth } from '@/auth';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { getMyTeamSlugs } from '@/lib/teamSurface';
 import { isReplayOwnerViewer, loadTagScopes, resolveTagScope, tagVisibleToViewer, writeTagScope } from '@/lib/tagScope';
+import { canViewReplayIdentities } from '@/lib/altPerspective';
+import { orderPlayersOwnerFirst } from '@/lib/players';
+import { redactPublicTags } from '@/lib/publicTags';
+import { normalizeMentions } from '@/lib/mentions';
+import { users } from '@/lib/schema';
 import { notifyMentions } from '@/lib/discordNotify';
 
 export const runtime = 'nodejs';
@@ -39,7 +44,13 @@ export async function GET(
     // others — incl. anonymous visitors' personal-scoped comments — is
     // addressed to them).
     const [replayRow] = await db
-      .select({ userId: replays.userId, ownerToken: replays.ownerToken })
+      .select({
+        userId: replays.userId,
+        ownerToken: replays.ownerToken,
+        publicAt: replays.publicAt,
+        players: replays.players,
+        ownerPlayerId: replays.ownerPlayerId,
+      })
       .from(replays)
       .where(eq(replays.slug, slug))
       .limit(1);
@@ -50,6 +61,46 @@ export async function GET(
       .from(tags)
       .where(eq(tags.replaySlug, slug))
       .orderBy(asc(tags.frameIndex));
+
+    // B133: PUBLIC replay + a viewer NOT entitled to identities (not the
+    // owner, not a teammate of the owner) → serve ALL tags in REDACTED form
+    // (aliased authors, mentions stripped, no identity fields). Entitled
+    // viewers fall through to the normal scoped read below.
+    if (replayRow?.publicAt) {
+      const entitled = await canViewReplayIdentities(
+        { userId: replayRow.userId, ownerToken: replayRow.ownerToken },
+        { sessionUserId: viewerUserId, installToken },
+      );
+      if (!entitled) {
+        const mentionUserIds = new Set<string>();
+        const mentionTeamSlugs = new Set<string>();
+        for (const t of rows) {
+          const m = normalizeMentions(t.mentions);
+          m.userIds.forEach((id) => mentionUserIds.add(id));
+          m.teamSlugs.forEach((s) => mentionTeamSlugs.add(s));
+        }
+        const userNamesById = new Map<string, string>();
+        if (mentionUserIds.size > 0) {
+          const nameRows = await db
+            .select({ id: users.id, name: users.name })
+            .from(users)
+            .where(inArray(users.id, Array.from(mentionUserIds)));
+          for (const u of nameRows) if (u.name) userNamesById.set(u.id, u.name);
+        }
+        const teamNamesBySlug = new Map<string, string>();
+        if (mentionTeamSlugs.size > 0) {
+          const teamRows = await db
+            .select({ slug: teams.slug, name: teams.name })
+            .from(teams)
+            .where(inArray(teams.slug, Array.from(mentionTeamSlugs)));
+          for (const t of teamRows) teamNamesBySlug.set(t.slug, t.name);
+        }
+        const ordered = orderPlayersOwnerFirst(replayRow.players, replayRow.ownerPlayerId) as Array<{ username?: string | null }>;
+        const data = redactPublicTags(rows, ordered, { userNamesById, teamNamesBySlug });
+        return NextResponse.json({ ok: true, data, armedTeams: [] }, { headers });
+      }
+    }
+
     const scopes = await loadTagScopes(rows.map((t) => t.id));
 
     const visible = rows

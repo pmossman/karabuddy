@@ -30,6 +30,10 @@ export function ShareWithTeam({
   const [shares, setShares] = useState<Set<string>>(new Set());
   const [teams, setTeams] = useState<{ slug: string; name: string }[]>([]);
   const [pending, setPending] = useState<Set<string>>(new Set());
+  // B133: owner-controlled public sharing — anyone with the link (or via the
+  // public browser) sees the game AND its comments, anonymized + redacted.
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicPending, setPublicPending] = useState(false);
   // B100: tags on this replay scoped to each team — drives the "un-sharing
   // also removes N comments" confirmation.
   const [scopedCounts, setScopedCounts] = useState<Record<string, number>>({});
@@ -59,6 +63,7 @@ export function ShareWithTeam({
         setShares(new Set((body.shares || []).map((s: any) => s.teamSlug)));
         setTeams(body.ownerTeams || []);
         setScopedCounts(body.scopedTagCounts || {});
+        setIsPublic(!!body.isPublic);
         setState(body.ownerTeams && body.ownerTeams.length > 0 ? 'ready' : 'empty');
       } catch {
         if (cancelled) return;
@@ -142,15 +147,63 @@ export function ShareWithTeam({
     }
   };
 
+  // B133: publish / unpublish. Optimistic with revert, mirroring the team
+  // toggles.
+  const togglePublic = async () => {
+    if (publicPending) return;
+    const was = isPublic;
+    setIsPublic(!was);
+    setPublicPending(true);
+    try {
+      const res = await fetch(`/api/replays/${replaySlug}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
+        body: JSON.stringify({ public: !was }),
+      });
+      const body = await res.json();
+      if (!body.ok) setIsPublic(was);
+    } catch {
+      setIsPublic(was);
+    } finally {
+      setPublicPending(false);
+    }
+  };
+
   if (state === 'loading' || state === 'unauth') return null;
   if (state === 'error') {
     return <div style={{ fontSize: 11, color: '#ff7a7a', fontStyle: 'italic' }}>Couldn&apos;t load team shares.</div>;
   }
+
+  // B133: the Public section renders for owners with zero teams too — public
+  // sharing doesn't require team membership.
+  const publicSection = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Public
+      </div>
+      <LedToggle
+        checked={isPublic}
+        onChange={togglePublic}
+        label="Public replay"
+        statusOn="Public"
+        disabled={publicPending}
+      />
+      <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
+        {isPublic
+          ? 'Listed in the public browser. Anyone can watch AND read this replay’s comments — author names are anonymized and @mentions redacted for outside viewers.'
+          : 'Off: only people with the link (and your shared teams) can see this replay; outside viewers never see its comments.'}
+      </div>
+    </div>
+  );
+
   if (state === 'empty') {
     return (
-      <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-        You&apos;re not in any teams yet. Create or join one at{' '}
-        <a href="/teams" style={{ color: '#5db4ff' }}>/teams</a>.
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {publicSection}
+        <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
+          You&apos;re not in any teams yet. Create or join one at{' '}
+          <a href="/teams" style={{ color: '#5db4ff' }}>/teams</a>.
+        </div>
       </div>
     );
   }
@@ -180,6 +233,9 @@ export function ShareWithTeam({
           Surfaces in the selected teams&apos; replay grid.
         </div>
       )}
+      <div style={{ borderTop: '1px solid #2e333c', paddingTop: 8, marginTop: 2 }}>
+        {publicSection}
+      </div>
       {confirm && (
         <UnshareConfirm
           teamName={confirm.name}

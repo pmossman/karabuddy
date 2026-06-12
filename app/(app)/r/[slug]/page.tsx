@@ -153,5 +153,5 @@ export default async function ReplayPage({ params }: PageProps) {
   // GET /api/replays/[slug]/tags so the server can scope them to the
   // viewer (own + team-scoped only). SSR'ing all tags would leak other
   // teams' / others' personal comments into the initial HTML.
-  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} />;
+  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} publicComments={!!(row as any).publicAt} />;
 }

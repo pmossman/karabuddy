@@ -485,6 +485,24 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   const tagsAtCurrent = tagsByFrame.get(currentIndex) || [];
 
+  // B132: landing on an annotated frame (tag click in the list, [ / ] keys,
+  // the board-edge tag-jump buttons, or plain stepping) scrolls the tag list
+  // back to the top, where the "This frame" callout now holds that comment —
+  // otherwise a click on a far-down tag jumps the board but leaves you
+  // scrolled past the very comment you wanted to read. Scroll ONLY the list
+  // container (the B102 lesson: scrollIntoView bubbles to ancestor scrollers
+  // and nudges the whole page).
+  const tagListScrollRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const c = tagListScrollRef.current;
+    if (!c) return;
+    if (!(tagsByFrame.get(currentIndex) || []).length) return;
+    c.scrollTo({ top: 0, behavior: 'smooth' });
+    // Only on frame changes — a tags refetch or a new comment mid-read must
+    // not yank the reader's scroll position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex]);
+
   // B78: replies grouped by their parent tag id, oldest-first within a thread.
   const repliesByParent = useMemo(() => {
     const m = new Map<string, TagRow[]>();
@@ -1030,7 +1048,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         )}
       </section>
 
-      <section style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
+      <section ref={tagListScrollRef} style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
         {tagsAtCurrent.some((t) => !t.parentTagId) && (
           <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This frame</div>
@@ -1039,21 +1057,24 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           </div>
         )}
 
-        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>All tags ({tags.filter((t) => !t.parentTagId).length})</div>
+        {/* B132: only tags AT or AFTER the current frame — the list reads as
+            "what's coming up" while you review forward; past comments live at
+            the frames themselves (jump back with [ or the edge buttons). */}
+        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Coming up ({tags.filter((t) => !t.parentTagId && t.frameIndex > currentIndex).length})</div>
         {tags.length === 0 ? (
           <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No tags yet. Click &quot;+ Tag this frame&quot; to add one.</div>
         ) : (
-          // B3 + B7: filter out current-frame tags (already shown in the
-          // callout above), then render the rest with B7's per-tag canEdit
+          // B3 + B7: current-frame tags are already shown in the callout
+          // above; render the upcoming rest with B7's per-tag canEdit
           // / canDelete computation so replay owners can delete others'
           // comments but only authors can edit text.
           (() => {
-            // B78: top-level tags not on the current frame; their replies nest
+            // B78: top-level tags after the current frame; their replies nest
             // inside via renderThread (replies share the parent's frame).
-            const otherTags = tags.filter((t) => t.frameIndex !== currentIndex && !t.parentTagId);
+            const otherTags = tags.filter((t) => t.frameIndex > currentIndex && !t.parentTagId);
             if (otherTags.length === 0) {
               return (
-                <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No other tags on this replay.</div>
+                <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No more tags after this frame.</div>
               );
             }
             return (

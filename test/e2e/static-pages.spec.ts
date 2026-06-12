@@ -29,9 +29,10 @@ test.describe('static pages render', () => {
     await expect(page.locator('body')).toBeVisible();
   });
 
-  test('anonymous /replays renders', async ({ page }) => {
+  test('anonymous /replays renders (with the B133 Public tab)', async ({ page }) => {
     await page.goto('/replays');
-    await expect(page.getByRole('heading', { name: 'Your replays', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Replays', level: 1 })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /Public/ })).toBeVisible();
   });
 });
 

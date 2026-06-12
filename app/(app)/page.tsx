@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, inArray, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, replays } from '@/lib/schema';
@@ -29,17 +29,30 @@ export default async function Home() {
   const userId: string | null = (session?.user as any)?.id || null;
 
   if (!userId) {
-    const samples = await loadSampleReplays();
+    // B133: lead with recent PUBLIC replays — real games owners chose to
+    // publish (comments included, anonymized) beat a static curated sample as
+    // the shop window. Falls back to the B107 samples while nothing is public.
+    const publicReplays = await loadPublicReplays();
+    const showcase = publicReplays.length > 0 ? publicReplays : await loadSampleReplays();
     return (
       <Main>
-        {samples.length > 0 && (
+        {showcase.length > 0 && (
           <section style={{ marginBottom: 40 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>See it in action</h1>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>See it in action</h1>
+                {publicReplays.length > 0 && (
+                  <Link href="/replays?tab=public" style={{ color: '#5db4ff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+                    Browse all public replays →
+                  </Link>
+                )}
+              </div>
               <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, maxWidth: 640 }}>
                 KaraBuddy records your <a href="https://karabast.net" style={{ color: '#5db4ff' }}>karabast.net</a>{' '}
                 games so you can replay them frame-by-frame, tag key turns, and review matchups with
-                your team. Open a sample below — players are anonymized.
+                your team. {publicReplays.length > 0
+                  ? 'These are real games their owners shared publicly — comments included, players anonymized.'
+                  : 'Open a sample below — players are anonymized.'}
               </p>
             </div>
             <div
@@ -49,7 +62,7 @@ export default async function Home() {
                 gap: 14,
               }}
             >
-              {samples.map((r) => (
+              {showcase.map((r) => (
                 <ReplayCard key={r.slug} replay={r as any} canManage={false} />
               ))}
             </div>
@@ -122,6 +135,24 @@ export default async function Home() {
       </section>
     </Main>
   );
+}
+
+// B133: most recently published public replays, anonymized for the signed-out
+// home (same treatment as samples: Player1/Player2, no "YOU" deck badge, no
+// uploader identity). displayName is kept — it's user-chosen and the owner
+// published deliberately.
+async function loadPublicReplays() {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(replays)
+    .where(isNotNull(replays.publicAt))
+    .orderBy(desc(replays.publicAt))
+    .limit(RECENT_LIMIT);
+  return rows.map((r) => {
+    const base = serializeRow(r);
+    return { ...base, userId: null, players: anonymizePlayersSummary(base.players as any[]), ownerPlayerId: null };
+  });
 }
 
 // B107: fetch the curated sample replays (by slug), preserve the curated

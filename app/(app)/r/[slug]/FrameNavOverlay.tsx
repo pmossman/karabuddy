@@ -24,6 +24,10 @@ export function FrameNavOverlay({
   canPrev,
   canNext,
   showKeyboardHint,
+  onJumpTag,
+  canPrevTag,
+  canNextTag,
+  showTagJump,
 }: {
   // Edge offsets + vertical centre are computed by the parent (ReplayViewer)
   // from the live review-sheet size, so the chevrons ride with the sheet.
@@ -37,6 +41,13 @@ export function FrameNavOverlay({
   canPrev: boolean;
   canNext: boolean;
   showKeyboardHint?: boolean;
+  // B132: jump to the previous/next ANNOTATED frame — a smaller companion
+  // button under each chevron, rendered only when the replay has visible
+  // tags. Same fixed edge positioning, so it works identically on mobile.
+  onJumpTag?: (dir: 1 | -1) => void;
+  canPrevTag?: boolean;
+  canNextTag?: boolean;
+  showTagJump?: boolean;
 }) {
   return (
     <>
@@ -64,7 +75,50 @@ export function FrameNavOverlay({
       >
         ›
       </ChevronButton>
+      {showTagJump && onJumpTag && (
+        <>
+          <ChevronButton
+            side="left"
+            offset={leftOffset}
+            verticalCenter={`calc(${verticalCenter} + 72px)`}
+            dragging={dragging}
+            ariaLabel="Previous comment"
+            disabled={!canPrevTag}
+            onClick={() => onJumpTag(-1)}
+            keyboardHint={showKeyboardHint ? '[' : null}
+            compact
+            testId="tag-jump-prev"
+          >
+            <TagJumpGlyph dir={-1} />
+          </ChevronButton>
+          <ChevronButton
+            side="right"
+            offset={rightOffset}
+            verticalCenter={`calc(${verticalCenter} + 72px)`}
+            dragging={dragging}
+            ariaLabel="Next comment"
+            disabled={!canNextTag}
+            onClick={() => onJumpTag(1)}
+            keyboardHint={showKeyboardHint ? ']' : null}
+            compact
+            testId="tag-jump-next"
+          >
+            <TagJumpGlyph dir={1} />
+          </ChevronButton>
+        </>
+      )}
     </>
+  );
+}
+
+// Speech bubble with a directional chevron inside — one centered glyph
+// ("step to the adjacent frame that has a comment").
+function TagJumpGlyph({ dir }: { dir: 1 | -1 }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.2-.6L3 21l1.75-5.8A8.38 8.38 0 0 1 4 11.5a8.5 8.5 0 1 1 17 0z" />
+      <path d={dir > 0 ? 'M11 8.5l3.5 3-3.5 3' : 'M14 8.5l-3.5 3 3.5 3'} />
+    </svg>
   );
 }
 
@@ -77,6 +131,8 @@ function ChevronButton({
   disabled,
   onClick,
   keyboardHint,
+  compact,
+  testId,
   children,
 }: {
   side: 'left' | 'right';
@@ -87,6 +143,10 @@ function ChevronButton({
   disabled: boolean;
   onClick: () => void;
   keyboardHint: string | null;
+  // B132: the tag-jump companion is a shorter button (the full-height chevron
+  // stays the dominant affordance).
+  compact?: boolean;
+  testId?: string;
   children: React.ReactNode;
 }) {
   // Press animation: briefly nudge the chevron in the step direction +
@@ -114,6 +174,8 @@ function ChevronButton({
       onClick={handleClick}
       disabled={disabled}
       aria-label={ariaLabel}
+      title={ariaLabel}
+      data-testid={testId}
       style={{
         position: 'fixed',
         [side]: offset,
@@ -121,7 +183,7 @@ function ChevronButton({
         transform: `translateY(-50%) translateX(${pressed ? nudge : 0}px)`,
         zIndex: 90,
         width: 36,
-        height: 84,
+        height: compact ? 40 : 84,
         background: pressed ? 'rgba(77, 157, 255, 0.45)' : 'rgba(36, 48, 68, 0.7)',
         color: disabled ? '#4a4e56' : '#d6e7ff',
         border: '1px solid rgba(77, 157, 255, 0.3)',
@@ -144,20 +206,30 @@ function ChevronButton({
       }}
     >
       {children}
+      {/* Keycap-styled hint so it reads as "press this key", not a stray
+          glyph floating next to the button. */}
       {keyboardHint && (
         <span
           aria-hidden="true"
           style={{
             position: 'absolute',
-            [side === 'left' ? 'right' : 'left']: -22,
+            [side === 'left' ? 'right' : 'left']: -28,
             top: '50%',
             transform: 'translateY(-50%)',
+            minWidth: 18,
+            boxSizing: 'border-box',
+            padding: '3px 4px',
             fontSize: 10,
-            color: '#6c7588',
-            fontWeight: 600,
-            opacity: 0.7,
+            lineHeight: 1,
+            textAlign: 'center',
+            color: '#8b94a6',
+            fontWeight: 700,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            background: 'rgba(20, 26, 36, 0.85)',
+            border: '1px solid #3a4150',
+            borderBottomWidth: 2,
+            borderRadius: 4,
             pointerEvents: 'none',
-            letterSpacing: '0.04em',
           }}
         >
           {keyboardHint}

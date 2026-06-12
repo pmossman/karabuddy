@@ -101,16 +101,19 @@ interface Props {
   // B129: the games of this replay's Bo3 series (identity-entitled viewers
   // only) — drives the Game-N title suffix + the series hop pills.
   series?: SeriesInfo | null;
+  // B133: the owner published this replay — anonymized viewers still fetch
+  // tags (the server serves them redacted).
+  publicComments?: boolean;
 }
 
-export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series }: Props) {
+export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, publicComments }: Props) {
   return (
     <ThemeContextProvider>
       <UserProvider>
         <CosmeticsProvider>
           <PopupProvider>
             <GameProvider>
-              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} />
+              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} publicComments={publicComments} />
             </GameProvider>
           </PopupProvider>
         </CosmeticsProvider>
@@ -133,7 +136,7 @@ function InfoIcon() {
   );
 }
 
-function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series }: Props) {
+function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, publicComments }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
   // B112: double-sided replay. `decoded` is always the CANONICAL perspective
@@ -312,9 +315,11 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // when the install token resolves (identifies an anonymous author) or
   // the session changes (team membership).
   useEffect(() => {
-    // B107: a public sample replay never loads tags — their authors are real
-    // handles we don't want to surface, and the comment UI isn't the point.
-    if (anonymize) return;
+    // B107: an anonymized viewer normally never loads tags — their authors
+    // are real handles we don't want to surface. B133 exception: the owner
+    // PUBLISHED this replay, so the server serves the tags redacted (aliased
+    // authors, mentions stripped) and we fetch them for everyone.
+    if (anonymize && !publicComments) return;
     if (!installToken) return;
     let cancelled = false;
     (async () => {
@@ -998,6 +1003,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               canNext={!!frames && currentIndex < frames.length - 1}
               // Desktop only: faint keyboard hint adjacent to each chevron.
               showKeyboardHint={!isMobile}
+              // B132: jump to the previous/next annotated frame — companion
+              // buttons under the chevrons, shown only when tags exist.
+              onJumpTag={jumpToAdjacentTag}
+              canPrevTag={displayTags.some((t) => t.frameIndex < currentIndex)}
+              canNextTag={displayTags.some((t) => t.frameIndex > currentIndex)}
+              showTagJump={displayTags.length > 0}
             />
             {/* B66b/B100: desktop step/playback controls as an inline pill that
                 tracks the docked sidebar (shifts left past it). On MOBILE the
