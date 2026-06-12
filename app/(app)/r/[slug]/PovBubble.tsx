@@ -25,16 +25,22 @@ export function PovBubble({
   right: string;
 }) {
   const half: React.CSSProperties = {
-    width: 40,
     height: '100%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
     background: 'transparent',
     border: 0,
-    padding: 0,
+    padding: '0 12px',
     cursor: 'pointer',
     color: '#d6e7ff',
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
   };
 
   return (
@@ -70,6 +76,7 @@ export function PovBubble({
         }}
       >
         <RevealIcon on={revealHands} />
+        Hands up
       </button>
       <span aria-hidden style={{ width: 1, background: 'rgba(77, 157, 255, 0.3)' }} />
       <button
@@ -78,9 +85,10 @@ export function PovBubble({
         onClick={onFlip}
         aria-label={`Flip perspective — viewing ${viewLabel}`}
         title={`Flip perspective — viewing ${viewLabel}`}
-        style={{ ...half, fontSize: 16, fontWeight: 700 }}
+        style={half}
       >
-        ⇄
+        <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>⇄</span>
+        Flip
       </button>
     </div>
   );
