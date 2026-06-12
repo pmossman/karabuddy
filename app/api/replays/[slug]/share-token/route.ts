@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { tags } from '@/lib/schema';
+import { replays, tags } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { getMyTeamSlugs } from '@/lib/teamSurface';
-import { loadTagScopes, tagVisibleToViewer } from '@/lib/tagScope';
+import { isReplayOwnerViewer, loadTagScopes, tagVisibleToViewer } from '@/lib/tagScope';
 import { signMoment } from '@/lib/shareToken';
 
 export const runtime = 'nodejs';
@@ -48,8 +48,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ ok: false, error: 'tag not found' }, { status: 404, headers });
     }
 
+    // B131: same predicate as the tags GET — the replay owner can see (and
+    // therefore share) every tag on their own replay.
+    const [replayRow] = await db
+      .select({ userId: replays.userId, ownerToken: replays.ownerToken })
+      .from(replays)
+      .where(eq(replays.slug, slug))
+      .limit(1);
+    const isReplayOwner = !!replayRow && isReplayOwnerViewer(replayRow, { userId: viewerUserId, installToken });
+
     const scope = (await loadTagScopes([tagId])).get(tagId) ?? new Set<string>();
-    const allowed = tagVisibleToViewer(tag, scope, { userId: viewerUserId, installToken, teams: viewerTeams });
+    const allowed = tagVisibleToViewer(tag, scope, { userId: viewerUserId, installToken, teams: viewerTeams, isReplayOwner });
     if (!allowed) {
       return NextResponse.json({ ok: false, error: 'not allowed' }, { status: 403, headers });
     }

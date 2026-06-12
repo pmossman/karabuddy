@@ -58,6 +58,13 @@ for the decisions behind the model.
   (`tag_team_scope` join table). **Empty scope = personal** (author-only).
   Bounded server-side: `audience ⊆ replay shares ∩ author memberships`
   (`lib/tagScope.resolveTagScope` — the security boundary).
+- **Owner visibility (B131)** — the replay's OWNER (claimed account or
+  install token) sees EVERY tag on their own replay, scope notwithstanding:
+  a comment on someone else's replay is feedback addressed to them. The
+  motivating case: an anonymous (signed-out) reviewer's comments are always
+  personal-scoped and were invisible to the very person they reviewed.
+  Applied in the tags GET + share-token routes via
+  `tagVisibleToViewer(..., { isReplayOwner })`.
 - **Narrowing rule** — how a draft's scope is computed from @-mentions
   (`lib/commentScope.scopeFromMentions`): 0 mentions → all armed teams
   (broadcast); ≥1 mention → union of mentioned people's teams ∩ armed. Shared

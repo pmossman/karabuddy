@@ -8,7 +8,7 @@ import { resolveUserId } from '@/lib/userResolution';
 import { auth } from '@/auth';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { getMyTeamSlugs } from '@/lib/teamSurface';
-import { loadTagScopes, resolveTagScope, tagVisibleToViewer, writeTagScope } from '@/lib/tagScope';
+import { isReplayOwnerViewer, loadTagScopes, resolveTagScope, tagVisibleToViewer, writeTagScope } from '@/lib/tagScope';
 import { notifyMentions } from '@/lib/discordNotify';
 
 export const runtime = 'nodejs';
@@ -35,6 +35,16 @@ export async function GET(
     const viewerTeams = new Set(viewerUserId ? await getMyTeamSlugs(viewerUserId) : []);
 
     const db = getDb();
+    // B131: the replay OWNER sees every tag on their replay (feedback left by
+    // others — incl. anonymous visitors' personal-scoped comments — is
+    // addressed to them).
+    const [replayRow] = await db
+      .select({ userId: replays.userId, ownerToken: replays.ownerToken })
+      .from(replays)
+      .where(eq(replays.slug, slug))
+      .limit(1);
+    const isReplayOwner = !!replayRow && isReplayOwnerViewer(replayRow, { userId: viewerUserId, installToken });
+
     const rows = await db
       .select()
       .from(tags)
@@ -48,6 +58,7 @@ export async function GET(
           userId: viewerUserId,
           installToken,
           teams: viewerTeams,
+          isReplayOwner,
         }),
       )
       .map((t) => ({ ...t, createdAt: t.createdAt.toISOString(), scope: Array.from(scopes.get(t.id) ?? []) }));

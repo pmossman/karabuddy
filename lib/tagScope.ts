@@ -56,17 +56,33 @@ export async function resolveTagScope(opts: {
 }
 
 // Viewer-side visibility predicate (pure, unit-testable). A tag is visible
-// to a viewer when they authored it (by account or install token) or when
-// it's scoped to a team the viewer belongs to. Personal tags (empty scope)
-// are visible only to their author.
+// to a viewer when they authored it (by account or install token), when
+// it's scoped to a team the viewer belongs to, or when the viewer OWNS the
+// replay (B131: a comment on someone else's replay is feedback addressed to
+// them — without this, an anonymous friend's comments are personal-scoped
+// and invisible to the very person they reviewed). Personal tags (empty
+// scope) stay hidden from everyone else.
 export function tagVisibleToViewer(
   tag: { userId: string | null; authorToken: string },
   scope: Set<string>,
-  viewer: { userId: string | null; installToken: string | null; teams: Set<string> },
+  viewer: { userId: string | null; installToken: string | null; teams: Set<string>; isReplayOwner?: boolean },
 ): boolean {
+  if (viewer.isReplayOwner) return true;
   if (viewer.userId && tag.userId === viewer.userId) return true;
   if (viewer.installToken && tag.authorToken === viewer.installToken) return true;
   for (const teamSlug of scope) if (viewer.teams.has(teamSlug)) return true;
+  return false;
+}
+
+// Is this viewer the replay's owner (claimed account or anonymous install
+// token)? The ownership half of the B131 read rule, shared by the tag-read
+// routes so they apply it identically.
+export function isReplayOwnerViewer(
+  replay: { userId: string | null; ownerToken: string | null },
+  viewer: { userId: string | null; installToken: string | null },
+): boolean {
+  if (viewer.userId && replay.userId && replay.userId === viewer.userId) return true;
+  if (viewer.installToken && replay.ownerToken && replay.ownerToken === viewer.installToken) return true;
   return false;
 }
 
