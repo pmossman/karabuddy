@@ -137,3 +137,12 @@ for the decisions behind the model.
   actions (flip loops, interrupted choreography) and was replaced by this.
   GameCard treats an opponent-hand card WITH a setId as revealed (face-up,
   hover preview).
+- **Series hop (B129)** — replays sharing a `match.lobbyId` are one Bo3
+  series. The viewer shows hop pills ("Game 1 / Game 2 / …", play order
+  among RECORDED games) under the title plus a "— Game N" auto-title
+  suffix, for identity-entitled viewers only (`canViewReplayIdentities`) —
+  an anonymous share-link visitor is never handed the sibling slugs. The
+  replay browser's series groups (B116) label each game with a Game-N chip.
+  Curated samples (B107) now anonymize **by entitlement** instead of
+  unconditionally: the public still sees "Player 1 vs Player 2", but the
+  uploader/teammates see their own featured replay normally.

@@ -22,6 +22,7 @@ import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '
 import { mapFrameIndex } from '@/lib/replaySignature';
 import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MobileControlsFab, MatchupPanel } from './MobileLandscapePanels';
+import type { SeriesInfo } from './SeriesNav';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import { ResourcingModal } from './ResourcingModal';
 import { FrameNavOverlay } from './FrameNavOverlay';
@@ -97,16 +98,19 @@ interface Props {
   // B121-followup: signed-in viewer already has a linked extension (server-known)
   // → suppress the install-onboarding banner regardless of the browser probe.
   hasLinkedExtension?: boolean;
+  // B129: the games of this replay's Bo3 series (identity-entitled viewers
+  // only) — drives the Game-N title suffix + the series hop pills.
+  series?: SeriesInfo | null;
 }
 
-export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension }: Props) {
+export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series }: Props) {
   return (
     <ThemeContextProvider>
       <UserProvider>
         <CosmeticsProvider>
           <PopupProvider>
             <GameProvider>
-              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} />
+              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} />
             </GameProvider>
           </PopupProvider>
         </CosmeticsProvider>
@@ -129,7 +133,7 @@ function InfoIcon() {
   );
 }
 
-function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension }: Props) {
+function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
   // B112: double-sided replay. `decoded` is always the CANONICAL perspective
@@ -956,6 +960,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         onArmedTeamsChange={setArmedTeams}
         onOpenResourcing={() => setResourcingOpen(true)}
         anonymize={anonymize}
+        series={series ?? null}
       />
       </KaraBuddyThemeProvider>
       <ResourcingModal
@@ -1150,6 +1155,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           installToken={installToken}
           isOwner={isOwner}
           anonymize={anonymize}
+          series={series ?? null}
         />
       )}
       </div>

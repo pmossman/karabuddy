@@ -333,7 +333,7 @@ function CardGrid({ rows, canManage, group = false }: { rows: Row[]; canManage: 
               {seriesHeadline(g)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-              {g.rows.map((r) => <ReplayCard key={r.slug} replay={r as any} canManage={canManage} />)}
+              {g.rows.map((r, i) => <ReplayCard key={r.slug} replay={r as any} canManage={canManage} gameNumber={i + 1} />)}
             </div>
           </div>
         ) : (
@@ -838,11 +838,11 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
         </thead>
         <tbody>
           {groups.map((g) => {
-            const gameRow = (r: Row, inSeries: boolean) => (
+            const gameRow = (r: Row, inSeries: boolean, gameNumber?: number) => (
               <tr key={r.slug} style={{ borderTop: '1px solid #2e333c', ...(inSeries ? { boxShadow: 'inset 3px 0 0 rgba(77,157,255,0.5)' } : {}) }}>
                 <td style={cellStyle}>{formatDateShort(r.createdAt)}</td>
                 <td style={cellStyle} data-testid="replay-cell">
-                  <ReplayCellLink replay={r} />
+                  <ReplayCellLink replay={r} gameNumber={gameNumber} />
                 </td>
                 {showShared && (
                   <td style={cellStyle} data-testid="shared-cell">
@@ -880,7 +880,7 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
                     {seriesHeadline(g)}
                   </td>
                 </tr>
-                {g.rows.map((r) => gameRow(r, true))}
+                {g.rows.map((r, i) => gameRow(r, true, i + 1))}
               </Fragment>
             );
           })}
@@ -893,7 +893,7 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
 // Replay cell: leader+base mini thumbnails for each player, separated by
 // "vs", with the matchup text below. Wrapped in <Link> so the whole cell
 // (text + thumbs) navigates to /r/<slug>.
-function ReplayCellLink({ replay }: { replay: Row }) {
+function ReplayCellLink({ replay, gameNumber }: { replay: Row; gameNumber?: number }) {
   // Perspective order: my/the-uploader's side first, opponent second.
   const [p1, p2] = perspectivePlayers(replay);
   return (
@@ -904,6 +904,7 @@ function ReplayCellLink({ replay }: { replay: Row }) {
         <PlayerThumbs player={p2} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {gameNumber != null && <GameNumberChip n={gameNumber} />}
         <ResultBadge playerId={p1?.id} winners={replay.winners} />
         <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
@@ -912,6 +913,30 @@ function ReplayCellLink({ replay }: { replay: Row }) {
       {/* B116: usernames demoted to small secondary text. */}
       <div style={{ fontSize: 10, color: '#6c7588' }}>{nameText(p1)} vs {nameText(p2)}</div>
     </Link>
+  );
+}
+
+// B129: position of a game within its Bo3 series (play order among the
+// recorded games). Only rendered inside series groups.
+export function GameNumberChip({ n }: { n: number }) {
+  return (
+    <span
+      data-testid="game-number-chip"
+      style={{
+        background: 'rgba(77, 157, 255, 0.12)',
+        border: '1px solid rgba(77, 157, 255, 0.4)',
+        color: '#a7d2ff',
+        borderRadius: 999,
+        padding: '1px 8px',
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      Game {n}
+    </span>
   );
 }
 

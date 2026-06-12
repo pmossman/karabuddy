@@ -44,7 +44,7 @@ interface ReplayRow {
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
 // matchChips() helper used everywhere.
 
-export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage: boolean }) {
+export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRow; canManage: boolean; gameNumber?: number }) {
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
 
@@ -109,6 +109,25 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
         )}
         <ShareBadge sharedTeams={replay.sharedTeams} />
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* B129: position within the Bo3 series (rendered inside series groups). */}
+          {gameNumber != null && (
+            <span
+              data-testid="game-number-chip"
+              style={{
+                background: 'rgba(77, 157, 255, 0.12)',
+                border: '1px solid rgba(77, 157, 255, 0.4)',
+                color: '#a7d2ff',
+                borderRadius: 999,
+                padding: '1px 8px',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Game {gameNumber}
+            </span>
+          )}
           <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
           {replay.doubleSided && (
             <span

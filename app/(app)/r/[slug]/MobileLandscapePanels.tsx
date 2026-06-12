@@ -20,6 +20,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
 import { DecksModal } from './DecksModal';
 import { EditableTitle } from './EditableTitle';
+import { SeriesNav, type SeriesInfo } from './SeriesNav';
 import { LabelsRow } from './LabelsRow';
 import { ResultBadge } from './ResultBadge';
 import { useDragSize, Grabber } from './useDragSize';
@@ -522,6 +523,7 @@ export function MatchupPanel({
   installToken,
   isOwner,
   anonymize,
+  series,
 }: {
   open: boolean;
   onClose: () => void;
@@ -540,6 +542,8 @@ export function MatchupPanel({
   isOwner: boolean;
   // B122: anonymized viewer — leader-matchup default title + hide deck-page link.
   anonymize?: boolean;
+  // B129: the games of this replay's Bo3 series — Game-N title suffix + hop pills.
+  series?: SeriesInfo | null;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
   const players = (replay.players as any[]) || [];
@@ -630,10 +634,12 @@ export function MatchupPanel({
             replaySlug={replay.slug}
             installToken={installToken}
             initialDisplayName={replay.displayName ?? null}
-            defaultText={defaultTitleFor(replay, anonymize)}
+            defaultText={defaultTitleFor(replay, anonymize) + (series ? ` — Game ${series.current}` : '')}
             canEdit={isOwner}
           />
         </div>
+        {/* B129: hop between the games of the same Bo3. */}
+        {series && <SeriesNav series={series} />}
 
         {(isOwner || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
           <LabelsRow

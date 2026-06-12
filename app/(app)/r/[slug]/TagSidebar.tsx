@@ -15,6 +15,7 @@ import { DecksModal } from './DecksModal';
 import { ShareWithTeam } from './ShareWithTeam';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
 import { EditableTitle } from './EditableTitle';
+import { SeriesNav, type SeriesInfo } from './SeriesNav';
 // B71: shared scope-derivation — same module the extension copies, so the
 // web comment form and the in-game bubble narrow audiences identically.
 import { scopeFromMentions, scopeLabel } from '@/lib/commentScope';
@@ -111,6 +112,8 @@ interface Props {
   decks: DecksByUserId | null;
   // B122: anonymized viewer — propagates to the decks modal (hide deck-page link).
   anonymize?: boolean;
+  // B129: the games of this replay's Bo3 series — Game-N title suffix + hop pills.
+  series?: SeriesInfo | null;
   localPlayerId: string | null;
   // B71: teams the comment author can scope a tag to here = teams they're
   // in that this replay is shared with (audience ⊆ shares). Drives the
@@ -155,7 +158,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, anonymize }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, anonymize, series }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -810,10 +813,12 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             replaySlug={replay.slug}
             installToken={installToken}
             initialDisplayName={replay.displayName ?? null}
-            defaultText={defaultTitleFor(replay)}
+            defaultText={defaultTitleFor(replay) + (series ? ` — Game ${series.current}` : '')}
             canEdit={isOwner}
           />
         </div>
+        {/* B129: hop between the games of the same Bo3. */}
+        {series && <SeriesNav series={series} />}
         {/* B66c: labels as their own pill row + plus button, separate
             from the title affordance. Always render the row so the +
             button is discoverable even with zero labels. */}
