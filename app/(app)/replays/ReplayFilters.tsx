@@ -897,7 +897,7 @@ function ReplayCellLink({ replay }: { replay: Row }) {
   // Perspective order: my/the-uploader's side first, opponent second.
   const [p1, p2] = perspectivePlayers(replay);
   return (
-    <Link href={`/r/${replay.slug}`} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <Link href={`/r/${replay.slug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <PlayerThumbs player={p1} />
         <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, letterSpacing: '0.08em' }}>VS</span>

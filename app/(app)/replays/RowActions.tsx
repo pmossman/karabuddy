@@ -206,6 +206,7 @@ function MenuLink({ children, href }: { children: React.ReactNode; href: string 
   return (
     <Link
       href={href}
+      prefetch={false}
       role="menuitem"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}

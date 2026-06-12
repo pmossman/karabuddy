@@ -149,7 +149,7 @@ function Comment({ tag, replaySlug }: { tag: TagRow; replaySlug: string }) {
         <span style={{ fontSize: 12.5, fontWeight: 700, color: '#e6e6e6' }}>{tag.authorName}</span>
         {/* Frame deeplink — jump straight to the tagged moment if you do want
             the viewer. Secondary; reading the text doesn't require it. */}
-        <Link href={`/r/${replaySlug}?f=${tag.frameIndex}`} style={{ fontSize: 10.5, color: '#5db4ff', textDecoration: 'none', fontWeight: 600 }}>
+        <Link href={`/r/${replaySlug}?f=${tag.frameIndex}`} prefetch={false} style={{ fontSize: 10.5, color: '#5db4ff', textDecoration: 'none', fontWeight: 600 }}>
           Frame {tag.frameIndex} →
         </Link>
         <span style={{ fontSize: 10.5, color: '#6c7588', marginLeft: 'auto' }}>{shortDate(tag.createdAt)}</span>

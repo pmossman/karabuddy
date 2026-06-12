@@ -122,6 +122,7 @@ function ActivityRow({ item }: { item: DiscussionItem }) {
   return (
     <Link
       href={href}
+      prefetch={false}
       data-testid="home-activity-row"
       style={{
         display: 'flex',

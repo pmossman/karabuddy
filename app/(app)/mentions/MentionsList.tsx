@@ -66,6 +66,7 @@ export function MentionsList() {
         <Link
           key={r.id}
           href={`/r/${r.replaySlug}?f=${r.frameIndex + 1}`}
+          prefetch={false}
           style={{
             display: 'flex',
             flexDirection: 'column',

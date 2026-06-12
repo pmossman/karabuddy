@@ -96,6 +96,7 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
   return (
     <Link
       href={href}
+      prefetch={false}
       data-testid="discussion-item"
       style={{
         display: 'flex',
