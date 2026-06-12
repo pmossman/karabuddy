@@ -37,6 +37,8 @@ interface ReplayRow {
   commentCount?: number;
   // B100: viewer owns this replay (lets the owner un-share from the team grid).
   isMine?: boolean;
+  // B128: both players' recordings exist — "⇄ both POVs" badge.
+  doubleSided?: boolean;
 }
 
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
@@ -108,6 +110,25 @@ export function ReplayCard({ replay, canManage }: { replay: ReplayRow; canManage
         <ShareBadge sharedTeams={replay.sharedTeams} />
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
+          {replay.doubleSided && (
+            <span
+              data-testid="double-sided-chip"
+              title="Both players recorded — view with both hands face up"
+              style={{
+                background: 'rgba(77, 210, 255, 0.12)',
+                border: '1px solid rgba(77, 210, 255, 0.4)',
+                color: '#4dd2ff',
+                borderRadius: 999,
+                padding: '1px 8px',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              ⇄ both POVs
+            </span>
+          )}
           {matchChips(replay.match).map((label) => (
             <span
               key={label}

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { and, desc, eq, inArray, count } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, teamMembers, replayParticipants, tags, tagTeamScope } from '@/lib/schema';
+import { replays, users, teamMembers, replayParticipants, replayAltPayload, tags, tagTeamScope } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
 import { serializeReplayRow } from '@/lib/replayRow';
 
@@ -62,6 +62,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     .groupBy(tags.replaySlug);
   for (const c of countRows) commentCountBySlug.set(c.replaySlug, Number(c.n));
 
+  // B128: which surfaced replays have BOTH recordings (alt payload exists) —
+  // drives the "both POVs" badge.
+  const doubleSidedSlugs = new Set(
+    (await db
+      .select({ slug: replayAltPayload.replaySlug })
+      .from(replayAltPayload)
+      .where(inArray(replayAltPayload.replaySlug, surfaceSlugs))).map((r) => r.slug)
+  );
+
   const rows = await db
     .select({ replay: replays, ownerName: users.name })
     .from(replays)
@@ -81,6 +90,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     internal: (teammatesByReplay.get(replay.slug)?.size ?? 0) >= 2,
     commentCount: commentCountBySlug.get(replay.slug) ?? 0,
     isMine: !!replay.userId && replay.userId === userId,
+    doubleSided: doubleSidedSlugs.has(replay.slug),
   }));
   return NextResponse.json({ ok: true, data: flat });
 }

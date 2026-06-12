@@ -47,6 +47,9 @@ export interface SerializedReplayRow {
   commentCount?: number;
   internal?: boolean;
   isMine?: boolean;
+  // B128: both players' recordings exist (replay_alt_payload row) — the viewer
+  // can show both hands face up / flip seats.
+  doubleSided?: boolean;
 }
 
 export function serializeReplayRow(
@@ -60,6 +63,7 @@ export function serializeReplayRow(
     commentCount?: number;
     internal?: boolean;
     isMine?: boolean;
+    doubleSided?: boolean;
   },
 ): SerializedReplayRow {
   // Order owner-first off the CANONICAL ownerPlayerId (not the viewer) so
@@ -94,5 +98,6 @@ export function serializeReplayRow(
   if (opts.commentCount !== undefined) out.commentCount = opts.commentCount;
   if (opts.internal !== undefined) out.internal = opts.internal;
   if (opts.isMine !== undefined) out.isMine = opts.isMine;
+  if (opts.doubleSided !== undefined) out.doubleSided = opts.doubleSided;
   return out;
 }

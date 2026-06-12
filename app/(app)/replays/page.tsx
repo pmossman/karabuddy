@@ -89,7 +89,15 @@ async function MyReplays({ userId }: { userId: string }) {
   const slugs = rows.map((r) => r.replay.slug);
   const sharesBySlug = new Map<string, { slug: string; name: string }[]>();
   const commentCountBySlug = new Map<string, number>();
+  const doubleSidedSlugs = new Set<string>();
   if (slugs.length > 0) {
+    // B128: which of these replays have BOTH recordings (alt payload exists) —
+    // drives the "both POVs" badge in the browser.
+    const altPayloadRows = await db
+      .select({ slug: replayAltPayload.replaySlug })
+      .from(replayAltPayload)
+      .where(inArray(replayAltPayload.replaySlug, slugs));
+    for (const a of altPayloadRows) doubleSidedSlugs.add(a.slug);
     const shareRows = await db
       .select({ replaySlug: replayTeamShares.replaySlug, teamSlug: teams.slug, teamName: teams.name })
       .from(replayTeamShares)
@@ -118,6 +126,7 @@ async function MyReplays({ userId }: { userId: string }) {
         viewerPlayerId: replay.userId === userId ? replay.ownerPlayerId : (altSideBySlug.get(replay.slug) ?? null),
         sharedTeams: sharesBySlug.get(replay.slug) ?? [],
         commentCount: commentCountBySlug.get(replay.slug) ?? 0,
+        doubleSided: doubleSidedSlugs.has(replay.slug),
       }))}
       canManage
       showShareTabs

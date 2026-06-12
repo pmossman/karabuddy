@@ -56,6 +56,9 @@ interface Row {
   oppLeader?: { name?: string | null; set?: string | null; number?: number | null } | null;
   // B116: stable across a Bo3's games — drives series grouping. Null = singleton.
   lobbyId?: string | null;
+  // B128: both players' recordings exist — the viewer can show both hands
+  // face up / flip seats. Drives the "⇄ both POVs" badge.
+  doubleSided?: boolean;
 }
 
 type ResultFilter = '' | 'wins' | 'losses';
@@ -904,10 +907,37 @@ function ReplayCellLink({ replay }: { replay: Row }) {
         <ResultBadge playerId={p1?.id} winners={replay.winners} />
         <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
+        {replay.doubleSided && <DoubleSidedChip />}
       </div>
       {/* B116: usernames demoted to small secondary text. */}
       <div style={{ fontSize: 10, color: '#6c7588' }}>{nameText(p1)} vs {nameText(p2)}</div>
     </Link>
+  );
+}
+
+// B128: both players recorded this game — the viewer can show both hands face
+// up. Cyan to match the reveal accent.
+export function DoubleSidedChip() {
+  return (
+    <span
+      data-testid="double-sided-chip"
+      title="Both players recorded — view with both hands face up"
+      style={{
+        background: 'rgba(77, 210, 255, 0.12)',
+        border: '1px solid rgba(77, 210, 255, 0.4)',
+        color: '#4dd2ff',
+        borderRadius: 999,
+        padding: '1px 8px',
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+        marginLeft: 4,
+      }}
+    >
+      ⇄ both POVs
+    </span>
   );
 }
 

@@ -16,6 +16,11 @@ test('single-sided replay: no double-sided controls', async ({ page, request }) 
   await page.goto(`/r/${slug}`);
   await expect(page.getByText(/Frame 1/)).toBeVisible(); // viewer loaded
   await expect(page.getByTestId('pov-controls')).toHaveCount(0);
+
+  // …and no "both POVs" badge in the browser.
+  await page.goto('/replays');
+  await expect(page.getByTestId('replay-cell').first()).toBeVisible();
+  await expect(page.getByTestId('double-sided-chip')).toHaveCount(0);
 });
 
 test('double-sided: hands-up on by default, reveals the hidden hand; manual flip works', async ({ page, browser, request }) => {
@@ -74,4 +79,11 @@ test('double-sided: hands-up on by default, reveals the hidden hand; manual flip
   await page.getByTestId('flip-button').click();
   await expect(page.getByTestId('flip-button')).toHaveAttribute('title', /viewing UserB/, { timeout: 5000 });
   await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
+
+  // B128: the replay browser tags it — "⇄ both POVs" chip in the table (personal
+  // library) and on the team grid.
+  await page.goto('/replays');
+  await expect(page.getByTestId('double-sided-chip').first()).toBeVisible();
+  await page.goto(`/teams/${teamSlug}?tab=replays`);
+  await expect(page.getByTestId('double-sided-chip').first()).toBeVisible();
 });
