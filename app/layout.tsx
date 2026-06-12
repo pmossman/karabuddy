@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Barlow, Orbitron } from 'next/font/google';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
+import { Analytics } from '@vercel/analytics/next';
 import { auth } from '@/auth';
 import { AuthProvider } from '@/app/_components/AuthProvider';
 import './globals.css';
@@ -41,6 +42,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <AppRouterCacheProvider>
           <AuthProvider session={session}>{children}</AuthProvider>
         </AppRouterCacheProvider>
+        {/* Vercel Web Analytics — cookieless page-view counts; no-op outside
+            Vercel deployments, so local/test runs stay clean. */}
+        <Analytics />
       </body>
     </html>
   );

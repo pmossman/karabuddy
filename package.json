@@ -41,6 +41,7 @@
     "@mui/material": "^6.1.8",
     "@mui/material-nextjs": "^9.0.1",
     "@neondatabase/serverless": "^1.0.2",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^0.27.0",
     "drizzle-orm": "^0.45.2",
     "next": "latest",
