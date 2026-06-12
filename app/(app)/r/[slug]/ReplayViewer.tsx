@@ -13,7 +13,7 @@ import { EndGameSummary } from './EndGameSummary';
 import { computeEndGameStats } from '@/lib/endGameStats';
 import { JumpToMenu } from './JumpToMenu';
 import { PovBubble } from './PovBubble';
-import { shouldHandoff } from './povHandoff';
+import { revealHiddenHand } from './revealHands';
 import { computeChapters, type Chapter } from '@/lib/replayChapters';
 import { anonymizeFrames, anonByIdFromPlayers, anonymizeDecks } from '@/lib/anonymizeReplay';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
@@ -540,10 +540,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         if (target !== currentIndexRef.current) setCurrentIndex(target);
         return;
       }
-      stopPlayback(); // deliberate single step → play through (choreography)
       const start = currentIndexRef.current;
       const target = actionBoundary(start, dir);
       if (target === start) return;
+      stopPlayback(); // deliberate single step → play through (choreography)
       const stepDir: 1 | -1 = target > start ? 1 : -1;
       let pos = start;
       // Recursive timer (not a fixed interval) so each frame can dwell for its
@@ -691,124 +691,68 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     }
   }, [replay.slug, installToken]);
 
-  // B128: every POV swap — manual Flip AND auto-flip — goes through the same
-  // fade-to-black curtain (the whole point is to make the board mirroring less
-  // jarring). The swap render also tells the FrameAnimator to SKIP its next
-  // FLIP pass: the swapped board re-renders the same card uuids at mirrored
-  // positions, which would otherwise animate bases/leaders flying across the
-  // board (and outliving the curtain).
-  const [autoPov, setAutoPov] = useState(false);
+  // B128 v2: "both hands face up" — the double-sided experience. Instead of
+  // flipping the board between seats, merge the OTHER recording's unmasked
+  // hand into the shown board (revealHands.ts). No POV choreography at all:
+  // you watch one stable board with complete information. Defaults ON for
+  // double-sided replays; the manual Flip (cinematic curtain) remains for
+  // literally sitting in the other seat.
   const [curtain, setCurtain] = useState(false);
-  const [handoffName, setHandoffName] = useState('');
   const handoffBusyRef = useRef(false);
   const skipAnimRef = useRef(false);
-  const [resumeTick, setResumeTick] = useState(0);
-  // Bumped when a handoff fully settles (busy ref cleared) — the auto-flip
-  // effect depends on it so a check that early-returned while a swap was in
-  // flight re-evaluates afterwards (refs don't re-trigger effects).
-  const [settleTick, setSettleTick] = useState(0);
+  const [revealHands, setRevealHands] = useState(true);
 
-  const setAutoPovChecked = useCallback((next: boolean) => {
-    setAutoPov(next);
-    if (next) void ensureAlt(); // prefetch so the first handoff doesn't stall
-  }, [ensureAlt]);
+  // Eagerly fetch the alt perspective when entitled + reveal is on — the
+  // unmasked hand should be there from the first frame.
+  useEffect(() => {
+    if (canFlip && revealHands) void ensureAlt();
+  }, [canFlip, revealHands, ensureAlt]);
 
-  // Curtain choreography — two profiles over the BOARD only (sidebar +
-  // controls stay up):
-  //   'cinematic' (manual Flip): slow fade, HOLD on "<name>'s turn" long
-  //     enough to read, swap behind the black, slow reveal.
-  //   'cut' (auto-flip): a quick ~250ms dip — SWU alternates actions every
-  //     frame or two, so auto-flips fire like camera cuts between seats; a
-  //     slow curtain per action would be wall-to-wall black.
-  // `resumeIfPlaying` restarts playback on the NEW timeline (auto-flip);
-  // manual flips leave it paused.
-  const PROFILES = {
-    cinematic: { fade: 280, hold: 750, label: true },
-    cut: { fade: 130, hold: 60, label: false },
-  } as const;
-  const [curtainFadeMs, setCurtainFadeMs] = useState<number>(PROFILES.cinematic.fade);
-  // Where the last swap LANDED (pov + frame index). The auto-flip effect must
-  // not fire while we're sitting exactly there: the two recordings collapse
-  // differently, so the mapped landing frame's own (lagged) attribution can
-  // disagree and point straight back — without this guard that's a stationary
-  // flip loop (cut A→B→A→… on the same frame pair, play/pause thrashing).
-  // A real step/tick moves currentIndex off the landing spot and re-arms.
-  const lastSwapLandingRef = useRef<{ pov: 'canonical' | 'alt'; index: number } | null>(null);
-  const runCurtainSwap = useCallback((opts: { resumeIfPlaying: boolean; profile: keyof typeof PROFILES }) => {
+  // Enriched frames for the SHOWN timeline (works from either seat — the
+  // "other" recording is whichever one the viewer isn't watching). Falls back
+  // to the raw frames until the alt payload lands.
+  const revealedFrames = useMemo(() => {
+    if (!revealHands || !canFlip || !decoded || !altDecoded) return null;
+    const shown = pov === 'canonical' ? decoded : altDecoded;
+    const other = pov === 'canonical' ? altDecoded : decoded;
+    return revealHiddenHand(shown, other);
+  }, [revealHands, canFlip, decoded, altDecoded, pov]);
+
+  // Curtain for the MANUAL flip (board only — sidebar + controls stay up): a
+  // snappy dip to black that masks the board mirroring. User-initiated via the
+  // Flip button, so no label/hold theatrics needed.
+  const CURTAIN_FADE_MS = 160;
+  const CURTAIN_HOLD_MS = 80; // let the swapped board paint behind the black
+  const runCurtainSwap = useCallback(() => {
     if (handoffBusyRef.current) return;
     const shown = pov === 'canonical' ? decoded : altDecodedRef.current;
     const other = pov === 'canonical' ? altDecodedRef.current : decoded;
     if (!shown || !other) return;
 
-    const { fade, hold, label } = PROFILES[opts.profile];
     handoffBusyRef.current = true;
-    const wasPlaying = playingRef.current;
     stopAutoplay();
     stopPlayback();
-    const otherName = ((replay.players as any[]) || []).find((p) => p?.id === other.meta.localPlayerId)?.username
-      || (pov === 'canonical' ? 'Player 2' : 'Player 1');
-    setHandoffName(label ? otherName : ''); // cuts are too fast for a readable label
-    setCurtainFadeMs(fade);
     setCurtain(true);
     window.setTimeout(() => {
-      // Fully black: swap behind the curtain, then hold (cinematic) / settle
-      // one paint (cut) before revealing.
       skipAnimRef.current = true; // the swap render must snap, not FLIP-animate
       const target = mapFrameIndex(shown.frames, currentIndexRef.current, other.frames);
-      const newPov = pov === 'canonical' ? 'alt' : 'canonical';
-      lastSwapLandingRef.current = { pov: newPov, index: target };
-      setPov(newPov);
+      setPov(pov === 'canonical' ? 'alt' : 'canonical');
       setCurrentIndex(target);
       window.setTimeout(() => {
         setCurtain(false);
-        window.setTimeout(() => {
-          handoffBusyRef.current = false;
-          setSettleTick((n) => n + 1);
-          if (opts.resumeIfPlaying && wasPlaying) setResumeTick((n) => n + 1);
-        }, fade);
-      }, hold);
-    }, fade);
+        window.setTimeout(() => { handoffBusyRef.current = false; }, CURTAIN_FADE_MS);
+      }, CURTAIN_HOLD_MS);
+    }, CURTAIN_FADE_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pov, decoded, replay.players, stopAutoplay, stopPlayback, setCurrentIndex]);
+  }, [pov, decoded, stopAutoplay, stopPlayback, setCurrentIndex]);
 
-  // B112: manual flip between the two players' recordings — cinematic curtain
-  // (slow fade + readable "<name>'s turn" hold). Lazily fetches the alt
-  // perspective on first use; silently no-ops if not entitled.
+  // B112: manual flip between the two players' recordings. Lazily fetches the
+  // alt perspective on first use; no-ops if not entitled.
   const flipPov = useCallback(async () => {
     if (!canFlip || handoffBusyRef.current) return;
     if (pov === 'canonical' && !(await ensureAlt())) return;
-    runCurtainSwap({ resumeIfPlaying: false, profile: 'cinematic' });
+    runCurtainSwap();
   }, [canFlip, pov, ensureAlt, runCurtainSwap]);
-
-  // Auto-flip: follow the actor. Attribution is LAGGED one frame — frame N's
-  // visuals belong to the flag of frame N−1 (actorOfFrameVisuals; karabast
-  // advances the flag to the next actor as soon as an action resolves), so the
-  // cut lands exactly when that player's action appears on screen. Fires as a
-  // quick cut; the busy guard + settle tick pace consecutive alternations.
-  useEffect(() => {
-    if (!autoPov || !canFlip || handoffBusyRef.current) return;
-    // Loop breaker: still parked exactly where the last swap landed → hold
-    // until playback/stepping moves the index (see lastSwapLandingRef).
-    const landing = lastSwapLandingRef.current;
-    if (landing && landing.pov === pov && landing.index === currentIndex) return;
-    const shown = activeDecoded;
-    const other = pov === 'canonical' ? altDecoded : decoded;
-    if (!shown || !other) return; // alt still loading — effect re-runs when it lands
-    if (!shouldHandoff({
-      frames: shown.frames,
-      index: currentIndex,
-      shownLocalId: shown.meta.localPlayerId,
-      otherLocalId: other.meta.localPlayerId,
-    })) return;
-    runCurtainSwap({ resumeIfPlaying: true, profile: 'cut' });
-  }, [autoPov, canFlip, currentIndex, pov, activeDecoded, altDecoded, decoded, runCurtainSwap, settleTick]);
-
-  // Resume playback AFTER the pov swap re-renders, so startAutoplay's closure
-  // captures the NEW timeline's frames.
-  useEffect(() => {
-    if (resumeTick > 0) startAutoplay();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resumeTick]);
 
   // B112: the handle of the player whose perspective is currently shown (for the
   // Flip control's label). Falls back to a side label if the handle is unknown.
@@ -826,12 +770,18 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // keeps up at the paint rate (skipping intermediates), instead of crawling.
   const boardRafRef = useRef<number | null>(null);
   const lastPushedIndexRef = useRef<number>(-1);
+  // B128 v2: render from the hand-revealed frames when available (same length
+  // + indices as `frames` — only the hidden opponent hand differs).
+  const displayFrames = revealedFrames ?? frames;
+  const displayFramesRef = useRef(displayFrames);
+  displayFramesRef.current = displayFrames;
   useEffect(() => {
     if (!frames || frames.length === 0) return;
     if (boardRafRef.current != null) return; // already scheduled — coalesce
     boardRafRef.current = requestAnimationFrame(() => {
       boardRafRef.current = null;
-      const i = Math.max(0, Math.min(frames.length - 1, currentIndexRef.current));
+      const src = displayFramesRef.current ?? frames;
+      const i = Math.max(0, Math.min(src.length - 1, currentIndexRef.current));
       // B108: this effect can run more than once for a single step (a re-render
       // lands on the same currentIndex), which would push the SAME frame's state
       // twice — re-triggering the FrameAnimator and double-playing one-shot
@@ -839,12 +789,14 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       // actually changed.
       if (i === lastPushedIndexRef.current) return;
       lastPushedIndexRef.current = i;
-      setGameState(frames[i].state);
+      setGameState(src[i].state);
     });
-  }, [frames, currentIndex, setGameState]);
-  // Re-decode (new frames array) must be allowed to re-push even at the same
-  // index, so reset the dedupe whenever the frames identity changes.
-  useEffect(() => { lastPushedIndexRef.current = -1; }, [frames]);
+  }, [frames, displayFrames, currentIndex, setGameState]);
+  // Re-decode (new frames array) or a reveal on/off flip must be allowed to
+  // re-push even at the same index, so reset the dedupe when identity changes.
+  // The re-push of the SAME position must snap (hand stubs swap for revealed
+  // cards — nothing should FLIP-animate).
+  useEffect(() => { lastPushedIndexRef.current = -1; skipAnimRef.current = true; }, [frames, displayFrames]);
   useEffect(() => () => { if (boardRafRef.current != null) cancelAnimationFrame(boardRafRef.current); }, []);
 
   // Keyboard nav. Shift+arrow temporarily flips mode (action↔frame).
@@ -941,11 +893,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 onClose={() => setSummaryDismissed(true)}
               />
             )}
-            {/* B128: the handoff curtain — fades ONLY the gameboard to black
-                while the POV swaps (the sidebar + floating controls stay up),
-                holding on the turn label long enough to read, then reveals the
-                other player's seat. Lives inside the board container so the
-                label centers over the board, not the whole screen. */}
+            {/* B128: the flip curtain — a snappy dip to black over ONLY the
+                gameboard (sidebar + floating controls stay up) that masks the
+                board mirroring while the POV swaps underneath. */}
             <div
               data-testid="pov-curtain"
               aria-hidden={!curtain}
@@ -954,33 +904,11 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 inset: 0,
                 zIndex: 60,
                 background: '#000',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
                 opacity: curtain ? 1 : 0,
                 pointerEvents: curtain ? 'auto' : 'none',
-                transition: `opacity ${curtainFadeMs}ms ease`,
+                transition: 'opacity 160ms ease-in-out',
               }}
-            >
-              {/* Label only on cinematic (manual) flips — auto cuts are far too
-                  fast for text to read. */}
-              {handoffName && (
-                <span
-                  style={{
-                    fontFamily: 'var(--font-barlow), sans-serif',
-                    fontSize: 17,
-                    fontWeight: 700,
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                    color: '#a7d2ff',
-                    opacity: curtain ? 1 : 0,
-                    transition: 'opacity 220ms ease 80ms',
-                  }}
-                >
-                  ⇄ {handoffName}&apos;s turn
-                </span>
-              )}
-            </div>
+            />
           </>
         ) : (
           <div style={{ padding: 32, color: '#a0a8b8', fontFamily: 'var(--font-barlow), sans-serif' }}>
@@ -1169,17 +1097,18 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                     bottom={`calc(${menuBottom} + 46px)`}
                     right={menuRight}
                   />
-                  {/* B128: double-sided controls bubble — only when both
-                      teammates' recordings exist. Stacked one FAB above the
-                      Jump-to-moment bubble in the same right-edge cluster. */}
+                  {/* B128: double-sided split control (hands-up toggle + flip)
+                      — only when both teammates' recordings exist. Sits LEFT of
+                      the Jump-to-moment bubble on the same row (38px FAB + 8px
+                      gap), tracking the same offsets. */}
                   {canFlip && (
                     <PovBubble
                       viewLabel={viewingHandle}
                       onFlip={flipPov}
-                      autoPov={autoPov}
-                      onAutoPovChange={setAutoPovChecked}
-                      bottom={`calc(${menuBottom} + 92px)`}
-                      right={menuRight}
+                      revealHands={revealHands}
+                      onRevealHandsChange={setRevealHands}
+                      bottom={`calc(${menuBottom} + 46px)`}
+                      right={`calc(${menuRight} + 46px)`}
                     />
                   )}
                 </>

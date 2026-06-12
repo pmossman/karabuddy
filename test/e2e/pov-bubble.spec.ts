@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { signInAsTestUser, createTeam, generateInvite, uploadReplay, claimInstallToken } from './helpers';
 
-// B128: double-sided replay controls bubble — manual Flip + the hotseat
-// "auto-switch" (fade-to-black handoff that follows the active player).
+// B128 v2: double-sided replays show BOTH hands face up (the other recording's
+// unmasked hand + resources merged into the board) — no auto board flipping.
+// The split capsule holds the hands-up toggle (default ON) + the manual Flip.
 
-test('single-sided replay: no perspective bubble', async ({ page, request }) => {
+test('single-sided replay: no double-sided controls', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'SoloViewer' });
   const { slug, installToken } = await uploadReplay(request, {
     local: { username: 'SoloViewer' },
@@ -14,10 +15,10 @@ test('single-sided replay: no perspective bubble', async ({ page, request }) => 
   await claimInstallToken(page, installToken);
   await page.goto(`/r/${slug}`);
   await expect(page.getByText(/Frame 1/)).toBeVisible(); // viewer loaded
-  await expect(page.getByTestId('pov-bubble-fab')).toHaveCount(0);
+  await expect(page.getByTestId('pov-controls')).toHaveCount(0);
 });
 
-test('double-sided: bubble appears; manual flip + auto-switch handoff work', async ({ page, browser, request }) => {
+test('double-sided: hands-up on by default, reveals the hidden hand; manual flip works', async ({ page, browser, request }) => {
   // Two teammates: A (canonical recorder) + B (alt recorder).
   await signInAsTestUser(page, { name: 'UserA', email: 'pov-a@example.com' });
   const { slug: teamSlug } = await createTeam(page, 'POV Squad');
@@ -29,10 +30,8 @@ test('double-sided: bubble appears; manual flip + auto-switch handoff work', asy
   await page2.goto(`/teams/join?code=${code}`);
   await page2.waitForURL(new RegExp(`/teams/${teamSlug}`));
 
-  // A records + uploads the game, shared to the team. Claim BEFORE uploading
-  // so the share applies (anonymous uploads can't arm team shares) and the
-  // replay is account-attributed from the start. A's recording marks the
-  // OPPONENT (B's side) as the active player so auto-switch has a reason to flip.
+  // A records + uploads, shared to the team (claim BEFORE upload so the share
+  // + account attribution apply). B uploads the SAME game from their seat.
   const gameId = randomUUID();
   const tokenA = `kbx_${randomUUID()}`;
   await claimInstallToken(page, tokenA);
@@ -41,12 +40,8 @@ test('double-sided: bubble appears; manual flip + auto-switch handoff work', asy
     installToken: tokenA,
     local: { id: 'pA', username: 'UserA' },
     opponent: { id: 'pB', username: 'UserB' },
-    activePlayer: 'opponent',
     shareTeamSlugs: [teamSlug],
   });
-
-  // B uploads the SAME game from their seat (claim BEFORE upload so the alt
-  // branch attributes it to B's account). B's recording marks B (local) active.
   const tokenB = `kbx_${randomUUID()}`;
   await claimInstallToken(page2, tokenB);
   await uploadReplay(request, {
@@ -58,38 +53,25 @@ test('double-sided: bubble appears; manual flip + auto-switch handoff work', asy
   });
   await ctx2.close();
 
-  // A opens the replay: the double-sided bubble exists, showing A's POV.
   await page.goto(`/r/${slug}`);
-  await expect(page.getByTestId('pov-bubble-fab')).toBeVisible();
-  await page.getByTestId('pov-bubble-fab').click();
-  const panel = page.getByTestId('pov-bubble-panel');
-  await expect(panel).toContainText('Viewing UserA');
+  const controls = page.getByTestId('pov-controls');
+  await expect(controls).toBeVisible();
 
-  // The curtain is always mounted (opacity-driven), so assert the OPACITY —
-  // toBeVisible passes at opacity 0 and proves nothing.
-  const curtainShown = () =>
-    page.waitForFunction(() => {
-      const el = document.querySelector('[data-testid="pov-curtain"]');
-      return el && parseFloat(getComputedStyle(el).opacity) > 0.1;
-    });
+  // Hands-up defaults ON; B's hand card (visible only in B's own recording)
+  // appears on A's board once the alt payload lands + merges. The fixture's
+  // hidden opponent hand is empty, so the revealed card is the proof.
+  await expect(page.getByTestId('reveal-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-card-uuid="card-1"]')).toHaveCount(2, { timeout: 5000 }); // own + revealed
 
-  // Auto-flip FIRST (before any manual swap — the loop-breaker parks auto-flip
-  // at a swap's landing frame until the index moves, and this single-frame
-  // fixture never moves): A's recording attributes the frame to B → quick cut
-  // to B's recording, curtain lifts.
-  await panel.getByRole('checkbox', { name: 'Auto-flip' }).click();
-  await expect(panel).toContainText('Viewing UserB', { timeout: 5000 });
+  // Toggle off → the revealed card disappears again.
+  await page.getByTestId('reveal-toggle').click();
+  await expect(page.getByTestId('reveal-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('[data-card-uuid="card-1"]')).toHaveCount(1);
+
+  // Manual flip → snappy curtain, lands in B's seat (flip button title tracks
+  // whose recording is shown).
+  await expect(page.getByTestId('flip-button')).toHaveAttribute('title', /viewing UserA/);
+  await page.getByTestId('flip-button').click();
+  await expect(page.getByTestId('flip-button')).toHaveAttribute('title', /viewing UserB/, { timeout: 5000 });
   await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
-  // …and it does NOT bounce back: the landing guard holds until a real step.
-  await page.waitForTimeout(600);
-  await expect(panel).toContainText('Viewing UserB');
-  await panel.getByRole('checkbox', { name: 'Auto-flip' }).click(); // off
-
-  // Manual flips → cinematic fade-to-black curtain, both directions.
-  await panel.getByRole('button', { name: /Flip/ }).click();
-  await curtainShown();
-  await expect(panel).toContainText('Viewing UserA', { timeout: 5000 });
-  await expect(page.getByTestId('pov-curtain')).toHaveCSS('opacity', '0', { timeout: 5000 });
-  await panel.getByRole('button', { name: /Flip/ }).click();
-  await expect(panel).toContainText('Viewing UserB', { timeout: 5000 });
 });

@@ -124,12 +124,16 @@ for the decisions behind the model.
   lib/tournamentAccess: `canView = member OR linked entrant`). Claiming never
   joins the team; team membership stays owner-controlled via normal team
   invites. Organizer powers always require membership.
-- **POV bubble / hotseat auto-switch (B128)** — double-sided replays (B112) get
-  a dedicated ⇄ controls bubble on the board (only when `canFlip`): the manual
-  Flip control (relocated from the playback pill/bubble) + an **auto-switch**
-  toggle. Auto-switch follows the ACTIVE player: when the action passes to the
-  other side, the board fades to black ("⇄ <name>'s turn") and comes back from
-  that player's recording at the equivalent frame; playback pauses for the
-  handoff and resumes on the new timeline. Pure decision logic in
-  `app/(app)/r/[slug]/povHandoff.ts` — flips only when the frame's active id is
-  EXACTLY the other recording's side (malformed signals can never flip-loop).
+- **Both hands face up (B128)** — double-sided replays (B112) show COMPLETE
+  information on one stable board: the other recording's unmasked hand +
+  face-down resources are merged into the shown timeline per frame
+  (`app/(app)/r/[slug]/revealHands.ts`; joined via the board-signature
+  `mapFrameIndex` — hidden-zone card uuids are randomized per viewer, so a
+  uuid join is impossible). Default ON; toggled from a split capsule next to
+  Jump-to-moment (only when `canFlip`) whose other half is the **manual Flip**
+  (relocated from the playback pill/bubble): a snappy dip-to-black masking the
+  board mirroring while the seat swaps. There is deliberately NO auto board
+  flipping — an earlier hotseat auto-flip prototype fought SWU's alternating
+  actions (flip loops, interrupted choreography) and was replaced by this.
+  GameCard treats an opponent-hand card WITH a setId as revealed (face-up,
+  hover preview).

@@ -34,7 +34,10 @@ const GameCard: React.FC<IGameCardProps> = ({
     const activePlayer = gameState?.players?.[connectedPlayer]?.isActionPhaseActivePlayer;
 
     const cardInPlayersHand = card.controllerId === connectedPlayer && card.zone === 'hand';
-    const cardInOpponentsHand = card.controllerId !== connectedPlayer && card.zone === 'hand';
+    // karabuddy B128: an opponent-hand card WITH a setId has been revealed (a
+    // double-sided replay merged the other recording's unmasked hand) — treat
+    // it as a normal face-up card (hover preview works, no hidden styling).
+    const cardInOpponentsHand = card.controllerId !== connectedPlayer && card.zone === 'hand' && !card.setId;
     const isHiddenHandCard = overlapEnabled && (cardInOpponentsHand || (isSpectator && card.zone === 'hand'));
     
     // Check if card is blocked from play by opponent's effect (e.g., Regional Governor, Trade Route Taxation)
