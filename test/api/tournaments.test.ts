@@ -287,7 +287,13 @@ describe('GET /api/swudbdeck', () => {
     expect(body.leader.id).toBe('SOR_010');
     expect(body.deckSource).toBe('SWUBase');
 
-    const bad = await swudbdeck(new Request('http://t/api/swudbdeck?deckLink=' + encodeURIComponent('https://swudb.com/deck/view/x')));
+    // B130: swudb.com is now a supported source (its /api/getDeckJson/<id>
+    // export — upstream resolves it BE-side).
+    const swudb = await swudbdeck(new Request('http://t/api/swudbdeck?deckLink=' + encodeURIComponent('https://swudb.com/deck/uHWArqRGY')));
+    expect(swudb.status).toBe(200);
+    expect((await swudb.json()).deckSource).toBe('SWUDB');
+
+    const bad = await swudbdeck(new Request('http://t/api/swudbdeck?deckLink=' + encodeURIComponent('https://pastebin.com/raw/whatever')));
     expect(bad.status).toBe(400);
   });
 });

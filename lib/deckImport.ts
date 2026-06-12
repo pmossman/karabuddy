@@ -7,8 +7,10 @@
 // Every supported site exposes a karabast-interop JSON endpoint returning the
 // same IDeckData shape ({metadata{name}, leader{id,count}, secondleader, base,
 // deck[], sideboard[]}), so there is no per-source transform — only per-source
-// link parsing + error mapping. swudb.com itself has no such endpoint (same
-// gap upstream) and is rejected as unsupported.
+// link parsing + error mapping. swudb.com included: its export API is
+// /api/getDeckJson/<id> (karabast resolves it on their game-server BE via
+// SwuDbDeckFetcher — the Amplify client route never grew it, which is why the
+// original port marked it unsupported).
 
 import type { TournamentDeck, TournamentDeckCard } from '@/lib/schema';
 
@@ -44,6 +46,18 @@ const lastPathSegment = (re: RegExp) => (link: string) => {
 };
 
 const SOURCES: SourceDef[] = [
+  {
+    source: 'SWUDB',
+    hostMatch: 'swudb.com',
+    // Deck links look like /deck/<id> (sometimes /deck/view/<id>); the id is
+    // the last path segment, mirroring upstream's SwuDbDeckFetcher.
+    extractId: lastPathSegment(/\/([^/?#]+?)\/?(?:[?#].*)?$/),
+    apiUrl: (id) => `https://swudb.com/api/getDeckJson/${encodeURIComponent(id)}`,
+    errorMap: {
+      403: { status: 403, error: 'Deck is set to Private. Change it to Unlisted or Public on swudb.com.' },
+      404: { status: 404, error: 'Deck not found. Make sure the deck exists on swudb.com.' },
+    },
+  },
   {
     source: 'SWUStats',
     hostMatch: 'swustats.net',
@@ -172,7 +186,7 @@ export async function importDeck(deckLink: string): Promise<DeckImportResult> {
 
   const def = deckSourceFor(trimmed);
   if (!def) {
-    return { ok: false, status: 400, error: 'Deckbuilder not supported. Supported: swustats, swubase, my-swu, swuforge, kyberdecks, and others with a karabast export.' };
+    return { ok: false, status: 400, error: 'Deckbuilder not supported. Supported: swudb, swustats, swubase, my-swu, swuforge, kyberdecks, and others with a karabast export.' };
   }
   const id = def.extractId(trimmed);
   if (!id) {
