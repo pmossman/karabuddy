@@ -70,6 +70,7 @@ export function HeaderBar({
 
       <Link
         href="/"
+        prefetch={false}
         style={{
           textDecoration: 'none', color: 'inherit', display: 'inline-flex',
           alignItems: 'baseline', gap: 6, lineHeight: 1, userSelect: 'none',
@@ -180,6 +181,7 @@ function MenuLink({ href, children }: { href: string; children: React.ReactNode 
   return (
     <Link
       href={href}
+      prefetch={false}
       role="menuitem"
       aria-current={active ? 'page' : undefined}
       style={{

@@ -12,6 +12,9 @@ export function NavLink({ href, children }: { href: string; children: React.Reac
   return (
     <Link
       href={href}
+      // Header nav points at force-dynamic pages — viewport prefetch would
+      // invoke every one of them on every page load.
+      prefetch={false}
       aria-current={active ? 'page' : undefined}
       style={{
         color: active ? '#ffffff' : '#a0a8b8',

@@ -26,8 +26,8 @@ export function Footer() {
         </span>
       </div>
       <div style={{ display: 'flex', gap: 16 }}>
-        <Link href="/privacy" style={linkStyle}>Privacy</Link>
-        <Link href="/install" style={linkStyle}>Install</Link>
+        <Link href="/privacy" prefetch={false} style={linkStyle}>Privacy</Link>
+        <Link href="/install" prefetch={false} style={linkStyle}>Install</Link>
         <a
           href="https://github.com/pmossman/karabuddy"
           target="_blank"

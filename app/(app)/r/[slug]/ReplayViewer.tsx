@@ -17,7 +17,7 @@ import { revealHiddenHand } from './revealHands';
 import { computeChapters, type Chapter } from '@/lib/replayChapters';
 import { anonymizeFrames, anonByIdFromPlayers, anonymizeDecks } from '@/lib/anonymizeReplay';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { mapFrameIndex } from '@/lib/replaySignature';
 import { TagSidebar } from './TagSidebar';
@@ -345,11 +345,11 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
 
   // B48: persist + restore current frame via URL search param `?f=N` so
   // refreshes keep your place AND links to a specific frame share cleanly.
-  // Uses router.replace with scroll:false to avoid touching scroll position
-  // on every step. Reads the initial value once on mount; subsequent URL
-  // changes (e.g. browser back) don't re-sync state to avoid a write-loop
-  // with the writer effect below.
-  const router = useRouter();
+  // Written via native history.replaceState — router.replace() on this
+  // force-dynamic page fires an RSC request (a real function invocation)
+  // per settled step, so skimming a replay hammered prod. Reads the initial
+  // value once on mount; subsequent URL changes (e.g. browser back) don't
+  // re-sync state to avoid a write-loop with the writer effect below.
   const searchParams = useSearchParams();
   const initialFrameRef = useRef<number | null>(null);
   if (initialFrameRef.current === null) {
@@ -369,22 +369,22 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       mountedRef.current = true;
       return;
     }
-    // B104: debounce the URL write. `router.replace` per step is expensive (a
-    // Next navigation); firing it 30×/s while holding the arrow tanks perf. We
-    // only need the final frame in the URL — write it once stepping settles.
+    // B104: debounce the URL write; firing it 30×/s while holding the arrow
+    // is wasted work. We only need the final frame in the URL — write it once
+    // stepping settles.
     if (urlTimerRef.current != null) window.clearTimeout(urlTimerRef.current);
     urlTimerRef.current = window.setTimeout(() => {
-      const params = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
+      const params = new URLSearchParams(window.location.search);
       // Mirror as an ORIGINAL index so the link round-trips and matches external
       // deep-links (comments/decks) that point at original frame indices.
       const human = collapsedToOriginal(currentIndexRef.current) + 1;
       if (currentIndexRef.current === 0) params.delete('f');
       else params.set('f', String(human));
       const qs = params.toString();
-      const url = qs ? `?${qs}` : window.location.pathname;
-      router.replace(url, { scroll: false });
+      const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+      window.history.replaceState(null, '', url);
     }, 200);
-    // Intentionally exclude searchParams + router from deps — replace runs
+    // Intentionally exclude searchParams from deps — the write runs
     // on every meaningful frame change, not on its own URL writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
