@@ -25,6 +25,8 @@ import { StepModeOverlay, MobileControlsFab, MatchupPanel } from './MobileLandsc
 import type { SeriesInfo } from './SeriesNav';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import { ResourcingModal } from './ResourcingModal';
+import { ClipBubble } from './ClipBubble';
+import { ClipBuilder } from './ClipBuilder';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import { useDragSize } from './useDragSize';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -268,6 +270,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   const [matchupOpen, setMatchupOpen] = useState(false);
   // B101: per-game resourcing report (analyzed client-side from decoded frames).
   const [resourcingOpen, setResourcingOpen] = useState(false);
+  const [clipOpen, setClipOpen] = useState(false);
   const userTouchedDrawerRef = useRef(false);
   useEffect(() => {
     if (userTouchedDrawerRef.current) return;
@@ -1012,6 +1015,20 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
         onJump={setCurrentIndex}
       />
+      {/* B136: clip trim builder — its own independent board over the viewer. */}
+      {displayFrames && displayFrames.length > 1 && (
+        <ClipBuilder
+          open={clipOpen}
+          onClose={() => setClipOpen(false)}
+          replaySlug={replay.slug}
+          frames={displayFrames}
+          collapsedToOriginal={collapsedToOriginal}
+          localPlayerId={activeDecoded?.meta.localPlayerId ?? null}
+          chapters={chapters}
+          initialIndex={currentIndex}
+          installToken={installToken}
+        />
+      )}
       {(() => {
         // B100: chevron + FAB geometry, derived from the LIVE review-sheet
         // size so everything rides with the sheet as you drag it.
@@ -1148,6 +1165,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                     currentIndex={currentIndex}
                     onJump={jumpTo}
                     bottom={`calc(${menuBottom} + 46px)`}
+                    right={menuRight}
+                  />
+                  {/* B136: Clip FAB — stacked above Jump-to-moment. */}
+                  <ClipBubble
+                    onClick={() => setClipOpen(true)}
+                    bottom={`calc(${menuBottom} + 92px)`}
                     right={menuRight}
                   />
                   {/* B128: double-sided split control (hands-up toggle + flip)
