@@ -1,0 +1,62 @@
+import { NextResponse } from 'next/server';
+import { and, eq } from 'drizzle-orm';
+import { auth } from '@/auth';
+import { getDb } from '@/lib/db';
+import { replays, replayTeamShares } from '@/lib/schema';
+import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
+import { getTeamMembership } from '@/lib/teamSurface';
+
+export const runtime = 'nodejs';
+
+// POST /api/replays/[slug]/review — B135: flag (or clear) a replay's share to a
+// team for review.
+//   body: { teamSlug, requested: boolean }
+//   requested=true  → REQUEST review. Owner-only; the replay must already be
+//                     shared with the team (the queue lives off the share row).
+//   requested=false → MARK REVIEWED / un-request. Owner OR any member of the
+//                     team (a collaborative queue — whoever reviews closes it).
+export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const session = await auth();
+  const userId: string | null = (session?.user as any)?.id || null;
+
+  const body = await req.json().catch(() => ({} as any));
+  const teamSlug = String(body?.teamSlug || '').trim();
+  const requested = body?.requested === true;
+  if (!teamSlug) {
+    return NextResponse.json({ ok: false, error: 'teamSlug required' }, { status: 400 });
+  }
+
+  const db = getDb();
+  const [replay] = await db.select().from(replays).where(eq(replays.slug, slug)).limit(1);
+  if (!replay) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+
+  // The review flag lives on the replay's share to this team — it must exist.
+  const [share] = await db
+    .select()
+    .from(replayTeamShares)
+    .where(and(eq(replayTeamShares.replaySlug, slug), eq(replayTeamShares.teamSlug, teamSlug)))
+    .limit(1);
+  if (!share) {
+    return NextResponse.json({ ok: false, error: 'replay is not shared with this team' }, { status: 400 });
+  }
+
+  const isOwner = canMutateReplay(replay, authContextFromRequest(req, userId));
+  if (requested) {
+    // Requesting review is the uploader's call.
+    if (!isOwner) return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
+  } else {
+    // Clearing (mark reviewed) — the owner, or any member of the team.
+    const member = userId ? await getTeamMembership(teamSlug, userId) : null;
+    if (!isOwner && !member) {
+      return NextResponse.json({ ok: false, error: 'must be the owner or a team member' }, { status: 403 });
+    }
+  }
+
+  await db
+    .update(replayTeamShares)
+    .set({ reviewRequestedAt: requested ? new Date() : null })
+    .where(and(eq(replayTeamShares.replaySlug, slug), eq(replayTeamShares.teamSlug, teamSlug)));
+
+  return NextResponse.json({ ok: true, reviewRequested: requested });
+}

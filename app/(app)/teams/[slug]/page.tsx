@@ -9,6 +9,7 @@ import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
 import { TeamTournaments } from './TeamTournaments';
+import { ReviewQueue } from './ReviewQueue';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,7 @@ interface PageProps {
 // B61 split the team page into discussion + replays. B62 tabs it: one
 // page, three+ distinct concerns, separate tab per concern. Active tab
 // is URL-persisted (`?tab=X`) so deep-links + browser back work.
-const VALID_TABS = ['discussion', 'replays', 'tournaments', 'members', 'settings'] as const;
+const VALID_TABS = ['discussion', 'replays', 'review', 'tournaments', 'members', 'settings'] as const;
 type Tab = (typeof VALID_TABS)[number];
 const DEFAULT_TAB: Tab = 'discussion';
 
@@ -111,6 +112,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
       <div style={{ marginTop: 20 }}>
         {tab === 'discussion' && <TeamDiscussion teamSlug={slug} />}
         {tab === 'replays' && <TeamReplays teamSlug={slug} />}
+        {tab === 'review' && <ReviewQueue teamSlug={slug} />}
         {tab === 'tournaments' && <TeamTournaments teamSlug={slug} />}
         {tab === 'members' && <MembersList members={members} viewerUserId={userId} />}
         {tab === 'settings' && (
@@ -140,6 +142,7 @@ function TabBar({ slug, active }: { slug: string; active: Tab }) {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'discussion', label: 'Discussion' },
     { id: 'replays', label: 'Replays' },
+    { id: 'review', label: 'Review queue' },
     { id: 'tournaments', label: 'Tournaments' },
     { id: 'members', label: 'Members' },
     { id: 'settings', label: 'Settings' },

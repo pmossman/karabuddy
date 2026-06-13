@@ -176,6 +176,13 @@
       "when": 1781481600000,
       "tag": "0024_public_replays",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781568000000,
+      "tag": "0025_review_queue",
+      "breakpoints": true
     }
   ]
 }

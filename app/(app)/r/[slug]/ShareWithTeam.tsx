@@ -30,6 +30,9 @@ export function ShareWithTeam({
   const [shares, setShares] = useState<Set<string>>(new Set());
   const [teams, setTeams] = useState<{ slug: string; name: string }[]>([]);
   const [pending, setPending] = useState<Set<string>>(new Set());
+  // B135: teams this replay is flagged for review by (subset of shares).
+  const [reviewTeams, setReviewTeams] = useState<Set<string>>(new Set());
+  const [reviewPending, setReviewPending] = useState<Set<string>>(new Set());
   // B133: owner-controlled public sharing — anyone with the link (or via the
   // public browser) sees the game AND its comments, anonymized + redacted.
   const [isPublic, setIsPublic] = useState(false);
@@ -61,6 +64,7 @@ export function ShareWithTeam({
           return;
         }
         setShares(new Set((body.shares || []).map((s: any) => s.teamSlug)));
+        setReviewTeams(new Set((body.shares || []).filter((s: any) => s.reviewRequestedAt).map((s: any) => s.teamSlug)));
         setTeams(body.ownerTeams || []);
         setScopedCounts(body.scopedTagCounts || {});
         setIsPublic(!!body.isPublic);
@@ -128,8 +132,10 @@ export function ShareWithTeam({
         });
       } else if (wasShared) {
         // Un-share succeeded: the server stripped this team from the replay's
-        // tag scopes, so nothing more is scoped to it.
+        // tag scopes, so nothing more is scoped to it. B135: the share row
+        // (which carried the review flag) is gone too.
         setScopedCounts((prev) => ({ ...prev, [teamSlug]: 0 }));
+        setReviewTeams((prev) => { const next = new Set(prev); next.delete(teamSlug); return next; });
       }
     } catch {
       setShares((prev) => {
@@ -166,6 +172,27 @@ export function ShareWithTeam({
       setIsPublic(was);
     } finally {
       setPublicPending(false);
+    }
+  };
+
+  // B135: request / un-request team review for a SHARED team (optimistic).
+  const toggleReview = async (teamSlug: string) => {
+    if (reviewPending.has(teamSlug)) return;
+    const was = reviewTeams.has(teamSlug);
+    setReviewTeams((prev) => { const next = new Set(prev); if (was) next.delete(teamSlug); else next.add(teamSlug); return next; });
+    setReviewPending((prev) => new Set(prev).add(teamSlug));
+    try {
+      const res = await fetch(`/api/replays/${replaySlug}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
+        body: JSON.stringify({ teamSlug, requested: !was }),
+      });
+      const body = await res.json();
+      if (!body.ok) setReviewTeams((prev) => { const next = new Set(prev); if (was) next.add(teamSlug); else next.delete(teamSlug); return next; });
+    } catch {
+      setReviewTeams((prev) => { const next = new Set(prev); if (was) next.add(teamSlug); else next.delete(teamSlug); return next; });
+    } finally {
+      setReviewPending((prev) => { const next = new Set(prev); next.delete(teamSlug); return next; });
     }
   };
 
@@ -212,25 +239,45 @@ export function ShareWithTeam({
       <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         Share with team
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {teams.map((t) => {
           const isShared = shares.has(t.slug);
           const isPending = pending.has(t.slug);
           return (
-            <LedToggle
-              key={t.slug}
-              checked={isShared}
-              onChange={() => requestToggle(t.slug)}
-              label={t.name}
-              statusOn="Sharing"
-              disabled={isPending}
-            />
+            <div key={t.slug} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <LedToggle
+                checked={isShared}
+                onChange={() => requestToggle(t.slug)}
+                label={t.name}
+                statusOn="Sharing"
+                disabled={isPending}
+              />
+              {/* B135: once shared, the owner can flag THIS team for review. */}
+              {isShared && (
+                <button
+                  type="button"
+                  onClick={() => toggleReview(t.slug)}
+                  disabled={reviewPending.has(t.slug)}
+                  data-testid={`request-review-${t.slug}`}
+                  style={{
+                    alignSelf: 'flex-start', marginLeft: 26,
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: 'transparent', border: 0, padding: '1px 0', cursor: reviewPending.has(t.slug) ? 'default' : 'pointer',
+                    fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                    color: reviewTeams.has(t.slug) ? '#ffc357' : '#6c7588',
+                  }}
+                >
+                  <span aria-hidden style={{ fontSize: 12 }}>{reviewTeams.has(t.slug) ? '★' : '☆'}</span>
+                  {reviewTeams.has(t.slug) ? 'In review queue — click to remove' : 'Request team review'}
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
       {shares.size > 0 && (
         <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-          Surfaces in the selected teams&apos; replay grid.
+          Surfaces in the selected teams&apos; replay grid. Request review to add it to a team&apos;s review queue.
         </div>
       )}
       <div style={{ borderTop: '1px solid #2e333c', paddingTop: 8, marginTop: 2 }}>

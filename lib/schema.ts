@@ -352,6 +352,10 @@ export const replayTeamShares = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'set null' as any }),
     sharedAt: timestamp('shared_at', { withTimezone: true }).notNull().defaultNow(),
+    // B135: the uploader flagged this replay for review by this team. Null =
+    // not requested; a timestamp = requested at. Anyone on the team clears it
+    // (mark reviewed) → null. Drives the team's Review-queue tab.
+    reviewRequestedAt: timestamp('review_requested_at'),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.replaySlug, t.teamSlug] }),

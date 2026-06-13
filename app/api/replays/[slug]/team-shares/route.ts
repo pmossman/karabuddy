@@ -27,9 +27,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
   }
 
-  // Existing share rows for this replay.
+  // Existing share rows for this replay. B135: include the per-team review-
+  // request state so the popover can show a "Request review" toggle per share.
   const shares = await db
-    .select({ teamSlug: replayTeamShares.teamSlug, sharedAt: replayTeamShares.sharedAt, teamName: teams.name })
+    .select({ teamSlug: replayTeamShares.teamSlug, sharedAt: replayTeamShares.sharedAt, teamName: teams.name, reviewRequestedAt: replayTeamShares.reviewRequestedAt })
     .from(replayTeamShares)
     .innerJoin(teams, eq(teams.slug, replayTeamShares.teamSlug))
     .where(eq(replayTeamShares.replaySlug, slug));

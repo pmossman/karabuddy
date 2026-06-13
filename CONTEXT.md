@@ -162,6 +162,14 @@ for the decisions behind the model.
   Curated samples (B107) now anonymize **by entitlement** instead of
   unconditionally: the public still sees "Player 1 vs Player 2", but the
   uploader/teammates see their own featured replay normally.
+- **Review queue (B135)** — the uploader flags a replay's share to a team
+  for review (`replay_team_shares.review_requested_at`, set from the
+  viewer's Share menu per shared team). It surfaces in that team's
+  **Review queue** tab. Requesting is owner-only and the replay must
+  already be shared with the team (the flag lives on the share row);
+  **any team member** can "Mark reviewed" to clear it (collaborative). API:
+  `POST /api/replays/[slug]/review {teamSlug, requested}` +
+  `GET /api/teams/[slug]/review-queue`. Never automatic.
 - **Card-play choreography (B134)** — the FrameAnimator (B110 pure
   planner → executor) gained dramatic "staged" animations for the big
   plays, each detected from the log + zone transitions: an EVENT flies out
