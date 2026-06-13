@@ -12,6 +12,7 @@ import { canDeleteTag, canEditTag, canMutateReplay, type AuthContext } from '@/l
 import { ResultBadge } from './ResultBadge';
 import { Popover } from '@/app/_components/Popover';
 import { DecksModal } from './DecksModal';
+import { ClipsList, type ClipSummary } from './ClipsList';
 import { ShareWithTeam } from './ShareWithTeam';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
 import { EditableTitle } from './EditableTitle';
@@ -124,6 +125,8 @@ interface Props {
   onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
   // B101: open the per-game resourcing report (analyzed in the viewer).
   onOpenResourcing?: () => void;
+  // B138: clips already created on this replay (desktop Clips section).
+  clips?: ClipSummary[];
 }
 
 // B42 chip labels live in lib/matchMetadata.ts — single source of truth
@@ -158,7 +161,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, anonymize, series }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, anonymize, series, clips }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -1112,6 +1115,16 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           >
             View decks →
           </button>
+        </section>
+      )}
+      {/* B138: clips on this replay — open a clip's reel. Desktop only (mobile
+          surfaces them in the ⓘ matchup panel). */}
+      {clips && clips.length > 0 && !isMobile && (
+        <section style={{ borderTop: '1px solid #2e333c', padding: '10px 16px 12px', flex: '0 0 auto' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8b93a5', padding: '0 6px 6px' }}>
+            Clips · {clips.length}
+          </div>
+          <ClipsList clips={clips} />
         </section>
       )}
       {decks && Object.keys(decks).length > 0 && !isMobile && (

@@ -6,7 +6,6 @@ import { getDb } from '@/lib/db';
 import { clips, replays } from '@/lib/schema';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
-import { anonByIdFromPlayers } from '@/lib/anonymizeReplay';
 import { canViewReplayIdentities } from '@/lib/altPerspective';
 import { auth } from '@/auth';
 import { ClipPlayer } from './ClipPlayer';
@@ -61,8 +60,6 @@ export default async function ClipPage({ params }: PageProps) {
   const viewerUserId = (session?.user as any)?.id ?? null;
   const ctx = { sessionUserId: viewerUserId, installToken: null };
   const anonymize = isSampleReplaySlug(replay.slug) || !(await canViewReplayIdentities(replay, ctx));
-  const ordered = orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId) as any[];
-  const anonById = anonymize ? Object.fromEntries(anonByIdFromPlayers(ordered)) : null;
 
   // Show the delete affordance to a signed-in creator OR the replay owner. An
   // anonymous (install-token) creator deletes from the builder right after
@@ -77,10 +74,9 @@ export default async function ClipPage({ params }: PageProps) {
       startFrame={clip.startFrame}
       endFrame={clip.endFrame}
       title={clip.title}
-      // Orient the board to the recorder's POV (the uploader's side).
-      localPlayerId={replay.ownerPlayerId ?? null}
+      // POV is derived client-side from the decoded payload (the recorder's
+      // captured perspective), identical to the replay viewer — see playback.ts.
       anonymize={anonymize}
-      anonById={anonById}
       canDelete={canDelete}
     />
   );

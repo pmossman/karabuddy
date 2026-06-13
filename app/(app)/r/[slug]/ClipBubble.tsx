@@ -2,17 +2,22 @@
 
 import React from 'react';
 
-// B136: the Clip FAB — a bottom-right bubble that opens the clip trim builder.
-// Same 38px capsule styling as PovBubble / JumpToMenu so it stacks cleanly in
-// the FAB cluster.
+// B136: the Clip FAB — opens the clip trim builder. On desktop it's a labeled
+// "Clip" pill at the board's top-right; on mobile it collapses to a compact
+// 38px round scissors bubble (conserving screen space) stacked under the ⓘ
+// matchup button. (Existing clips are listed in the matchup info, not here.)
 export function ClipBubble({
   onClick,
-  bottom,
+  top,
   right,
+  left,
+  compact = false,
 }: {
   onClick: () => void;
-  bottom: string;
-  right: string;
+  top: string;
+  right?: string;
+  left?: string;
+  compact?: boolean;
 }) {
   return (
     <button
@@ -23,12 +28,13 @@ export function ClipBubble({
       title="Create a clip"
       style={{
         position: 'fixed',
-        bottom,
-        right,
+        top,
+        ...(left != null ? { left } : { right }),
         zIndex: 90,
-        width: 38,
         height: 38,
-        borderRadius: 19,
+        ...(compact
+          ? { width: 38, borderRadius: '50%', padding: 0, gap: 0 }
+          : { borderRadius: 19, padding: '0 14px 0 12px', gap: 7 }),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -38,14 +44,19 @@ export function ClipBubble({
         backdropFilter: 'blur(6px)',
         color: '#d6e7ff',
         cursor: 'pointer',
-        padding: 0,
+        fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+        fontSize: 13.5,
+        fontWeight: 800,
+        letterSpacing: '0.04em',
       }}
     >
-      {/* Film/clip glyph. */}
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <rect x="3" y="5" width="18" height="14" rx="2" />
-        <path d="M3 9h18M7 5v14M17 5v14" />
+      {/* Scissors — the universal "clip / cut" glyph. */}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="6" cy="6" r="3" />
+        <circle cx="6" cy="18" r="3" />
+        <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
       </svg>
+      {!compact && <span>Clip</span>}
     </button>
   );
 }

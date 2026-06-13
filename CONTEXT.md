@@ -19,6 +19,14 @@ for the decisions behind the model.
 - **Tag** — a timestamped comment pinned to a frame of a replay (`tags` row).
   Created in-game (extension) or in the viewer (web). May carry structured
   **mentions** and a **team scope**.
+- **Clip (B136)** — a saved `[start, end]` frame range of a replay (`clips`
+  row), bounds stored in ORIGINAL frame space (survive re-upload). Any viewer
+  can create one from the viewer's trim builder; it gets a shareable link to a
+  dedicated auto-playing **reel** (`/c/<slug>`) that ends on a summary card
+  (matchup, replay/share, "watch full replay"). Link-public, anonymized for
+  non-identity-entitled viewers like the parent replay. Listed in the matchup
+  info (sidebar + mobile ⓘ panel). Discord/Twitter unfurl with a static
+  moment-card thumbnail (`og-image`); animated embeds are deferred.
 - **Leader / base** — the two signature cards defining a SWU deck. Always
   captured for both players; karabast masks the opponent's full decklist, so
   for the opponent only leader + base are known (the rest is recovered as
@@ -186,3 +194,21 @@ for the decisions behind the model.
   and a unit played-then-attacking (ambush) holds the play before the lunge.
   Cardbacks render `contain` (the default `/card-back.png` is square, so
   `cover` cropped the logo).
+- **Unified playback foundation (B138)** — the replay viewer, the clip reel,
+  and the clip builder preview all drive their boards through ONE foundation so
+  they can't diverge: `playback.ts` (`resolveConnectedPlayer` — POV from the
+  decoded payload's `meta.localPlayerId`; `usePlaybackBoard` — POV + frame push
+  with forward-step animate / scrub-snap; `createDwellStepper` — the dwell-paced
+  stepping engine; `PLAYBACK_SPEEDS` — literal 0.5×/1×/2× multipliers, default
+  1×), and `animationTiming.ts` (the single source for every choreography
+  duration + the `dwellFor(total)` = `total + READ_BUFFER_MS` rule that
+  `computeFrameDwells` uses, so a frame always outlasts its animation at 1×).
+  Speed is one multiplier scaling BOTH the dwell (stepper) AND the animations
+  (FrameAnimator sets each Web Animation's `playbackRate`), so beats are never
+  cut off at any speed. POV anonymization derives id→label from the FRAMES
+  (`anonByIdFromFrames`) — the stored players summary has no ids.
+- **Base damage shake (B139)** — a base that takes damage jiggles, amplitude ∝
+  damage dealt (`min(18, dealt·1.5+0.5)` px). Tracked via a base-uuid→damage ref
+  across frames; only on forward playback. Animates an overlay CLONE (real base
+  hidden underneath) — transforming the live base in the board DOM didn't move
+  it.

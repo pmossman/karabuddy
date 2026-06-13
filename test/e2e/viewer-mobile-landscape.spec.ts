@@ -193,9 +193,9 @@ test('mobile: playback-settings bubble exposes Speed + Step by (landscape + port
     await expect(bubble.getByText(/Step by/i)).toBeVisible();
     await expect(bubble.getByRole('button', { name: /^Action$/ })).toBeVisible();
     await expect(bubble.getByRole('button', { name: /^Frame$/ })).toBeVisible();
-    // Named speed tiers (no fake "1×" baseline).
+    // Literal speed multipliers (shared with the clip reel — 0.5× / 1× / 2×).
     await expect(bubble.getByText(/Speed/i)).toBeVisible();
-    await expect(bubble.getByRole('button', { name: /^Normal$/ })).toBeVisible();
+    await expect(bubble.getByRole('button', { name: /^1×$/ })).toBeVisible();
   }
 });
 

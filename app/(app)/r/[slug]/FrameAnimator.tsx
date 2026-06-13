@@ -4,6 +4,15 @@ import { useLayoutEffect, useRef } from 'react';
 import { useGame } from '@/app/_contexts/Game.context';
 import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
+// B138: animation durations live in one shared module so the autoplay/clip
+// dwell (frameDwell.ts) is derived from the SAME numbers — see animationTiming.
+import {
+  RAPID_STEP_MS, DURATION, LUNGE_MS, TRACER_MS, PLAY_MOVE_MS, PLAY_FLIP_MS,
+  EVENT_TOTAL_MS, EVENT_FLIP_MS, EVENT_FLIP_DELAY, UPGRADE_TOTAL_MS,
+  RESOURCE_RISE_MS, RESOURCE_HOLD_MS, RESOURCE_DROP_MS, RESOURCE_TOTAL_MS,
+  LEADER_DEPLOY_RISE_MS, LEADER_DEPLOY_HOLD_MS, LEADER_DEPLOY_DESCEND_MS, LEADER_DEPLOY_TOTAL,
+  VIGNETTE_LINGER_MS,
+} from './animationTiming';
 
 // B104/B109/B110: animate card movement between replay frames. Cards carry a
 // stable `uuid` across frames + zones, and the lifted board tags each DOM node
@@ -16,53 +25,29 @@ import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './fr
 // FLIP refs through every zone component. Driven off the game context's
 // `gameState` so the effect runs AFTER the board re-renders the new frame.
 
-// Below this gap between frame changes we treat it as rapid stepping (held
-// arrow) and snap without animating, so flying through a replay stays smooth.
-const RAPID_STEP_MS = 110;
-const DURATION = 300;
+// Animator-internal shape constants (easings, stage scales, and offset ratios).
+// The raw ms durations are imported from ./animationTiming (shared with the
+// dwell map); the ratios below are derived from those same durations.
 const EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
-const LUNGE_MS = 440;
 const LUNGE_EASING = 'cubic-bezier(0.34, 1.2, 0.64, 1)';
-const TRACER_MS = 300;
-const PLAY_MOVE_MS = 420;
-const PLAY_FLIP_MS = 280;
-// B134: event-play choreography — fly out of the hand to center stage, hold
-// (grown, "above" the board), then drop to the discard.
-const EVENT_TOTAL_MS = 1500;
+// Event-play choreography offsets — fly out, hold at the stage point, drop away.
 const EVENT_ARRIVE = 0.26;   // offset: at the stage point
 const EVENT_DEPART = 0.74;   // offset: leaves the stage point
 const EVENT_STAGE_SCALE = 2.1;
-const EVENT_FLIP_MS = 260;
-const EVENT_FLIP_DELAY = 130; // mid-flight
-// B134: upgrade choreography — present above the unit, then tuck under it.
-const UPGRADE_TOTAL_MS = 1350;
+// Upgrade choreography — present above the unit, then tuck under it.
 const UPGRADE_ARRIVE = 0.28;
 const UPGRADE_DEPART = 0.66;
 const UPGRADE_STAGE_SCALE = 1.7;
-// B134: resourcing — rise + grow (face up), HOLD so the viewer can read the
-// card(s), then flip face-down + drop into the pile. Explicit phases so the
-// read-pause is a real beat, not a sliver of the flight.
-const RESOURCE_RISE_MS = 340;
-const RESOURCE_HOLD_MS = 425;   // the read pause (face up, side by side)
-const RESOURCE_DROP_MS = 520;   // flip face-down + fall into the pile
-const RESOURCE_TOTAL_MS = RESOURCE_RISE_MS + RESOURCE_HOLD_MS + RESOURCE_DROP_MS;
+// Resourcing — rise + grow (face up), HOLD to read, then flip + drop. The
+// arrive/depart offsets are the phase boundaries within RESOURCE_TOTAL_MS.
 const RESOURCE_ARRIVE = RESOURCE_RISE_MS / RESOURCE_TOTAL_MS;
 const RESOURCE_DEPART = (RESOURCE_RISE_MS + RESOURCE_HOLD_MS) / RESOURCE_TOTAL_MS;
 const RESOURCE_STAGE_SCALE = 1.65;
-// B134: the board's default cardback — resources go face-DOWN (the card flips
-// to this on its way to the pile, mirroring the physical game). Same asset the
-// lifted board uses (getCardback default), rendered `contain` so the square
-// back shows fully.
+// The board's default cardback — resources go face-DOWN into the pile. Same
+// asset the lifted board uses (getCardback default), rendered `contain`.
 const CARDBACK_URL = '/card-back.png';
-// B134: dramatic leader deploy — raise off the table (grow), hold, flip to the
-// unit side, slam down to the board slot + board shake on landing.
-const LEADER_DEPLOY_RISE_MS = 400;
-const LEADER_DEPLOY_HOLD_MS = 450;
-const LEADER_DEPLOY_DESCEND_MS = 480;
-const LEADER_DEPLOY_TOTAL = LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS + LEADER_DEPLOY_DESCEND_MS;
+// Dramatic leader deploy — raise (grow), hold, flip to the unit side, slam down.
 const LEADER_DEPLOY_SCALE = 2.3;
-// The spotlight vignette holds through the landing, then lifts over this tail.
-const VIGNETTE_LINGER_MS = 380;
 
 export function FrameAnimator({
   containerRef,
@@ -70,9 +55,15 @@ export function FrameAnimator({
   direction,
   skipNextRef,
   localPlayerId,
+  speedRef,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   enabled: boolean;
+  // B138: live playback-speed multiplier. Every animation's playbackRate is set
+  // to this so animations run faster/slower IN STEP with the dwell — never cut
+  // off or skipped at higher speeds. A ref so changing speed doesn't re-run the
+  // effect (which would re-trigger animations). Defaults to 1× when absent.
+  speedRef?: React.RefObject<number | null>;
   // B134: the current POV player id — maps a resourced card's controller to the
   // own vs opponent resource pile.
   localPlayerId?: string | null;
@@ -98,6 +89,7 @@ export function FrameAnimator({
   const hidden = useRef<HTMLElement[]>([]);
   const lastRun = useRef(0); // timestamp of the last frame change (rapid-step detection)
   const zones = useRef<Map<string, string>>(new Map()); // uuid → zone, previous frame
+  const baseDamage = useRef<Map<string, number>>(new Map()); // base uuid → damage, previous frame
   const remeasureRaf = useRef<number | null>(null); // deferred settle-measure after a backward snap
 
   useLayoutEffect(() => {
@@ -132,6 +124,16 @@ export function FrameAnimator({
     const now = performance.now();
     const dt = now - lastRun.current;
     lastRun.current = now;
+    // B139: track each base's damage so we can shake it by the damage DEALT this
+    // frame (the delta). Capture prev, refresh the ref now — so snaps/scrubs keep
+    // it current and only a real forward step (below) shakes.
+    const prevBaseDmg = baseDamage.current;
+    const curBaseDmg = new Map<string, number>();
+    for (const pid of Object.keys(gameState?.players || {})) {
+      const b = gameState.players[pid]?.base;
+      if (b?.uuid) curBaseDmg.set(b.uuid, typeof b.damage === 'number' ? b.damage : 0);
+    }
+    baseDamage.current = curBaseDmg;
     // B128: a POV swap render — snap, exactly like the rapid-step path (the
     // next real step re-measures from the settled mirrored layout).
     if (skipNextRef?.current) { skipNextRef.current = false; prev.current = null; return; }
@@ -180,15 +182,21 @@ export function FrameAnimator({
     });
 
     // ----- Execute -----
+    // B138: scale every animation by the live playback speed so it finishes IN
+    // STEP with the (also speed-scaled) dwell — 2× plays the choreography twice
+    // as fast, 0.5× half as fast, and nothing is ever cut off or skipped.
+    const rate = Math.max(0.05, speedRef?.current ?? 1);
     const cRect = container.getBoundingClientRect();
     const ctx: Ctx = {
       overlay,
       container,
       cRect,
+      rate,
       rel: (s) => ({ left: s.x - cRect.left, top: s.y - cRect.top }),
       findCard: (uuid) => container.querySelector<HTMLElement>(`[data-card-uuid="${cssEscape(uuid)}"]`),
       track: (anim, onDone) => {
         if (!anim) { onDone?.(); return; }
+        anim.playbackRate = rate; // playbackRate scales delay + duration together
         active.current.push(anim);
         anim.onfinish = anim.oncancel = () => { onDone?.(); };
       },
@@ -196,6 +204,31 @@ export function FrameAnimator({
       show: (el) => { if (el) el.style.opacity = ''; },
     };
     for (const intent of intents) runIntent(intent, ctx);
+
+    // B139: a base that took damage this frame shakes, harder the more it took.
+    // We shake a CLONE in the overlay (and hide the real base underneath) —
+    // transforming the live base in the board DOM didn't move it visually. Same
+    // proven pattern as the leader-deploy / event choreography.
+    for (const [uuid, dmg] of curBaseDmg) {
+      const before = prevBaseDmg.get(uuid);
+      if (before == null) continue; // not tracked last frame (first frame / scrub)
+      const dealt = dmg - before;
+      if (dealt <= 0) continue;
+      const snap = next.get(uuid);
+      const realEl = ctx.findCard(uuid);
+      if (!snap || !realEl) continue;
+      const p = ctx.rel(snap);
+      const clone = document.createElement('div');
+      Object.assign(clone.style, {
+        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
+        width: `${snap.w}px`, height: `${snap.h}px`,
+        pointerEvents: 'none', zIndex: '8', transformOrigin: 'center',
+      } as CSSStyleDeclaration);
+      clone.appendChild(fitNode(snap.html));
+      overlay.appendChild(clone);
+      ctx.hide(realEl);
+      ctx.track(shakeCard(clone, dealt), () => { clone.remove(); ctx.show(realEl); });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, enabled, localPlayerId]);
 
@@ -212,6 +245,7 @@ interface Ctx {
   overlay: HTMLElement;
   container: HTMLElement;
   cRect: DOMRect;
+  rate: number; // playback-speed multiplier; scales swap timeouts (track scales the animations)
   rel: (s: { x: number; y: number }) => { left: number; top: number };
   findCard: (uuid: string) => HTMLElement | null;
   track: (anim: Animation | null, onDone?: () => void) => void;
@@ -225,7 +259,7 @@ interface Ctx {
 // animation never flashes at its natural rect (fill:'backwards' alone can let
 // one frame through); fill:'both' holds the end until the clone is removed.
 function runIntent(intent: Intent, ctx: Ctx): void {
-  const { overlay, rel, findCard, track, hide, show } = ctx;
+  const { overlay, rel, findCard, track, hide, show, rate } = ctx;
   switch (intent.type) {
     case 'move': {
       const { uuid, from: o, to: n, delay } = intent;
@@ -444,7 +478,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       // Hidden-hand play: flip face-up mid-flight (swap the card back for the
       // real face at the flip's narrowest point — needs the discard render).
       if (faceDown && to) {
-        const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2);
+        const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, (EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2) / rate);
         track(
           inner.animate(
             [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
@@ -503,7 +537,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
           position: 'absolute', inset: '0', backgroundImage: `url(${faceUp})`,
           backgroundSize: 'contain', backgroundPosition: 'center', borderRadius: '7px',
         } as CSSStyleDeclaration);
-        const swap = window.setTimeout(() => { inner.replaceChildren(faceNode); }, EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2);
+        const swap = window.setTimeout(() => { inner.replaceChildren(faceNode); }, (EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2) / rate);
         track(
           inner.animate(
             [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
@@ -579,10 +613,10 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       );
       track(outerAnim, () => { outer.remove(); show(liveEl); });
       // Shake the whole board ONLY on a real landing (not a rapid-step cancel).
-      outerAnim.addEventListener('finish', () => shakeBoard(ctx.container));
+      outerAnim.addEventListener('finish', () => shakeBoard(ctx.container, rate));
       // Flip leader → unit side as the slam begins.
       const flipDelay = LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS;
-      const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, flipDelay + 130);
+      const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, (flipDelay + 130) / rate);
       track(inner.animate(
         [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
         { duration: 280, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
@@ -642,7 +676,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
           position: 'absolute', inset: '0', backgroundImage: `url(${CARDBACK_URL})`,
           backgroundSize: 'contain', backgroundPosition: 'center', borderRadius: '7px',
         } as CSSStyleDeclaration);
-        const swap = window.setTimeout(() => { inner.replaceChildren(back); }, flipDelay + 150);
+        const swap = window.setTimeout(() => { inner.replaceChildren(back); }, (flipDelay + 150) / rate);
         track(inner.animate(
           [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
           { duration: 300, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
@@ -670,7 +704,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       track(outer.animate(
         [{ transform: `translate(${tx}px, ${ty}px) scale(${sx}, ${sy})` }, { transform: 'translate(0,0) scale(1,1)' }],
         { duration: PLAY_MOVE_MS, fill: 'backwards', easing: EASING }));
-      const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, PLAY_MOVE_MS + PLAY_FLIP_MS / 2);
+      const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, (PLAY_MOVE_MS + PLAY_FLIP_MS / 2) / rate);
       track(
         inner.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
           { duration: PLAY_FLIP_MS, delay: PLAY_MOVE_MS, fill: 'backwards', easing: 'ease-in-out' }),
@@ -715,9 +749,31 @@ function fitNode(html: string): HTMLElement {
   return node;
 }
 
+// B139: shake a card (a damaged base) with an amplitude proportional to the
+// damage DEALT this frame — 1 is a tiny nudge, 7+ a big shake, 10+ huge. Returns
+// the Animation so the caller can track() it (which scales it by playback speed
+// and reverts the transform when the next frame cancels it).
+function shakeCard(el: HTMLElement | null, damage: number): Animation | null {
+  if (!el) return null;
+  const a = Math.min(18, damage * 1.5 + 0.5); // 1→2px, 7→11px, 10→15.5px, ≥12→18px
+  const dur = Math.min(460, 240 + damage * 20);
+  return el.animate(
+    [
+      { transform: 'translate(0, 0)' },
+      { transform: `translate(${-a}px, ${a * 0.5}px)` },
+      { transform: `translate(${a * 0.85}px, ${-a * 0.4}px)` },
+      { transform: `translate(${-a * 0.6}px, ${a * 0.3}px)` },
+      { transform: `translate(${a * 0.4}px, ${-a * 0.2}px)` },
+      { transform: `translate(${-a * 0.2}px, ${a * 0.1}px)` },
+      { transform: 'translate(0, 0)' },
+    ],
+    { duration: dur, easing: 'cubic-bezier(0.36, 0.07, 0.19, 0.97)' },
+  );
+}
+
 // B134: a brief impact shake of the whole board — the leader slamming down.
-function shakeBoard(container: HTMLElement): void {
-  container.animate(
+function shakeBoard(container: HTMLElement, rate = 1): void {
+  const anim = container.animate(
     [
       { transform: 'translate(0, 0)' },
       { transform: 'translate(-5px, 4px)' },
@@ -728,6 +784,7 @@ function shakeBoard(container: HTMLElement): void {
     ],
     { duration: 380, easing: 'ease-out' },
   );
+  anim.playbackRate = rate;
 }
 
 // B134: temporarily lift overflow-clipping on a card's ancestors (up to, not

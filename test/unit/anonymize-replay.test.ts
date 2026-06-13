@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anonLabel, anonByIdFromPlayers, anonymizePlayersSummary, anonymizeFrames, anonymizeDecks } from '@/lib/anonymizeReplay';
+import { anonLabel, anonByIdFromPlayers, anonByIdFromFrames, anonymizePlayersSummary, anonymizeFrames, anonymizeDecks } from '@/lib/anonymizeReplay';
 
 describe('anonymizeReplay', () => {
   const players = [
@@ -56,6 +56,29 @@ describe('anonymizeReplay', () => {
     expect(anon.p2.username).toBe('Player2');
     expect(anon.p2.name).toBeNull();
     expect(anonymizeDecks(null, byId)).toBeNull();
+  });
+
+  it('anonByIdFromFrames: derives ids from the FRAMES (the players summary has none)', () => {
+    // The stored players summary carries no id — only the frame player map does.
+    const frames = [
+      { state: { players: { 'uuid-a': { user: { username: 'BDST_Squire' } }, 'uuid-b': { user: { username: 'ReprintConfiscate' } } } } },
+    ];
+    // No owner → first-seen order.
+    const byOrder = anonByIdFromFrames(frames);
+    expect(byOrder.get('uuid-a')).toBe('Player1');
+    expect(byOrder.get('uuid-b')).toBe('Player2');
+    // Owner-first → the owner becomes Player1 regardless of map order.
+    const byOwner = anonByIdFromFrames(frames, 'uuid-b');
+    expect(byOwner.get('uuid-b')).toBe('Player1');
+    expect(byOwner.get('uuid-a')).toBe('Player2');
+    // End-to-end: every real handle is replaced (the leak this guards against).
+    anonymizeFrames(frames, byOrder);
+    expect(Object.values(frames[0].state.players).map((p: any) => p.user.username)).toEqual(['Player1', 'Player2']);
+  });
+
+  it('anonByIdFromFrames: empty for frames without players', () => {
+    expect(anonByIdFromFrames(null).size).toBe(0);
+    expect(anonByIdFromFrames([{ state: {} }]).size).toBe(0);
   });
 
   it('tolerates missing/odd shapes', () => {

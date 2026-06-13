@@ -39,10 +39,14 @@ describe('computeChapters', () => {
       frame('action', { lz: 'groundArena' }, { lz: 'spaceArena', leaderName: 'The Mandalorian' }), // 3 Bob flips
     ];
     const leaders = computeChapters(frames).filter((c) => c.kind === 'leader');
-    expect(leaders).toEqual([
+    // toMatchObject (not toEqual): leader chapters also carry an `art` URL
+    // derived from the deployed leader's card; these test fixtures have no
+    // setId so it resolves to the cardback, asserted below.
+    expect(leaders).toMatchObject([
       { frameIndex: 1, kind: 'leader', label: 'Luke Skywalker deploys', sublabel: 'Ann' },
       { frameIndex: 3, kind: 'leader', label: 'The Mandalorian deploys', sublabel: 'Bob' },
     ]);
+    expect(leaders.every((c) => typeof c.art === 'string' && c.art.length > 0)).toBe(true);
   });
 
   it('orders by frame, with start first and end last', () => {

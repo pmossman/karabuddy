@@ -7,6 +7,8 @@
 // end of the game. Tags are merged in by the caller (they live in component
 // state), so this stays a pure function of the frames.
 
+import { cardArtUrl } from './momentCard';
+
 export type ChapterKind = 'start' | 'round' | 'leader' | 'end' | 'tag';
 
 export interface Chapter {
@@ -14,6 +16,7 @@ export interface Chapter {
   kind: ChapterKind;
   label: string;
   sublabel?: string;
+  art?: string;            // leader-deploy chapters: the deployed leader's card art
 }
 
 const leaderIsDeployed = (leader: any): boolean =>
@@ -51,7 +54,7 @@ export function computeChapters(frames: ReadonlyArray<{ state: any }> | null): C
         deployed.add(pid);
         const name = (typeof leader.name === 'string' && leader.name) || 'Leader';
         const who = players[pid]?.user?.username;
-        chapters.push({ frameIndex: i, kind: 'leader', label: `${name} deploys`, sublabel: who || undefined });
+        chapters.push({ frameIndex: i, kind: 'leader', label: `${name} deploys`, sublabel: who || undefined, art: cardArtUrl(leader) });
       }
     }
 

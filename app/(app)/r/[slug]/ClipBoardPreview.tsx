@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
-import { useGame } from '@/app/_contexts/Game.context';
 import { FrameAnimator } from './FrameAnimator';
+import { usePlaybackBoard } from './playback';
 import type { Frame } from '@/lib/replayDecoder';
 
 // B136: an INDEPENDENT board preview for the clip builder. The real Gameboard
@@ -22,39 +22,20 @@ export function ClipBoardPreview({
   index,
   animate,
   localPlayerId,
+  speedRef,
 }: {
   frames: Frame[];
   index: number;            // which frame to show (clamped by the caller)
   animate: boolean;         // true during preview PLAY → animate forward steps
   localPlayerId: string | null;
+  speedRef?: RefObject<number | null>; // preview speed → scales animations
 }) {
-  const { setGameState, setConnectedPlayer } = useGame();
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.4);
-  const prevIdx = useRef(index);
-  const dir = useRef(1);
   const skipRef = useRef(true); // first push snaps
-
-  useEffect(() => {
-    const players = frames[0]?.state?.players;
-    if (!players) return;
-    const connected = (localPlayerId && Object.prototype.hasOwnProperty.call(players, localPlayerId))
-      ? localPlayerId
-      : Object.keys(players)[0] ?? null;
-    if (connected) setConnectedPlayer(connected);
-  }, [frames, localPlayerId, setConnectedPlayer]);
-
-  // Push the requested frame. Animate only a forward single step DURING play;
-  // anything else (scrub, backward, jump, or not playing) snaps.
-  useEffect(() => {
-    const i = Math.max(0, Math.min(frames.length - 1, index));
-    const delta = i - prevIdx.current;
-    dir.current = delta >= 0 ? 1 : -1;
-    if (!animate || delta <= 0 || delta > 1) skipRef.current = true;
-    prevIdx.current = i;
-    const f = frames[i];
-    if (f?.state) setGameState(f.state);
-  }, [frames, index, animate, setGameState]);
+  // Shared playback foundation — identical POV + frame-push to the reel player
+  // and the replay viewer (see playback.ts).
+  const dir = usePlaybackBoard({ frames, metaLocalPlayerId: localPlayerId, index, animate, skipNextRef: skipRef });
 
   // Fit the full-viewport board into the preview box.
   useLayoutEffect(() => {
@@ -87,7 +68,7 @@ export function ClipBoardPreview({
         <Gameboard />
       </div>
       {/* Same card-movement choreography as the main board. */}
-      <FrameAnimator containerRef={boxRef} enabled direction={dir.current} skipNextRef={skipRef} localPlayerId={localPlayerId} />
+      <FrameAnimator containerRef={boxRef} enabled direction={dir.current} skipNextRef={skipRef} localPlayerId={localPlayerId} speedRef={speedRef} />
     </div>
   );
 }

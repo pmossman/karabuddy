@@ -17,6 +17,26 @@ export function anonByIdFromPlayers(players: Array<{ id?: string }> | null | und
   return m;
 }
 
+// id → label, derived from the DECODED FRAMES. The stored `players` summary
+// carries no player id (only username), so a summary-keyed map is empty and
+// anonymization silently no-ops — the real ids live ONLY as the frame's
+// `state.players` keys. Labels are owner-first (so "Player1" = the uploader,
+// matching the owner-first matchup) when `ownerPlayerId` is known, else in
+// first-seen order. Every player present in the frames gets a label, so no real
+// handle can survive.
+export function anonByIdFromFrames(
+  frames: Array<{ state?: any }> | null | undefined,
+  ownerPlayerId?: string | null,
+): Map<string, string> {
+  const m = new Map<string, string>();
+  const fp = (frames || []).find((f) => f?.state?.players && typeof f.state.players === 'object')?.state.players;
+  if (!fp) return m;
+  let ids = Object.keys(fp);
+  if (ownerPlayerId && ids.includes(ownerPlayerId)) ids = [ownerPlayerId, ...ids.filter((i) => i !== ownerPlayerId)];
+  ids.forEach((id, i) => m.set(id, anonLabel(i)));
+  return m;
+}
+
 // Players summary with usernames swapped for anon labels — everything else
 // (leader / base / result) is preserved so the matchup still shows the decks.
 export function anonymizePlayersSummary<T extends { username?: string }>(players: T[] | null | undefined): T[] {

@@ -15,7 +15,7 @@ import { JumpToMenu } from './JumpToMenu';
 import { PovBubble } from './PovBubble';
 import { revealHiddenHand } from './revealHands';
 import { computeChapters, type Chapter } from '@/lib/replayChapters';
-import { anonymizeFrames, anonByIdFromPlayers, anonymizeDecks } from '@/lib/anonymizeReplay';
+import { anonymizeFrames, anonByIdFromPlayers, anonByIdFromFrames, anonymizeDecks } from '@/lib/anonymizeReplay';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
@@ -26,6 +26,7 @@ import type { SeriesInfo } from './SeriesNav';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import { ResourcingModal } from './ResourcingModal';
 import { ClipBubble } from './ClipBubble';
+import type { ClipSummary } from './ClipsList';
 import { ClipBuilder } from './ClipBuilder';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import { useDragSize } from './useDragSize';
@@ -34,6 +35,7 @@ import { useSession } from 'next-auth/react';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { canMutateReplay } from '@/lib/replayPermissions';
 import { computeFrameDwells } from './frameDwell';
+import { resolveConnectedPlayer, createDwellStepper, type DwellStepper, PLAYBACK_SPEEDS, PLAYBACK_SPEED_DEFAULT, PLAYBACK_SPEED_STORAGE_KEY } from './playback';
 
 // B104: cadence of the action-mode multi-frame playback (ms between frames).
 // Tuned to ~the card-move animation length so consecutive transitions flow.
@@ -44,17 +46,6 @@ const PLAYBACK_TICK_MS = 300;
 // (key-repeat ~30-50ms) — fly through instead of playing the choreography.
 const HELD_STEP_MS = 180;
 
-// B104: auto-play speed tiers. There's no objective "real-time" rate for a
-// replay (frames aren't evenly spaced in wall-clock), so the UI labels these
-// qualitatively; `value` is the dwell divisor (higher = less time per frame).
-const PLAY_SPEEDS = [
-  { label: 'Slow', value: 0.25 },
-  { label: 'Normal', value: 0.5 },
-  { label: 'Fast', value: 1 },
-  { label: 'Faster', value: 3 },
-] as const;
-const PLAY_SPEED_DEFAULT = 0.5; // Normal
-const PLAY_SPEED_STORAGE_KEY = 'karabuddy:playSpeed';
 // Never dwell shorter than this regardless of speed — below it the board can't
 // keep up and frames just blur past without registering.
 const PLAY_MIN_DWELL_MS = 45;
@@ -199,7 +190,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // Independent of step-mode (which only governs manual arrow/chevron stepping).
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
-  const autoplayTimerRef = useRef<number | null>(null);
+  // Shared autoplay stepping engine (playback.ts) — same cadence as the clip
+  // reel. Created lazily in startAutoplay; closures read live refs.
+  const autoplayStepperRef = useRef<DwellStepper | null>(null);
   // B121: pulse the Play button to cue first-time viewers; cleared the first
   // time they press play, remembered across visits. Initialized in an effect
   // (not the useState initializer) to avoid an SSR/hydration mismatch.
@@ -207,23 +200,23 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   useEffect(() => {
     try { if (!window.localStorage.getItem('karabuddy:hasPlayedReplay')) setPulsePlay(true); } catch {}
   }, []);
-  const [speed, setSpeed] = useState<number>(PLAY_SPEED_DEFAULT);
-  const speedRef = useRef(PLAY_SPEED_DEFAULT);
+  const [speed, setSpeed] = useState<number>(PLAYBACK_SPEED_DEFAULT);
+  const speedRef = useRef(PLAYBACK_SPEED_DEFAULT);
   useEffect(() => {
     try {
-      const v = Number(window.localStorage.getItem(PLAY_SPEED_STORAGE_KEY));
-      if (PLAY_SPEEDS.some((o) => o.value === v)) { setSpeed(v); speedRef.current = v; }
+      const v = Number(window.localStorage.getItem(PLAYBACK_SPEED_STORAGE_KEY));
+      if (PLAYBACK_SPEEDS.some((o) => o.value === v)) { setSpeed(v); speedRef.current = v; }
     } catch {}
   }, []);
   const stopAutoplay = useCallback(() => {
     playingRef.current = false;
-    if (autoplayTimerRef.current != null) { window.clearTimeout(autoplayTimerRef.current); autoplayTimerRef.current = null; }
+    autoplayStepperRef.current?.stop();
     setPlaying(false);
   }, []);
   const setSpeedValue = useCallback((next: number) => {
     speedRef.current = next;
     setSpeed(next);
-    try { window.localStorage.setItem(PLAY_SPEED_STORAGE_KEY, String(next)); } catch {}
+    try { window.localStorage.setItem(PLAYBACK_SPEED_STORAGE_KEY, String(next)); } catch {}
   }, []);
   // B44/B46: drawer state owned here so the gameboard overlay (FrameNavOverlay)
   // can shift in response. Starts closed on mobile so the first paint gives
@@ -256,6 +249,18 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // B101: per-game resourcing report (analyzed client-side from decoded frames).
   const [resourcingOpen, setResourcingOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
+  // B138: clips that already exist on this replay → the Clip control gains a
+  // picker. Public list (link-accessible like the replay); refetched after the
+  // builder creates one.
+  const [clips, setClips] = useState<ClipSummary[]>([]);
+  const refetchClips = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/replays/${replay.slug}/clips`);
+      const body = await res.json();
+      if (body?.ok && Array.isArray(body.data)) setClips(body.data);
+    } catch { /* non-fatal */ }
+  }, [replay.slug]);
+  useEffect(() => { refetchClips(); }, [refetchClips]);
   const userTouchedDrawerRef = useRef(false);
   useEffect(() => {
     if (userTouchedDrawerRef.current) return;
@@ -586,20 +591,24 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     // B121: they've now used Play — stop the first-time pulse for good.
     setPulsePlay(false);
     try { window.localStorage.setItem('karabuddy:hasPlayedReplay', '1'); } catch {}
-    const tick = () => {
-      if (!playingRef.current || !frames) return;
-      if (pos >= frames.length - 1) { stopAutoplay(); return; }
-      pos += 1;
-      setCurrentIndex(pos);
-      if (pos >= frames.length - 1) { stopAutoplay(); return; } // landed on last
-      const base = animateRef.current ? (frameAnimMsRef.current[pos] ?? PLAYBACK_TICK_MS) : PLAYBACK_TICK_MS;
-      autoplayTimerRef.current = window.setTimeout(tick, Math.max(PLAY_MIN_DWELL_MS, base / speedRef.current));
-    };
-    // Dwell on the CURRENT frame before advancing to the next, so the very
-    // first transition gets the same pacing as the rest.
-    const first = animateRef.current ? (frameAnimMsRef.current[pos] ?? PLAYBACK_TICK_MS) : PLAYBACK_TICK_MS;
-    autoplayTimerRef.current = window.setTimeout(tick, Math.max(PLAY_MIN_DWELL_MS, first / speedRef.current));
-  }, [frames, stopPlayback, stopAutoplay, setCurrentIndex]);
+    // Shared stepping engine — identical cadence to the clip reel (playback.ts).
+    // `animate` off → flat tick; on → per-frame choreography dwell. Stops at the
+    // last frame (no loop). Closures read live refs, so flips/speed take effect.
+    if (!autoplayStepperRef.current) {
+      autoplayStepperRef.current = createDwellStepper({
+        isPlaying: () => playingRef.current,
+        speed: () => speedRef.current,
+        minDwellMs: PLAY_MIN_DWELL_MS,
+        dwellMs: (f) => (animateRef.current ? (frameAnimMsRef.current[f] ?? PLAYBACK_TICK_MS) : PLAYBACK_TICK_MS),
+        lower: () => 0,
+        upper: () => frameAnimMsRef.current.length - 1,
+        loop: false,
+        show: (f) => setCurrentIndex(f),
+        onEnd: () => { playingRef.current = false; setPlaying(false); },
+      });
+    }
+    autoplayStepperRef.current.start(pos);
+  }, [frames, stopPlayback, setCurrentIndex]);
   const toggleAutoplay = useCallback(() => {
     if (playingRef.current) stopAutoplay(); else startAutoplay();
   }, [startAutoplay, stopAutoplay]);
@@ -635,9 +644,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         if (cancelled) return;
         // B107: sample replay → rewrite the board labels + game-log player
         // names to "Player N" before the frames ever reach the game context.
-        // The id→label map comes from the (already-anonymized) players prop, so
-        // the board, log, and card all agree.
-        if (anonymize) anonymizeFrames(result.frames, anonByIdFromPlayers(replay.players as any[]));
+        // The id→label map is derived from the FRAMES (the stored players
+        // summary has no player ids), owner-first so the board, log, and card
+        // all agree.
+        if (anonymize) anonymizeFrames(result.frames, anonByIdFromFrames(result.frames, result.meta?.localPlayerId ?? null));
         setDecoded(result);
         // Prefer the player ID captured by the recorder (the local karabast
         // Board orientation (connectedPlayer) is set by a dedicated effect that
@@ -669,10 +679,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   useEffect(() => {
     const players = activeDecoded?.frames[0]?.state?.players;
     if (!players) return;
-    const localId = activeDecoded?.meta.localPlayerId;
-    const connected = (localId && Object.prototype.hasOwnProperty.call(players, localId))
-      ? localId
-      : Object.keys(players)[0] ?? null;
+    // Shared POV rule (playback.ts) — the clip surfaces resolve orientation the
+    // same way, so the board can never orient differently between them.
+    const connected = resolveConnectedPlayer(players, activeDecoded?.meta.localPlayerId);
     if (connected) setConnectedPlayer(connected);
   }, [activeDecoded, setConnectedPlayer]);
 
@@ -894,6 +903,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               // B134: the displayed POV — maps a resourced card's controller to
               // its own/opponent resource pile (incl. the hands-up alt view).
               localPlayerId={activeDecoded?.meta.localPlayerId ?? null}
+              // B138: scale animations with playback speed (shared with the clip reel).
+              speedRef={speedRef}
             />
             {showSummary && endStats && (
               <EndGameSummary
@@ -967,6 +978,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         onOpenResourcing={() => setResourcingOpen(true)}
         anonymize={anonymize}
         series={series ?? null}
+        clips={clips}
       />
       </KaraBuddyThemeProvider>
       <ResourcingModal
@@ -988,6 +1000,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           chapters={chapters}
           initialIndex={currentIndex}
           installToken={installToken}
+          onCreated={refetchClips}
         />
       )}
       {(() => {
@@ -1038,7 +1051,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 playing={playing}
                 onTogglePlay={toggleAutoplay}
                 speed={speed}
-                speeds={PLAY_SPEEDS as unknown as { label: string; value: number }[]}
+                speeds={PLAYBACK_SPEEDS as { label: string; value: number }[]}
                 onSetSpeed={setSpeedValue}
                 landscape
                 drawerOpen={drawerOpen}
@@ -1061,7 +1074,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 playing={playing}
                 onTogglePlay={toggleAutoplay}
                 speed={speed}
-                speeds={PLAY_SPEEDS as unknown as { label: string; value: number }[]}
+                speeds={PLAYBACK_SPEEDS as { label: string; value: number }[]}
                 onSetSpeed={setSpeedValue}
                 bottom={portraitLift ? `calc(${reviewDrag.size}px + 12px)` : edgeB}
                 right={`calc(${fabRight} + 50px)`}
@@ -1128,12 +1141,27 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                     bottom={`calc(${menuBottom} + 46px)`}
                     right={menuRight}
                   />
-                  {/* B136: Clip FAB — stacked above Jump-to-moment. */}
-                  <ClipBubble
-                    onClick={() => setClipOpen(true)}
-                    bottom={`calc(${menuBottom} + 92px)`}
-                    right={menuRight}
-                  />
+                  {/* B136: Clip FAB. Desktop → a labeled "Clip" pill at the
+                      board's top-right (below the header; bottom-right was
+                      crowded). Mobile → a compact scissors bubble stacked one
+                      FAB-height under the ⓘ matchup button, mirroring its edge
+                      (top-right portrait / top-left landscape) to save space. */}
+                  {isMobile ? (
+                    <ClipBubble
+                      onClick={() => setClipOpen(true)}
+                      compact
+                      top="calc(max(10px, env(safe-area-inset-top, 10px)) + 46px)"
+                      {...(mobileLandscape
+                        ? { left: 'max(10px, env(safe-area-inset-left, 10px))' }
+                        : { right: 'max(10px, env(safe-area-inset-right, 10px))' })}
+                    />
+                  ) : (
+                    <ClipBubble
+                      onClick={() => setClipOpen(true)}
+                      top="calc(var(--kb-header-h, 0px) + max(10px, env(safe-area-inset-top, 10px)))"
+                      right={menuRight}
+                    />
+                  )}
                   {/* B128: double-sided split control (hands-up toggle + flip)
                       — only when both teammates' recordings exist. Sits LEFT of
                       the Jump-to-moment bubble on the same row (38px FAB + 8px
@@ -1188,6 +1216,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           isOwner={isOwner}
           anonymize={anonymize}
           series={series ?? null}
+          clips={clips}
         />
       )}
       </div>

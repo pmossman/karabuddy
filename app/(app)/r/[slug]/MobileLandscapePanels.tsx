@@ -24,6 +24,7 @@ import { SeriesNav, type SeriesInfo } from './SeriesNav';
 import { LabelsRow } from './LabelsRow';
 import { ResultBadge } from './ResultBadge';
 import { useDragSize, Grabber } from './useDragSize';
+import { ClipsList, type ClipSummary } from './ClipsList';
 import type { DecksByUserId, MatchMeta, Frame } from '@/lib/replayDecoder';
 
 interface ReplayShape {
@@ -230,7 +231,7 @@ function SpeedMenu({ speed, speeds, onSetSpeed }: { speed: number; speeds: { lab
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [open]);
-  const activeLabel = speeds.find((o) => o.value === speed)?.label ?? 'Normal';
+  const activeLabel = speeds.find((o) => o.value === speed)?.label ?? '1×';
   return (
     <div ref={wrapRef} style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto' }}>
       <button
@@ -524,6 +525,7 @@ export function MatchupPanel({
   isOwner,
   anonymize,
   series,
+  clips,
 }: {
   open: boolean;
   onClose: () => void;
@@ -544,6 +546,8 @@ export function MatchupPanel({
   anonymize?: boolean;
   // B129: the games of this replay's Bo3 series — Game-N title suffix + hop pills.
   series?: SeriesInfo | null;
+  // B138: clips already created on this replay → a Clips section in the panel.
+  clips?: ClipSummary[];
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
   const players = (replay.players as any[]) || [];
@@ -675,6 +679,15 @@ export function MatchupPanel({
           >
             View decks →
           </button>
+        )}
+
+        {clips && clips.length > 0 && (
+          <div style={{ borderTop: '1px solid #2e333c', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, padding: '0 6px' }}>
+              Clips · {clips.length}
+            </span>
+            <ClipsList clips={clips} />
+          </div>
         )}
         </div>
         {/* Resize grabber on the edge nearest the board: bottom (top sheet)
