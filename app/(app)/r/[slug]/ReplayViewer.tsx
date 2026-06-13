@@ -31,10 +31,28 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSession } from 'next-auth/react';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { canMutateReplay } from '@/lib/replayPermissions';
+import { classifyStagedPlays, unitPlayUuids, extractAttacks } from './frameLog';
 
 // B104: cadence of the action-mode multi-frame playback (ms between frames).
 // Tuned to ~the card-move animation length so consecutive transitions flow.
 const PLAYBACK_TICK_MS = 300;
+// B134: action-step / autoplay must dwell on a staged play (event → discard,
+// upgrade → unit) long enough for the full fly-out → present → land animation
+// to finish instead of glitching past it. Slightly above the FrameAnimator's
+// EVENT_TOTAL_MS (1500) / UPGRADE_TOTAL_MS (1350).
+const EVENT_PLAY_DWELL_MS = 1600;
+const UPGRADE_PLAY_DWELL_MS = 1450;
+// B134: an AMBUSH play (a unit played then attacking in the same action) must
+// let the play animation (playFlip ~700ms) fully settle before the lunge frame
+// arrives and cancels it — full play anim + a beat.
+const AMBUSH_PLAY_DWELL_MS = 950;
+// B134: resourcing — rise + read-hold + flip-and-drop. Covers the full
+// FrameAnimator resource choreography (~1285ms) so action-step/autoplay don't
+// cut the read-pause short.
+const RESOURCE_DWELL_MS = 1450;
+// B134: a dramatic leader deploy (raise → hold → flip → slam + shake, then the
+// spotlight vignette lingers past the landing before lifting, ~1710ms total).
+const LEADER_DEPLOY_DWELL_MS = 1800;
 // If two action steps arrive within this window, the user is holding the arrow
 // (key-repeat ~30-50ms) — fly through instead of playing the choreography.
 const HELD_STEP_MS = 180;
@@ -440,12 +458,28 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   const frameAnimMs = useMemo(() => {
     const fr = decoded?.frames;
     if (!fr) return [] as number[];
-    return fr.map((f: Frame) => {
+    // B134: per-frame attacker uuids, so a unit play that ATTACKS within the
+    // next couple of frames (an ambush) can be given extra dwell.
+    const attackersAt = fr.map((f: Frame) => new Set(extractAttacks(f.state).map((a) => a.attackerUuid)));
+    const attacksSoon = (uuids: string[], i: number) =>
+      uuids.some((u) => attackersAt[i + 1]?.has(u) || attackersAt[i + 2]?.has(u));
+    return fr.map((f: Frame, i: number) => {
       const msgs = (f.state as any)?.newMessages;
       const has = (re: RegExp) => Array.isArray(msgs) && msgs.some((m: any) =>
         Array.isArray(m?.message) && m.message.some((p: any) => typeof p === 'string' && re.test(p)));
+      // B134: staged plays run the longest (full center-stage choreography) —
+      // check them BEFORE the generic "plays" dwell, which they'd also match.
+      const { events, upgrades } = classifyStagedPlays(f.state);
+      if (events) return EVENT_PLAY_DWELL_MS;
+      if (upgrades) return UPGRADE_PLAY_DWELL_MS;
+      // B134: ambush — a unit played here attacks in the next frame(s). Let the
+      // play animation finish before the lunge frame cancels it.
+      const units = unitPlayUuids(f.state);
+      if (units.length && attacksSoon(units, i)) return AMBUSH_PLAY_DWELL_MS;
+      if (has(/resourced/i)) return RESOURCE_DWELL_MS; // grow + flip into the pile
+      if (has(/\bdeploy/i)) return LEADER_DEPLOY_DWELL_MS; // raise → flip → slam
       if (has(/attacks/i)) return 900;   // lunge → death → reflow choreography
-      if (has(/plays /i)) return 720;    // slide-in + flip reveal
+      if (has(/plays /i)) return 720;    // slide-in + flip reveal (unit plays)
       return PLAYBACK_TICK_MS;
     });
   }, [decoded]);
@@ -893,6 +927,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               enabled={animate}
               direction={lastTransition && lastTransition.to < lastTransition.from ? -1 : 1}
               skipNextRef={skipAnimRef}
+              // B134: the displayed POV — maps a resourced card's controller to
+              // its own/opponent resource pile (incl. the hands-up alt view).
+              localPlayerId={activeDecoded?.meta.localPlayerId ?? null}
             />
             {showSummary && endStats && (
               <EndGameSummary

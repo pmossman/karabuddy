@@ -561,7 +561,10 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
 
                 {cardStyle === LeaderBaseCardStyle.Leader && title && (
                     <>
-                        <Box sx={styles.nameplateBox}>
+                        {/* karabuddy: data-leader-nameplate lets the deploy
+                            animation strip the player name from the cloned card
+                            so only the leader itself rises (B134). */}
+                        <Box sx={styles.nameplateBox} data-leader-nameplate="true">
                             <Typography variant="body2" sx={styles.nameplateText}>
                                 {title}
                             </Typography>

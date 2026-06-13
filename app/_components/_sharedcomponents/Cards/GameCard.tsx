@@ -258,6 +258,13 @@ const GameCard: React.FC<IGameCardProps> = ({
     const cardbackgroundImage = card.selected && (phase === 'setup' || phase === 'regroup')
         ? `linear-gradient(rgba(255, 254, 80, 0.2), rgba(255, 254, 80, 0.6)), url(${styledCardUrl})`
         : `url(${styledCardUrl})`;
+    // karabuddy: a CARDBACK (hidden hand, face-down) is `cover`ed + top-left
+    // positioned like card art. The default back (`/card-back.png`) is SQUARE,
+    // so cover in the portrait card box crops ~29% off the right ("STAR WARS
+    // UNLIMITED" → "STAI WAR UNLIMIT"). Show the whole back (`contain`, centered)
+    // instead — the dark card fills the small top/bottom letterbox. Real card
+    // art keeps `cover`. Matches both `cardback` and `card-back` spellings.
+    const isCardbackImage = /card-?back/i.test(styledCardUrl);
     // Styles
     const styles = {
         cardContainer: {
@@ -279,7 +286,11 @@ const GameCard: React.FC<IGameCardProps> = ({
             borderRadius: '0.5rem',
             position: 'relative',
             backgroundImage: cardbackgroundImage,
-            backgroundSize: 'cover',
+            backgroundSize: isCardbackImage ? 'contain' : 'cover',
+            // Cardbacks center the whole image; real card art keeps the default
+            // top-left framing (the arena's square crop shows the card's top —
+            // its name — which centering would hide).
+            backgroundPosition: isCardbackImage ? 'center' : 'left top',
             backgroundRepeat: 'no-repeat',
             aspectRatio: cardStyle === CardStyle.InPlay ? '1' : '1/1.4',
             width: '100%',

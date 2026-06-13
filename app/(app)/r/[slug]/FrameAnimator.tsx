@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef } from 'react';
 import { useGame } from '@/app/_contexts/Game.context';
-import { extractFrameCards, extractAttacks, extractInteractions } from './frameLog';
+import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
 
 // B104/B109/B110: animate card movement between replay frames. Cards carry a
@@ -26,15 +26,56 @@ const LUNGE_EASING = 'cubic-bezier(0.34, 1.2, 0.64, 1)';
 const TRACER_MS = 300;
 const PLAY_MOVE_MS = 420;
 const PLAY_FLIP_MS = 280;
+// B134: event-play choreography — fly out of the hand to center stage, hold
+// (grown, "above" the board), then drop to the discard.
+const EVENT_TOTAL_MS = 1500;
+const EVENT_ARRIVE = 0.26;   // offset: at the stage point
+const EVENT_DEPART = 0.74;   // offset: leaves the stage point
+const EVENT_STAGE_SCALE = 2.1;
+const EVENT_FLIP_MS = 260;
+const EVENT_FLIP_DELAY = 130; // mid-flight
+// B134: upgrade choreography — present above the unit, then tuck under it.
+const UPGRADE_TOTAL_MS = 1350;
+const UPGRADE_ARRIVE = 0.28;
+const UPGRADE_DEPART = 0.66;
+const UPGRADE_STAGE_SCALE = 1.7;
+// B134: resourcing — rise + grow (face up), HOLD so the viewer can read the
+// card(s), then flip face-down + drop into the pile. Explicit phases so the
+// read-pause is a real beat, not a sliver of the flight.
+const RESOURCE_RISE_MS = 340;
+const RESOURCE_HOLD_MS = 425;   // the read pause (face up, side by side)
+const RESOURCE_DROP_MS = 520;   // flip face-down + fall into the pile
+const RESOURCE_TOTAL_MS = RESOURCE_RISE_MS + RESOURCE_HOLD_MS + RESOURCE_DROP_MS;
+const RESOURCE_ARRIVE = RESOURCE_RISE_MS / RESOURCE_TOTAL_MS;
+const RESOURCE_DEPART = (RESOURCE_RISE_MS + RESOURCE_HOLD_MS) / RESOURCE_TOTAL_MS;
+const RESOURCE_STAGE_SCALE = 1.65;
+// B134: the board's default cardback — resources go face-DOWN (the card flips
+// to this on its way to the pile, mirroring the physical game). Same asset the
+// lifted board uses (getCardback default), rendered `contain` so the square
+// back shows fully.
+const CARDBACK_URL = '/card-back.png';
+// B134: dramatic leader deploy — raise off the table (grow), hold, flip to the
+// unit side, slam down to the board slot + board shake on landing.
+const LEADER_DEPLOY_RISE_MS = 400;
+const LEADER_DEPLOY_HOLD_MS = 450;
+const LEADER_DEPLOY_DESCEND_MS = 480;
+const LEADER_DEPLOY_TOTAL = LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS + LEADER_DEPLOY_DESCEND_MS;
+const LEADER_DEPLOY_SCALE = 2.3;
+// The spotlight vignette holds through the landing, then lifts over this tail.
+const VIGNETTE_LINGER_MS = 380;
 
 export function FrameAnimator({
   containerRef,
   enabled,
   direction,
   skipNextRef,
+  localPlayerId,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   enabled: boolean;
+  // B134: the current POV player id — maps a resourced card's controller to the
+  // own vs opponent resource pile.
+  localPlayerId?: string | null;
   // +1 stepping forward, -1 stepping backward. Animations are forward-only: they
   // visualize the transition INTO the new frame (read from its log), which only
   // matches the motion going forward. Rewinding, we snap — the new frame's
@@ -130,12 +171,19 @@ export function FrameAnimator({
       leaders,
       attacks: extractAttacks(gameState),
       interactions: extractInteractions(gameState),
+      eventPlays: extractEventPlays(gameState),
+      bases: extractBases(gameState),
+      resourcePile: measureEl(container, '[data-testid="my-resource-pile"]'),
+      resourcePileOpp: measureEl(container, '[data-testid="opp-resource-pile"]'),
+      localPlayerId,
+      resourceCounts: extractResourceCounts(gameState),
     });
 
     // ----- Execute -----
     const cRect = container.getBoundingClientRect();
     const ctx: Ctx = {
       overlay,
+      container,
       cRect,
       rel: (s) => ({ left: s.x - cRect.left, top: s.y - cRect.top }),
       findCard: (uuid) => container.querySelector<HTMLElement>(`[data-card-uuid="${cssEscape(uuid)}"]`),
@@ -149,7 +197,7 @@ export function FrameAnimator({
     };
     for (const intent of intents) runIntent(intent, ctx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, enabled]);
+  }, [gameState, enabled, localPlayerId]);
 
   return (
     <div
@@ -162,6 +210,7 @@ export function FrameAnimator({
 
 interface Ctx {
   overlay: HTMLElement;
+  container: HTMLElement;
   cRect: DOMRect;
   rel: (s: { x: number; y: number }) => { left: number; top: number };
   findCard: (uuid: string) => HTMLElement | null;
@@ -256,19 +305,37 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       const { uuid, from: a, to: t } = intent;
       const dx = (t.x + t.w / 2 - (a.x + a.w / 2)) * 0.55;
       const dy = (t.y + t.h / 2 - (a.y + a.h / 2)) * 0.55;
+      const kf = [
+        { transform: 'translate(0,0) scale(1)', offset: 0 },
+        { transform: `translate(${dx}px, ${dy}px) scale(1.08)`, offset: 0.42 },
+        { transform: 'translate(0,0) scale(1)', offset: 1 },
+      ];
       const liveEl = findCard(uuid);
-      const clone = makeClone(a.html, rel(a), a.w, a.h);
-      clone.style.zIndex = '10';
-      overlay.appendChild(clone);
-      hide(liveEl);
-      track(
-        clone.animate(
-          [{ transform: 'translate(0,0) scale(1)', offset: 0 },
-           { transform: `translate(${dx}px, ${dy}px) scale(1.08)`, offset: 0.42 },
-           { transform: 'translate(0,0) scale(1)', offset: 1 }],
-          { duration: LUNGE_MS, easing: LUNGE_EASING }),
-        () => { clone.remove(); show(liveEl); },
-      );
+      if (liveEl) {
+        // B134: a SURVIVING attacker lunges as the LIVE element. The old path
+        // cloned it + hid the original, but the original could stay visible — a
+        // stationary "clone" left behind while the lunge flew out. Animating the
+        // element itself can't diverge from itself. (Same trick as 'enter';
+        // WAAPI reverts the transform on finish/cancel, so no residue.)
+        const pz = liveEl.style.zIndex, pp = liveEl.style.position;
+        if (!liveEl.style.position) liveEl.style.position = 'relative';
+        liveEl.style.zIndex = '20'; // above its row-mates during the traversal
+        // The unit board clips with overflow:hidden, so a leader lunging across
+        // the board to a base would be cut off. Temporarily un-clip the
+        // ancestors (up to the board container) for the traversal — the overlay
+        // clone path didn't need this because it lives outside the clip.
+        const unclipped = unclipAncestors(liveEl, ctx.container);
+        track(
+          liveEl.animate(kf, { duration: LUNGE_MS, easing: LUNGE_EASING }),
+          () => { liveEl.style.zIndex = pz; liveEl.style.position = pp; unclipped(); },
+        );
+      } else {
+        // Attacker traded away (gone from the board) → clone its last look.
+        const clone = makeClone(a.html, rel(a), a.w, a.h);
+        clone.style.zIndex = '10';
+        overlay.appendChild(clone);
+        track(clone.animate(kf, { duration: LUNGE_MS, easing: LUNGE_EASING }), () => clone.remove());
+      }
       return;
     }
     case 'targetHold': {
@@ -289,6 +356,9 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       Object.assign(orb.style, {
         position: 'absolute', left: `${from.x - ctx.cRect.left - size / 2}px`, top: `${from.y - ctx.cRect.top - size / 2}px`,
         width: `${size}px`, height: `${size}px`, borderRadius: '50%',
+        // Invisible until the animation begins — matters when delayed (B134),
+        // so the orb doesn't sit lit at its origin during the wait.
+        opacity: '0',
         background: color, boxShadow: `0 0 10px 3px ${color}`, pointerEvents: 'none', zIndex: '11',
       } as CSSStyleDeclaration);
       overlay.appendChild(orb);
@@ -298,7 +368,8 @@ function runIntent(intent: Intent, ctx: Ctx): void {
           [{ transform: 'translate(0,0) scale(0.5)', opacity: 0.3, offset: 0 },
            { transform: `translate(${dx * 0.5}px, ${dy * 0.5}px) scale(1)`, opacity: 1, offset: 0.5 },
            { transform: `translate(${dx}px, ${dy}px) scale(1.4)`, opacity: 1, offset: 1 }],
-          { duration: TRACER_MS, easing: 'cubic-bezier(0.4, 0, 0.6, 1)' }),
+          // B134: delay (event effect) holds the bolt until the card presents.
+          { duration: TRACER_MS, delay: intent.delay ?? 0, easing: 'cubic-bezier(0.4, 0, 0.6, 1)' }),
         () => orb.remove(),
       );
       return;
@@ -314,9 +385,269 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       overlay.appendChild(flash);
       track(
         flash.animate([{ opacity: 0 }, { opacity: 0.55 }, { opacity: 0 }],
-          { duration: 240, delay: TRACER_MS - 70, fill: 'backwards', easing: 'ease-out' }),
+          // B134: + the event-effect delay so the flash pops as the bolt lands,
+          // both held until the staged card has presented.
+          { duration: 240, delay: (intent.delay ?? 0) + TRACER_MS - 70, fill: 'backwards', easing: 'ease-out' }),
         () => flash.remove(),
       );
+      return;
+    }
+    case 'eventStage': {
+      // B134: the event card flies out of the hand toward the bases, pausing
+      // grown at the stage point ("held above the board"), then drops into the
+      // discard. A hidden-hand play flips face-up mid-flight. The card's REAL
+      // discard render stays hidden until the clone lands.
+      const { from, to, faceDown, stage } = intent;
+      const liveEl = intent.to ? findCard(intent.uuid) : null;
+      hide(liveEl);
+      const p = rel(from);
+      const outer = document.createElement('div');
+      Object.assign(outer.style, {
+        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
+        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
+        pointerEvents: 'none', zIndex: '12',
+      } as CSSStyleDeclaration);
+      const inner = document.createElement('div');
+      Object.assign(inner.style, {
+        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
+        filter: 'drop-shadow(0 16px 26px rgba(0, 0, 0, 0.55))',
+      } as CSSStyleDeclaration);
+      inner.appendChild(fitNode(from.html));
+      outer.appendChild(inner);
+      overlay.appendChild(outer);
+
+      // Center-to-center deltas (outer's transform-origin is its center).
+      const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
+      const dxS = stage.x - fcx, dyS = stage.y - fcy;
+      const tStage = `translate(${dxS}px, ${dyS}px) scale(${EVENT_STAGE_SCALE})`;
+      let tEnd: string;
+      let fadeOut = false;
+      if (to) {
+        const dxE = (to.x + to.w / 2) - fcx, dyE = (to.y + to.h / 2) - fcy;
+        tEnd = `translate(${dxE}px, ${dyE}px) scale(${to.w / from.w}, ${to.h / from.h})`;
+      } else {
+        tEnd = `translate(${dxS}px, ${dyS}px) scale(0.5)`;
+        fadeOut = true;
+      }
+      track(
+        outer.animate(
+          [
+            { transform: 'translate(0, 0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' },
+            { transform: tStage, opacity: 1, offset: EVENT_ARRIVE, easing: 'linear' },
+            { transform: tStage, opacity: 1, offset: EVENT_DEPART, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
+            { transform: tEnd, opacity: fadeOut ? 0 : 1, offset: 1 },
+          ],
+          { duration: EVENT_TOTAL_MS, fill: 'both' },
+        ),
+        () => { outer.remove(); show(liveEl); },
+      );
+      // Hidden-hand play: flip face-up mid-flight (swap the card back for the
+      // real face at the flip's narrowest point — needs the discard render).
+      if (faceDown && to) {
+        const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2);
+        track(
+          inner.animate(
+            [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
+            { duration: EVENT_FLIP_MS, delay: EVENT_FLIP_DELAY, fill: 'backwards', easing: 'ease-in-out' },
+          ),
+          () => window.clearTimeout(swap),
+        );
+      }
+      return;
+    }
+    case 'upgradeStage': {
+      // B134: fly out of the hand, present grown above the unit, then tuck
+      // under it — the clone lands at the unit's lower edge and fades out,
+      // handing off to the real upgrade strip rendered beneath the overlay.
+      // A hidden-hand play flips face-down → card-art mid-flight.
+      const { from, unit, faceDown, faceUp, stage } = intent;
+      const p = rel(from);
+      const outer = document.createElement('div');
+      Object.assign(outer.style, {
+        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
+        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
+        pointerEvents: 'none', zIndex: '12',
+      } as CSSStyleDeclaration);
+      const inner = document.createElement('div');
+      Object.assign(inner.style, {
+        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
+        filter: 'drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55))',
+      } as CSSStyleDeclaration);
+      inner.appendChild(fitNode(from.html));
+      outer.appendChild(inner);
+      overlay.appendChild(outer);
+
+      const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
+      const dxS = stage.x - fcx, dyS = stage.y - fcy;
+      const tStage = `translate(${dxS}px, ${dyS}px) scale(${UPGRADE_STAGE_SCALE})`;
+      // Land at the unit, biased to its lower edge, scaled to the unit width —
+      // reads as the upgrade sliding beneath the unit.
+      const dxE = (unit.x + unit.w / 2) - fcx;
+      const dyE = (unit.y + unit.h * 0.62) - fcy;
+      const tEnd = `translate(${dxE}px, ${dyE}px) scale(${unit.w / from.w})`;
+      track(
+        outer.animate(
+          [
+            { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' },
+            { transform: tStage, opacity: 1, offset: UPGRADE_ARRIVE, easing: 'linear' },
+            { transform: tStage, opacity: 1, offset: UPGRADE_DEPART, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
+            { transform: tEnd, opacity: 0, offset: 1 },
+          ],
+          { duration: UPGRADE_TOTAL_MS, fill: 'both' },
+        ),
+        () => outer.remove(),
+      );
+      if (faceDown && faceUp) {
+        const faceNode = document.createElement('div');
+        Object.assign(faceNode.style, {
+          position: 'absolute', inset: '0', backgroundImage: `url(${faceUp})`,
+          backgroundSize: 'contain', backgroundPosition: 'center', borderRadius: '7px',
+        } as CSSStyleDeclaration);
+        const swap = window.setTimeout(() => { inner.replaceChildren(faceNode); }, EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2);
+        track(
+          inner.animate(
+            [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
+            { duration: EVENT_FLIP_MS, delay: EVENT_FLIP_DELAY, fill: 'backwards', easing: 'ease-in-out' },
+          ),
+          () => window.clearTimeout(swap),
+        );
+      }
+      return;
+    }
+    case 'leaderDeploy': {
+      // B134: raise the leader off the table (grow + lift), hold, flip to its
+      // unit side, then bring it down to the board slot with a board shake on
+      // landing. The real deployed unit stays hidden until the clone lands.
+      const { from, to, stage } = intent;
+      const liveEl = findCard(intent.uuid);
+      hide(liveEl);
+      // Vignette: darken the board edges as the leader rises (spotlighting it),
+      // hold through the present AND the slam-down, then lift AFTER it lands.
+      // Sits just under the leader clone (zIndex 14) and over the board.
+      const vigTotal = LEADER_DEPLOY_TOTAL + VIGNETTE_LINGER_MS;
+      const vigIn = LEADER_DEPLOY_RISE_MS / vigTotal;          // faded in by the time it's up
+      const vigHoldEnd = LEADER_DEPLOY_TOTAL / vigTotal;       // still full when the leader lands
+      const vignette = document.createElement('div');
+      Object.assign(vignette.style, {
+        position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '13', opacity: '0',
+        // Strong spotlight: a tight clear center over the leader falling off fast
+        // to near-black at the edges.
+        background: 'radial-gradient(ellipse 62% 62% at 50% 45%, transparent 14%, rgba(0,0,0,0.92) 86%)',
+      } as CSSStyleDeclaration);
+      overlay.appendChild(vignette);
+      track(
+        vignette.animate(
+          [{ opacity: 0, offset: 0 }, { opacity: 0.9, offset: vigIn }, { opacity: 0.9, offset: vigHoldEnd }, { opacity: 0, offset: 1 }],
+          { duration: vigTotal, easing: 'ease-in-out' }),
+        () => vignette.remove(),
+      );
+      const p = rel(from);
+      const outer = document.createElement('div');
+      Object.assign(outer.style, {
+        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
+        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
+        pointerEvents: 'none', zIndex: '14',
+      } as CSSStyleDeclaration);
+      const inner = document.createElement('div');
+      Object.assign(inner.style, {
+        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
+        filter: 'drop-shadow(0 22px 34px rgba(0, 0, 0, 0.6))',
+      } as CSSStyleDeclaration);
+      const leaderFace = fitNode(from.html); // leader side
+      // Drop the player-name nameplate so only the CARD rises (it also stays
+      // rendered on the board, which would otherwise read as a duplicate).
+      leaderFace.querySelectorAll('[data-leader-nameplate]').forEach((el) => el.remove());
+      inner.appendChild(leaderFace);
+      outer.appendChild(inner);
+      overlay.appendChild(outer);
+
+      const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
+      const dxS = stage.x - fcx, dyS = stage.y - fcy;
+      const tStage = `translate(${dxS}px, ${dyS}px) scale(${LEADER_DEPLOY_SCALE})`;
+      const dxE = (to.x + to.w / 2) - fcx, dyE = (to.y + to.h / 2) - fcy;
+      const tEnd = `translate(${dxE}px, ${dyE}px) scale(${to.w / from.w})`;
+      const arrive = LEADER_DEPLOY_RISE_MS / LEADER_DEPLOY_TOTAL;
+      const depart = (LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS) / LEADER_DEPLOY_TOTAL;
+      const outerAnim = outer.animate(
+        [
+          { transform: 'translate(0,0) scale(1)', offset: 0, easing: 'cubic-bezier(0.2, 0, 0.2, 1)' },
+          { transform: tStage, offset: arrive, easing: 'linear' },
+          { transform: tStage, offset: depart, easing: 'cubic-bezier(0.55, 0, 0.85, 0.5)' }, // accelerate the slam
+          { transform: tEnd, offset: 1 },
+        ],
+        { duration: LEADER_DEPLOY_TOTAL, fill: 'both' },
+      );
+      track(outerAnim, () => { outer.remove(); show(liveEl); });
+      // Shake the whole board ONLY on a real landing (not a rapid-step cancel).
+      outerAnim.addEventListener('finish', () => shakeBoard(ctx.container));
+      // Flip leader → unit side as the slam begins.
+      const flipDelay = LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS;
+      const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, flipDelay + 130);
+      track(inner.animate(
+        [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
+        { duration: 280, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
+        () => window.clearTimeout(swap));
+      return;
+    }
+    case 'resourceStage': {
+      // B134: a card committed to resources — grows (presented face-up), flips,
+      // then shrinks into the resource pile and fades (the pile is one stacked
+      // box, so there's no per-card destination render to hand off to).
+      const { from, pile, stage, faceDown } = intent;
+      // No per-card stagger — cards resourced together present side by side
+      // simultaneously (the game-start two-card opening), pause, then drop in.
+      const startDelay = 0;
+      const p = rel(from);
+      const outer = document.createElement('div');
+      Object.assign(outer.style, {
+        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
+        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
+        pointerEvents: 'none', zIndex: '12', opacity: '0',
+      } as CSSStyleDeclaration);
+      const inner = document.createElement('div');
+      Object.assign(inner.style, {
+        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
+        filter: 'drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55))',
+      } as CSSStyleDeclaration);
+      inner.appendChild(fitNode(from.html));
+      outer.appendChild(inner);
+      overlay.appendChild(outer);
+
+      const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
+      const dxS = stage.x - fcx, dyS = stage.y - fcy;
+      const tStage = `translate(${dxS}px, ${dyS}px) scale(${RESOURCE_STAGE_SCALE})`;
+      const dxE = (pile.x + pile.w / 2) - fcx, dyE = (pile.y + pile.h / 2) - fcy;
+      const tEnd = `translate(${dxE}px, ${dyE}px) scale(${Math.max(0.25, pile.w / from.w)})`;
+      track(
+        outer.animate(
+          [
+            { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' },
+            { transform: tStage, opacity: 1, offset: RESOURCE_ARRIVE, easing: 'linear' },
+            { transform: tStage, opacity: 1, offset: RESOURCE_DEPART, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
+            { transform: tEnd, opacity: 0, offset: 1 },
+          ],
+          { duration: RESOURCE_TOTAL_MS, delay: startDelay, fill: 'both' },
+        ),
+        () => outer.remove(),
+      );
+      // A FACE-UP source (your own card, or a hands-up reveal) flips to the
+      // cardback as it commits — that's how a card is resourced in the physical
+      // game. The flip starts AFTER the read-hold (as the drop begins), so the
+      // face sits readable through the pause. An already-face-down source (the
+      // opponent's hidden hand) is a cardback throughout, so it just drops.
+      if (!faceDown) {
+        const flipDelay = startDelay + RESOURCE_RISE_MS + RESOURCE_HOLD_MS;
+        const back = document.createElement('div');
+        Object.assign(back.style, {
+          position: 'absolute', inset: '0', backgroundImage: `url(${CARDBACK_URL})`,
+          backgroundSize: 'contain', backgroundPosition: 'center', borderRadius: '7px',
+        } as CSSStyleDeclaration);
+        const swap = window.setTimeout(() => { inner.replaceChildren(back); }, flipDelay + 150);
+        track(inner.animate(
+          [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
+          { duration: 300, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
+          () => window.clearTimeout(swap));
+      }
       return;
     }
     case 'playFlip': {
@@ -350,6 +681,16 @@ function runIntent(intent: Intent, ctx: Ctx): void {
   }
 }
 
+// B134: measure a single element (by selector) into a Snap of absolute screen
+// coords — same frame as the card snapshots. Null when absent / zero-size.
+function measureEl(container: HTMLElement, selector: string): Snap | null {
+  const el = container.querySelector<HTMLElement>(selector);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return null;
+  return { x: r.left, y: r.top, w: r.width, h: r.height, html: '' };
+}
+
 function makeClone(html: string, pos: { left: number; top: number }, w: number, h: number): HTMLElement {
   const box = document.createElement('div');
   box.innerHTML = html;
@@ -372,6 +713,38 @@ function fitNode(html: string): HTMLElement {
   const node = (box.firstElementChild as HTMLElement) ?? box;
   Object.assign(node.style, { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', margin: '0' } as CSSStyleDeclaration);
   return node;
+}
+
+// B134: a brief impact shake of the whole board — the leader slamming down.
+function shakeBoard(container: HTMLElement): void {
+  container.animate(
+    [
+      { transform: 'translate(0, 0)' },
+      { transform: 'translate(-5px, 4px)' },
+      { transform: 'translate(5px, -3px)' },
+      { transform: 'translate(-4px, 2px)' },
+      { transform: 'translate(3px, -1px)' },
+      { transform: 'translate(0, 0)' },
+    ],
+    { duration: 380, easing: 'ease-out' },
+  );
+}
+
+// B134: temporarily lift overflow-clipping on a card's ancestors (up to, not
+// including, the board container) so a lunge that travels out of its unit cell
+// — e.g. a leader striking a base across the board — isn't cut off. Returns a
+// restore fn. The clipping ancestor is UnitsBoard's overflow:hidden grid.
+function unclipAncestors(el: HTMLElement, container: HTMLElement): () => void {
+  const touched: Array<[HTMLElement, string]> = [];
+  let p = el.parentElement;
+  while (p && p !== container && p !== document.body) {
+    if (getComputedStyle(p).overflow !== 'visible') {
+      touched.push([p, p.style.overflow]);
+      p.style.overflow = 'visible';
+    }
+    p = p.parentElement;
+  }
+  return () => { for (const [node, prev] of touched) node.style.overflow = prev; };
 }
 
 // CSS.escape isn't guaranteed everywhere; uuids are safe chars but guard anyway.

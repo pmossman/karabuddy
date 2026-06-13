@@ -72,13 +72,23 @@ describe('planFrameAnimations', () => {
     expect(is[1]).toMatchObject({ type: 'targetHold', uuid: 'tgt' });
   });
 
-  it('flips a leader that crosses the deploy boundary (arena ↔ slot)', () => {
+  it('B134: a leader DEPLOY (slot → arena) gets the dramatic raise-flip-slam', () => {
     const is = plan({
       prev: snapshot({ L: snap(0, 0) }), next: snapshot({ L: snap(200, 200) }),
       prevZones: new Map([['L', 'base']]), cards: cardsOf({ L: { zone: 'groundArena', ctrl: 'p' } }),
       leaders: new Set(['L']),
     });
-    expect(is).toEqual([{ type: 'leaderFlip', uuid: 'L', from: snap(0, 0), to: snap(200, 200), delay: 0 }]);
+    expect(is.length).toBe(1);
+    expect(is[0]).toMatchObject({ type: 'leaderDeploy', uuid: 'L', from: snap(0, 0), to: snap(200, 200) });
+  });
+
+  it('a leader RETURN (arena → slot) keeps the quick crossfade', () => {
+    const is = plan({
+      prev: snapshot({ L: snap(200, 200) }), next: snapshot({ L: snap(0, 0) }),
+      prevZones: new Map([['L', 'groundArena']]), cards: cardsOf({ L: { zone: 'base', ctrl: 'p' } }),
+      leaders: new Set(['L']),
+    });
+    expect(is).toEqual([{ type: 'leaderFlip', uuid: 'L', from: snap(200, 200), to: snap(0, 0), delay: 0 }]);
   });
 
   it('does NOT flip a leader reflowing within the arena — plain slide', () => {
@@ -140,6 +150,148 @@ describe('planFrameAnimations', () => {
     expect(is).toEqual([{ type: 'playFlip', uuid: 'played', from: snap(0, 0), to: snap(100, 0) }]);
   });
 
+  // B134: staged event/upgrade plays.
+  it('stages an own-hand EVENT play (hand → discard) and skips its move/exit', () => {
+    const is = plan({
+      prev: snapshot({ ev: snap(0, 0) }),
+      next: snapshot({ ev: snap(200, 50) }), // discard render
+      prevZones: new Map([['ev', 'hand']]),
+      cards: cardsOf({ ev: { zone: 'discard', ctrl: 'p1' } }),
+      eventPlays: [{ uuid: 'ev' }],
+    });
+    // No bases → stage = midpoint of the from/discard centers.
+    expect(is).toEqual([
+      { type: 'eventStage', uuid: 'ev', from: snap(0, 0), to: snap(200, 50), faceDown: false, stage: { x: 105, y: 30 } },
+    ]);
+  });
+
+  it('stages an own-hand UPGRADE play under its unit (no stray move/exit)', () => {
+    const is = plan({
+      // The unit pre-exists on the board (prev + next, same slot); only the
+      // upgrade card leaves the hand. The upgrade has no own rect (renders as
+      // a strip), so it never appears in the measured snapshots.
+      prev: snapshot({ up: snap(0, 0), unit: snap(100, 100, 'U', 20, 28) }),
+      next: snapshot({ unit: snap(100, 100, 'U', 20, 28) }),
+      prevZones: new Map([['up', 'hand'], ['unit', 'groundArena']]),
+      cards: cardsOf({
+        up: { zone: 'groundArena', ctrl: 'p1', parentCardId: 'unit', setId: { set: 'ASH', number: 66 } },
+        unit: { zone: 'groundArena', ctrl: 'p1' },
+      }),
+      eventPlays: [{ uuid: 'up' }],
+    });
+    expect(types(is)).toEqual(['upgradeStage']);
+    const u = is[0] as Extract<Intent, { type: 'upgradeStage' }>;
+    expect(u.uuid).toBe('up');
+    expect(u.unit).toEqual(snap(100, 100, 'U', 20, 28));
+    expect(u.faceDown).toBe(false);
+    expect(u.faceUp).toBeNull(); // own hand — no flip face needed
+    // Presented above the unit center.
+    expect(u.stage.x).toBe(110);
+    expect(u.stage.y).toBeCloseTo(114 - 28 * 0.7);
+  });
+
+  it('B134: resourcing — cards committed hand→resource grow + flip into the pile', () => {
+    const is = plan({
+      prev: snapshot({ rA: snap(0, 0), rB: snap(20, 0) }), // hand cards
+      next: snapshot({}),                                   // pile has no per-card uuid
+      prevZones: new Map([['rA', 'hand'], ['rB', 'hand']]),
+      cards: cardsOf({ rA: { zone: 'resource', ctrl: 'me' }, rB: { zone: 'resource', ctrl: 'me' } }),
+      resourcePile: snap(300, 200, 'pile', 12, 16),
+    });
+    const stages = is.filter((i) => i.type === 'resourceStage') as Extract<Intent, { type: 'resourceStage' }>[];
+    expect(stages.length).toBe(2);
+    expect(stages.every((s) => s.pile.x === 300)).toBe(true);
+    // Presented SIDE BY SIDE: same stage height, distinct x.
+    expect(stages[0].stage.y).toBe(stages[1].stage.y);
+    expect(stages[0].stage.x).not.toBe(stages[1].stage.x);
+    expect(stages.every((s) => s.faceDown === false)).toBe(true); // own → visible
+    // The committed cards must NOT also fade out via the exit loop.
+    expect(is.some((i) => i.type === 'exit')).toBe(false);
+  });
+
+  it('B134: the opponent resources FACE DOWN (hidden hand → opp pile), no stray exit', () => {
+    const is = plan({
+      // The opponent's hidden hand: two replay-hidden cards leave it this frame.
+      prev: snapshot({ 'replay-hidden-opp-0': snap(0, 0), 'replay-hidden-opp-1': snap(20, 0) }),
+      next: snapshot({}), // anonymous pile cards have no uuid
+      prevZones: new Map([['replay-hidden-opp-0', 'hand'], ['replay-hidden-opp-1', 'hand']]),
+      cards: cardsOf({}),
+      localPlayerId: 'me',
+      resourceCounts: new Map([['opp', 2]]),
+      resourcePileOpp: snap(300, 50, 'opp-pile', 12, 16),
+    });
+    const stages = is.filter((i) => i.type === 'resourceStage') as Extract<Intent, { type: 'resourceStage' }>[];
+    expect(stages.length).toBe(2);
+    expect(stages.every((s) => s.faceDown === true)).toBe(true); // hidden → cardback
+    expect(stages.every((s) => s.pile.y === 50)).toBe(true);     // opp pile
+    expect(is.some((i) => i.type === 'exit')).toBe(false);       // consumed, not faded
+  });
+
+  it('B134: a hands-up reveal sends the opponent’s VISIBLE resource to the opp pile face-up', () => {
+    const is = plan({
+      prev: snapshot({ oppCard: snap(0, 0) }),
+      next: snapshot({}),
+      prevZones: new Map([['oppCard', 'hand']]),
+      cards: cardsOf({ oppCard: { zone: 'resource', ctrl: 'opp' } }),
+      localPlayerId: 'me',
+      resourcePile: snap(300, 600, 'my', 12, 16),
+      resourcePileOpp: snap(300, 50, 'opp', 12, 16),
+    });
+    const stages = is.filter((i) => i.type === 'resourceStage') as Extract<Intent, { type: 'resourceStage' }>[];
+    expect(stages.length).toBe(1);
+    expect(stages[0].faceDown).toBe(false); // revealed → flips face-up→down like own
+    expect(stages[0].pile.y).toBe(50);      // opponent's pile, not ours
+  });
+
+  it('without a measured resource pile, resourcing falls back (no resourceStage)', () => {
+    const is = plan({
+      prev: snapshot({ rA: snap(0, 0) }),
+      next: snapshot({}),
+      prevZones: new Map([['rA', 'hand']]),
+      cards: cardsOf({ rA: { zone: 'resource', ctrl: 'me' } }),
+      // resourcePile omitted → null
+    });
+    expect(is.some((i) => i.type === 'resourceStage')).toBe(false);
+  });
+
+  it('a staged EVENT delays its effect (defeated units to discard) until the card presents', () => {
+    // Hyperspace Disaster plays (→ discard) AND defeats space units (they slide
+    // to discard) in one frame. The defeats must wait for the card to present
+    // above the board, not fire simultaneously.
+    const is = plan({
+      prev: snapshot({ ev: snap(0, 0), unitA: snap(50, 0), unitB: snap(70, 0) }),
+      next: snapshot({ ev: snap(200, 50), unitA: snap(210, 50), unitB: snap(220, 50) }), // all in discard now
+      prevZones: new Map([['ev', 'hand'], ['unitA', 'spaceArena'], ['unitB', 'spaceArena']]),
+      cards: cardsOf({
+        ev: { zone: 'discard', ctrl: 'p1' },
+        unitA: { zone: 'discard', ctrl: 'p2' },
+        unitB: { zone: 'discard', ctrl: 'p2' },
+      }),
+      eventPlays: [{ uuid: 'ev' }],
+    });
+    const moves = is.filter((i) => i.type === 'move') as Extract<Intent, { type: 'move' }>[];
+    expect(moves.length).toBe(2); // the two defeated units
+    expect(moves.every((m) => m.delay > 0)).toBe(true); // held until the card presents
+    expect(is.some((i) => i.type === 'eventStage' && (i as any).uuid === 'ev')).toBe(true);
+  });
+
+  it('a hidden-hand UPGRADE play flips via card art + consumes the hidden exit', () => {
+    const is = plan({
+      prev: snapshot({ 'replay-hidden-p2-0': snap(0, 0), unit: snap(100, 100, 'U', 20, 28) }),
+      next: snapshot({ unit: snap(100, 100, 'U', 20, 28) }),
+      prevZones: new Map([['unit', 'groundArena']]),
+      cards: cardsOf({
+        up: { zone: 'groundArena', ctrl: 'p2', parentCardId: 'unit', setId: { set: 'LOF', number: 91 } },
+        unit: { zone: 'groundArena', ctrl: 'p2' },
+      }),
+      eventPlays: [{ uuid: 'up' }],
+    });
+    expect(types(is)).toEqual(['upgradeStage']); // the hidden card is paired, not exited
+    const u = is[0] as Extract<Intent, { type: 'upgradeStage' }>;
+    expect(u.faceDown).toBe(true);
+    expect(u.faceUp).toMatch(/LOF.*091/);
+  });
+
   it('does NOT exit a defeated attacker — its lunge owns the visual', () => {
     const is = plan({
       prev: snapshot({ atk: snap(0, 0), tgt: snap(50, 0, 'T1') }),
@@ -149,6 +301,22 @@ describe('planFrameAnimations', () => {
     });
     expect(is.some((i) => i.type === 'exit')).toBe(false);
     expect(is.some((i) => i.type === 'lunge' && (i as any).uuid === 'atk')).toBe(true);
+  });
+
+  it('B134: a unit created on an attack frame (Spy token) enters AFTER the strike', () => {
+    // Dedra lunges; a Spy token is new this frame. The token must not fade in
+    // during the lunge (it reads as a clone of the attacker) — delay its enter
+    // until the strike lands.
+    const is = plan({
+      prev: snapshot({ dedra: snap(0, 0), obi: snap(90, 0) }),
+      next: snapshot({ dedra: snap(0, 0), spy: snap(20, 0) }), // obi defeated, spy created
+      prevZones: new Map([['dedra', 'groundArena'], ['obi', 'groundArena']]),
+      cards: cardsOf({ dedra: { zone: 'groundArena', ctrl: 'p' }, spy: { zone: 'groundArena', ctrl: 'p' } }),
+      attacks: [{ attackerUuid: 'dedra', targetUuid: 'obi' }],
+    });
+    const enter = is.find((i) => i.type === 'enter' && (i as any).uuid === 'spy') as Extract<Intent, { type: 'enter' }>;
+    expect(enter).toBeTruthy();
+    expect(enter.delay).toBeGreaterThan(0); // held until the strike, not during the lunge
   });
 
   it('holds NOTHING at a stale position on an fx frame — every delay is 0', () => {

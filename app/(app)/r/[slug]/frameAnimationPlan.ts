@@ -4,7 +4,8 @@
 // fully unit-testable. The animator's executor turns each intent into a clone +
 // Web-Animations call; this module owns every "move vs snap vs flip" decision.
 
-import type { FrameCard, AttackEvent, InteractionEvent } from './frameLog';
+import type { FrameCard, AttackEvent, InteractionEvent, EventPlayMsg } from './frameLog';
+import { cardImageUrl } from '@/lib/cardImage';
 
 // A measured card: screen rect + an outerHTML snapshot (for cards that unmount).
 export interface Snap { x: number; y: number; w: number; h: number; html: string }
@@ -16,11 +17,29 @@ export type Intent =
   | { type: 'enter'; uuid: string; delay: number }
   | { type: 'exit'; uuid: string; rect: Snap; delay: number }
   | { type: 'leaderFlip'; uuid: string; from: Snap; to: Snap; delay: number }
+  // B134: a dramatic leader DEPLOY — raise the leader off the table (grow), hold,
+  // flip to its unit side, then bring it down to the board slot (`to`) with a
+  // board shake on landing.
+  | { type: 'leaderDeploy'; uuid: string; from: Snap; to: Snap; stage: Point }
   | { type: 'lunge'; uuid: string; from: Snap; to: Snap }
   | { type: 'targetHold'; uuid: string; oldRect: Snap; newRect: Snap }
-  | { type: 'tracer'; from: Point; to: Point; color: string }
-  | { type: 'flash'; rect: Snap; color: string }
-  | { type: 'playFlip'; uuid: string; from: Snap; to: Snap };
+  | { type: 'tracer'; from: Point; to: Point; color: string; delay?: number }
+  | { type: 'flash'; rect: Snap; color: string; delay?: number }
+  | { type: 'playFlip'; uuid: string; from: Snap; to: Snap }
+  // B134: an EVENT play — fly the card out of the hand to a center-stage point
+  // (grown, flipped face-up when it came from a hidden hand), hold, then send
+  // it to its discard rect. `to` is null when the discard pile doesn't render
+  // the card (the clone shrinks out at the stage instead).
+  | { type: 'eventStage'; uuid: string; from: Snap; to: Snap | null; faceDown: boolean; stage: Point }
+  // B134: an UPGRADE play — fly out of the hand, present above the unit it's
+  // attaching to (flipped face-up via `faceUp` art for a hidden-hand play),
+  // then tuck under that unit (`unit` rect) handing off to the rendered strip.
+  | { type: 'upgradeStage'; uuid: string; from: Snap; unit: Snap; faceDown: boolean; faceUp: string | null; stage: Point }
+  // B134: a RESOURCE — a card committed from hand to the resource pile. Grows,
+  // pauses, then shrinks into the pile (`pile` rect). A face-up source flips to
+  // the cardback (your own / hands-up reveal); a `faceDown` source (the
+  // opponent's hidden hand in a normal replay) stays a cardback throughout.
+  | { type: 'resourceStage'; uuid: string; from: Snap; pile: Snap; stage: Point; order: number; faceDown: boolean };
 
 export interface PlanInput {
   prev: Snapshot;
@@ -30,6 +49,20 @@ export interface PlanInput {
   leaders: Set<string>;
   attacks: AttackEvent[];
   interactions: InteractionEvent[];
+  // B134: "{player} plays {card}" log events + base ownership (stage point).
+  // Optional so older callers/tests don't break.
+  eventPlays?: EventPlayMsg[];
+  bases?: Map<string, string>;             // base uuid → owning player id
+  // B134: resource-pile rects (measured by data-testid) — own + opponent.
+  // Destinations for cards committed hand → resources. Null when not rendered.
+  resourcePile?: Snap | null;
+  resourcePileOpp?: Snap | null;
+  // B134: the current POV player id (maps a resourced card's controller to the
+  // own vs opponent pile). Null → treat all resourcing as own.
+  localPlayerId?: string | null;
+  // B134: per-controller resource counts (the opponent's resourced cards are
+  // anonymous, so this drives how many hidden cards fly to the opp pile).
+  resourceCounts?: Map<string, number>;
 }
 
 // px of POSITION change to count as a real move (ignores size-only grid reflows).
@@ -44,7 +77,7 @@ const dist = (a: Snap, b: Snap) => Math.hypot(a.x - b.x, a.y - b.y);
 const center = (s: Snap): Point => ({ x: s.x + s.w / 2, y: s.y + s.h / 2 });
 
 export function planFrameAnimations(input: PlanInput): Intent[] {
-  const { prev, next, prevZones, cards, leaders, attacks, interactions } = input;
+  const { prev, next, prevZones, cards, leaders, attacks, interactions, eventPlays = [], bases = new Map(), resourcePile = null, resourcePileOpp = null, localPlayerId = null, resourceCounts } = input;
   const intents: Intent[] = [];
   const zoneOf = (u: string) => cards.get(u)?.zone;
 
@@ -64,9 +97,24 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
   // cross-dissolves — the lunge would collide with any held clone.)
   const hasAttack = attacks.length > 0;
   const fxHold = interactions.length > 0 && !hasAttack;
-  const EXIT_DELAY = fxHold ? 300 : 0;   // corpse fades as the bolt lands (~TRACER_MS)
-  const MOVE_DELAY = fxHold ? 540 : 0;   // survivors fill in after the corpse clears
-  const LEADER_DELAY = fxHold ? 420 : 0;
+  // B134: a staged EVENT (a "plays" card landing in discard) flies out and
+  // PRESENTS above the board before its effect resolves. So everything the
+  // event DOES — units sliding to discard (defeated), bolts, board shifts —
+  // waits until the card has presented + paused. ~the eventStage's arrive
+  // (0.26·1500≈390ms) into its hold. Wins over fxHold (longer).
+  const hasStagedEvent = eventPlays.some((e) => cards.get(e.uuid)?.zone === 'discard');
+  const EVENT_EFFECT_DELAY = 650;
+  const EXIT_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : (fxHold ? 300 : 0);   // corpse fades as the bolt lands (~TRACER_MS)
+  const MOVE_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : (fxHold ? 540 : 0);   // survivors fill in after the corpse clears
+  const LEADER_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : (fxHold ? 420 : 0);
+  const FX_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : 0; // tracer/flash bolts
+  // B134: a unit CREATED on attack (a Spy/Clone token from an on-attack
+  // ability) must appear AFTER the strike, not during the lunge — otherwise the
+  // token materializes next to the attacker mid-lunge and reads as a ghost
+  // clone of it. Delay enters on an attack frame until the strike lands. (Safe:
+  // an enter animates the live element in place, so it never parks a clone in
+  // the lunge's path — the ghost-clone hazard the hold comments warn about.)
+  const ENTER_DELAY = hasAttack ? 360 : MOVE_DELAY;
 
   // The lunge OWNS the attacker's visual this frame — even when it trades and
   // dies. So an attacker is skipped by both the move loop AND the exit loop
@@ -99,9 +147,147 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     }
   }
 
+  // B134 STAGED PLAYS: a "plays" log line whose card ends up in DISCARD (an
+  // event) or attached to a unit (an upgrade — parentCardId set, in an arena).
+  // Both fly out of the hand and present grown at a stage point; the event then
+  // drops to its discard rect, the upgrade tucks under its unit. Own-hand plays
+  // have a visible prev rect; a hidden hand pairs with an exiting face-down card
+  // (same pool as unit plays, which run first). The stage intent OWNS the
+  // card's visual this frame, so the move/enter/exit loops below skip it.
+  const staged = new Set<string>();
+  const stageIntents: Intent[] = [];
+  // Base midpoint, biased toward the caster's OPPONENT ("presented" across the
+  // table) — the event stage point. Null when bases aren't measurable.
+  const baseRects = Array.from(bases.entries())
+    .map(([bu, pid]) => ({ pid, rect: next.get(bu) ?? prev.get(bu) }))
+    .filter((b): b is { pid: string; rect: Snap } => !!b.rect);
+  const baseStage = (ctrl: string | undefined): Point | null => {
+    if (baseRects.length !== 2 || !ctrl) return null;
+    const opp = baseRects.find((b) => b.pid !== ctrl) ?? baseRects[0];
+    const own = baseRects.find((b) => b.pid === ctrl) ?? baseRects[1];
+    const oc = center(opp.rect), sc = center(own.rect);
+    return { x: sc.x + (oc.x - sc.x) * 0.62, y: sc.y + (oc.y - sc.y) * 0.62 };
+  };
+
+  for (const { uuid } of eventPlays) {
+    if (staged.has(uuid)) continue;
+    const info = cards.get(uuid);
+    const z = info?.zone;
+    const isEvent = z === 'discard';
+    const isUpgrade = !!info?.parentCardId && isArena(z);
+    if (!isEvent && !isUpgrade) continue;
+
+    // Resolve the card's STARTING rect: a visible own-hand card, else a paired
+    // hidden face-down card (opponent's hand).
+    let from = prev.get(uuid);
+    let faceDown = false;
+    if (from) {
+      if (prevZones.get(uuid) !== 'hand') continue; // only a hand departure is a play we choreograph
+    } else {
+      const pool = info?.ctrl ? hiddenByCtrl.get(info.ctrl) : undefined;
+      if (!pool || pool.length === 0) continue;
+      const hiddenU = pool.shift()!;
+      from = prev.get(hiddenU);
+      if (!from) continue;
+      pairedExit.add(hiddenU);
+      faceDown = true;
+    }
+    staged.add(uuid);
+
+    if (isUpgrade) {
+      // Land target = the unit it attaches to (upgrades render only as a strip
+      // under the unit, so they have no own rect). Skip if we can't place it.
+      const unit = next.get(info!.parentCardId!) ?? prev.get(info!.parentCardId!);
+      if (!unit) { staged.delete(uuid); continue; }
+      // Present just above the unit (lifted), then drop in.
+      const uc = center(unit);
+      const stage: Point = { x: uc.x, y: uc.y - unit.h * 0.7 };
+      // Hidden-hand upgrade has no full-card render to flip to → build the
+      // face from card art.
+      const faceUp = faceDown && info?.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
+      stageIntents.push({ type: 'upgradeStage', uuid, from, unit, faceDown, faceUp, stage });
+      continue;
+    }
+
+    // Event → drop to its discard rect (null when discard doesn't render it).
+    const to = next.get(uuid) ?? null;
+    let stage = baseStage(info?.ctrl);
+    if (!stage) {
+      const fc = center(from), tc = to ? center(to) : fc;
+      stage = { x: (fc.x + tc.x) / 2, y: (fc.y + tc.y) / 2 };
+    }
+    stageIntents.push({ type: 'eventStage', uuid, from, to, faceDown, stage });
+  }
+
+  // B134 RESOURCING: a card committed from hand to the resource pile. Only the
+  // local player's resourced cards keep a uuid (the opponent's become anonymous
+  // pile cards), so detect by the zone transition hand → resources with a
+  // visible hand rect. Grows + flips into the pile; the stage owns the card, so
+  // the exit loop below skips it (it has no `next` rect — the pile is one box).
+  if (resourcePile || resourcePileOpp) {
+    // A group of cards resourced together (the two-card opening, or a player's
+    // multi-resource) presents SIDE BY SIDE at a shared lineup center, then
+    // drops into its pile. The card's own `zone` field is 'resource' (singular);
+    // the pile key is 'resources'. extractFrameCards prefers the card field.
+    // liftSign: present the cards TOWARD the board interior — up (−1) for the
+    // POV player at the bottom, down (+1) for the opponent at the top. (Lifting
+    // everything "up" sent the opponent's cards off the top of the board.)
+    const emitGroup = (items: { uuid: string; from: Snap }[], pile: Snap | null, faceDown: boolean, liftSign: number) => {
+      if (!items.length || !pile) return;
+      const pc = center(pile);
+      const avgX = items.reduce((s, r) => s + center(r.from).x, 0) / items.length;
+      const avgY = items.reduce((s, r) => s + center(r.from).y, 0) / items.length;
+      const maxH = Math.max(...items.map((r) => r.from.h));
+      const w = items[0].from.w;
+      const centerX = (avgX + pc.x) / 2;
+      const centerY = avgY + liftSign * maxH * 1.3;
+      const spacing = w * 2.0;
+      items.forEach((r, i) => {
+        const stage: Point = { x: centerX + (i - (items.length - 1) / 2) * spacing, y: centerY };
+        stageIntents.push({ type: 'resourceStage', uuid: r.uuid, from: r.from, pile, stage, order: i, faceDown });
+      });
+    };
+
+    // Pass 1 — VISIBLE resourced cards (real uuid, hand → resource): the POV
+    // player's own resourcing, plus the opponent's in a hands-up double-sided
+    // replay (their hand is revealed). Split by controller → own vs opp pile;
+    // both flip face-up → cardback (we can see them).
+    const ownItems: { uuid: string; from: Snap }[] = [];
+    const oppItems: { uuid: string; from: Snap }[] = [];
+    for (const [uuid, info] of cards) {
+      if (staged.has(uuid) || info.zone !== 'resource' || prevZones.get(uuid) !== 'hand') continue;
+      const from = prev.get(uuid);
+      if (!from) continue;
+      staged.add(uuid);
+      const isOwn = !localPlayerId || info.ctrl === localPlayerId;
+      (isOwn ? ownItems : oppItems).push({ uuid, from });
+    }
+    emitGroup(ownItems, resourcePile, false, -1);    // POV player: bottom → lift up
+    emitGroup(oppItems, resourcePileOpp, false, +1);  // opponent: top → lift down
+
+    // Pass 2 — the OPPONENT's HIDDEN resourcing (normal replay): their hand is
+    // face-down, so the resourced cards leave as replay-hidden cards (paired
+    // from the same pool as plays, which ran first) and stay cardbacks.
+    if (resourcePileOpp && resourceCounts) {
+      const oppHidden: { uuid: string; from: Snap }[] = [];
+      for (const [ctrl, count] of resourceCounts) {
+        if (localPlayerId && ctrl === localPlayerId) continue; // own handled in pass 1
+        const pool = hiddenByCtrl.get(ctrl);
+        if (!pool) continue;
+        for (let taken = 0; taken < count && pool.length; taken++) {
+          const hu = pool.shift()!;
+          const from = prev.get(hu);
+          if (from) { oppHidden.push({ uuid: hu, from }); pairedExit.add(hu); }
+        }
+      }
+      emitGroup(oppHidden, resourcePileOpp, true, +1); // opponent: top → lift down
+    }
+  }
+
   // MOVES / ENTERS / LEADER-FLIPS — iterate the new frame's cards.
   for (const [uuid, n] of next) {
     if (attackers.has(uuid)) continue; // the lunge owns the attacker this frame
+    if (staged.has(uuid)) continue;    // the eventStage owns a played event
     const o = prev.get(uuid);
     if (o) {
       const oz = prevZones.get(uuid);
@@ -110,7 +296,20 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
       // face. A leader merely reflowing WITHIN the arena keeps its face → falls
       // through to a plain slide.
       if (leaders.has(uuid) && isArena(oz) !== isArena(nz)) {
-        if (dist(n, o) > MOVE_THRESHOLD) intents.push({ type: 'leaderFlip', uuid, from: o, to: n, delay: LEADER_DELAY });
+        if (dist(n, o) > MOVE_THRESHOLD) {
+          // DEPLOY (slot → arena) gets the dramatic raise-flip-slam; a RETURN
+          // (arena → slot) keeps the quick crossfade.
+          if (!isArena(oz) && isArena(nz)) {
+            // Present lifted toward the board interior — up for the POV player
+            // (bottom), down for the opponent (top).
+            const liftSign = !localPlayerId || cards.get(uuid)?.ctrl === localPlayerId ? -1 : 1;
+            const fc = center(o), tc = center(n);
+            const stage: Point = { x: (fc.x + tc.x) / 2, y: (fc.y + tc.y) / 2 + liftSign * Math.max(o.h, n.h) * 1.35 };
+            intents.push({ type: 'leaderDeploy', uuid, from: o, to: n, stage });
+          } else {
+            intents.push({ type: 'leaderFlip', uuid, from: o, to: n, delay: LEADER_DELAY });
+          }
+        }
         continue;
       }
       // Same-zone reflow in a TRAY zone (hand re-centering, a card lifting as
@@ -120,13 +319,13 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
       if (dist(n, o) <= MOVE_THRESHOLD) continue;
       intents.push({ type: 'move', uuid, from: o, to: n, delay: MOVE_DELAY });
     } else if (!pairedEnter.has(uuid)) {
-      intents.push({ type: 'enter', uuid, delay: MOVE_DELAY });
+      intents.push({ type: 'enter', uuid, delay: ENTER_DELAY });
     }
   }
 
   // EXITS — gone from the new frame.
   for (const [uuid, o] of prev) {
-    if (next.has(uuid) || pairedExit.has(uuid) || attackers.has(uuid)) continue;
+    if (next.has(uuid) || pairedExit.has(uuid) || attackers.has(uuid) || staged.has(uuid)) continue;
     intents.push({ type: 'exit', uuid, rect: o, delay: EXIT_DELAY });
   }
 
@@ -156,9 +355,9 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     if (s) {
       const from = center(s);
       const to = center(t);
-      if (Math.hypot(to.x - from.x, to.y - from.y) >= TRACER_MIN_DIST) intents.push({ type: 'tracer', from, to, color });
+      if (Math.hypot(to.x - from.x, to.y - from.y) >= TRACER_MIN_DIST) intents.push({ type: 'tracer', from, to, color, delay: FX_DELAY });
     }
-    intents.push({ type: 'flash', rect: t, color });
+    intents.push({ type: 'flash', rect: t, color, delay: FX_DELAY });
   }
 
   // PLAYS — slide the face-down card to its slot, then flip to the real card.
@@ -168,5 +367,6 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     if (from && to) intents.push({ type: 'playFlip', uuid: played, from, to });
   }
 
+  intents.push(...stageIntents);
   return intents;
 }

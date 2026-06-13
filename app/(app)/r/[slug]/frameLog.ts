@@ -3,7 +3,16 @@
 // NO DOM and NO animation — so it's unit-testable in isolation. The animator's
 // effect calls these, hands the results to the (also pure) planner, then renders.
 
-export interface FrameCard { zone: string; ctrl: string | undefined }
+export interface FrameCard {
+  zone: string;
+  ctrl: string | undefined;
+  // B134: upgrades live in an arena pile but carry a parentCardId pointing at
+  // the unit they attach to (rendered as a subcard strip under that unit).
+  parentCardId?: string;
+  // B134: {set, number} for building a face-up card image when a hidden-hand
+  // play has no full-card render to clone (an upgrade renders only as a strip).
+  setId?: { set: string; number: number };
+}
 export interface AttackEvent { attackerUuid: string; targetUuid: string }
 export interface InteractionEvent {
   sourceUuid: string;
@@ -22,7 +31,9 @@ export function extractFrameCards(state: any): { cards: Map<string, FrameCard>; 
     const player = state.players[pid] || {};
     const piles = player.cardPiles || {};
     for (const z of Object.keys(piles)) {
-      for (const c of piles[z] || []) if (c?.uuid) cards.set(c.uuid, { zone: c.zone || z, ctrl: c.controllerId });
+      for (const c of piles[z] || []) {
+        if (c?.uuid) cards.set(c.uuid, { zone: c.zone || z, ctrl: c.controllerId, parentCardId: c.parentCardId, setId: c.setId });
+      }
     }
     const leader = player.leader;
     if (leader?.uuid) {
@@ -110,4 +121,92 @@ export function playerBaseByName(state: any, name: string | null): string | null
     if (players[k]?.user?.username === name) return players[k]?.base?.uuid ?? null;
   }
   return null;
+}
+
+// B134: event plays from the log — "{player} plays {card} ..." where the card
+// resolves to DISCARD this frame (the planner applies that zone check; unit
+// plays into an arena are the existing playFlip pairing). The card part
+// immediately after the "plays" string is the played card.
+export interface EventPlayMsg { uuid: string }
+export function extractEventPlays(state: any): EventPlayMsg[] {
+  const out: EventPlayMsg[] = [];
+  const msgs = Array.isArray(state?.newMessages) ? state.newMessages : [];
+  for (const m of msgs) {
+    const parts = m?.message;
+    if (!Array.isArray(parts)) continue;
+    const pi = parts.findIndex((p: any) => typeof p === 'string' && /\bplays\b/i.test(p));
+    if (pi < 0) continue;
+    const after = parts[pi + 1];
+    if (after && typeof after === 'object' && after.type === 'card' && after.uuid) {
+      out.push({ uuid: after.uuid });
+    }
+  }
+  return out;
+}
+
+// B134: base uuid → owning player id, for the event-stage point (the played
+// card pauses between the bases, biased toward the caster's opponent).
+export function extractBases(state: any): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const pid of Object.keys(state?.players || {})) {
+    const uuid = state.players[pid]?.base?.uuid;
+    if (uuid) m.set(uuid, pid);
+  }
+  return m;
+}
+
+// B134: classify the staged plays in a frame (events that land in DISCARD,
+// upgrades that attach to a unit) so playback can dwell long enough for the
+// full fly-out → present → land choreography. MUST agree with the planner's
+// branch in frameAnimationPlan (zone==='discard' vs parentCardId+arena).
+export function classifyStagedPlays(state: any): { events: number; upgrades: number } {
+  const { cards } = extractFrameCards(state);
+  let events = 0, upgrades = 0;
+  for (const { uuid } of extractEventPlays(state)) {
+    const info = cards.get(uuid);
+    if (!info) continue;
+    if (info.zone === 'discard') events++;
+    else if (info.parentCardId && (info.zone === 'groundArena' || info.zone === 'spaceArena')) upgrades++;
+  }
+  return { events, upgrades };
+}
+
+// B134: uuids of UNITS played into an arena this frame (a unit play, not an
+// event → discard or an upgrade → unit). Lets playback detect an "ambush"
+// (a unit played then attacking in the same action) so the play animation
+// finishes before the attack lunge.
+export function unitPlayUuids(state: any): string[] {
+  const { cards } = extractFrameCards(state);
+  const out: string[] = [];
+  for (const { uuid } of extractEventPlays(state)) {
+    const info = cards.get(uuid);
+    if (info && !info.parentCardId && (info.zone === 'groundArena' || info.zone === 'spaceArena')) out.push(uuid);
+  }
+  return out;
+}
+
+// B134: how many cards each player resourced this frame, keyed by controller
+// id. The opponent's resourced cards become anonymous (uuid-less) pile cards,
+// so the count is the only signal of how many hidden cards to fly to the pile.
+// Parses "{player} has resourced N card(s) from hand".
+export function extractResourceCounts(state: any): Map<string, number> {
+  const out = new Map<string, number>();
+  const nameToCtrl = new Map<string, string>();
+  for (const pid of Object.keys(state?.players || {})) {
+    const u = state.players[pid]?.user?.username;
+    if (typeof u === 'string' && u) nameToCtrl.set(u, pid);
+  }
+  const msgs = Array.isArray(state?.newMessages) ? state.newMessages : [];
+  for (const m of msgs) {
+    const parts = m?.message;
+    if (!Array.isArray(parts)) continue;
+    const text = parts.filter((p: any) => typeof p === 'string').join(' ');
+    const mt = /resourced\s+(\d+)\s+card/i.exec(text);
+    if (!mt) continue;
+    const count = parseInt(mt[1], 10);
+    const playerPart = parts.find((p: any) => p && typeof p === 'object' && p.type === 'player');
+    const ctrl = playerPart ? nameToCtrl.get(playerPart.name) : undefined;
+    if (ctrl && count > 0) out.set(ctrl, (out.get(ctrl) || 0) + count);
+  }
+  return out;
 }

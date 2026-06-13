@@ -162,3 +162,19 @@ for the decisions behind the model.
   Curated samples (B107) now anonymize **by entitlement** instead of
   unconditionally: the public still sees "Player 1 vs Player 2", but the
   uploader/teammates see their own featured replay normally.
+- **Card-play choreography (B134)** — the FrameAnimator (B110 pure
+  planner → executor) gained dramatic "staged" animations for the big
+  plays, each detected from the log + zone transitions: an EVENT flies out
+  of the hand, presents above the board, then drops to discard — its EFFECT
+  (defeats, bolts, board shifts) held until the card presents; an UPGRADE
+  presents above its unit then tucks under it; RESOURCING grows the card(s)
+  side by side, holds for a read, flips face-down, drops into the pile (own
+  face-up, opponent face-down — hands-up reveal animates both the same); a
+  leader DEPLOY raises off the table, holds under a spotlight vignette,
+  flips to its unit side, and slams down with a board shake. Pure intents
+  (`leaderDeploy`/`eventStage`/`upgradeStage`/`resourceStage` + delays) in
+  `frameAnimationPlan`; the executor clones into the overlay. Action-step /
+  autoplay dwell per-frame on these (`frameAnimMs`) so they aren't cut off,
+  and a unit played-then-attacking (ambush) holds the play before the lunge.
+  Cardbacks render `contain` (the default `/card-back.png` is square, so
+  `cover` cropped the logo).
