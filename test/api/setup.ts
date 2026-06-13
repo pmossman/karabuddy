@@ -19,6 +19,7 @@ const TABLES = [
   'match_players',
   'matches',
   'cards',
+  'clips',
   'replay_team_shares',
   'team_invites',
   'team_members',

@@ -366,6 +366,35 @@ export const replayTeamShares = pgTable(
 
 export type ReplayTeamShare = typeof replayTeamShares.$inferSelect;
 
+// B136: replay clips — a saved [start,end] frame range of a replay with its own
+// shareable slug (the dedicated reel viewer at /c/<slug>). Frames are stored in
+// ORIGINAL space (like tags) so they survive a re-upload's re-collapse. Any
+// viewer can create one (dual userId/createdBy attribution, like tags); the
+// creator OR the replay owner can delete it.
+export const clips = pgTable(
+  'clips',
+  {
+    slug: text('slug').primaryKey(),
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    startFrame: integer('start_frame').notNull(),
+    endFrame: integer('end_frame').notNull(),
+    title: text('title'),
+    // Signed-in creator (set-null on account delete) + the token that owns the
+    // clip for the mutate check (session userId or install token).
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    replayIdx: index('clips_replay_idx').on(t.replaySlug),
+    creatorIdx: index('clips_creator_idx').on(t.createdBy),
+  })
+);
+
+export type ClipRow = typeof clips.$inferSelect;
+
 // B84: who RECORDED a replay, by karabuddy account. Account-based bridge —
 // when a linked install uploads, its user becomes a participant; when two
 // teammates both record the same match, both are participants. Drives

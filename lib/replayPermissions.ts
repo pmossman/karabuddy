@@ -58,6 +58,22 @@ export function canDeleteTag(
   return canEditTag(tag, ctx) || canMutateReplay(replay, ctx);
 }
 
+// B136: can the caller mutate (delete) this clip? Clip creator OR the parent
+// replay's owner — same shape as canDeleteTag.
+interface ClipOwnership {
+  userId?: string | null;
+  createdBy: string;
+}
+export function canMutateClip(
+  clip: ClipOwnership,
+  replay: ReplayOwnership,
+  ctx: AuthContext,
+): boolean {
+  if (ctx.sessionUserId && clip.userId === ctx.sessionUserId) return true;
+  if (ctx.installToken && clip.createdBy === ctx.installToken) return true;
+  return canMutateReplay(replay, ctx);
+}
+
 // Convenience: build the AuthContext from a Next request + Auth.js
 // session. Server-side only (calls into the Request to read the
 // X-Install-Token header). Keeps callers' boilerplate to one line.

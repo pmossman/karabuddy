@@ -17,6 +17,11 @@ export function generateTagId(): string {
   return generateSlug('tag_', 16);
 }
 
+// B136: clip slugs — short shareable ids, e.g. `/c/cl_a4f8x2`.
+export function generateClipSlug(): string {
+  return generateSlug('cl_', 6);
+}
+
 // B55a: team slugs — 6 chars without prefix so URLs look like `/teams/k7x4dq`
 // instead of `/teams/t_k7x4dq`. Same alphabet (Crockford-ish base32, no
 // ambiguous chars). 32^6 ≈ 1B possibilities; collision on retry-once.
