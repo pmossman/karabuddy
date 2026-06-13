@@ -65,6 +65,14 @@ export async function canViewAltPerspective(slug: string, viewerUserId: string |
     .limit(1);
   if (!rep?.userId) return false; // canonical recorder's account is gone
 
+  // B137: the two people who RECORDED this game (canonical uploader + alt
+  // recorder) may always flip to their own two-sided view — they were both in
+  // the match and already saw their own hands; consent is implicit. The
+  // team-share rule below is what governs OTHER teammates seeing it. Without
+  // this, a double-sided replay the owner never shared locked BOTH players out
+  // of their own game even though the alt was retained.
+  if (viewerUserId === rep.userId || viewerUserId === alt.altUserId) return true;
+
   // Candidate teams = teams the VIEWER belongs to that the replay is shared with.
   // (viewer-membership is satisfied by construction since these come from the
   // viewer's own team list.)

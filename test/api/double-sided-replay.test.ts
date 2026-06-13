@@ -156,10 +156,16 @@ describe('B112 perspective endpoint authorization', () => {
     expect(res.status).toBe(403);
   });
 
-  it('403s once a recorder has left the shared team', async () => {
+  it('403s a non-recorder teammate once a recorder has left the shared team', async () => {
     const { a, b, team, slug } = await setupShared();
+    // A third teammate (not a recorder) can view while both recorders are on the team...
+    const c = await seedUser();
+    await getDb().insert(teamMembers).values({ teamSlug: team, userId: c.id, role: 'member' });
+    expect((await getPerspective(slug, c.id)).status).toBe(200);
+    // ...but loses access once the alt recorder leaves (B112 revoke-on-leave).
+    // The recorders themselves keep access (B137) — that's covered separately.
     await getDb().delete(teamMembers).where(eq(teamMembers.userId, b.id)); // b (alt recorder) leaves
-    const res = await getPerspective(slug, a.id);
+    const res = await getPerspective(slug, c.id);
     expect(res.status).toBe(403);
   });
 
@@ -168,6 +174,45 @@ describe('B112 perspective endpoint authorization', () => {
     const team = await seedTeam(a.id, [a.id]);
     as(a.id); const { slug } = await (await doUpload(a.token, 'g-noalt', { share: [team] })).json();
     const res = await getPerspective(slug, a.id);
+    expect(res.status).toBe(403);
+  });
+
+  // B137: a participant who RECORDED this game may always flip to their own
+  // two-sided view, even when the replay was never shared with a team. The alt
+  // is still retained (the recorders share a team), but with no
+  // replay_team_shares row the old rule locked BOTH players out of their own
+  // game. Setup: two teammates record, no `share` passed.
+  async function setupUnshared() {
+    const a = await seedUser();
+    const b = await seedUser();
+    await seedTeam(a.id, [a.id, b.id]); // teammates, but the replay is NOT shared with the team
+    as(a.id); const { slug } = await (await doUpload(a.token, 'g-' + randomUUID().slice(0, 5))).json();
+    as(b.id); await doUpload(b.token, await gameIdOf(slug), { localPlayerId: 'p2' });
+    return { a, b, slug };
+  }
+
+  it('B137: serves the alt to the canonical recorder even when never shared', async () => {
+    const { a, slug } = await setupUnshared();
+    expect(await altRow(slug)).toBeTruthy(); // alt retained (shared team), but no team-share row
+    const res = await getPerspective(slug, a.id);
+    expect(res.status).toBe(200);
+    expect((await res.json()).altOwnerPlayerId).toBe('p2');
+  });
+
+  it('B137: serves the alt to the alt recorder even when never shared', async () => {
+    const { b, slug } = await setupUnshared();
+    const res = await getPerspective(slug, b.id);
+    expect(res.status).toBe(200);
+  });
+
+  it('B137: still 403s a non-recorder teammate when the replay is not shared', async () => {
+    const { a, slug } = await setupUnshared();
+    // a third member of a's team who did NOT record this game
+    const c = await seedUser();
+    const { teamMembers } = await import('@/lib/schema');
+    const [mine] = await getDb().select().from(teamMembers).where(eq(teamMembers.userId, a.id));
+    await getDb().insert(teamMembers).values({ teamSlug: mine.teamSlug, userId: c.id, role: 'member' });
+    const res = await getPerspective(slug, c.id);
     expect(res.status).toBe(403);
   });
 
