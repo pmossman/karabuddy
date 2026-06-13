@@ -5,6 +5,7 @@ import { GameProvider } from '@/app/_contexts/Game.context';
 import type { Frame } from '@/lib/replayDecoder';
 import type { Chapter } from '@/lib/replayChapters';
 import { ClipBoardPreview } from './ClipBoardPreview';
+import { computeFrameDwells, PLAYBACK_TICK_MS } from './frameDwell';
 
 // B136: the clip trim builder — a large modal over the replay viewer with its
 // OWN independent board (nested GameProvider; the underlying viewer board never
@@ -23,7 +24,7 @@ interface Props {
   installToken: string;
 }
 
-const PREVIEW_DWELL_MS = 420;
+const SPEEDS = [0.5, 1, 2] as const;
 
 export function ClipBuilder(props: Props) {
   const { open, onClose } = props;
@@ -72,6 +73,10 @@ function ClipBuilderInner({
   const [focus, setFocus] = useState(() => clamp(initialIndex)); // which frame the preview shows
   const [title, setTitle] = useState('');
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);          // preview speed, independent of the main board
+  const speedRef = useRef(1); speedRef.current = speed;
+  const dwells = useMemo(() => computeFrameDwells(frames), [frames]);
+  const dwellsRef = useRef<number[]>(dwells); dwellsRef.current = dwells;
   const [busy, setBusy] = useState(false);
   const [createdSlug, setCreatedSlug] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -128,12 +133,18 @@ function ClipBuilderInner({
     setPlaying(true);
     playheadRef.current = start;
     setFocus(start);
+    // Dwell per-frame (same choreography map as the main board) ÷ the preview's
+    // own speed, so animations get time to play and the speed is independent.
     const tick = () => {
-      playheadRef.current = playheadRef.current >= end ? start : playheadRef.current + 1;
-      setFocus(playheadRef.current);
-      playTimer.current = window.setTimeout(tick, PREVIEW_DWELL_MS);
+      const cur = playheadRef.current;
+      const dwell = (dwellsRef.current[cur] ?? PLAYBACK_TICK_MS) / speedRef.current;
+      playTimer.current = window.setTimeout(() => {
+        playheadRef.current = cur >= end ? start : cur + 1;
+        setFocus(playheadRef.current);
+        tick();
+      }, dwell);
     };
-    playTimer.current = window.setTimeout(tick, PREVIEW_DWELL_MS);
+    tick();
   }, [start, end, stopPreview]);
   useEffect(() => stopPreview, [stopPreview]);
 
@@ -173,7 +184,7 @@ function ClipBuilderInner({
       {/* Independent preview board. */}
       <div style={{ padding: '12px 16px 0', flex: '1 1 auto', minHeight: 0 }}>
         <div style={{ height: 'min(48vh, 420px)' }}>
-          <ClipBoardPreview frames={frames} index={focus} localPlayerId={localPlayerId} />
+          <ClipBoardPreview frames={frames} index={focus} animate={playing} localPlayerId={localPlayerId} />
         </div>
       </div>
 
@@ -222,6 +233,24 @@ function ClipBuilderInner({
           <>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <Btn onClick={playing ? stopPreview : playPreview} data-testid="clip-preview-play">{playing ? '❚❚ Pause' : '▶ Preview'}</Btn>
+              {/* Preview speed — independent of the main board. */}
+              <div style={{ display: 'inline-flex', borderRadius: 8, border: '1px solid #2e333c', overflow: 'hidden' }}>
+                {SPEEDS.map((sp) => (
+                  <button
+                    key={sp}
+                    type="button"
+                    onClick={() => setSpeed(sp)}
+                    data-testid={`clip-speed-${sp}`}
+                    style={{
+                      background: speed === sp ? '#4d9dff' : 'transparent',
+                      color: speed === sp ? '#fff' : '#a0a8b8',
+                      border: 0, padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    {sp}×
+                  </button>
+                ))}
+              </div>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value.slice(0, 80))}
