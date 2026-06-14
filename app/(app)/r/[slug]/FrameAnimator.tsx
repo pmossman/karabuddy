@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { useGame } from '@/app/_contexts/Game.context';
 import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
+import { createBoardGeometry } from './boardGeometry';
 // B138: animation durations live in one shared module so the autoplay/clip
 // dwell (frameDwell.ts) is derived from the SAME numbers — see animationTiming.
 import {
@@ -101,17 +102,9 @@ export function FrameAnimator({
     const overlay = overlayRef.current;
     if (!container || !overlay) return;
 
-    const measure = (): Snapshot => {
-      const map = new Map<string, Snap>();
-      container.querySelectorAll<HTMLElement>('[data-card-uuid]').forEach((el) => {
-        const uuid = el.getAttribute('data-card-uuid');
-        if (!uuid || map.has(uuid)) return; // first (top-level) wins
-        const r = el.getBoundingClientRect();
-        if (r.width === 0 || r.height === 0) return;
-        map.set(uuid, { x: r.left, y: r.top, w: r.width, h: r.height, html: el.outerHTML });
-      });
-      return map;
-    };
+    // B147 / ADR 0008: all board-position reads go through the geometry seam.
+    const geom = createBoardGeometry(container);
+    const measure = geom.measureAll;
 
     // Cancel anything still running, un-hide cards from the last step, and remove
     // leftover clones — BEFORE measuring, so measure() only ever sees real board
@@ -214,8 +207,8 @@ export function FrameAnimator({
       interactions: extractInteractions(gameState),
       eventPlays: extractEventPlays(gameState),
       bases: extractBases(gameState),
-      resourcePile: measureEl(container, '[data-testid="my-resource-pile"]'),
-      resourcePileOpp: measureEl(container, '[data-testid="opp-resource-pile"]'),
+      resourcePile: geom.resourcePile('mine'),
+      resourcePileOpp: geom.resourcePile('opp'),
       localPlayerId,
       resourceCounts: extractResourceCounts(gameState),
     });
@@ -839,14 +832,6 @@ function runIntent(intent: Intent, ctx: Ctx): void {
 
 // B134: measure a single element (by selector) into a Snap of absolute screen
 // coords — same frame as the card snapshots. Null when absent / zero-size.
-function measureEl(container: HTMLElement, selector: string): Snap | null {
-  const el = container.querySelector<HTMLElement>(selector);
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  if (r.width === 0 || r.height === 0) return null;
-  return { x: r.left, y: r.top, w: r.width, h: r.height, html: '' };
-}
-
 function makeClone(html: string, pos: { left: number; top: number }, w: number, h: number): HTMLElement {
   const box = document.createElement('div');
   box.innerHTML = html;
