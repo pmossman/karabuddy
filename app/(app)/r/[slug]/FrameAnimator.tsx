@@ -5,7 +5,7 @@ import { useGame } from '@/app/_contexts/Game.context';
 import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
 import { createBoardGeometry } from './boardGeometry';
-import { slide, enterFade, exitFade, playFlip } from './animPrimitives';
+import { slide, enterFade, exitFade, playFlip, lunge, targetHold, tracer, flash } from './animPrimitives';
 // B138: animation durations live in one shared module so the autoplay/clip
 // dwell (frameDwell.ts) is derived from the SAME numbers — see animationTiming.
 import {
@@ -250,6 +250,8 @@ export function FrameAnimator({
         overlay.appendChild(outer);
         return { outer, inner };
       },
+      mount: (el) => overlay.appendChild(el),
+      unclip: (el) => unclipAncestors(el, container),
       track: (anim, onDone) => {
         if (!anim) { onDone?.(); return; }
         anim.playbackRate = rate; // playbackRate scales delay + duration together
@@ -313,6 +315,8 @@ interface Ctx {
   clone: (snap: Snap, zIndex?: number) => HTMLElement;
   fit: (html: string) => HTMLElement;
   layer: (snap: Snap, opts: { zIndex: number; origin?: string; shadow?: string }) => { outer: HTMLElement; inner: HTMLElement };
+  mount: (el: HTMLElement) => void;
+  unclip: (el: HTMLElement) => () => void;
   track: (anim: Animation | null, onDone?: () => void) => void;
   hide: (el: HTMLElement | null) => void;
   show: (el: HTMLElement | null) => void;
@@ -369,97 +373,18 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       );
       return;
     }
-    case 'lunge': {
-      const { uuid, from: a, to: t } = intent;
-      const dx = (t.x + t.w / 2 - (a.x + a.w / 2)) * 0.55;
-      const dy = (t.y + t.h / 2 - (a.y + a.h / 2)) * 0.55;
-      const kf = [
-        { transform: 'translate(0,0) scale(1)', offset: 0 },
-        { transform: `translate(${dx}px, ${dy}px) scale(1.08)`, offset: 0.42 },
-        { transform: 'translate(0,0) scale(1)', offset: 1 },
-      ];
-      const liveEl = findCard(uuid);
-      if (liveEl) {
-        // B134: a SURVIVING attacker lunges as the LIVE element. The old path
-        // cloned it + hid the original, but the original could stay visible — a
-        // stationary "clone" left behind while the lunge flew out. Animating the
-        // element itself can't diverge from itself. (Same trick as 'enter';
-        // WAAPI reverts the transform on finish/cancel, so no residue.)
-        const pz = liveEl.style.zIndex, pp = liveEl.style.position;
-        if (!liveEl.style.position) liveEl.style.position = 'relative';
-        liveEl.style.zIndex = '20'; // above its row-mates during the traversal
-        // The unit board clips with overflow:hidden, so a leader lunging across
-        // the board to a base would be cut off. Temporarily un-clip the
-        // ancestors (up to the board container) for the traversal — the overlay
-        // clone path didn't need this because it lives outside the clip.
-        const unclipped = unclipAncestors(liveEl, ctx.container);
-        track(
-          liveEl.animate(kf, { duration: LUNGE_MS, easing: LUNGE_EASING }),
-          () => { liveEl.style.zIndex = pz; liveEl.style.position = pp; unclipped(); },
-        );
-      } else {
-        // Attacker traded away (gone from the board) → clone its last look.
-        const clone = makeClone(a.html, rel(a), a.w, a.h);
-        clone.style.zIndex = '10';
-        overlay.appendChild(clone);
-        track(clone.animate(kf, { duration: LUNGE_MS, easing: LUNGE_EASING }), () => clone.remove());
-      }
+    case 'lunge':
+      lunge(ctx, { uuid: intent.uuid, from: intent.from, to: intent.to });
       return;
-    }
-    case 'targetHold': {
-      // Hold the target's OLD look over the real card until the lunge connects,
-      // so its damage counter pops on impact rather than before.
-      const { uuid, oldRect, newRect } = intent;
-      const tEl = findCard(uuid);
-      const tClone = makeClone(oldRect.html, rel(newRect), newRect.w, newRect.h);
-      overlay.appendChild(tClone);
-      hide(tEl);
-      track(tClone.animate([{ opacity: 1 }, { opacity: 1 }], { duration: 230 }), () => { tClone.remove(); show(tEl); });
+    case 'targetHold':
+      targetHold(ctx, { uuid: intent.uuid, oldRect: intent.oldRect, newRect: intent.newRect });
       return;
-    }
-    case 'tracer': {
-      const { from, to, color } = intent;
-      const size = 16;
-      const orb = document.createElement('div');
-      Object.assign(orb.style, {
-        position: 'absolute', left: `${from.x - ctx.cRect.left - size / 2}px`, top: `${from.y - ctx.cRect.top - size / 2}px`,
-        width: `${size}px`, height: `${size}px`, borderRadius: '50%',
-        // Invisible until the animation begins — matters when delayed (B134),
-        // so the orb doesn't sit lit at its origin during the wait.
-        opacity: '0',
-        background: color, boxShadow: `0 0 10px 3px ${color}`, pointerEvents: 'none', zIndex: '11',
-      } as CSSStyleDeclaration);
-      overlay.appendChild(orb);
-      const dx = to.x - from.x, dy = to.y - from.y;
-      track(
-        orb.animate(
-          [{ transform: 'translate(0,0) scale(0.5)', opacity: 0.3, offset: 0 },
-           { transform: `translate(${dx * 0.5}px, ${dy * 0.5}px) scale(1)`, opacity: 1, offset: 0.5 },
-           { transform: `translate(${dx}px, ${dy}px) scale(1.4)`, opacity: 1, offset: 1 }],
-          // B134: delay (event effect) holds the bolt until the card presents.
-          { duration: TRACER_MS, delay: intent.delay ?? 0, easing: 'cubic-bezier(0.4, 0, 0.6, 1)' }),
-        () => orb.remove(),
-      );
+    case 'tracer':
+      tracer(ctx, { from: intent.from, to: intent.to, color: intent.color, delay: intent.delay });
       return;
-    }
-    case 'flash': {
-      const { rect: t, color } = intent;
-      const fp = rel(t);
-      const flash = document.createElement('div');
-      Object.assign(flash.style, {
-        position: 'absolute', left: `${fp.left}px`, top: `${fp.top}px`, width: `${t.w}px`, height: `${t.h}px`,
-        borderRadius: '7px', background: color, opacity: '0', pointerEvents: 'none', zIndex: '9', mixBlendMode: 'screen',
-      } as CSSStyleDeclaration);
-      overlay.appendChild(flash);
-      track(
-        flash.animate([{ opacity: 0 }, { opacity: 0.55 }, { opacity: 0 }],
-          // B134: + the event-effect delay so the flash pops as the bolt lands,
-          // both held until the staged card has presented.
-          { duration: 240, delay: (intent.delay ?? 0) + TRACER_MS - 70, fill: 'backwards', easing: 'ease-out' }),
-        () => flash.remove(),
-      );
+    case 'flash':
+      flash(ctx, { rect: intent.rect, color: intent.color, delay: intent.delay });
       return;
-    }
     case 'eventStage': {
       // B134: the event card flies out of the hand toward the bases, pausing
       // grown at the stage point ("held above the board"), then drops into the

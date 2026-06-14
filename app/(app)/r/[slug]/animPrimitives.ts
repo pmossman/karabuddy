@@ -6,11 +6,14 @@
 // in FrameAnimator are being migrated onto these one kind at a time (each ported
 // kind is byte-identical to its old executor, verified visually before the next).
 import type { Snap } from './frameAnimationPlan';
-import { DURATION, PLAY_MOVE_MS, PLAY_FLIP_MS } from './animationTiming';
+import { DURATION, PLAY_MOVE_MS, PLAY_FLIP_MS, LUNGE_MS, TRACER_MS } from './animationTiming';
 
-// Kept in sync with the legacy executors' EASING during the migration;
+// Kept in sync with the legacy executors' easings during the migration;
 // consolidated once every kind is ported.
 const EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
+const LUNGE_EASING = 'cubic-bezier(0.34, 1.2, 0.64, 1)';
+
+export interface Point { x: number; y: number }
 
 // The render-side capabilities a primitive needs. Clones live in the overlay;
 // `track` runs a cancellable, playback-rate-scaled animation and fires onDone on
@@ -27,6 +30,13 @@ export interface Stage {
   // INNER (center-origin) drives the flip + holds the face(s). The composite
   // choreographies (play/deploy/event/upgrade) all build on this.
   layer(snap: Snap, opts: { zIndex: number; origin?: string; shadow?: string }): { outer: HTMLElement; inner: HTMLElement };
+  // Container-relative position of a screen point (for raw FX: orbs, flashes).
+  rel(p: Point): { left: number; top: number };
+  // Append a caller-built element (an FX node) to the overlay.
+  mount(el: HTMLElement): void;
+  // Temporarily lift overflow-clipping on a live card's ancestors (so a leader
+  // lunging across the board to a base isn't cut off); returns a restore fn.
+  unclip(el: HTMLElement): () => void;
   hide(el: HTMLElement | null): void;
   show(el: HTMLElement | null): void;
   track(anim: Animation | null, onDone?: () => void): void;
@@ -119,4 +129,82 @@ export function playFlip(stage: Stage, p: { uuid: string; from: Snap; to: Snap }
     duration: PLAY_FLIP_MS,
     onDone: () => { outer.remove(); stage.show(live); },
   });
+}
+
+// LUNGE: an attacker thrusts ~55% of the way to its target and recoils. A
+// SURVIVING attacker lunges as the LIVE element (a clone could be left behind as
+// a stationary ghost; animating the element itself can't diverge — WAAPI reverts
+// on finish/cancel). A traded-away attacker (gone from the board) lunges a clone.
+export function lunge(stage: Stage, p: { uuid: string; from: Snap; to: Snap }): void {
+  const { from: a, to: t } = p;
+  const dx = (t.x + t.w / 2 - (a.x + a.w / 2)) * 0.55;
+  const dy = (t.y + t.h / 2 - (a.y + a.h / 2)) * 0.55;
+  const kf = [
+    { transform: 'translate(0,0) scale(1)', offset: 0 },
+    { transform: `translate(${dx}px, ${dy}px) scale(1.08)`, offset: 0.42 },
+    { transform: 'translate(0,0) scale(1)', offset: 1 },
+  ];
+  const live = stage.findCard(p.uuid);
+  if (live) {
+    const pz = live.style.zIndex, pp = live.style.position;
+    if (!live.style.position) live.style.position = 'relative';
+    live.style.zIndex = '20'; // above its row-mates during the traversal
+    const unclipped = stage.unclip(live);
+    stage.track(
+      live.animate(kf, { duration: LUNGE_MS, easing: LUNGE_EASING }),
+      () => { live.style.zIndex = pz; live.style.position = pp; unclipped(); },
+    );
+  } else {
+    const el = stage.clone(a, 10);
+    stage.track(el.animate(kf, { duration: LUNGE_MS, easing: LUNGE_EASING }), () => el.remove());
+  }
+}
+
+// TARGET-HOLD: hold the target's OLD look (a clone, at its new rect) over the
+// real card until the lunge connects, so its damage counter pops on impact.
+export function targetHold(stage: Stage, p: { uuid: string; oldRect: Snap; newRect: Snap }): void {
+  const t = stage.findCard(p.uuid);
+  const clone = stage.clone({ ...p.newRect, html: p.oldRect.html });
+  stage.hide(t);
+  stage.track(clone.animate([{ opacity: 1 }, { opacity: 1 }], { duration: 230 }), () => { clone.remove(); stage.show(t); });
+}
+
+// TRACER: a colored bolt that streaks from a source point to a target (damage /
+// heal). Invisible until it begins (matters when delayed behind a staged event).
+export function tracer(stage: Stage, p: { from: Point; to: Point; color: string; delay?: number }): void {
+  const size = 16;
+  const o = stage.rel(p.from);
+  const orb = document.createElement('div');
+  Object.assign(orb.style, {
+    position: 'absolute', left: `${o.left - size / 2}px`, top: `${o.top - size / 2}px`,
+    width: `${size}px`, height: `${size}px`, borderRadius: '50%', opacity: '0',
+    background: p.color, boxShadow: `0 0 10px 3px ${p.color}`, pointerEvents: 'none', zIndex: '11',
+  } as CSSStyleDeclaration);
+  stage.mount(orb);
+  const dx = p.to.x - p.from.x, dy = p.to.y - p.from.y;
+  stage.track(
+    orb.animate(
+      [{ transform: 'translate(0,0) scale(0.5)', opacity: 0.3, offset: 0 },
+       { transform: `translate(${dx * 0.5}px, ${dy * 0.5}px) scale(1)`, opacity: 1, offset: 0.5 },
+       { transform: `translate(${dx}px, ${dy}px) scale(1.4)`, opacity: 1, offset: 1 }],
+      { duration: TRACER_MS, delay: p.delay ?? 0, easing: 'cubic-bezier(0.4, 0, 0.6, 1)' }),
+    () => orb.remove(),
+  );
+}
+
+// FLASH: a colored impact wash over the struck card, timed to land as the bolt
+// connects (TRACER_MS - 70, + any event-effect delay).
+export function flash(stage: Stage, p: { rect: Snap; color: string; delay?: number }): void {
+  const f = stage.rel(p.rect);
+  const el = document.createElement('div');
+  Object.assign(el.style, {
+    position: 'absolute', left: `${f.left}px`, top: `${f.top}px`, width: `${p.rect.w}px`, height: `${p.rect.h}px`,
+    borderRadius: '7px', background: p.color, opacity: '0', pointerEvents: 'none', zIndex: '9', mixBlendMode: 'screen',
+  } as CSSStyleDeclaration);
+  stage.mount(el);
+  stage.track(
+    el.animate([{ opacity: 0 }, { opacity: 0.55 }, { opacity: 0 }],
+      { duration: 240, delay: (p.delay ?? 0) + TRACER_MS - 70, fill: 'backwards', easing: 'ease-out' }),
+    () => el.remove(),
+  );
 }
