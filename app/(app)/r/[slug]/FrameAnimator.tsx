@@ -2,10 +2,10 @@
 
 import { useLayoutEffect, useRef } from 'react';
 import { useGame } from '@/app/_contexts/Game.context';
-import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
+import { extractFrameCards, extractInteractions, extractEventPlays, extractBases, extractResourceCounts, frameAttacks } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
 import { createBoardGeometry } from './boardGeometry';
-import { slide, enterFade, exitFade, playFlip, lunge, targetHold, tracer, flash } from './animPrimitives';
+import { slide, enterFade, exitFade, playFlip, lunge, targetHold, tracer, flash, flip, stagePresent } from './animPrimitives';
 // B138: animation durations live in one shared module so the autoplay/clip
 // dwell (frameDwell.ts) is derived from the SAME numbers — see animationTiming.
 import {
@@ -96,6 +96,7 @@ export function FrameAnimator({
   const lastRun = useRef(0); // timestamp of the last frame change (rapid-step detection)
   const zones = useRef<Map<string, string>>(new Map()); // uuid → zone, previous frame
   const baseDamage = useRef<Map<string, number>>(new Map()); // base uuid → damage, previous frame
+  const prevStateRef = useRef<any>(null); // previous frame's gameState (B148 exhaust+damage base-attack attribution)
   const remeasureRaf = useRef<number | null>(null); // deferred settle-measure after a backward snap
 
   useLayoutEffect(() => {
@@ -149,6 +150,7 @@ export function FrameAnimator({
     // the settled, pre-strip layout; the deploy executor reveals each as it tucks.
     const { cards, leaders } = extractFrameCards(gameState);
     const prevZones = zones.current;
+    const prevState = prevStateRef.current; // captured before we overwrite the ref below
     const isArenaZone = (z?: string) => z === 'groundArena' || z === 'spaceArena';
     for (const [u, c] of cards) {
       if (c.parentCardId && isArenaZone(c.zone) && prevZones.get(u) !== c.zone && !upgHidden.current.has(u)) {
@@ -179,6 +181,7 @@ export function FrameAnimator({
     const nextZones = new Map<string, string>();
     for (const [u, c] of cards) nextZones.set(u, c.zone);
     zones.current = nextZones;
+    prevStateRef.current = gameState;
 
     // Backward step = rewind. Don't animate, and DON'T trust this measurement:
     // when a card re-enters going back, the board reflows the row AFTER we read
@@ -204,7 +207,9 @@ export function FrameAnimator({
       prevZones,
       cards,
       leaders,
-      attacks: extractAttacks(gameState),
+      // ADR 0008 step 2d: the single attack classifier (log + isAttacker flag +
+      // exhaust/damage fallback), shared byte-for-byte with the dwell's timeline.
+      attacks: frameAttacks(prevState, gameState),
       interactions: extractInteractions(gameState),
       eventPlays: extractEventPlays(gameState),
       bases: extractBases(gameState),
@@ -323,6 +328,20 @@ interface Ctx {
   upgHidden: Map<string, { style: HTMLStyleElement; timer: number | null }>;
 }
 
+// B141 follow-up: when a pilot/upgrade attaches, the board immediately renders
+// the host with its BUFFED stats — but the buff should read as applied when the
+// upgrade LANDS, not the instant the frame loads. Hold a clone of the host's
+// pre-attach render (old stats, no strip) over the live (buffed) host, hidden
+// underneath; the deploy/upgrade's onDone calls the returned restore to swap
+// back. No-op when the host is new this frame or its render didn't change.
+function holdHostStats(ctx: Ctx, unitUuid: string, unitNew: Snap, unitOld: Snap | null): () => void {
+  const live = ctx.findCard(unitUuid);
+  if (!unitOld || !live || unitOld.html === unitNew.html) return () => {};
+  const held = ctx.clone({ ...unitNew, html: unitOld.html }, 7);
+  ctx.hide(live);
+  return () => { held.remove(); ctx.show(live); };
+}
+
 // Turn one planned Intent into clones + Web-Animations calls. The "what" lives
 // in the planner; this is only the "how" (geometry → keyframes). Each clone sets
 // its start transform/opacity INLINE before the first paint so a delayed
@@ -386,96 +405,54 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       flash(ctx, { rect: intent.rect, color: intent.color, delay: intent.delay });
       return;
     case 'eventStage': {
-      // B134: the event card flies out of the hand toward the bases, pausing
-      // grown at the stage point ("held above the board"), then drops into the
-      // discard. A hidden-hand play flips face-up mid-flight. The card's REAL
-      // discard render stays hidden until the clone lands.
+      // B134 / ADR 0008: the event card flies out of the hand toward the bases,
+      // pausing grown at the stage point ("held above the board"), then drops
+      // into the discard. A hidden-hand play flips face-up mid-flight. The card's
+      // REAL discard render stays hidden until the clone lands. Migrated onto
+      // stagePresent + flip; byte-identical to the old executor.
       const { from, to, faceDown, stage, pile, faceUp } = intent;
       const liveEl = intent.to ? findCard(intent.uuid) : null;
       hide(liveEl);
-      const p = rel(from);
-      const outer = document.createElement('div');
-      Object.assign(outer.style, {
-        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
-        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
-        pointerEvents: 'none', zIndex: '12',
-      } as CSSStyleDeclaration);
-      const inner = document.createElement('div');
-      Object.assign(inner.style, {
-        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
-        filter: 'drop-shadow(0 16px 26px rgba(0, 0, 0, 0.55))',
-      } as CSSStyleDeclaration);
-      // B141: a PLOT lifts a cardback from the resource pile (the pile rect has
-      // no card html); everything else clones the departing card.
-      inner.appendChild(pile ? cardbackNode() : fitNode(from.html));
-      outer.appendChild(inner);
-      overlay.appendChild(outer);
-
       // Center-to-center deltas (outer's transform-origin is its center).
       const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
       const dxS = stage.x - fcx, dyS = stage.y - fcy;
       const tStage = `translate(${dxS}px, ${dyS}px) scale(${EVENT_STAGE_SCALE})`;
-      let tEnd: string;
-      let fadeOut = false;
-      if (to) {
-        const dxE = (to.x + to.w / 2) - fcx, dyE = (to.y + to.h / 2) - fcy;
-        tEnd = `translate(${dxE}px, ${dyE}px) scale(${to.w / from.w}, ${to.h / from.h})`;
-      } else {
-        tEnd = `translate(${dxS}px, ${dyS}px) scale(0.5)`;
-        fadeOut = true;
-      }
-      track(
-        outer.animate(
-          [
-            { transform: 'translate(0, 0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' },
-            { transform: tStage, opacity: 1, offset: EVENT_ARRIVE, easing: 'linear' },
-            { transform: tStage, opacity: 1, offset: EVENT_DEPART, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
-            { transform: tEnd, opacity: fadeOut ? 0 : 1, offset: 1 },
-          ],
-          { duration: EVENT_TOTAL_MS, fill: 'both' },
-        ),
-        () => { outer.remove(); show(liveEl); },
-      );
+      const tEnd = to
+        ? `translate(${(to.x + to.w / 2) - fcx}px, ${(to.y + to.h / 2) - fcy}px) scale(${to.w / from.w}, ${to.h / from.h})`
+        : `translate(${dxS}px, ${dyS}px) scale(0.5)`;
+      const { inner } = stagePresent(ctx, {
+        from, tStage, tEnd,
+        arrive: EVENT_ARRIVE, depart: EVENT_DEPART, total: EVENT_TOTAL_MS,
+        zIndex: 12, shadow: 'drop-shadow(0 16px 26px rgba(0, 0, 0, 0.55))',
+        // B141: a PLOT lifts a cardback from the resource pile (the pile rect has
+        // no card html); everything else clones the departing card.
+        initial: () => (pile ? cardbackNode() : fitNode(from.html)),
+        opacity: true, fadeOut: !to,
+        startEasing: 'cubic-bezier(0.3, 0, 0.2, 1)', departEasing: 'cubic-bezier(0.5, 0, 0.7, 1)',
+        onDone: () => show(liveEl),
+      });
       // Hidden-hand / plot play: flip face-up mid-flight — swap the cardback for
       // the discard render (or, for a plot whose discard doesn't render, the
       // card art) at the flip's narrowest point.
       if (faceDown && (to || faceUp)) {
-        const swap = window.setTimeout(() => { inner.replaceChildren(to ? fitNode(to.html) : artNode(faceUp!)); }, (EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2) / rate);
-        track(
-          inner.animate(
-            [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
-            { duration: EVENT_FLIP_MS, delay: EVENT_FLIP_DELAY, fill: 'backwards', easing: 'ease-in-out' },
-          ),
-          () => window.clearTimeout(swap),
-        );
+        flip(ctx, inner, {
+          build: () => (to ? fitNode(to.html) : artNode(faceUp!)),
+          at: EVENT_FLIP_DELAY, duration: EVENT_FLIP_MS,
+        });
       }
       return;
     }
     case 'upgradeStage': {
-      // B134: fly out of the hand, present grown above the unit, then tuck
-      // under it — the clone lands at the unit's lower edge and fades out,
-      // handing off to the real upgrade strip rendered beneath the overlay.
-      // A hidden-hand play flips face-down → card-art mid-flight.
-      const { from, unit, faceDown, faceUp, stage, pile } = intent;
+      // B134 / ADR 0008: fly out of the hand, present grown above the unit, then
+      // tuck under it — the clone lands at the unit's lower edge and fades out,
+      // handing off to the real upgrade strip rendered beneath the overlay. A
+      // hidden-hand play flips face-down → card-art mid-flight. Migrated onto
+      // stagePresent + flip; byte-identical to the old executor.
+      const { from, unit, unitUuid, unitOld, faceDown, faceUp, stage, pile } = intent;
       // Reveal the (pre-hidden) upgrade strip as the clone starts tucking down.
       const upg = scheduleUpgradeReveal(upgHidden, intent.uuid, (UPGRADE_DEPART * UPGRADE_TOTAL_MS) / rate);
-      const p = rel(from);
-      const outer = document.createElement('div');
-      Object.assign(outer.style, {
-        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
-        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
-        pointerEvents: 'none', zIndex: '12',
-      } as CSSStyleDeclaration);
-      const inner = document.createElement('div');
-      Object.assign(inner.style, {
-        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
-        filter: 'drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55))',
-      } as CSSStyleDeclaration);
-      // B141: a PLOT upgrade lifts a cardback from the resource pile.
-      inner.appendChild(pile ? cardbackNode() : fitNode(from.html));
-      outer.appendChild(inner);
-      overlay.appendChild(outer);
-
+      // Hold the host's pre-attach stats until the upgrade lands.
+      const restoreHost = holdHostStats(ctx, unitUuid, unit, unitOld);
       const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
       const dxS = stage.x - fcx, dyS = stage.y - fcy;
       const tStage = `translate(${dxS}px, ${dyS}px) scale(${UPGRADE_STAGE_SCALE})`;
@@ -484,39 +461,32 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       const dxE = (unit.x + unit.w / 2) - fcx;
       const dyE = (unit.y + unit.h * 0.62) - fcy;
       const tEnd = `translate(${dxE}px, ${dyE}px) scale(${unit.w / from.w})`;
-      track(
-        outer.animate(
-          [
-            { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' },
-            { transform: tStage, opacity: 1, offset: UPGRADE_ARRIVE, easing: 'linear' },
-            { transform: tStage, opacity: 1, offset: UPGRADE_DEPART, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
-            { transform: tEnd, opacity: 0, offset: 1 },
-          ],
-          { duration: UPGRADE_TOTAL_MS, fill: 'both' },
-        ),
-        () => { upg.reveal(); outer.remove(); },
-      );
+      const { inner } = stagePresent(ctx, {
+        from, tStage, tEnd,
+        arrive: UPGRADE_ARRIVE, depart: UPGRADE_DEPART, total: UPGRADE_TOTAL_MS,
+        zIndex: 12, shadow: 'drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55))',
+        // B141: a PLOT upgrade lifts a cardback from the resource pile.
+        initial: () => (pile ? cardbackNode() : fitNode(from.html)),
+        opacity: true, fadeOut: true,
+        startEasing: 'cubic-bezier(0.3, 0, 0.2, 1)', departEasing: 'cubic-bezier(0.5, 0, 0.7, 1)',
+        onDone: () => { upg.reveal(); restoreHost(); },
+      });
       if (faceDown && faceUp) {
         const faceNode = document.createElement('div');
         Object.assign(faceNode.style, {
           position: 'absolute', inset: '0', backgroundImage: `url(${faceUp})`,
           backgroundSize: 'contain', backgroundPosition: 'center', borderRadius: '7px',
         } as CSSStyleDeclaration);
-        const swap = window.setTimeout(() => { inner.replaceChildren(faceNode); }, (EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2) / rate);
-        track(
-          inner.animate(
-            [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
-            { duration: EVENT_FLIP_MS, delay: EVENT_FLIP_DELAY, fill: 'backwards', easing: 'ease-in-out' },
-          ),
-          () => window.clearTimeout(swap),
-        );
+        flip(ctx, inner, { build: () => faceNode, at: EVENT_FLIP_DELAY, duration: EVENT_FLIP_MS });
       }
       return;
     }
     case 'leaderDeploy': {
-      // B134: raise the leader off the table (grow + lift), hold, flip to its
-      // unit side, then bring it down to the board slot with a board shake on
-      // landing. The real deployed unit stays hidden until the clone lands.
+      // B134 / ADR 0008: raise the leader off the table (grow + lift), hold, flip
+      // to its unit side, then bring it down to the board slot with a board shake
+      // on landing. The real deployed unit stays hidden until the clone lands.
+      // Migrated onto stagePresent + flip; byte-identical to the old executor.
+      // The spotlight vignette + board shake are deploy-specific extras kept here.
       const { from, to, stage } = intent;
       const liveEl = findCard(intent.uuid);
       hide(liveEl);
@@ -540,26 +510,6 @@ function runIntent(intent: Intent, ctx: Ctx): void {
           { duration: vigTotal, easing: 'ease-in-out' }),
         () => vignette.remove(),
       );
-      const p = rel(from);
-      const outer = document.createElement('div');
-      Object.assign(outer.style, {
-        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
-        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
-        pointerEvents: 'none', zIndex: '14',
-      } as CSSStyleDeclaration);
-      const inner = document.createElement('div');
-      Object.assign(inner.style, {
-        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
-        filter: 'drop-shadow(0 22px 34px rgba(0, 0, 0, 0.6))',
-      } as CSSStyleDeclaration);
-      const leaderFace = fitNode(from.html); // leader side
-      // Drop the player-name nameplate so only the CARD rises (it also stays
-      // rendered on the board, which would otherwise read as a duplicate).
-      leaderFace.querySelectorAll('[data-leader-nameplate]').forEach((el) => el.remove());
-      inner.appendChild(leaderFace);
-      outer.appendChild(inner);
-      overlay.appendChild(outer);
-
       const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
       const dxS = stage.x - fcx, dyS = stage.y - fcy;
       const tStage = `translate(${dxS}px, ${dyS}px) scale(${LEADER_DEPLOY_SCALE})`;
@@ -567,25 +517,26 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       const tEnd = `translate(${dxE}px, ${dyE}px) scale(${to.w / from.w})`;
       const arrive = LEADER_DEPLOY_RISE_MS / LEADER_DEPLOY_TOTAL;
       const depart = (LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS) / LEADER_DEPLOY_TOTAL;
-      const outerAnim = outer.animate(
-        [
-          { transform: 'translate(0,0) scale(1)', offset: 0, easing: 'cubic-bezier(0.2, 0, 0.2, 1)' },
-          { transform: tStage, offset: arrive, easing: 'linear' },
-          { transform: tStage, offset: depart, easing: 'cubic-bezier(0.55, 0, 0.85, 0.5)' }, // accelerate the slam
-          { transform: tEnd, offset: 1 },
-        ],
-        { duration: LEADER_DEPLOY_TOTAL, fill: 'both' },
-      );
-      track(outerAnim, () => { outer.remove(); show(liveEl); });
+      const { inner, anim } = stagePresent(ctx, {
+        from, tStage, tEnd,
+        arrive, depart, total: LEADER_DEPLOY_TOTAL,
+        zIndex: 14, shadow: 'drop-shadow(0 22px 34px rgba(0, 0, 0, 0.6))',
+        // Leader side; drop the player-name nameplate so only the CARD rises (it
+        // also stays rendered on the board, which would read as a duplicate).
+        initial: () => {
+          const f = fitNode(from.html);
+          f.querySelectorAll('[data-leader-nameplate]').forEach((el) => el.remove());
+          return f;
+        },
+        startEasing: 'cubic-bezier(0.2, 0, 0.2, 1)',
+        departEasing: 'cubic-bezier(0.55, 0, 0.85, 0.5)', // accelerate the slam
+        onDone: () => show(liveEl),
+      });
       // Shake the whole board ONLY on a real landing (not a rapid-step cancel).
-      outerAnim.addEventListener('finish', () => shakeBoard(ctx.container, rate));
+      anim.addEventListener('finish', () => shakeBoard(ctx.container, rate));
       // Flip leader → unit side as the slam begins.
       const flipDelay = LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS;
-      const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, (flipDelay + 130) / rate);
-      track(inner.animate(
-        [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
-        { duration: 280, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
-        () => window.clearTimeout(swap));
+      flip(ctx, inner, { build: () => fitNode(to.html), at: flipDelay, duration: 280, swapAt: flipDelay + 130 });
       return;
     }
     case 'pilotDeploy': {
@@ -594,7 +545,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       // upgrade text lives), then DESCEND + shrink onto the vehicle (tucking on
       // as an upgrade) and fade into the rendered strip — shaking the board on
       // landing, same as a regular leader deploy as a unit.
-      const { from, unit, stage, faceUp } = intent;
+      const { from, unit, unitUuid, unitOld, stage, faceUp } = intent;
       const vigTotal = LEADER_DEPLOY_TOTAL + VIGNETTE_LINGER_MS;
       const vigIn = LEADER_DEPLOY_RISE_MS / vigTotal;
       const vigHoldEnd = LEADER_DEPLOY_TOTAL / vigTotal;
@@ -610,24 +561,6 @@ function runIntent(intent: Intent, ctx: Ctx): void {
           { duration: vigTotal, easing: 'ease-in-out' }),
         () => vignette.remove(),
       );
-      const p = rel(from);
-      const outer = document.createElement('div');
-      Object.assign(outer.style, {
-        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
-        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
-        pointerEvents: 'none', zIndex: '14',
-      } as CSSStyleDeclaration);
-      const inner = document.createElement('div');
-      Object.assign(inner.style, {
-        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
-        filter: 'drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6))',
-      } as CSSStyleDeclaration);
-      const face = fitNode(from.html);
-      face.querySelectorAll('[data-leader-nameplate]').forEach((el) => el.remove());
-      inner.appendChild(face);
-      outer.appendChild(inner);
-      overlay.appendChild(outer);
-
       const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
       const tStage = `translate(${stage.x - fcx}px, ${stage.y - fcy}px) scale(${LEADER_DEPLOY_SCALE})`;
       // Land at the lower band of the vehicle (where the upgrade strip sits), shrunk.
@@ -637,87 +570,62 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       const depart = (LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS) / LEADER_DEPLOY_TOTAL;
       // Reveal the (pre-hidden) upgrade strip as the descent (depart → end) begins.
       const upg = scheduleUpgradeReveal(upgHidden, intent.uuid, (depart * LEADER_DEPLOY_TOTAL) / rate);
-      const outerAnim = outer.animate(
-        [
-          { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.2, 0, 0.2, 1)' },
-          { transform: tStage, opacity: 1, offset: arrive, easing: 'linear' },
-          { transform: tStage, opacity: 1, offset: depart, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
-          { transform: tEnd, opacity: 0, offset: 1 },
-        ],
-        { duration: LEADER_DEPLOY_TOTAL, fill: 'both' },
-      );
-      track(outerAnim, () => { upg.reveal(); outer.remove(); });
-      outerAnim.addEventListener('finish', () => shakeBoard(ctx.container, rate));
+      // Hold the vehicle's pre-pilot stats until the leader lands on it.
+      const restoreHost = holdHostStats(ctx, unitUuid, unit, unitOld);
+      const { inner, anim } = stagePresent(ctx, {
+        from, tStage, tEnd,
+        arrive, depart, total: LEADER_DEPLOY_TOTAL,
+        zIndex: 14, shadow: 'drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6))',
+        initial: () => {
+          const f = fitNode(from.html);
+          f.querySelectorAll('[data-leader-nameplate]').forEach((el) => el.remove());
+          return f;
+        },
+        opacity: true, fadeOut: true,
+        startEasing: 'cubic-bezier(0.2, 0, 0.2, 1)', departEasing: 'cubic-bezier(0.5, 0, 0.7, 1)',
+        onDone: () => { upg.reveal(); restoreHost(); },
+      });
+      anim.addEventListener('finish', () => shakeBoard(ctx.container, rate));
       // Flip leader → unit side at the TOP of the rise (vs the slam, for a normal
       // deploy) — the unit side carries the upgrade text it's about to become.
       if (faceUp) {
         const flipDelay = LEADER_DEPLOY_RISE_MS;
-        const swap = window.setTimeout(() => { inner.replaceChildren(artNode(faceUp)); }, (flipDelay + 130) / rate);
-        track(inner.animate(
-          [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
-          { duration: 280, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
-          () => window.clearTimeout(swap));
+        flip(ctx, inner, { build: () => artNode(faceUp), at: flipDelay, duration: 280, swapAt: flipDelay + 130 });
       }
       return;
     }
     case 'resourceStage': {
-      // B134: a card committed to resources — grows (presented face-up), flips,
-      // then shrinks into the resource pile and fades (the pile is one stacked
-      // box, so there's no per-card destination render to hand off to).
+      // B134 / ADR 0008: a card committed to resources — grows (presented
+      // face-up), flips, then shrinks into the resource pile and fades (the pile
+      // is one stacked box, so there's no per-card destination render to hand off
+      // to). Migrated onto stagePresent + flip; byte-identical to the old executor.
       const { from, pile, stage, faceDown } = intent;
-      // No per-card stagger — cards resourced together present side by side
-      // simultaneously (the game-start two-card opening), pause, then drop in.
-      const startDelay = 0;
-      const p = rel(from);
-      const outer = document.createElement('div');
-      Object.assign(outer.style, {
-        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
-        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
-        pointerEvents: 'none', zIndex: '12', opacity: '0',
-      } as CSSStyleDeclaration);
-      const inner = document.createElement('div');
-      Object.assign(inner.style, {
-        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
-        filter: 'drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55))',
-      } as CSSStyleDeclaration);
-      inner.appendChild(fitNode(from.html));
-      outer.appendChild(inner);
-      overlay.appendChild(outer);
-
       const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
       const dxS = stage.x - fcx, dyS = stage.y - fcy;
       const tStage = `translate(${dxS}px, ${dyS}px) scale(${RESOURCE_STAGE_SCALE})`;
       const dxE = (pile.x + pile.w / 2) - fcx, dyE = (pile.y + pile.h / 2) - fcy;
       const tEnd = `translate(${dxE}px, ${dyE}px) scale(${Math.max(0.25, pile.w / from.w)})`;
-      track(
-        outer.animate(
-          [
-            { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' },
-            { transform: tStage, opacity: 1, offset: RESOURCE_ARRIVE, easing: 'linear' },
-            { transform: tStage, opacity: 1, offset: RESOURCE_DEPART, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
-            { transform: tEnd, opacity: 0, offset: 1 },
-          ],
-          { duration: RESOURCE_TOTAL_MS, delay: startDelay, fill: 'both' },
-        ),
-        () => outer.remove(),
-      );
+      // No per-card stagger — cards resourced together present side by side
+      // simultaneously (the game-start two-card opening), pause, then drop in.
+      const { inner } = stagePresent(ctx, {
+        from, tStage, tEnd,
+        arrive: RESOURCE_ARRIVE, depart: RESOURCE_DEPART, total: RESOURCE_TOTAL_MS, delay: 0,
+        zIndex: 12, shadow: 'drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55))',
+        initial: () => fitNode(from.html), opacity: true, fadeOut: true, startHidden: true,
+        startEasing: 'cubic-bezier(0.3, 0, 0.2, 1)', departEasing: 'cubic-bezier(0.5, 0, 0.7, 1)',
+      });
       // A FACE-UP source (your own card, or a hands-up reveal) flips to the
       // cardback as it commits — that's how a card is resourced in the physical
       // game. The flip starts AFTER the read-hold (as the drop begins), so the
       // face sits readable through the pause. An already-face-down source (the
       // opponent's hidden hand) is a cardback throughout, so it just drops.
       if (!faceDown) {
-        const flipDelay = startDelay + RESOURCE_RISE_MS + RESOURCE_HOLD_MS;
         const back = document.createElement('div');
         Object.assign(back.style, {
           position: 'absolute', inset: '0', backgroundImage: `url(${CARDBACK_URL})`,
           backgroundSize: 'contain', backgroundPosition: 'center', borderRadius: '7px',
         } as CSSStyleDeclaration);
-        const swap = window.setTimeout(() => { inner.replaceChildren(back); }, (flipDelay + 150) / rate);
-        track(inner.animate(
-          [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
-          { duration: 300, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
-          () => window.clearTimeout(swap));
+        flip(ctx, inner, { build: () => back, at: RESOURCE_RISE_MS + RESOURCE_HOLD_MS, duration: 300 });
       }
       return;
     }

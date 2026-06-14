@@ -5,6 +5,7 @@
 // Web-Animations call; this module owns every "move vs snap vs flip" decision.
 
 import type { FrameCard, AttackEvent, InteractionEvent, EventPlayMsg } from './frameLog';
+import { playKindOf } from './frameLog';
 import { cardImageUrl } from '@/lib/cardImage';
 
 // A measured card: screen rect + an outerHTML snapshot (for cards that unmount).
@@ -24,7 +25,7 @@ export type Intent =
   // B141: a PILOT leader deploy — raise off the base like a normal deploy, but
   // land as an UPGRADE tucked onto a vehicle (`unit` rect) instead of slamming
   // to an arena slot. Fades into the rendered upgrade strip on landing.
-  | { type: 'pilotDeploy'; uuid: string; from: Snap; unit: Snap; stage: Point; faceUp: string | null }
+  | { type: 'pilotDeploy'; uuid: string; from: Snap; unit: Snap; unitUuid: string; unitOld: Snap | null; stage: Point; faceUp: string | null }
   | { type: 'lunge'; uuid: string; from: Snap; to: Snap }
   | { type: 'targetHold'; uuid: string; oldRect: Snap; newRect: Snap }
   | { type: 'tracer'; from: Point; to: Point; color: string; delay?: number }
@@ -38,7 +39,9 @@ export type Intent =
   // B134: an UPGRADE play — fly out of the hand, present above the unit it's
   // attaching to (flipped face-up via `faceUp` art for a hidden-hand play),
   // then tuck under that unit (`unit` rect) handing off to the rendered strip.
-  | { type: 'upgradeStage'; uuid: string; from: Snap; unit: Snap; faceDown: boolean; faceUp: string | null; stage: Point; pile?: boolean }
+  // `unitUuid`/`unitOld` hold the host's PRE-attach render until the upgrade
+  // lands (the board buffs the host's stats instantly otherwise).
+  | { type: 'upgradeStage'; uuid: string; from: Snap; unit: Snap; unitUuid: string; unitOld: Snap | null; faceDown: boolean; faceUp: string | null; stage: Point; pile?: boolean }
   // B134: a RESOURCE — a card committed from hand to the resource pile. Grows,
   // pauses, then shrinks into the pile (`pile` rect). A face-up source flips to
   // the cardback (your own / hands-up reveal); a `faceDown` source (the
@@ -51,7 +54,6 @@ export interface PlanInput {
   prevZones: Map<string, string>;          // each card's zone the PREVIOUS frame
   cards: Map<string, FrameCard>;           // this frame's zone + controller per card
   leaders: Set<string>;
-  attacks: AttackEvent[];
   interactions: InteractionEvent[];
   // B134: "{player} plays {card}" log events + base ownership (stage point).
   // Optional so older callers/tests don't break.
@@ -67,6 +69,10 @@ export interface PlanInput {
   // B134: per-controller resource counts (the opponent's resourced cards are
   // anonymous, so this drives how many hidden cards fly to the opp pile).
   resourceCounts?: Map<string, number>;
+  // ADR 0008 step 2d: `attacks` is the resolved set from frameLog.frameAttacks
+  // (log + isAttacker + exhaust/damage fallback). The planner doesn't re-derive
+  // any board attacks — it just renders this.
+  attacks: AttackEvent[];
 }
 
 // px of POSITION change to count as a real move (ignores size-only grid reflows).
@@ -85,6 +91,10 @@ const center = (s: Snap): Point => ({ x: s.x + s.w / 2, y: s.y + s.h / 2 });
 const sizedAt = (c: Point, w: number, h: number): Snap => ({ x: c.x - w / 2, y: c.y - h / 2, w, h, html: '' });
 
 export function planFrameAnimations(input: PlanInput): Intent[] {
+  // ADR 0008 step 2d: `attacks` arrives FULLY RESOLVED from the single classifier
+  // (frameLog.frameAttacks) — log + isAttacker board flag + exhaust/damage
+  // fallback, already deduped. The planner no longer re-derives any of it (that
+  // independent board-diff was the B146 drift risk); it only resolves geometry.
   const { prev, next, prevZones, cards, leaders, attacks, interactions, eventPlays = [], bases = new Map(), resourcePile = null, resourcePileOpp = null, localPlayerId = null, resourceCounts } = input;
   const intents: Intent[] = [];
   const zoneOf = (u: string) => cards.get(u)?.zone;
@@ -204,9 +214,11 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
   for (const { uuid } of eventPlays) {
     if (staged.has(uuid)) continue;
     const info = cards.get(uuid);
-    const z = info?.zone;
-    const isEvent = z === 'discard';
-    const isUpgrade = !!info?.parentCardId && isArena(z);
+    // ADR 0008 step 2d: the SAME play-kind rule the timeline uses (playKindOf) —
+    // a unit play is the hidden-hand pairing above; only events/upgrades stage.
+    const kind = playKindOf(info);
+    const isEvent = kind === 'event';
+    const isUpgrade = kind === 'upgrade';
     if (!isEvent && !isUpgrade) continue;
 
     // Resolve the card's STARTING rect: a visible own-hand card, a PLOT card
@@ -252,7 +264,7 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
       // A hidden-hand / plot upgrade has no full-card render to flip to → build
       // the face from card art.
       const faceUp = faceDown && info?.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
-      stageIntents.push({ type: 'upgradeStage', uuid, from: fromRect, unit, faceDown, faceUp, stage, pile });
+      stageIntents.push({ type: 'upgradeStage', uuid, from: fromRect, unit, unitUuid: info!.parentCardId!, unitOld: prev.get(info!.parentCardId!) ?? null, faceDown, faceUp, stage, pile });
       continue;
     }
 
@@ -262,9 +274,14 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     // (a hand-card's dims) so it grows big above the board like a hand-played
     // event, then the executor's end scale (to.w/from.w) settles it to discard.
     const fromRect = pile ? sizedAt(center(from), (fullCardDim ?? to ?? from).w, (fullCardDim ?? to ?? from).h) : from;
-    // For a plot event, if the discard doesn't render the card, fall back to its
-    // art so the flip still reveals a face.
-    const faceUp = pile && !to && info?.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
+    // A hidden-hand event (an OPPONENT'S play, or a plot from the pile) is cloned
+    // face-DOWN and the discard renders only its top card as a CSS background —
+    // never a measurable own rect — so `to` is null and there's nothing to flip
+    // TO. Derive the face from card art so the clone still flips face-up as it
+    // presents (otherwise an opponent's event grows but stays a cardback — you
+    // can't see what they played). Own-hand events start face-up, so faceDown is
+    // false and they don't flip; this only kicks in for a face-down source.
+    const faceUp = faceDown && !to && info?.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
     let stage = baseStage(info?.ctrl);
     if (!stage) {
       const fc = center(fromRect), tc = to ? center(to) : fc;
@@ -357,7 +374,7 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     // text). The board renders it only as a strip, so synthesize the face image:
     // the deployed/unit side is the plain card art (the leader side is `-base`).
     const faceUp = info.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
-    intents.push({ type: 'pilotDeploy', uuid, from, unit, stage, faceUp });
+    intents.push({ type: 'pilotDeploy', uuid, from, unit, unitUuid: info.parentCardId, unitOld: prev.get(info.parentCardId) ?? null, stage, faceUp });
   }
 
   // MOVES / ENTERS / LEADER-FLIPS — iterate the new frame's cards.

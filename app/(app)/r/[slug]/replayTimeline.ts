@@ -7,7 +7,7 @@
 // Step 1 of the migration (ADR 0008) wires `frameDwell` to consume this; later
 // steps make the planner + renderer consume it too (so they can never drift).
 import type { Frame } from '@/lib/replayDecoder';
-import { classifyStagedPlays, unitPlayUuids, extractAttacks, extractFrameCards } from './frameLog';
+import { classifyStagedPlays, unitPlayUuids, extractAttacks, extractFrameCards, frameAttacks } from './frameLog';
 import {
   PLAYBACK_TICK_MS,
   EVENT_TOTAL_MS,
@@ -96,6 +96,7 @@ function resourcePileTotal(state: any): number {
 // stripped log can't hide a deploy/play from the dwell.
 //   • a LEADER going base → arena      = leader deploy (incl. pilot)
 //   • a non-leader newly IN an arena   = a unit play (or an upgrade tuck)
+
 function boardAnims(prevState: any, curState: any): AnimSpec[] {
   const prev = extractFrameCards(prevState);
   const cur = extractFrameCards(curState);
@@ -144,10 +145,14 @@ export function buildTimeline(frames: Frame[]): Beat[] {
     if (units.length) anims.push({ kind: attacksSoon(units, i) ? 'ambush' : 'play' });
     if (has(/resourced/i) || (i > 0 && resourceTotals[i] > resourceTotals[i - 1])) anims.push({ kind: 'resource' });
     if (has(/\bdeploy/i)) anims.push({ kind: 'leaderDeploy' });
-    if (has(/attacks/i)) anims.push({ kind: 'attack' });
     if (has(/plays /i)) anims.push({ kind: 'play' });
     // ── board-diff signals (robust to a stripped log) ──
     if (i > 0) anims.push(...boardAnims(frames[i - 1].state, f.state));
+    // ADR 0008 step 2d: attacks come from the ONE classifier the renderer also
+    // uses (frameAttacks: log + isAttacker flag + exhaust/damage fallback), so the
+    // dwell budgets exactly the lunges the planner produces — they can't drift.
+    for (const a of i > 0 ? frameAttacks(frames[i - 1].state, f.state) : [])
+      anims.push({ kind: 'attack', uuid: a.attackerUuid });
 
     // The dwell must outlast the LONGEST animation on the frame (the max, not a
     // priority-pick, so concurrent beats — deploy + attack — budget the longer).

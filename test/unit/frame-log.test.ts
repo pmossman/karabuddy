@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractAttacks, extractInteractions, extractFrameCards } from '@/app/(app)/r/[slug]/frameLog';
+import { extractAttacks, extractInteractions, extractFrameCards, boardAttacks, exhaustBaseAttacks } from '@/app/(app)/r/[slug]/frameLog';
 
 const player = (name: string) => ({ type: 'player', name });
 const card = (name: string, uuid: string) => ({ type: 'card', name, uuid });
@@ -45,6 +45,101 @@ describe('extractInteractions', () => {
     expect(extractInteractions(attack)).toEqual([]);
     expect(extractInteractions(redirect)).toEqual([]);
     expect(extractInteractions(self)).toEqual([]);
+  });
+});
+
+describe('boardAttacks', () => {
+  const fc = (zone: string, extra: any = {}) => ({ zone, ctrl: 'P1', ...extra });
+
+  it('returns nothing when no unit is flagged isAttacker', () => {
+    const cards = new Map<string, any>([['u1', fc('groundArena')]]);
+    expect(boardAttacks(cards, new Map([['u1', 'groundArena']]))).toEqual([]);
+  });
+
+  it('targets the surviving isDefender unit', () => {
+    const cards = new Map<string, any>([
+      ['atk', fc('groundArena', { isAttacker: true })],
+      ['def', fc('groundArena', { isDefender: true })],
+    ]);
+    const prevZones = new Map([['atk', 'groundArena'], ['def', 'groundArena']]);
+    expect(boardAttacks(cards, prevZones)).toEqual([{ attackerUuid: 'atk', targetUuid: 'def' }]);
+  });
+
+  it('targets the lone unit that left the arena when no defender survives (recorder dropped the log)', () => {
+    // the Rancor/Constable case: attacker survives, the defeated defender is now
+    // in discard (still in `cards`), so the target = the one arena-exit.
+    const cards = new Map<string, any>([
+      ['rancor', fc('groundArena', { isAttacker: true })],
+      ['constable', fc('discard')],
+    ]);
+    const prevZones = new Map([['rancor', 'groundArena'], ['constable', 'groundArena']]);
+    expect(boardAttacks(cards, prevZones)).toEqual([{ attackerUuid: 'rancor', targetUuid: 'constable' }]);
+  });
+
+  it('skips when the target is ambiguous (a base attack: no defender, no arena exit)', () => {
+    const cards = new Map<string, any>([['atk', fc('groundArena', { isAttacker: true })]]);
+    expect(boardAttacks(cards, new Map([['atk', 'groundArena']]))).toEqual([]);
+  });
+
+  it('skips when multiple units exited (can\'t pin a single target)', () => {
+    const cards = new Map<string, any>([
+      ['atk', fc('groundArena', { isAttacker: true })],
+      ['x', fc('discard')],
+      ['y', fc('discard')],
+    ]);
+    const prevZones = new Map([['atk', 'groundArena'], ['x', 'groundArena'], ['y', 'groundArena']]);
+    expect(boardAttacks(cards, prevZones)).toEqual([]);
+  });
+});
+
+describe('exhaustBaseAttacks', () => {
+  // P1 owns base bP1; P2's unit `cmd` attacks it. State factory: per-unit
+  // exhausted + per-base damage.
+  const st = (cmdExhausted: boolean, baseDmg: number) => ({
+    players: {
+      P1: { user: { username: 'P1' }, base: { uuid: 'bP1', damage: baseDmg },
+            cardPiles: { groundArena: [] } },
+      P2: { user: { username: 'P2' },
+            cardPiles: { groundArena: [{ uuid: 'cmd', controllerId: 'P2', zone: 'groundArena', exhausted: cmdExhausted }] } },
+    },
+  });
+
+  it('attributes a dropped base attack to the unit that newly exhausted as the base took damage', () => {
+    const prev = st(false, 10), cur = st(true, 14); // cmd exhausts + base +4, same frame
+    expect(exhaustBaseAttacks(prev, cur, new Set())).toEqual([{ attackerUuid: 'cmd', targetUuid: 'bP1' }]);
+  });
+
+  it('stays silent when exhaust and damage are split across frames (a normally-logged attack)', () => {
+    // declaration frame: cmd exhausts, no base damage yet
+    expect(exhaustBaseAttacks(st(false, 10), st(true, 10), new Set())).toEqual([]);
+    // resolution frame: base damaged, but cmd already exhausted (not newly)
+    expect(exhaustBaseAttacks(st(true, 10), st(true, 14), new Set())).toEqual([]);
+  });
+
+  it('skips an attacker already lunging via log/flag (no double-lunge)', () => {
+    expect(exhaustBaseAttacks(st(false, 10), st(true, 14), new Set(['cmd']))).toEqual([]);
+  });
+
+  it('never attributes a base attack to the base owner\'s own unit', () => {
+    // P1's own unit exhausts as P1's base takes damage (e.g. an ability) — not an attack on itself
+    const own = (ex: boolean, dmg: number) => ({
+      players: { P1: { user: { username: 'P1' }, base: { uuid: 'bP1', damage: dmg },
+        cardPiles: { groundArena: [{ uuid: 'u1', controllerId: 'P1', zone: 'groundArena', exhausted: ex }] } } },
+    });
+    expect(exhaustBaseAttacks(own(false, 10), own(true, 14), new Set())).toEqual([]);
+  });
+
+  it('skips when >1 enemy unit newly exhausted (ambiguous attacker)', () => {
+    const multi = (ex: boolean, dmg: number) => ({
+      players: {
+        P1: { user: { username: 'P1' }, base: { uuid: 'bP1', damage: dmg }, cardPiles: { groundArena: [] } },
+        P2: { cardPiles: { groundArena: [
+          { uuid: 'a', controllerId: 'P2', zone: 'groundArena', exhausted: ex },
+          { uuid: 'b', controllerId: 'P2', zone: 'groundArena', exhausted: ex },
+        ] } },
+      },
+    });
+    expect(exhaustBaseAttacks(multi(false, 10), multi(true, 14), new Set())).toEqual([]);
   });
 });
 

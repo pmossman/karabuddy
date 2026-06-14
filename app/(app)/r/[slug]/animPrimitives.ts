@@ -44,13 +44,15 @@ export interface Stage {
 
 // FLIP: a card's inner faces flip (scaleX 1 → 0.04 → 1), swapping content at the
 // narrow point. `at`/`duration` are unscaled; the swap timeout is rate-scaled so
-// it lands at the flip's midpoint at any speed.
+// it lands at the flip's midpoint at any speed. `swapAt` overrides the swap time
+// (unscaled ms) for the few executors whose hand-tuned swap isn't exactly the
+// flip's midpoint (the leader/pilot deploys swap at +130 of a 280ms flip).
 export function flip(
   stage: Stage,
   inner: HTMLElement,
-  p: { build: () => HTMLElement; at: number; duration: number; easing?: string; onDone?: () => void },
+  p: { build: () => HTMLElement; at: number; duration: number; easing?: string; swapAt?: number; onDone?: () => void },
 ): void {
-  const swap = window.setTimeout(() => { inner.replaceChildren(p.build()); }, (p.at + p.duration / 2) / stage.rate);
+  const swap = window.setTimeout(() => { inner.replaceChildren(p.build()); }, (p.swapAt ?? p.at + p.duration / 2) / stage.rate);
   stage.track(
     inner.animate(
       [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
@@ -129,6 +131,48 @@ export function playFlip(stage: Stage, p: { uuid: string; from: Snap; to: Snap }
     duration: PLAY_FLIP_MS,
     onDone: () => { outer.remove(); stage.show(live); },
   });
+}
+
+// STAGE-PRESENT: the shared "fly out → present grown at a stage point (held to
+// read) → land" path behind every composite play (resource, event, upgrade,
+// leader deploy). Builds the two-layer clone and runs the outer's 4-keyframe
+// rise→hold→land; the caller flips the inner mid-flight (the `flip` primitive)
+// and hooks the landing (board shake / upgrade reveal / show the live card) via
+// the returned outer + Animation. Each migrated kind passes the EXACT transforms
+// + offsets + easings its old executor used, so the port is byte-identical.
+export function stagePresent(stage: Stage, p: {
+  from: Snap;
+  tStage: string;            // outer transform at the present point (center-delta + scale)
+  tEnd: string;              // outer transform at the landing
+  arrive: number;            // offset the card reaches the stage point
+  depart: number;            // offset it leaves to land
+  total: number;
+  delay?: number;
+  zIndex: number;
+  shadow?: string;
+  initial: () => HTMLElement;  // the first inner face (card front, or a cardback)
+  opacity?: boolean;           // carry opacity in the keyframes (event/upgrade/resource)
+  fadeOut?: boolean;           // fade to 0 on land (no destination render to hand to)
+  startEasing: string;
+  departEasing: string;
+  startHidden?: boolean;       // outer starts opacity:0 inline (the resource stagger guard)
+  onDone?: () => void;
+}): { outer: HTMLElement; inner: HTMLElement; anim: Animation } {
+  const { outer, inner } = stage.layer(p.from, { zIndex: p.zIndex, shadow: p.shadow });
+  if (p.startHidden) outer.style.opacity = '0';
+  inner.appendChild(p.initial());
+  const op = (v: number) => (p.opacity ? { opacity: v } : {});
+  const anim = outer.animate(
+    [
+      { transform: 'translate(0,0) scale(1)', ...op(1), offset: 0, easing: p.startEasing },
+      { transform: p.tStage, ...op(1), offset: p.arrive, easing: 'linear' },
+      { transform: p.tStage, ...op(1), offset: p.depart, easing: p.departEasing },
+      { transform: p.tEnd, ...op(p.fadeOut ? 0 : 1), offset: 1 },
+    ],
+    { duration: p.total, delay: p.delay ?? 0, fill: 'both' },
+  );
+  stage.track(anim, () => { outer.remove(); p.onDone?.(); });
+  return { outer, inner, anim };
 }
 
 // LUNGE: an attacker thrusts ~55% of the way to its target and recoils. A

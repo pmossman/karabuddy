@@ -12,6 +12,12 @@ export interface FrameCard {
   // B134: {set, number} for building a face-up card image when a hidden-hand
   // play has no full-card render to clone (an upgrade renders only as a strip).
   setId?: { set: string; number: number };
+  // B148: the gamestate's combat flags. A reliable, log-INDEPENDENT signal for
+  // who's attacking — karabast sometimes emits a combat frame with an empty log
+  // (so the log-only extractAttacks misses the lunge), but the board still flags
+  // the attacker. See boardAttacks.
+  isAttacker?: boolean;
+  isDefender?: boolean;
 }
 export interface AttackEvent { attackerUuid: string; targetUuid: string }
 export interface InteractionEvent {
@@ -32,7 +38,7 @@ export function extractFrameCards(state: any): { cards: Map<string, FrameCard>; 
     const piles = player.cardPiles || {};
     for (const z of Object.keys(piles)) {
       for (const c of piles[z] || []) {
-        if (c?.uuid) cards.set(c.uuid, { zone: c.zone || z, ctrl: c.controllerId, parentCardId: c.parentCardId, setId: c.setId });
+        if (c?.uuid) cards.set(c.uuid, { zone: c.zone || z, ctrl: c.controllerId, parentCardId: c.parentCardId, setId: c.setId, isAttacker: c.isAttacker, isDefender: c.isDefender });
       }
     }
     const leader = player.leader;
@@ -40,7 +46,7 @@ export function extractFrameCards(state: any): { cards: Map<string, FrameCard>; 
       leaders.add(leader.uuid);
       // B141: carry parentCardId/setId so the planner can spot a PILOT leader
       // deploying as an upgrade onto a vehicle (parentCardId set), not as a unit.
-      cards.set(leader.uuid, { zone: leader.zone || 'base', ctrl: leader.controllerId, parentCardId: leader.parentCardId, setId: leader.setId });
+      cards.set(leader.uuid, { zone: leader.zone || 'base', ctrl: leader.controllerId, parentCardId: leader.parentCardId, setId: leader.setId, isAttacker: leader.isAttacker, isDefender: leader.isDefender });
     }
   }
   return { cards, leaders };
@@ -69,6 +75,119 @@ export function extractAttacks(state: any): AttackEvent[] {
     if (targetUuid) out.push({ attackerUuid, targetUuid });
   }
   return out;
+}
+
+// B148: attacks detected from the BOARD, not the log — a unit with isAttacker
+// set. The log-only extractAttacks misses a combat whose "X attacks Y" line the
+// recorder dropped (an empty-log combat frame), so the lunge never fires. The
+// target is the isDefender unit if it survived, else the single unit that just
+// LEFT an arena (the defeated defender — its last rect is where the attacker
+// thrusts). Skips when the target can't be pinned (no defender + 0 or >1 exits,
+// e.g. a base attack — those keep a log and go through extractAttacks).
+const isArenaZone = (z?: string) => z === 'groundArena' || z === 'spaceArena';
+export function boardAttacks(
+  cards: Map<string, FrameCard>,
+  prevZones: Map<string, string>,
+): AttackEvent[] {
+  let hasAttacker = false;
+  for (const c of cards.values()) if (c.isAttacker) { hasAttacker = true; break; }
+  if (!hasAttacker) return [];
+
+  const defender = [...cards].find(([, c]) => c.isDefender)?.[0];
+  // A defeated defender LEAVES the arena (→ discard, still in `cards`) — so the
+  // target is a unit whose zone WAS an arena last frame and is no longer one.
+  const exited: string[] = [];
+  for (const [u, z] of prevZones) {
+    if (isArenaZone(z) && !isArenaZone(cards.get(u)?.zone)) exited.push(u);
+  }
+
+  const out: AttackEvent[] = [];
+  for (const [uuid, c] of cards) {
+    if (!c.isAttacker) continue;
+    const targetUuid = defender ?? (exited.length === 1 ? exited[0] : undefined);
+    if (targetUuid && targetUuid !== uuid) out.push({ attackerUuid: uuid, targetUuid });
+  }
+  return out;
+}
+
+// B148: a base attack the recorder dropped ENTIRELY — no "attacks" log, no
+// isAttacker flag (so extractAttacks + boardAttacks both miss it). The only
+// surviving trace is the board itself: an enemy base's damage rose AND a single
+// opposing unit newly EXHAUSTED, both in the SAME frame. That coincidence is the
+// signature of a dropped attack: a normally-recorded attack splits its exhaust
+// (the declaration frame) from its damage (the resolution frame) across two
+// frames, so this never double-fires on a logged attack — only when the recorder
+// collapsed the whole combat into one surviving frame (see r_jxqkup f72). The
+// target is the damaged base (rendered, so the lunge has a rect); the attacker is
+// the lone newly-exhausted enemy unit. Ambiguous cases (0 or >1 candidates, or an
+// attacker already lunging via log/flag) are skipped.
+function exhaustOf(state: any): Map<string, boolean> {
+  const m = new Map<string, boolean>();
+  for (const pid of Object.keys(state?.players || {})) {
+    const piles = state.players[pid]?.cardPiles || {};
+    for (const z of ['groundArena', 'spaceArena']) {
+      for (const c of piles[z] || []) if (c?.uuid) m.set(c.uuid, !!c.exhausted);
+    }
+  }
+  return m;
+}
+function baseDamageOf(state: any): Map<string, { owner: string; damage: number }> {
+  const m = new Map<string, { owner: string; damage: number }>();
+  for (const pid of Object.keys(state?.players || {})) {
+    const b = state.players[pid]?.base;
+    if (b?.uuid) m.set(b.uuid, { owner: pid, damage: typeof b.damage === 'number' ? b.damage : 0 });
+  }
+  return m;
+}
+export function exhaustBaseAttacks(prevState: any, curState: any, alreadyAttackers: Set<string>): AttackEvent[] {
+  if (!prevState || !curState) return [];
+  const curBases = baseDamageOf(curState), prevBases = baseDamageOf(prevState);
+  const damaged = [...curBases].filter(([u, b]) => b.damage > (prevBases.get(u)?.damage ?? 0));
+  if (!damaged.length) return [];
+  const prevEx = exhaustOf(prevState);
+  const { cards } = extractFrameCards(curState);
+  // uuid -> exhausted (units only; leaders attack too but exhaust the same way)
+  const curEx = exhaustOf(curState);
+  const out: AttackEvent[] = [];
+  for (const [baseUuid, base] of damaged) {
+    const candidates: string[] = [];
+    for (const [u, exhausted] of curEx) {
+      if (!exhausted || prevEx.get(u) !== false) continue;   // newly exhausted this frame
+      if (alreadyAttackers.has(u)) continue;                  // already lunging via log/flag
+      if (cards.get(u)?.ctrl === base.owner) continue;        // must be the base owner's OPPONENT
+      candidates.push(u);
+    }
+    if (candidates.length === 1) out.push({ attackerUuid: candidates[0], targetUuid: baseUuid });
+  }
+  return out;
+}
+
+// B147 / ADR 0008 step 2d: THE single attack classifier — the one place that
+// resolves a frame's full attack set, layering the three detection signals
+// (weakest-last) and deduping so each attacker lunges once:
+//   1. the LOG ("X attacks Y with Z") — extractAttacks
+//   2. the isAttacker board flag (recorder dropped the log) — boardAttacks
+//   3. the exhaust+damage coincidence (recorder dropped the flag too) — exhaustBaseAttacks
+// Both the renderer (via the planner's `attacks` input) and the dwell (via
+// buildTimeline) consume THIS, so they can never classify attacks differently
+// (the B146 drift class). Pure: prev+cur frame states in, AttackEvent[] out.
+function zonesOf(state: any): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const [u, c] of extractFrameCards(state).cards) m.set(u, c.zone);
+  return m;
+}
+export function frameAttacks(prevState: any, curState: any): AttackEvent[] {
+  const { cards } = extractFrameCards(curState);
+  const log = extractAttacks(curState);
+  const logSet = new Set(log.map((a) => a.attackerUuid));
+  const board = boardAttacks(cards, prevState ? zonesOf(prevState) : new Map()).filter((b) => !logSet.has(b.attackerUuid));
+  // Already lunging via the log or the isAttacker flag → exclude from the
+  // weakest (exhaust) signal so a dropped-flag fallback can't double-fire.
+  const already = new Set(logSet);
+  for (const [u, c] of cards) if (c.isAttacker) already.add(u);
+  for (const b of board) already.add(b.attackerUuid);
+  const base = exhaustBaseAttacks(prevState, curState, already);
+  return [...log, ...board, ...base];
 }
 
 // Non-combat interactions: "{player} uses/plays [source] to deal N damage to /
@@ -157,18 +276,31 @@ export function extractBases(state: any): Map<string, string> {
   return m;
 }
 
+// ADR 0008 step 2d: THE single rule classifying a played card by where it
+// landed — shared by the timeline (classifyStagedPlays / unitPlayUuids) and the
+// planner's staged-play branch, so "what kind of play is this" is judged ONE way.
+//   • discard          → an EVENT (flies out, presents, drops to discard)
+//   • arena + parent    → an UPGRADE (tucks under its host unit)
+//   • arena (no parent) → a UNIT play
+export type PlayKind = 'event' | 'upgrade' | 'unit';
+export function playKindOf(info: FrameCard | undefined): PlayKind | null {
+  if (!info) return null;
+  if (info.zone === 'discard') return 'event';
+  if (info.zone !== 'groundArena' && info.zone !== 'spaceArena') return null;
+  return info.parentCardId ? 'upgrade' : 'unit';
+}
+
 // B134: classify the staged plays in a frame (events that land in DISCARD,
 // upgrades that attach to a unit) so playback can dwell long enough for the
-// full fly-out → present → land choreography. MUST agree with the planner's
-// branch in frameAnimationPlan (zone==='discard' vs parentCardId+arena).
+// full fly-out → present → land choreography. Uses the shared playKindOf so it
+// can't diverge from the planner's branch in frameAnimationPlan.
 export function classifyStagedPlays(state: any): { events: number; upgrades: number } {
   const { cards } = extractFrameCards(state);
   let events = 0, upgrades = 0;
   for (const { uuid } of extractEventPlays(state)) {
-    const info = cards.get(uuid);
-    if (!info) continue;
-    if (info.zone === 'discard') events++;
-    else if (info.parentCardId && (info.zone === 'groundArena' || info.zone === 'spaceArena')) upgrades++;
+    const k = playKindOf(cards.get(uuid));
+    if (k === 'event') events++;
+    else if (k === 'upgrade') upgrades++;
   }
   return { events, upgrades };
 }
@@ -181,8 +313,7 @@ export function unitPlayUuids(state: any): string[] {
   const { cards } = extractFrameCards(state);
   const out: string[] = [];
   for (const { uuid } of extractEventPlays(state)) {
-    const info = cards.get(uuid);
-    if (info && !info.parentCardId && (info.zone === 'groundArena' || info.zone === 'spaceArena')) out.push(uuid);
+    if (playKindOf(cards.get(uuid)) === 'unit') out.push(uuid);
   }
   return out;
 }

@@ -96,10 +96,36 @@ Both localized, data-driven, unit-tested — no touching three classifiers and h
    *timing* divergence (would have prevented B141 and B146) and is the most testable piece.
    **← this ADR's accompanying change (B147).**
 2. **`BoardGeometry` + `Stage` + primitives.** Refactor the planner's executors to consume the beat's
-   `AnimSpec`s and render via the geometry/Stage seams. Kills the clone/hide bug class; makes the
-   planner consume the timeline (no more independent board-diff in the planner).
-3. **(Optional) event-driven player.** Have the renderer emit "beat complete" as a belt-and-suspenders
-   gate. Not required for correctness once the timeline guarantees duration ≥ animation.
+   `AnimSpec`s and render via the geometry/Stage seams. Kills the clone/hide bug class.
+   - **2a — `BoardGeometry`.** Behavior-preserving extraction of the inline `measure()` into
+     `boardGeometry.ts`. **Done.**
+   - **2b — `Stage` + primitive vocabulary; migrate `runIntent` kind-by-kind.** `animPrimitives.ts`
+     (`slide`/`enterFade`/`exitFade`/`flip`/`playFlip`/`lunge`/`targetHold`/`tracer`/`flash` +
+     the `stagePresent` composite behind the rise→present→land plays). Every staged kind
+     (`resourceStage`, `eventStage`, `upgradeStage`, `leaderDeploy`, `pilotDeploy`) ported
+     byte-identically, each visually verified before the next. **Done** (the `leaderFlip`
+     crossfade stays inline — it's not a stage-present composite). Two real bugs surfaced + fixed
+     while vetting: opponent events never flipped face-up (discard renders no measurable rect →
+     derive `faceUp` from `setId`); a pilot/upgrade host showed its buffed stats a full deploy
+     early (`holdHostStats` holds the pre-attach render until the upgrade lands).
+   - **2d — retire the planner's independent classifiers (one source per signal).** *Done for the
+     signals that can drift.* The geometry-focused planner can't re-classify and resolve geometry in
+     one pass, so the shared geometry-free classifiers live in `frameLog`, consumed by BOTH the
+     renderer (via the planner) and the dwell (`buildTimeline`):
+     - **Attacks** — `frameLog.frameAttacks` (log + isAttacker flag + exhaust/damage fallback,
+       deduped). The planner renders the resolved list it's handed; the timeline budgets exactly that
+       set. Eliminates the B141/B146 drift class.
+     - **Play kind** — `frameLog.playKindOf` (discard=event / arena+parent=upgrade / arena=unit), the
+       one rule behind `classifyStagedPlays`, `unitPlayUuids`, and the planner's staged-play branch.
+     Deliberately NOT folded (they are render-layer, not semantic — see the consequences below):
+     hidden-hand pairing (keys off synthetic `replay-hidden-*` DOM uuids absent from frame state),
+     move-vs-reflow (`dist > MOVE_THRESHOLD`), and enter/exit (measured card presence). The thin
+     zone-transition checks that remain (deploy = leader `base→arena`; resource = `hand→resources`)
+     are already derived on both sides from the same `frameLog` extractors, so there's no independent
+     classifier left to drift.
+3. **2e — (Optional) event-driven / arrow-cut player.** Have the renderer emit "beat complete" as a
+   belt-and-suspenders gate, and make arrow-key input cut the in-flight beat. Not required for
+   correctness once the timeline guarantees duration ≥ animation. *Deferred.*
 
 ## Consequences
 
