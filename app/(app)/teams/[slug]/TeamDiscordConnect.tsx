@@ -22,6 +22,9 @@ export function TeamDiscordConnect({
   const [channelId, setChannelId] = useState(initialChannelId);
   const [channels, setChannels] = useState<{ id: string; name: string }[]>([]);
   const [picked, setPicked] = useState(initialChannelId || '');
+  // B144: optional per-feature overrides ('' = use the main channel).
+  const [reviewCh, setReviewCh] = useState('');
+  const [tournamentCh, setTournamentCh] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [justConnected, setJustConnected] = useState(false);
 
@@ -42,6 +45,8 @@ export function TeamDiscordConnect({
         setChannels(b.channels || []);
         setChannelId(b.channelId || null);
         setPicked(b.channelId || '');
+        setReviewCh(b.reviewChannelId || '');
+        setTournamentCh(b.tournamentChannelId || '');
       })
       .catch(() => {});
     return () => { live = false; };
@@ -61,7 +66,13 @@ export function TeamDiscordConnect({
   };
   const disconnect = async () => {
     const r = await fetch(`/api/teams/${slug}/discord`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ disconnect: true }) });
-    if ((await r.json()).ok) { setGuildId(null); setChannelId(null); setChannels([]); setPicked(''); setMsg(null); }
+    if ((await r.json()).ok) { setGuildId(null); setChannelId(null); setChannels([]); setPicked(''); setReviewCh(''); setTournamentCh(''); setMsg(null); }
+  };
+  // B144: route a feature's posts to its own channel ('' = use the main channel).
+  const saveOverride = async (key: 'reviewChannelId' | 'tournamentChannelId', value: string) => {
+    if (key === 'reviewChannelId') setReviewCh(value); else setTournamentCh(value);
+    const r = await fetch(`/api/teams/${slug}/discord`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: value }) });
+    setMsg((await r.json()).ok ? 'Saved.' : 'failed');
   };
 
   const card: React.CSSProperties = { marginTop: 24, padding: 16, background: 'rgba(17,20,26,0.5)', border: '1px solid #2e333c', borderRadius: 8 };
@@ -108,7 +119,42 @@ export function TeamDiscordConnect({
         {channelId && <button type="button" onClick={sendTest} style={{ background: 'transparent', color: '#a7d2ff', border: '1px solid #4d9dff', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Send test</button>}
         <button type="button" onClick={disconnect} style={{ background: 'transparent', color: '#a0a8b8', border: '1px solid #4a4e56', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Disconnect</button>
       </div>
+
+      {/* B144: optionally route reviews / tournaments to their own channels. */}
+      {channelId && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #2e333c', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <p style={{ margin: 0, fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
+            Route specific activity to its own channel (defaults to the main channel above):
+          </p>
+          <OverrideRow label="Review posts" value={reviewCh} channels={channels} onChange={(v) => saveOverride('reviewChannelId', v)} />
+          <OverrideRow label="Tournament posts" value={tournamentCh} channels={channels} onChange={(v) => saveOverride('tournamentChannelId', v)} />
+        </div>
+      )}
       {msg && <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6bd968' }}>{msg}</p>}
     </section>
+  );
+}
+
+// B144: one per-feature channel override row — defaults to the main channel.
+function OverrideRow({
+  label, value, channels, onChange,
+}: {
+  label: string;
+  value: string;
+  channels: { id: string; name: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#c9d1dd' }}>
+      <span style={{ flex: '0 0 120px' }}>{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', font: '13px inherit' }}
+      >
+        <option value="">Use main channel</option>
+        {channels.map((c) => <option key={c.id} value={c.id}>#{c.name}</option>)}
+      </select>
+    </label>
   );
 }

@@ -257,6 +257,11 @@ export const teams = pgTable('teams', {
   // the bot token. Null = no Discord posting configured for this team.
   discordGuildId: text('discord_guild_id'),
   discordChannelId: text('discord_channel_id'),
+  // B144: optional per-feature channel overrides — route review / tournament
+  // posts to their own channel. Null = fall back to discordChannelId (the main
+  // team channel); if that's also null, no posting for that feature.
+  discordReviewChannelId: text('discord_review_channel_id'),
+  discordTournamentChannelId: text('discord_tournament_channel_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

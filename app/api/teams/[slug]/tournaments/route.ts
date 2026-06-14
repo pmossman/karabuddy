@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { tournaments, tournamentEntrants, tournamentRounds } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { generateSlug } from '@/lib/slug';
+import { notifyTournamentCreated } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
 
@@ -101,5 +102,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     decklistVisibility: visibility,
     plannedRounds,
   });
+  // B144: best-effort Discord post — never blocks the write.
+  try { await notifyTournamentCreated(slug, id, userId); } catch (e) { console.error('[karabuddy] notifyTournamentCreated failed:', e); }
   return NextResponse.json({ ok: true, id });
 }

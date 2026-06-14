@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { tournamentMatches, type TournamentGame } from '@/lib/schema';
 import { getTournamentAccess } from '@/lib/tournamentAccess';
+import { notifyMatchReported } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
 
@@ -80,5 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       updatedAt: new Date(),
     })
     .where(eq(tournamentMatches.id, matchId));
+  // B144: best-effort Discord post — never blocks the write.
+  try { await notifyMatchReported(slug, id, matchId); } catch (e) { console.error('[karabuddy] notifyMatchReported failed:', e); }
   return NextResponse.json({ ok: true, status: organizer ? 'confirmed' : 'reported' });
 }

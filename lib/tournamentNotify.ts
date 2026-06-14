@@ -9,10 +9,11 @@
 // (guests, non-Discord sign-ins) renders as a bold name. Channel pings don't
 // require the B99 DM opt-in — that gate is for DMs.
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, count } from 'drizzle-orm';
 import { getDb } from './db';
-import { accounts, teams, tournamentEntrants, tournamentMatches, tournamentRounds, tournaments } from './schema';
+import { accounts, users, tournamentEntrants, tournamentMatches, tournamentRounds, tournaments } from './schema';
 import { postToChannel } from './discord';
+import { teamChannelFor } from './teamDiscordChannel';
 import { computeStandings } from './swiss';
 import { toSwissMatches } from './tournamentLifecycle';
 
@@ -65,17 +66,59 @@ export function formatFinishedMessage(opts: {
   return lines.join('\n');
 }
 
+// B144: a tournament was created.
+export function formatTournamentCreatedMessage(opts: {
+  tournamentName: string;
+  createdBy: string | null;
+  url: string;
+}): string {
+  const by = opts.createdBy ? ` by **${opts.createdBy}**` : '';
+  return `🆕 New tournament **${opts.tournamentName}** created${by} — register: ${opts.url}`;
+}
+
+// B144: an entrant registered.
+export function formatRegistrationMessage(opts: {
+  tournamentName: string;
+  entrantName: string;
+  entrantCount: number;
+  url: string;
+}): string {
+  return `🎟️ **${opts.entrantName}** registered for **${opts.tournamentName}** ` +
+    `(${opts.entrantCount} entrant${opts.entrantCount === 1 ? '' : 's'}) — ${opts.url}`;
+}
+
+// B144: a match result was reported. Draw when game wins tie; "awaiting
+// organizer" when the report is a player's (pending confirmation).
+export function formatMatchResultMessage(opts: {
+  tournamentName: string;
+  roundNumber: number;
+  table: number;
+  entrant1: string;
+  entrant2: string;
+  e1Wins: number;
+  e2Wins: number;
+  pending: boolean;
+  url: string;
+}): string {
+  let body: string;
+  if (opts.e1Wins === opts.e2Wins) {
+    body = `**${opts.entrant1}** ${opts.e1Wins}–${opts.e2Wins} **${opts.entrant2}** (draw)`;
+  } else {
+    const [w, l, ws, ls] = opts.e1Wins > opts.e2Wins
+      ? [opts.entrant1, opts.entrant2, opts.e1Wins, opts.e2Wins]
+      : [opts.entrant2, opts.entrant1, opts.e2Wins, opts.e1Wins];
+    body = `**${w}** def. **${l}** ${ws}–${ls}`;
+  }
+  const tail = opts.pending ? ' _(reported — awaiting organizer)_' : '';
+  return `⚔️ **${opts.tournamentName}** R${opts.roundNumber} · Table ${opts.table}: ${body}${tail}\nStandings: ${opts.url}`;
+}
+
 // ---------------------------------------------------------------------------
 // Senders (best-effort; load everything from ids so route hooks stay one-liners)
 
-async function teamChannel(teamSlug: string): Promise<string | null> {
-  const [row] = await getDb()
-    .select({ channel: teams.discordChannelId })
-    .from(teams)
-    .where(eq(teams.slug, teamSlug))
-    .limit(1);
-  return row?.channel ?? null;
-}
+// B144: tournament posts route to the team's tournament channel (override ??
+// main). Was the bare discordChannelId before per-feature channels existed.
+const teamChannel = (teamSlug: string) => teamChannelFor(teamSlug, 'tournament');
 
 async function discordIdsFor(userIds: string[]): Promise<Map<string, string>> {
   if (userIds.length === 0) return new Map();
@@ -160,5 +203,88 @@ export async function notifyTournamentFinished(teamSlug: string, tournamentId: s
     }));
   } catch (err) {
     console.error('[karabuddy] tournament finish notify failed:', err);
+  }
+}
+
+const tUrl = (teamSlug: string, tournamentId: string) =>
+  `${publicUrl()}/teams/${teamSlug}/tournaments/${tournamentId}`;
+
+async function userName(userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const [u] = await getDb().select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+  return u?.name ?? null;
+}
+
+// B144: a tournament was just created.
+export async function notifyTournamentCreated(teamSlug: string, tournamentId: string, createdByUserId: string | null): Promise<void> {
+  try {
+    const channel = await teamChannel(teamSlug);
+    if (!channel) return;
+    const [t] = await getDb().select().from(tournaments).where(eq(tournaments.id, tournamentId)).limit(1);
+    if (!t) return;
+    await postToChannel(channel, formatTournamentCreatedMessage({
+      tournamentName: t.name,
+      createdBy: await userName(createdByUserId),
+      url: tUrl(teamSlug, tournamentId),
+    }));
+  } catch (err) {
+    console.error('[karabuddy] tournament created notify failed:', err);
+  }
+}
+
+// B144: an entrant just registered (member, guest-add, or public invite).
+export async function notifyEntrantRegistered(teamSlug: string, tournamentId: string, entrantName: string): Promise<void> {
+  try {
+    const channel = await teamChannel(teamSlug);
+    if (!channel) return;
+    const db = getDb();
+    const [t] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId)).limit(1);
+    if (!t) return;
+    const [{ n } = { n: 0 }] = await db
+      .select({ n: count() })
+      .from(tournamentEntrants)
+      .where(eq(tournamentEntrants.tournamentId, tournamentId));
+    await postToChannel(channel, formatRegistrationMessage({
+      tournamentName: t.name,
+      entrantName,
+      entrantCount: Number(n),
+      url: tUrl(teamSlug, tournamentId),
+    }));
+  } catch (err) {
+    console.error('[karabuddy] tournament registration notify failed:', err);
+  }
+}
+
+// B144: a match result was just reported/confirmed.
+export async function notifyMatchReported(teamSlug: string, tournamentId: string, matchId: string): Promise<void> {
+  try {
+    const channel = await teamChannel(teamSlug);
+    if (!channel) return;
+    const db = getDb();
+    const [m] = await db.select().from(tournamentMatches).where(eq(tournamentMatches.id, matchId)).limit(1);
+    if (!m || !m.entrant2Id) return; // byes aren't reported
+    const [[t], [round], entrants] = await Promise.all([
+      db.select().from(tournaments).where(eq(tournaments.id, tournamentId)).limit(1),
+      db.select().from(tournamentRounds).where(eq(tournamentRounds.id, m.roundId)).limit(1),
+      db.select().from(tournamentEntrants).where(inArray(tournamentEntrants.id, [m.entrant1Id, m.entrant2Id])),
+    ]);
+    if (!t || !round) return;
+    const nameOf = new Map(entrants.map((e) => [e.id, e.displayName]));
+    const games = (m.games as { winner: string | null }[] | null) ?? [];
+    const e1Wins = games.filter((g) => g?.winner === m.entrant1Id).length;
+    const e2Wins = games.filter((g) => g?.winner === m.entrant2Id).length;
+    await postToChannel(channel, formatMatchResultMessage({
+      tournamentName: t.name,
+      roundNumber: round.number,
+      table: m.tableNumber,
+      entrant1: nameOf.get(m.entrant1Id) ?? '?',
+      entrant2: nameOf.get(m.entrant2Id) ?? '?',
+      e1Wins,
+      e2Wins,
+      pending: m.status === 'reported',
+      url: tUrl(teamSlug, tournamentId),
+    }));
+  } catch (err) {
+    console.error('[karabuddy] tournament match notify failed:', err);
   }
 }

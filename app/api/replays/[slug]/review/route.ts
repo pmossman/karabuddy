@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { replays, replayTeamShares } from '@/lib/schema';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 import { getTeamMembership } from '@/lib/teamSurface';
+import { notifyTeamReview } from '@/lib/reviewNotify';
 
 export const runtime = 'nodejs';
 
@@ -57,6 +58,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     .update(replayTeamShares)
     .set({ reviewRequestedAt: requested ? new Date() : null })
     .where(and(eq(replayTeamShares.replaySlug, slug), eq(replayTeamShares.teamSlug, teamSlug)));
+
+  // B144: best-effort Discord post (review added/cleared) — never blocks the write.
+  try {
+    await notifyTeamReview({ replaySlug: slug, teamSlug, requested, actingUserId: userId });
+  } catch (e) {
+    console.error('[karabuddy] notifyTeamReview failed (review persisted):', e);
+  }
 
   return NextResponse.json({ ok: true, reviewRequested: requested });
 }

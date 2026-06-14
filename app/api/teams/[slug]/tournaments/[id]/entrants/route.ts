@@ -7,6 +7,7 @@ import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
 import { importDeck } from '@/lib/deckImport';
 import { generateSlug } from '@/lib/slug';
+import { notifyEntrantRegistered } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
 
@@ -87,5 +88,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     }
     throw err;
   }
+  // B144: best-effort Discord post — never blocks the write.
+  try { await notifyEntrantRegistered(slug, id, displayName); } catch (e) { console.error('[karabuddy] notifyEntrantRegistered failed:', e); }
   return NextResponse.json({ ok: true, entrantId });
 }
