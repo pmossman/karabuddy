@@ -5,6 +5,7 @@ import { useGame } from '@/app/_contexts/Game.context';
 import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
 import { createBoardGeometry } from './boardGeometry';
+import { slide } from './animPrimitives';
 // B138: animation durations live in one shared module so the autoplay/clip
 // dwell (frameDwell.ts) is derived from the SAME numbers — see animationTiming.
 import {
@@ -226,6 +227,12 @@ export function FrameAnimator({
       rate,
       rel: (s) => ({ left: s.x - cRect.left, top: s.y - cRect.top }),
       findCard: (uuid) => container.querySelector<HTMLElement>(`[data-card-uuid="${cssEscape(uuid)}"]`),
+      clone: (snap, zIndex) => {
+        const el = makeClone(snap.html, { left: snap.x - cRect.left, top: snap.y - cRect.top }, snap.w, snap.h);
+        if (zIndex != null) el.style.zIndex = String(zIndex);
+        overlay.appendChild(el);
+        return el;
+      },
       track: (anim, onDone) => {
         if (!anim) { onDone?.(); return; }
         anim.playbackRate = rate; // playbackRate scales delay + duration together
@@ -284,6 +291,8 @@ interface Ctx {
   rate: number; // playback-speed multiplier; scales swap timeouts (track scales the animations)
   rel: (s: { x: number; y: number }) => { left: number; top: number };
   findCard: (uuid: string) => HTMLElement | null;
+  // B147: spawn an overlay clone of a measured Snap (the Stage's clone factory).
+  clone: (snap: Snap, zIndex?: number) => HTMLElement;
   track: (anim: Animation | null, onDone?: () => void) => void;
   hide: (el: HTMLElement | null) => void;
   show: (el: HTMLElement | null) => void;
@@ -298,26 +307,10 @@ interface Ctx {
 function runIntent(intent: Intent, ctx: Ctx): void {
   const { overlay, rel, findCard, track, hide, show, rate, upgHidden } = ctx;
   switch (intent.type) {
-    case 'move': {
-      const { uuid, from: o, to: n, delay } = intent;
-      const liveEl = findCard(uuid);
-      const clone = makeClone(n.html, rel(n), n.w, n.h);
-      // Snap a near-1 scale to 1 so a slide with an incidental grid-resize
-      // doesn't also swell — only real zone changes (big size diff) keep it.
-      const rawSx = o.w / n.w, rawSy = o.h / n.h;
-      const sx = Math.abs(rawSx - 1) < 0.08 ? 1 : rawSx;
-      const sy = Math.abs(rawSy - 1) < 0.08 ? 1 : rawSy;
-      const startT = `translate(${o.x - n.x}px, ${o.y - n.y}px) scale(${sx}, ${sy})`;
-      clone.style.transform = startT;
-      overlay.appendChild(clone);
-      hide(liveEl);
-      track(
-        clone.animate([{ transform: startT }, { transform: 'translate(0, 0) scale(1, 1)' }],
-          { duration: DURATION, delay, fill: 'both', easing: EASING }),
-        () => { clone.remove(); show(liveEl); },
-      );
+    case 'move':
+      // B147 / ADR 0008: first kind migrated onto the primitive vocabulary.
+      slide(ctx, { uuid: intent.uuid, from: intent.from, to: intent.to, delay: intent.delay });
       return;
-    }
     case 'enter': {
       const liveEl = findCard(intent.uuid);
       if (!liveEl) return;
