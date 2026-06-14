@@ -101,6 +101,7 @@ export function HeaderBar({
         }}
       >
         {signedIn && <NavLink href="/replays">Replays</NavLink>}
+        {signedIn && <NavLink href="/clips">Clips</NavLink>}
         <NavLink href="/stats">Stats</NavLink>
         {signedIn && <NavLink href="/teams">Teams</NavLink>}
       </nav>
@@ -157,6 +158,7 @@ export function HeaderBar({
               }}
             >
               {signedIn && <MenuLink href="/replays">Replays</MenuLink>}
+              {signedIn && <MenuLink href="/clips">Clips</MenuLink>}
               <MenuLink href="/stats">Stats</MenuLink>
               {signedIn && <MenuLink href="/teams">Teams</MenuLink>}
               {signedIn && <MenuLink href="/mentions">Mentions</MenuLink>}
