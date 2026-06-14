@@ -5,7 +5,7 @@ import { useGame } from '@/app/_contexts/Game.context';
 import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
 import { createBoardGeometry } from './boardGeometry';
-import { slide, enterFade, exitFade } from './animPrimitives';
+import { slide, enterFade, exitFade, playFlip } from './animPrimitives';
 // B138: animation durations live in one shared module so the autoplay/clip
 // dwell (frameDwell.ts) is derived from the SAME numbers — see animationTiming.
 import {
@@ -233,6 +233,23 @@ export function FrameAnimator({
         overlay.appendChild(el);
         return el;
       },
+      fit: (html) => fitNode(html),
+      layer: (snap, opts) => {
+        const outer = document.createElement('div');
+        Object.assign(outer.style, {
+          position: 'absolute', left: `${snap.x - cRect.left}px`, top: `${snap.y - cRect.top}px`,
+          width: `${snap.w}px`, height: `${snap.h}px`, transformOrigin: opts.origin ?? 'center',
+          pointerEvents: 'none', zIndex: String(opts.zIndex),
+        } as CSSStyleDeclaration);
+        const inner = document.createElement('div');
+        Object.assign(inner.style, {
+          width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
+          ...(opts.shadow ? { filter: opts.shadow } : {}),
+        } as CSSStyleDeclaration);
+        outer.appendChild(inner);
+        overlay.appendChild(outer);
+        return { outer, inner };
+      },
       track: (anim, onDone) => {
         if (!anim) { onDone?.(); return; }
         anim.playbackRate = rate; // playbackRate scales delay + duration together
@@ -291,8 +308,11 @@ interface Ctx {
   rate: number; // playback-speed multiplier; scales swap timeouts (track scales the animations)
   rel: (s: { x: number; y: number }) => { left: number; top: number };
   findCard: (uuid: string) => HTMLElement | null;
-  // B147: spawn an overlay clone of a measured Snap (the Stage's clone factory).
+  // B147: the Stage's clone factories (overlay clone, fill-parent face, two-layer
+  // outer/inner) used by the migrated primitives.
   clone: (snap: Snap, zIndex?: number) => HTMLElement;
+  fit: (html: string) => HTMLElement;
+  layer: (snap: Snap, opts: { zIndex: number; origin?: string; shadow?: string }) => { outer: HTMLElement; inner: HTMLElement };
   track: (anim: Animation | null, onDone?: () => void) => void;
   hide: (el: HTMLElement | null) => void;
   show: (el: HTMLElement | null) => void;
@@ -776,34 +796,9 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       }
       return;
     }
-    case 'playFlip': {
-      // Slide the face-down card to its slot, then flip to reveal the played card.
-      const { uuid, from, to } = intent;
-      const liveEl = findCard(uuid);
-      hide(liveEl);
-      const p = rel(to);
-      const outer = document.createElement('div');
-      Object.assign(outer.style, {
-        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
-        width: `${to.w}px`, height: `${to.h}px`, transformOrigin: '0 0', pointerEvents: 'none', zIndex: '8',
-      } as CSSStyleDeclaration);
-      const inner = document.createElement('div');
-      Object.assign(inner.style, { width: '100%', height: '100%', transformOrigin: 'center', position: 'relative' } as CSSStyleDeclaration);
-      inner.appendChild(fitNode(from.html)); // face-down card to start
-      outer.appendChild(inner);
-      overlay.appendChild(outer);
-      const sx = from.w / to.w, sy = from.h / to.h, tx = from.x - to.x, ty = from.y - to.y;
-      track(outer.animate(
-        [{ transform: `translate(${tx}px, ${ty}px) scale(${sx}, ${sy})` }, { transform: 'translate(0,0) scale(1,1)' }],
-        { duration: PLAY_MOVE_MS, fill: 'backwards', easing: EASING }));
-      const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, (PLAY_MOVE_MS + PLAY_FLIP_MS / 2) / rate);
-      track(
-        inner.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
-          { duration: PLAY_FLIP_MS, delay: PLAY_MOVE_MS, fill: 'backwards', easing: 'ease-in-out' }),
-        () => { window.clearTimeout(swap); outer.remove(); show(liveEl); },
-      );
+    case 'playFlip':
+      playFlip(ctx, { uuid: intent.uuid, from: intent.from, to: intent.to });
       return;
-    }
   }
 }
 
