@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { asc, eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
@@ -21,10 +22,17 @@ export default async function ClipsIndex({ searchParams }: { searchParams: Promi
   const userId: string | null = (session?.user as any)?.id || null;
 
   if (!userId) {
+    // No team / "on my replays" scopes without an account — just the descriptor
+    // + this install's own clips (or a sign-in nudge).
     return (
       <main style={PAGE_STYLE}>
-        <h1 style={{ margin: '0 0 14px', fontSize: 24, fontWeight: 700 }}>Clips</h1>
-        <ClipLibraryTabs teams={[]} active="created" />
+        <h1 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 700 }}>Clips</h1>
+        <p style={{ margin: '0 0 8px', fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, maxWidth: 640 }}>
+          Clips are short, shareable moments captured from a replay — trim a key turn and send a link.
+          Open any replay and use the ✂ Clip button to make one;{' '}
+          <Link href="/signin?callbackUrl=/clips" style={{ color: '#5db4ff' }}>sign in</Link> to keep your clips
+          and see clips your teammates make of your games.
+        </p>
         <div style={{ marginTop: 18 }}>
           <MyClipsAnonymous />
         </div>

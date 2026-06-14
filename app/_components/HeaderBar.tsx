@@ -100,10 +100,13 @@ export function HeaderBar({
           alignItems: 'center', gap: 24,
         }}
       >
-        {signedIn && <NavLink href="/replays">Replays</NavLink>}
-        {signedIn && <NavLink href="/clips">Clips</NavLink>}
+        {/* Shown to everyone: signed-out visitors get functional/descriptive
+            pages (public replay + clip discovery, the teams pitch, global stats)
+            with a sign-in nudge. Mentions stays signed-in (a personal inbox). */}
+        <NavLink href="/replays">Replays</NavLink>
+        <NavLink href="/clips">Clips</NavLink>
         <NavLink href="/stats">Stats</NavLink>
-        {signedIn && <NavLink href="/teams">Teams</NavLink>}
+        <NavLink href="/teams">Teams</NavLink>
       </nav>
 
       {/* Right cluster. The avatar is always visible; secondary links collapse
@@ -157,10 +160,10 @@ export function HeaderBar({
                 display: 'flex', flexDirection: 'column', gap: 4,
               }}
             >
-              {signedIn && <MenuLink href="/replays">Replays</MenuLink>}
-              {signedIn && <MenuLink href="/clips">Clips</MenuLink>}
+              <MenuLink href="/replays">Replays</MenuLink>
+              <MenuLink href="/clips">Clips</MenuLink>
               <MenuLink href="/stats">Stats</MenuLink>
-              {signedIn && <MenuLink href="/teams">Teams</MenuLink>}
+              <MenuLink href="/teams">Teams</MenuLink>
               {signedIn && <MenuLink href="/mentions">Mentions</MenuLink>}
               {showInstall && (
                 <div style={{ paddingTop: 4, marginTop: 4, borderTop: '1px solid #2e333c' }}>

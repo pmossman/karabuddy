@@ -41,15 +41,9 @@ export function MyClipsAnonymous() {
     );
   }
 
-  if (state === 'none' || rows.length === 0) {
-    return (
-      <div style={{ marginTop: 24, color: '#828b99', fontSize: 14 }}>
-        Clips you create show up here.{' '}
-        <Link href="/signin?callbackUrl=/clips" style={{ color: '#5db4ff', textDecoration: 'underline' }}>Sign in</Link>{' '}
-        to keep them with your account and see clips of your replays.
-      </div>
-    );
-  }
+  // No clips (or no extension): the page descriptor above already explains
+  // clips + the sign-in nudge, so render nothing rather than repeat it.
+  if (state === 'none' || rows.length === 0) return null;
 
   return (
     <>

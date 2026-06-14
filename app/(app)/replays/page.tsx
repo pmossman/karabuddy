@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { eq, desc, inArray, count, asc } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
@@ -31,7 +32,12 @@ export default async function ReplaysIndex({ searchParams }: { searchParams: Pro
     const publicTab = tabParam === 'public';
     return (
       <main style={PAGE_STYLE}>
-        <h1 style={{ margin: '0 0 14px', fontSize: 24, fontWeight: 700 }}>Replays</h1>
+        <h1 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 700 }}>Replays</h1>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: '#a0a8b8', lineHeight: 1.5, maxWidth: 640 }}>
+          Record your <a href="https://karabast.net" style={{ color: '#5db4ff' }}>karabast.net</a> games with the
+          extension to replay them frame-by-frame, tag key turns, and review matchups. Browse public replays below, or{' '}
+          <Link href="/signin?callbackUrl=/replays" style={{ color: '#5db4ff' }}>sign in</Link> to save your own.
+        </p>
         <LibraryTabs teams={[]} activeSlug={publicTab ? 'public' : null} />
         <div style={{ marginTop: 18 }}>
           {publicTab ? <PublicReplays /> : <MineAnonymous />}
