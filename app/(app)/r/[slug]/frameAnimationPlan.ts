@@ -21,6 +21,10 @@ export type Intent =
   // flip to its unit side, then bring it down to the board slot (`to`) with a
   // board shake on landing.
   | { type: 'leaderDeploy'; uuid: string; from: Snap; to: Snap; stage: Point }
+  // B141: a PILOT leader deploy — raise off the base like a normal deploy, but
+  // land as an UPGRADE tucked onto a vehicle (`unit` rect) instead of slamming
+  // to an arena slot. Fades into the rendered upgrade strip on landing.
+  | { type: 'pilotDeploy'; uuid: string; from: Snap; unit: Snap; stage: Point; faceUp: string | null }
   | { type: 'lunge'; uuid: string; from: Snap; to: Snap }
   | { type: 'targetHold'; uuid: string; oldRect: Snap; newRect: Snap }
   | { type: 'tracer'; from: Point; to: Point; color: string; delay?: number }
@@ -30,11 +34,11 @@ export type Intent =
   // (grown, flipped face-up when it came from a hidden hand), hold, then send
   // it to its discard rect. `to` is null when the discard pile doesn't render
   // the card (the clone shrinks out at the stage instead).
-  | { type: 'eventStage'; uuid: string; from: Snap; to: Snap | null; faceDown: boolean; stage: Point }
+  | { type: 'eventStage'; uuid: string; from: Snap; to: Snap | null; faceDown: boolean; stage: Point; pile?: boolean; faceUp?: string | null }
   // B134: an UPGRADE play — fly out of the hand, present above the unit it's
   // attaching to (flipped face-up via `faceUp` art for a hidden-hand play),
   // then tuck under that unit (`unit` rect) handing off to the rendered strip.
-  | { type: 'upgradeStage'; uuid: string; from: Snap; unit: Snap; faceDown: boolean; faceUp: string | null; stage: Point }
+  | { type: 'upgradeStage'; uuid: string; from: Snap; unit: Snap; faceDown: boolean; faceUp: string | null; stage: Point; pile?: boolean }
   // B134: a RESOURCE — a card committed from hand to the resource pile. Grows,
   // pauses, then shrinks into the pile (`pile` rect). A face-up source flips to
   // the cardback (your own / hands-up reveal); a `faceDown` source (the
@@ -75,11 +79,32 @@ const TRACER_MIN_DIST = 28;
 const isArena = (z: string | undefined) => z === 'groundArena' || z === 'spaceArena';
 const dist = (a: Snap, b: Snap) => Math.hypot(a.x - b.x, a.y - b.y);
 const center = (s: Snap): Point => ({ x: s.x + s.w / 2, y: s.y + s.h / 2 });
+// A card-sized Snap centred on a point (for a plot lifting from the resource
+// pile, which has no card dimensions of its own). No html — the executor draws
+// a cardback.
+const sizedAt = (c: Point, w: number, h: number): Snap => ({ x: c.x - w / 2, y: c.y - h / 2, w, h, html: '' });
 
 export function planFrameAnimations(input: PlanInput): Intent[] {
   const { prev, next, prevZones, cards, leaders, attacks, interactions, eventPlays = [], bases = new Map(), resourcePile = null, resourcePileOpp = null, localPlayerId = null, resourceCounts } = input;
   const intents: Intent[] = [];
   const zoneOf = (u: string) => cards.get(u)?.zone;
+
+  // B141: a PLOT lifts from the resource pile, which carries NO card dimensions
+  // of its own. To present it like an event played from hand — grow large and
+  // "held above the board", then settle to its destination — it must start at a
+  // real card size, not the small discard rect (which only grows to a small
+  // present). Borrow a representative full-size card on the board this frame: a
+  // HAND card (the exact analog of a hand-played event), else any arena unit.
+  const fullCardDim = ((): { w: number; h: number } | null => {
+    let arena: Snap | undefined;
+    for (const [uuid, info] of cards) {
+      const r = next.get(uuid) ?? prev.get(uuid);
+      if (!r?.w || !r?.h) continue;
+      if (info.zone === 'hand') return { w: r.w, h: r.h };
+      if (!arena && isArena(info.zone)) arena = r;
+    }
+    return arena ? { w: arena.w, h: arena.h } : null;
+  })();
 
   // Sequencing delays park a clone, frozen, at a card's OLD slot for the delay.
   // That's the "clone under the attacker" bug class — but ONLY when something
@@ -104,9 +129,16 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
   // (0.26·1500≈390ms) into its hold. Wins over fxHold (longer).
   const hasStagedEvent = eventPlays.some((e) => cards.get(e.uuid)?.zone === 'discard');
   const EVENT_EFFECT_DELAY = 650;
+  // A leader RETURN (a leader unit defeated by the event → flips back to its
+  // slot) is a big, prominent corner animation — unlike the damage bolts the
+  // 650ms effect delay is tuned for, it can't fire while the event card is still
+  // held above the board (it reads as the consequence happening before the card
+  // resolves). Hold it until the event has DEPARTED the stage (~0.74·1500). The
+  // flip finishes ~440ms later, still inside the event dwell (dwellFor(1500)).
+  const LEADER_EVENT_DELAY = 1080;
   const EXIT_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : (fxHold ? 300 : 0);   // corpse fades as the bolt lands (~TRACER_MS)
   const MOVE_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : (fxHold ? 540 : 0);   // survivors fill in after the corpse clears
-  const LEADER_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : (fxHold ? 420 : 0);
+  const LEADER_DELAY = hasStagedEvent ? LEADER_EVENT_DELAY : (fxHold ? 420 : 0);
   const FX_DELAY = hasStagedEvent ? EVENT_EFFECT_DELAY : 0; // tracer/flash bolts
   // B134: a unit CREATED on attack (a Spy/Clone token from an on-attack
   // ability) must appear AFTER the strike, not during the lunge — otherwise the
@@ -177,12 +209,23 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     const isUpgrade = !!info?.parentCardId && isArena(z);
     if (!isEvent && !isUpgrade) continue;
 
-    // Resolve the card's STARTING rect: a visible own-hand card, else a paired
-    // hidden face-down card (opponent's hand).
+    // Resolve the card's STARTING rect: a visible own-hand card, a PLOT card
+    // from the resource row, else a paired hidden face-down card (opp hand).
+    const prevZone = prevZones.get(uuid);
     let from = prev.get(uuid);
     let faceDown = false;
-    if (from) {
-      if (prevZones.get(uuid) !== 'hand') continue; // only a hand departure is a play we choreograph
+    let pile = false;
+    if (prevZone === 'resource') {
+      // B141: PLOT — played from the resource row in the same action as a
+      // deploy. Fly it up from the resource pile (a cardback) and flip it face
+      // up to its destination (discard / unit). The pile is one stacked box.
+      const pileRect = info?.ctrl === localPlayerId ? resourcePile : resourcePileOpp;
+      if (!pileRect) continue;
+      from = pileRect;
+      faceDown = true;
+      pile = true;
+    } else if (from) {
+      if (prevZone !== 'hand') continue; // only a hand departure is a play we choreograph
     } else {
       const pool = info?.ctrl ? hiddenByCtrl.get(info.ctrl) : undefined;
       if (!pool || pool.length === 0) continue;
@@ -199,24 +242,35 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
       // under the unit, so they have no own rect). Skip if we can't place it.
       const unit = next.get(info!.parentCardId!) ?? prev.get(info!.parentCardId!);
       if (!unit) { staged.delete(uuid); continue; }
+      // A PLOT lifts from the resource pile, which has no card size — size the
+      // clone to a full card so it presents big (a hand-card's dims, else the
+      // destination unit's).
+      const fromRect = pile ? sizedAt(center(from), (fullCardDim ?? unit).w, (fullCardDim ?? unit).h) : from;
       // Present just above the unit (lifted), then drop in.
       const uc = center(unit);
       const stage: Point = { x: uc.x, y: uc.y - unit.h * 0.7 };
-      // Hidden-hand upgrade has no full-card render to flip to → build the
-      // face from card art.
+      // A hidden-hand / plot upgrade has no full-card render to flip to → build
+      // the face from card art.
       const faceUp = faceDown && info?.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
-      stageIntents.push({ type: 'upgradeStage', uuid, from, unit, faceDown, faceUp, stage });
+      stageIntents.push({ type: 'upgradeStage', uuid, from: fromRect, unit, faceDown, faceUp, stage, pile });
       continue;
     }
 
     // Event → drop to its discard rect (null when discard doesn't render it).
     const to = next.get(uuid) ?? null;
+    // A PLOT lifts from the pile (no card size) — size the clone to a FULL card
+    // (a hand-card's dims) so it grows big above the board like a hand-played
+    // event, then the executor's end scale (to.w/from.w) settles it to discard.
+    const fromRect = pile ? sizedAt(center(from), (fullCardDim ?? to ?? from).w, (fullCardDim ?? to ?? from).h) : from;
+    // For a plot event, if the discard doesn't render the card, fall back to its
+    // art so the flip still reveals a face.
+    const faceUp = pile && !to && info?.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
     let stage = baseStage(info?.ctrl);
     if (!stage) {
-      const fc = center(from), tc = to ? center(to) : fc;
+      const fc = center(fromRect), tc = to ? center(to) : fc;
       stage = { x: (fc.x + tc.x) / 2, y: (fc.y + tc.y) / 2 };
     }
-    stageIntents.push({ type: 'eventStage', uuid, from, to, faceDown, stage });
+    stageIntents.push({ type: 'eventStage', uuid, from: fromRect, to, faceDown, stage, pile, faceUp });
   }
 
   // B134 RESOURCING: a card committed from hand to the resource pile. Only the
@@ -282,6 +336,28 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
       }
       emitGroup(oppHidden, resourcePileOpp, true, +1); // opponent: top → lift down
     }
+  }
+
+  // B141: PILOT leader deploy — a leader leaving its base ('base' → an arena
+  // upgrade with parentCardId) lands ATTACHED to a vehicle, so it has no own
+  // rect in `next` (it renders as the vehicle's upgrade strip). Detect it here
+  // (the exit loop then skips it via `staged`) and stage a rise-then-tuck.
+  for (const uuid of leaders) {
+    if (staged.has(uuid)) continue;
+    const info = cards.get(uuid);
+    if (!info?.parentCardId || prevZones.get(uuid) !== 'base') continue;
+    const from = prev.get(uuid);
+    const unit = next.get(info.parentCardId) ?? prev.get(info.parentCardId);
+    if (!from || !unit) continue;
+    staged.add(uuid);
+    const liftSign = !localPlayerId || info.ctrl === localPlayerId ? -1 : 1;
+    const fc = center(from), uc = center(unit);
+    const stage: Point = { x: (fc.x + uc.x) / 2, y: (fc.y + uc.y) / 2 + liftSign * Math.max(from.h, unit.h) * 1.35 };
+    // Flip to the leader's UNIT side as it rises (the side carrying the upgrade
+    // text). The board renders it only as a strip, so synthesize the face image:
+    // the deployed/unit side is the plain card art (the leader side is `-base`).
+    const faceUp = info.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
+    intents.push({ type: 'pilotDeploy', uuid, from, unit, stage, faceUp });
   }
 
   // MOVES / ENTERS / LEADER-FLIPS — iterate the new frame's cards.

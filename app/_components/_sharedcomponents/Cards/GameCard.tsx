@@ -779,6 +779,12 @@ const GameCard: React.FC<IGameCardProps> = ({
                     onMouseEnter={handlePreviewOpen}
                     onMouseLeave={handlePreviewClose}
                     {...longPressHandlers}
+                    // karabuddy: lets the FrameAnimator find + hide this upgrade
+                    // strip so it stays hidden until the upgrade/pilot clone
+                    // begins its tuck-down (it shouldn't pop in on play-start). A
+                    // DISTINCT attr (not data-card-uuid) so the animator's
+                    // measure() doesn't treat strips as free-standing board cards.
+                    data-upgrade-uuid={subcard.uuid}
                     data-card-url={s3CardImageURL(
                         { ...subcard, setId: subcard.clonedCardId ?? subcard.setId },
                         CardStyle.Plain,

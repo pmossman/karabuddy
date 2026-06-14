@@ -5,17 +5,19 @@ import { useGame } from '@/app/_contexts/Game.context';
 import type { Frame } from '@/lib/replayDecoder';
 
 // ── Playback speed (single source of truth) ────────────────────────────────
-// Literal multipliers, consistent everywhere (replay viewer, clip reel, clip
-// builder): 1× is the natural pace (animations play at their real duration and
-// each frame dwells for animationTotal + buffer), 2× is exactly twice as fast,
-// 0.5× exactly half. The multiplier scales BOTH the dwell (createDwellStepper)
-// AND the animations (FrameAnimator playbackRate), so they always stay in step.
+// Consistent everywhere (replay viewer, clip reel, clip builder). The displayed
+// label is relative to the comfortable "1×" baseline; the underlying `value` is
+// the real multiplier scaling BOTH the dwell (createDwellStepper) AND the
+// animations (FrameAnimator playbackRate), so they always stay in step. The
+// baseline was retuned: the old 1× felt too fast, so "1×" now = 0.75× the old
+// natural pace, with the slow/fast options at ×0.75 / ×1.5 of that baseline.
+const BASE = 0.75;
 export const PLAYBACK_SPEEDS: ReadonlyArray<{ label: string; value: number }> = [
-  { label: '0.5×', value: 0.5 },
-  { label: '1×', value: 1 },
-  { label: '2×', value: 2 },
+  { label: '0.75×', value: BASE * 0.75 }, // 0.5625
+  { label: '1×', value: BASE },           // 0.75 — default
+  { label: '1.5×', value: BASE * 1.5 },   // 1.125
 ];
-export const PLAYBACK_SPEED_DEFAULT = 1;
+export const PLAYBACK_SPEED_DEFAULT = BASE;
 export const PLAYBACK_SPEED_STORAGE_KEY = 'karabuddy:playbackSpeed';
 
 // ── Shared autoplay cadence ────────────────────────────────────────────────

@@ -87,6 +87,10 @@ export function FrameAnimator({
   // In-flight animations + cards we've hidden, so a fast step can cancel/restore.
   const active = useRef<Animation[]>([]);
   const hidden = useRef<HTMLElement[]>([]);
+  // B141: freshly-played upgrade strips hidden (via injected CSS) BEFORE measure,
+  // keyed by upgrade uuid, so the host unit + siblings don't measure/animate the
+  // cell growth the strip causes. The deploy executor reveals each as it tucks.
+  const upgHidden = useRef<Map<string, { style: HTMLStyleElement; timer: number | null }>>(new Map());
   const lastRun = useRef(0); // timestamp of the last frame change (rapid-step detection)
   const zones = useRef<Map<string, string>>(new Map()); // uuid → zone, previous frame
   const baseDamage = useRef<Map<string, number>>(new Map()); // base uuid → damage, previous frame
@@ -118,6 +122,8 @@ export function FrameAnimator({
     active.current = [];
     hidden.current.forEach((el) => { el.style.opacity = ''; });
     hidden.current = [];
+    upgHidden.current.forEach((e) => { if (e.timer != null) clearTimeout(e.timer); e.style.remove(); });
+    upgHidden.current.clear();
     overlay.replaceChildren();
     if (remeasureRaf.current != null) { cancelAnimationFrame(remeasureRaf.current); remeasureRaf.current = null; }
 
@@ -139,15 +145,43 @@ export function FrameAnimator({
     if (skipNextRef?.current) { skipNextRef.current = false; prev.current = null; return; }
     if (!enabled || dt < RAPID_STEP_MS) { prev.current = null; return; }
 
-    const next = measure();
-    const old = prev.current;
-    prev.current = next;
-
     // Per-card zone this frame (kept in sync with `prev`). Comparing to the
     // previous frame's zones lets the planner tell a real cross-zone move from a
-    // same-zone reflow, and a leader deploy/return from an arena reflow.
+    // same-zone reflow, and a leader deploy/return from an arena reflow. Read it
+    // BEFORE measuring: a freshly-attached upgrade strip (a pilot leader, or a
+    // played upgrade landing on a unit) GROWS its host unit's cell, which reflows
+    // the arena and would animate the host + its siblings sliding — with a black
+    // bar in the reserved strip slot. Hide those strips first so measure() sees
+    // the settled, pre-strip layout; the deploy executor reveals each as it tucks.
     const { cards, leaders } = extractFrameCards(gameState);
     const prevZones = zones.current;
+    const isArenaZone = (z?: string) => z === 'groundArena' || z === 'spaceArena';
+    for (const [u, c] of cards) {
+      if (c.parentCardId && isArenaZone(c.zone) && prevZones.get(u) !== c.zone && !upgHidden.current.has(u)) {
+        const style = document.createElement('style');
+        style.textContent = `[data-upgrade-uuid="${cssEscape(u)}"]{display:none!important}`;
+        document.head.appendChild(style);
+        upgHidden.current.set(u, { style, timer: null });
+      }
+    }
+
+    const next = measure();
+    const old = prev.current;
+    // `next` is measured with fresh upgrade strips hidden, so THIS frame doesn't
+    // animate the host unit + siblings growing into the strip. But the frame
+    // SETTLES with the strips shown (revealed at descent), so prev.current — the
+    // baseline the NEXT frame diffs against — must be the SETTLED layout; else
+    // the next frame sees the host "grow" into the strip again and bounces.
+    // Briefly drop the hides, measure settled, then re-hide — all before paint.
+    if (upgHidden.current.size) {
+      const styles = [...upgHidden.current.values()].map((e) => e.style);
+      styles.forEach((s) => s.remove());
+      prev.current = measure();
+      styles.forEach((s) => document.head.appendChild(s));
+    } else {
+      prev.current = next;
+    }
+
     const nextZones = new Map<string, string>();
     for (const [u, c] of cards) nextZones.set(u, c.zone);
     zones.current = nextZones;
@@ -158,12 +192,17 @@ export function FrameAnimator({
     // clone parked at a wrong slot, which also poisons prev.current for the next
     // forward step). Snap instead, then re-measure the SETTLED layout on the next
     // frame so the following forward step animates from correct positions.
+    const revealAllUpg = () => {
+      upgHidden.current.forEach((e) => { if (e.timer != null) clearTimeout(e.timer); e.style.remove(); });
+      upgHidden.current.clear();
+    };
     if (dirRef.current < 0) {
+      revealAllUpg();
       remeasureRaf.current = requestAnimationFrame(() => { remeasureRaf.current = null; prev.current = measure(); });
       return;
     }
 
-    if (!old) return;
+    if (!old) { revealAllUpg(); return; }
 
     const intents = planFrameAnimations({
       prev: old,
@@ -202,8 +241,12 @@ export function FrameAnimator({
       },
       hide: (el) => { if (el) { el.style.opacity = '0'; hidden.current.push(el); } },
       show: (el) => { if (el) el.style.opacity = ''; },
+      upgHidden: upgHidden.current,
     };
     for (const intent of intents) runIntent(intent, ctx);
+    // Any pre-hidden upgrade strip NOT claimed by a deploy/upgrade executor (no
+    // reveal timer scheduled) wasn't actually animated this frame — show it now.
+    upgHidden.current.forEach((e, u) => { if (e.timer == null) { e.style.remove(); upgHidden.current.delete(u); } });
 
     // B139: a base that took damage this frame shakes, harder the more it took.
     // We shake a CLONE in the overlay (and hide the real base underneath) —
@@ -251,6 +294,7 @@ interface Ctx {
   track: (anim: Animation | null, onDone?: () => void) => void;
   hide: (el: HTMLElement | null) => void;
   show: (el: HTMLElement | null) => void;
+  upgHidden: Map<string, { style: HTMLStyleElement; timer: number | null }>;
 }
 
 // Turn one planned Intent into clones + Web-Animations calls. The "what" lives
@@ -259,7 +303,7 @@ interface Ctx {
 // animation never flashes at its natural rect (fill:'backwards' alone can let
 // one frame through); fill:'both' holds the end until the clone is removed.
 function runIntent(intent: Intent, ctx: Ctx): void {
-  const { overlay, rel, findCard, track, hide, show, rate } = ctx;
+  const { overlay, rel, findCard, track, hide, show, rate, upgHidden } = ctx;
   switch (intent.type) {
     case 'move': {
       const { uuid, from: o, to: n, delay } = intent;
@@ -431,7 +475,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       // grown at the stage point ("held above the board"), then drops into the
       // discard. A hidden-hand play flips face-up mid-flight. The card's REAL
       // discard render stays hidden until the clone lands.
-      const { from, to, faceDown, stage } = intent;
+      const { from, to, faceDown, stage, pile, faceUp } = intent;
       const liveEl = intent.to ? findCard(intent.uuid) : null;
       hide(liveEl);
       const p = rel(from);
@@ -446,7 +490,9 @@ function runIntent(intent: Intent, ctx: Ctx): void {
         width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
         filter: 'drop-shadow(0 16px 26px rgba(0, 0, 0, 0.55))',
       } as CSSStyleDeclaration);
-      inner.appendChild(fitNode(from.html));
+      // B141: a PLOT lifts a cardback from the resource pile (the pile rect has
+      // no card html); everything else clones the departing card.
+      inner.appendChild(pile ? cardbackNode() : fitNode(from.html));
       outer.appendChild(inner);
       overlay.appendChild(outer);
 
@@ -475,10 +521,11 @@ function runIntent(intent: Intent, ctx: Ctx): void {
         ),
         () => { outer.remove(); show(liveEl); },
       );
-      // Hidden-hand play: flip face-up mid-flight (swap the card back for the
-      // real face at the flip's narrowest point — needs the discard render).
-      if (faceDown && to) {
-        const swap = window.setTimeout(() => { inner.replaceChildren(fitNode(to.html)); }, (EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2) / rate);
+      // Hidden-hand / plot play: flip face-up mid-flight — swap the cardback for
+      // the discard render (or, for a plot whose discard doesn't render, the
+      // card art) at the flip's narrowest point.
+      if (faceDown && (to || faceUp)) {
+        const swap = window.setTimeout(() => { inner.replaceChildren(to ? fitNode(to.html) : artNode(faceUp!)); }, (EVENT_FLIP_DELAY + EVENT_FLIP_MS / 2) / rate);
         track(
           inner.animate(
             [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
@@ -494,7 +541,9 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       // under it — the clone lands at the unit's lower edge and fades out,
       // handing off to the real upgrade strip rendered beneath the overlay.
       // A hidden-hand play flips face-down → card-art mid-flight.
-      const { from, unit, faceDown, faceUp, stage } = intent;
+      const { from, unit, faceDown, faceUp, stage, pile } = intent;
+      // Reveal the (pre-hidden) upgrade strip as the clone starts tucking down.
+      const upg = scheduleUpgradeReveal(upgHidden, intent.uuid, (UPGRADE_DEPART * UPGRADE_TOTAL_MS) / rate);
       const p = rel(from);
       const outer = document.createElement('div');
       Object.assign(outer.style, {
@@ -507,7 +556,8 @@ function runIntent(intent: Intent, ctx: Ctx): void {
         width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
         filter: 'drop-shadow(0 14px 22px rgba(0, 0, 0, 0.55))',
       } as CSSStyleDeclaration);
-      inner.appendChild(fitNode(from.html));
+      // B141: a PLOT upgrade lifts a cardback from the resource pile.
+      inner.appendChild(pile ? cardbackNode() : fitNode(from.html));
       outer.appendChild(inner);
       overlay.appendChild(outer);
 
@@ -529,7 +579,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
           ],
           { duration: UPGRADE_TOTAL_MS, fill: 'both' },
         ),
-        () => outer.remove(),
+        () => { upg.reveal(); outer.remove(); },
       );
       if (faceDown && faceUp) {
         const faceNode = document.createElement('div');
@@ -621,6 +671,78 @@ function runIntent(intent: Intent, ctx: Ctx): void {
         [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
         { duration: 280, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
         () => window.clearTimeout(swap));
+      return;
+    }
+    case 'pilotDeploy': {
+      // B141: a PILOT leader deploy — rise off the base under a spotlight like a
+      // normal deploy (flipping to the leader's UNIT side at the top, where the
+      // upgrade text lives), then DESCEND + shrink onto the vehicle (tucking on
+      // as an upgrade) and fade into the rendered strip — shaking the board on
+      // landing, same as a regular leader deploy as a unit.
+      const { from, unit, stage, faceUp } = intent;
+      const vigTotal = LEADER_DEPLOY_TOTAL + VIGNETTE_LINGER_MS;
+      const vigIn = LEADER_DEPLOY_RISE_MS / vigTotal;
+      const vigHoldEnd = LEADER_DEPLOY_TOTAL / vigTotal;
+      const vignette = document.createElement('div');
+      Object.assign(vignette.style, {
+        position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '13', opacity: '0',
+        background: 'radial-gradient(ellipse 62% 62% at 50% 45%, transparent 16%, rgba(0,0,0,0.88) 88%)',
+      } as CSSStyleDeclaration);
+      overlay.appendChild(vignette);
+      track(
+        vignette.animate(
+          [{ opacity: 0, offset: 0 }, { opacity: 0.85, offset: vigIn }, { opacity: 0.85, offset: vigHoldEnd }, { opacity: 0, offset: 1 }],
+          { duration: vigTotal, easing: 'ease-in-out' }),
+        () => vignette.remove(),
+      );
+      const p = rel(from);
+      const outer = document.createElement('div');
+      Object.assign(outer.style, {
+        position: 'absolute', left: `${p.left}px`, top: `${p.top}px`,
+        width: `${from.w}px`, height: `${from.h}px`, transformOrigin: 'center',
+        pointerEvents: 'none', zIndex: '14',
+      } as CSSStyleDeclaration);
+      const inner = document.createElement('div');
+      Object.assign(inner.style, {
+        width: '100%', height: '100%', position: 'relative', transformOrigin: 'center',
+        filter: 'drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6))',
+      } as CSSStyleDeclaration);
+      const face = fitNode(from.html);
+      face.querySelectorAll('[data-leader-nameplate]').forEach((el) => el.remove());
+      inner.appendChild(face);
+      outer.appendChild(inner);
+      overlay.appendChild(outer);
+
+      const fcx = from.x + from.w / 2, fcy = from.y + from.h / 2;
+      const tStage = `translate(${stage.x - fcx}px, ${stage.y - fcy}px) scale(${LEADER_DEPLOY_SCALE})`;
+      // Land at the lower band of the vehicle (where the upgrade strip sits), shrunk.
+      const ucx = unit.x + unit.w / 2, ucy = unit.y + unit.h * 0.72;
+      const tEnd = `translate(${ucx - fcx}px, ${ucy - fcy}px) scale(${(unit.w / from.w) * 0.6})`;
+      const arrive = LEADER_DEPLOY_RISE_MS / LEADER_DEPLOY_TOTAL;
+      const depart = (LEADER_DEPLOY_RISE_MS + LEADER_DEPLOY_HOLD_MS) / LEADER_DEPLOY_TOTAL;
+      // Reveal the (pre-hidden) upgrade strip as the descent (depart → end) begins.
+      const upg = scheduleUpgradeReveal(upgHidden, intent.uuid, (depart * LEADER_DEPLOY_TOTAL) / rate);
+      const outerAnim = outer.animate(
+        [
+          { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0, easing: 'cubic-bezier(0.2, 0, 0.2, 1)' },
+          { transform: tStage, opacity: 1, offset: arrive, easing: 'linear' },
+          { transform: tStage, opacity: 1, offset: depart, easing: 'cubic-bezier(0.5, 0, 0.7, 1)' },
+          { transform: tEnd, opacity: 0, offset: 1 },
+        ],
+        { duration: LEADER_DEPLOY_TOTAL, fill: 'both' },
+      );
+      track(outerAnim, () => { upg.reveal(); outer.remove(); });
+      outerAnim.addEventListener('finish', () => shakeBoard(ctx.container, rate));
+      // Flip leader → unit side at the TOP of the rise (vs the slam, for a normal
+      // deploy) — the unit side carries the upgrade text it's about to become.
+      if (faceUp) {
+        const flipDelay = LEADER_DEPLOY_RISE_MS;
+        const swap = window.setTimeout(() => { inner.replaceChildren(artNode(faceUp)); }, (flipDelay + 130) / rate);
+        track(inner.animate(
+          [{ transform: 'scaleX(1)' }, { transform: 'scaleX(0.04)' }, { transform: 'scaleX(1)' }],
+          { duration: 280, delay: flipDelay, fill: 'backwards', easing: 'ease-in-out' }),
+          () => window.clearTimeout(swap));
+      }
       return;
     }
     case 'resourceStage': {
@@ -747,6 +869,59 @@ function fitNode(html: string): HTMLElement {
   const node = (box.firstElementChild as HTMLElement) ?? box;
   Object.assign(node.style, { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', margin: '0' } as CSSStyleDeclaration);
   return node;
+}
+
+// B141: a fill-parent card BACK (a plot card lifting face-down from the resource
+// pile) and a fill-parent FACE from card art (the flip target). Square cardback
+// renders `contain` so its logo isn't cropped.
+function cardbackNode(): HTMLElement {
+  const n = document.createElement('div');
+  Object.assign(n.style, {
+    position: 'absolute', inset: '0', borderRadius: '7px', backgroundColor: '#0a0c10',
+    backgroundImage: `url(${CARDBACK_URL})`, backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
+  } as CSSStyleDeclaration);
+  return n;
+}
+function artNode(url: string): HTMLElement {
+  const n = document.createElement('div');
+  Object.assign(n.style, {
+    position: 'absolute', inset: '0', borderRadius: '7px',
+    backgroundImage: `url(${url})`, backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
+  } as CSSStyleDeclaration);
+  return n;
+}
+
+// Hide a freshly-played upgrade strip until its clone tucks down onto the unit.
+// We inject a CSS rule matching the strip's data-upgrade-uuid rather than set an
+// inline style on the node: the rule is in the stylesheet BEFORE the first paint
+// (so the strip never flashes in on play-start) and it keeps matching even if
+// React re-renders/recreates the strip node mid-animation (the attribute comes
+// from props). reveal() — at descent-start, and again on animation cleanup —
+// drops the rule so the strip renders normally under the landing clone.
+// Schedule the reveal of a (pre-hidden) upgrade strip `delayMs` from now — when
+// its clone begins tucking down. The strip was hidden before measure() in the
+// effect; here we just time-out its removal. Falls back to hiding now if the
+// strip wasn't pre-hidden (e.g. zones were unknown). reveal() drops it early
+// (animation cleanup). Scheduling a timer also MARKS the entry as "claimed", so
+// the effect's post-loop sweep leaves it hidden until the timer fires.
+function scheduleUpgradeReveal(
+  upgHidden: Map<string, { style: HTMLStyleElement; timer: number | null }>,
+  uuid: string,
+  delayMs: number,
+): { reveal: () => void } {
+  let entry = upgHidden.get(uuid);
+  if (!entry) {
+    const style = document.createElement('style');
+    style.textContent = `[data-upgrade-uuid="${cssEscape(uuid)}"]{display:none!important}`;
+    document.head.appendChild(style);
+    entry = { style, timer: null };
+    upgHidden.set(uuid, entry);
+  }
+  const e = entry;
+  const remove = () => { e.style.remove(); upgHidden.delete(uuid); };
+  if (e.timer != null) window.clearTimeout(e.timer);
+  e.timer = window.setTimeout(remove, delayMs);
+  return { reveal: () => { if (e.timer != null) window.clearTimeout(e.timer); remove(); } };
 }
 
 // B139: shake a card (a damaged base) with an amplitude proportional to the

@@ -10,7 +10,7 @@ import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider } from '@/app/_contexts/Game.context';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
 import { FrameAnimator } from '@/app/(app)/r/[slug]/FrameAnimator';
-import { usePlaybackBoard, createDwellStepper, type DwellStepper, PLAYBACK_SPEEDS } from '@/app/(app)/r/[slug]/playback';
+import { usePlaybackBoard, createDwellStepper, type DwellStepper, PLAYBACK_SPEEDS, PLAYBACK_SPEED_DEFAULT } from '@/app/(app)/r/[slug]/playback';
 import { computeFrameDwells, PLAYBACK_TICK_MS } from '@/app/(app)/r/[slug]/frameDwell';
 import { decodeReplay, collapseReplay, type Frame } from '@/lib/replayDecoder';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -71,7 +71,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
   const [startOriginal, setStartOriginal] = useState(startFrame);
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(PLAYBACK_SPEED_DEFAULT);
   const [copied, setCopied] = useState(false);
   // Reel chrome starts HIDDEN (immersive autoplay), reveals on tap / pause /
   // end. At the end we DON'T loop — we pause, show the chrome, and overlay an
@@ -85,7 +85,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
 
   const dwellsRef = useRef<number[]>([]);
   const playingRef = useRef(true);
-  const speedRef = useRef(1); speedRef.current = speed;
+  const speedRef = useRef(PLAYBACK_SPEED_DEFAULT); speedRef.current = speed;
   const barRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const controlsRowRef = useRef<HTMLDivElement>(null);

@@ -6,7 +6,7 @@ import type { Frame } from '@/lib/replayDecoder';
 import type { Chapter, ChapterKind } from '@/lib/replayChapters';
 import { ClipBoardPreview } from './ClipBoardPreview';
 import { computeFrameDwells, PLAYBACK_TICK_MS } from './frameDwell';
-import { PLAYBACK_SPEEDS } from './playback';
+import { PLAYBACK_SPEEDS, PLAYBACK_SPEED_DEFAULT } from './playback';
 
 // B136: the clip trim builder — a large modal over the replay viewer with its
 // OWN independent board (nested GameProvider; the underlying viewer board never
@@ -89,8 +89,8 @@ function ClipBuilderInner({
   const [lastHandle, setLastHandle] = useState<'start' | 'end'>('end'); // arrow keys nudge this one
   const [title, setTitle] = useState('');
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);          // preview speed, independent of the main board
-  const speedRef = useRef(1); speedRef.current = speed;
+  const [speed, setSpeed] = useState(PLAYBACK_SPEED_DEFAULT); // preview speed, independent of the main board
+  const speedRef = useRef(PLAYBACK_SPEED_DEFAULT); speedRef.current = speed;
   const dwells = useMemo(() => computeFrameDwells(frames), [frames]);
   const dwellsRef = useRef<number[]>(dwells); dwellsRef.current = dwells;
   const [busy, setBusy] = useState(false);

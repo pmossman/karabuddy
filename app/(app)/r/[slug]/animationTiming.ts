@@ -46,8 +46,14 @@ export const AMBUSH_TOTAL_MS = UNIT_PLAY_TOTAL_MS + LUNGE_MS;                   
 export const LEADER_DEPLOY_FULL_MS = LEADER_DEPLOY_TOTAL + VIGNETTE_LINGER_MS;  // 1710
 
 // A reading pause held after each animated beat finishes, before autoplay moves
-// on — so a beat lands and registers instead of advancing the instant it ends.
-export const READ_BUFFER_MS = 260;
+// on — the board sits STATIC for this long so each beat lands and registers as
+// a distinct moment instead of streaming continuously into the next animation.
+export const READ_BUFFER_MS = 520;
 
 // The dwell for an animated beat = its animation length + the read pause.
 export const dwellFor = (animationTotalMs: number): number => animationTotalMs + READ_BUFFER_MS;
+
+// An extra, more SUBSTANTIAL pause inserted at a player handoff — the board
+// holds on the previous player's result before the other player's action+
+// animations begin, so turns read as distinct rather than streaming together.
+export const PLAYER_HANDOFF_PAUSE_MS = 700;

@@ -161,7 +161,7 @@ describe('planFrameAnimations', () => {
     });
     // No bases → stage = midpoint of the from/discard centers.
     expect(is).toEqual([
-      { type: 'eventStage', uuid: 'ev', from: snap(0, 0), to: snap(200, 50), faceDown: false, stage: { x: 105, y: 30 } },
+      { type: 'eventStage', uuid: 'ev', from: snap(0, 0), to: snap(200, 50), faceDown: false, stage: { x: 105, y: 30 }, pile: false, faceUp: null },
     ]);
   });
 

@@ -38,7 +38,9 @@ export function extractFrameCards(state: any): { cards: Map<string, FrameCard>; 
     const leader = player.leader;
     if (leader?.uuid) {
       leaders.add(leader.uuid);
-      cards.set(leader.uuid, { zone: leader.zone || 'base', ctrl: leader.controllerId });
+      // B141: carry parentCardId/setId so the planner can spot a PILOT leader
+      // deploying as an upgrade onto a vehicle (parentCardId set), not as a unit.
+      cards.set(leader.uuid, { zone: leader.zone || 'base', ctrl: leader.controllerId, parentCardId: leader.parentCardId, setId: leader.setId });
     }
   }
   return { cards, leaders };
