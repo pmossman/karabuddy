@@ -8,7 +8,7 @@
 // FrameAnimator uses (animationTiming.ts) + a read buffer, so a frame can never
 // advance before its animation finishes at 1×. See animationTiming for why.
 import type { Frame } from '@/lib/replayDecoder';
-import { classifyStagedPlays, unitPlayUuids, extractAttacks } from './frameLog';
+import { classifyStagedPlays, unitPlayUuids, extractAttacks, extractFrameCards } from './frameLog';
 import {
   PLAYBACK_TICK_MS,
   EVENT_TOTAL_MS,
@@ -83,6 +83,35 @@ function resourcePileTotal(state: any): number {
   return n;
 }
 
+const isArena = (z?: string) => z === 'groundArena' || z === 'spaceArena';
+
+// THE ROOT-FIX SIGNAL: the longest animation the FrameAnimator's planner will
+// produce for this frame, derived from the BOARD DIFF (prev → cur) — the SAME
+// signal the planner animates off. The log-based classification below can't see
+// an action whose log line the collapse stripped (a deploy/play with empty
+// `newMessages`), so it under-budgets and autoplay advances mid-animation,
+// hard-cancelling the choreography. Diffing the board catches those:
+//   • a LEADER going base → arena            = leader deploy (incl. pilot)
+//   • a non-leader newly IN an arena         = a unit play (or an upgrade tuck)
+// Resourcing is already board-detected via the pile-size growth below. Returns
+// the max raw animation duration (pre read-buffer); 0 = no board animation.
+function boardAnimMs(prevState: any, curState: any): number {
+  const prev = extractFrameCards(prevState);
+  const cur = extractFrameCards(curState);
+  let ms = 0;
+  for (const u of cur.leaders) {
+    const pz = prev.cards.get(u)?.zone;
+    const nz = cur.cards.get(u)?.zone;
+    if (pz === 'base' && isArena(nz)) ms = Math.max(ms, LEADER_DEPLOY_FULL_MS);
+  }
+  for (const [u, info] of cur.cards) {
+    if (cur.leaders.has(u) || !isArena(info.zone)) continue;   // leaders handled above
+    if (isArena(prev.cards.get(u)?.zone)) continue;            // already on board = a move, not a play
+    ms = Math.max(ms, info.parentCardId ? UPGRADE_TOTAL_MS : UNIT_PLAY_TOTAL_MS);
+  }
+  return ms;
+}
+
 export function computeFrameDwells(frames: Frame[]): number[] {
   // Per-frame attacker uuids → detect a unit played-then-attacking (ambush).
   const attackersAt = frames.map((f) => new Set(extractAttacks(f.state).map((a) => a.attackerUuid)));
@@ -105,21 +134,28 @@ export function computeFrameDwells(frames: Frame[]): number[] {
     activeAt.push(held);
   }
 
+  // The dwell must outlast the LONGEST animation on the frame. We take the MAX
+  // over every signal (not a priority-pick) so a frame with concurrent beats —
+  // e.g. a leader deploy AND an attack — budgets for the longer one, and we OR
+  // together the log-based and board-diff signals so a stripped log can't
+  // under-budget (the board diff is the source of truth the planner animates off).
   const baseDwell = (f: Frame, i: number): number => {
     const msgs = (f.state as any)?.newMessages;
     const has = (re: RegExp) => Array.isArray(msgs) && msgs.some((m: any) =>
       Array.isArray(m?.message) && m.message.some((p: any) => typeof p === 'string' && re.test(p)));
-    const resourced = has(/resourced/i) || (i > 0 && resourceTotals[i] > resourceTotals[i - 1]);
+    let ms = 0;
     const { events, upgrades } = classifyStagedPlays(f.state);
-    if (events) return dwellFor(EVENT_TOTAL_MS);
-    if (upgrades) return dwellFor(UPGRADE_TOTAL_MS);
+    if (events) ms = Math.max(ms, EVENT_TOTAL_MS);
+    if (upgrades) ms = Math.max(ms, UPGRADE_TOTAL_MS);
     const units = unitPlayUuids(f.state);
-    if (units.length && attacksSoon(units, i)) return dwellFor(AMBUSH_TOTAL_MS);
-    if (resourced) return dwellFor(RESOURCE_TOTAL_MS);
-    if (has(/\bdeploy/i)) return dwellFor(LEADER_DEPLOY_FULL_MS);
-    if (has(/attacks/i)) return dwellFor(ATTACK_TOTAL_MS);
-    if (has(/plays /i)) return dwellFor(UNIT_PLAY_TOTAL_MS);
-    return PLAYBACK_TICK_MS;
+    if (units.length) ms = Math.max(ms, attacksSoon(units, i) ? AMBUSH_TOTAL_MS : UNIT_PLAY_TOTAL_MS);
+    if (has(/resourced/i) || (i > 0 && resourceTotals[i] > resourceTotals[i - 1])) ms = Math.max(ms, RESOURCE_TOTAL_MS);
+    if (has(/\bdeploy/i)) ms = Math.max(ms, LEADER_DEPLOY_FULL_MS);
+    if (has(/attacks/i)) ms = Math.max(ms, ATTACK_TOTAL_MS);
+    if (has(/plays /i)) ms = Math.max(ms, UNIT_PLAY_TOTAL_MS);
+    // Board diff — catches animations whose log the collapse stripped.
+    if (i > 0) ms = Math.max(ms, boardAnimMs(frames[i - 1].state, f.state));
+    return ms > 0 ? dwellFor(ms) : PLAYBACK_TICK_MS;
   };
 
   return frames.map((f, i) => {
