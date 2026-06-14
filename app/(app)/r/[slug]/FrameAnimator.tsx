@@ -5,7 +5,7 @@ import { useGame } from '@/app/_contexts/Game.context';
 import { extractFrameCards, extractAttacks, extractInteractions, extractEventPlays, extractBases, extractResourceCounts } from './frameLog';
 import { planFrameAnimations, type Snap, type Snapshot, type Intent } from './frameAnimationPlan';
 import { createBoardGeometry } from './boardGeometry';
-import { slide } from './animPrimitives';
+import { slide, enterFade, exitFade } from './animPrimitives';
 // B138: animation durations live in one shared module so the autoplay/clip
 // dwell (frameDwell.ts) is derived from the SAME numbers — see animationTiming.
 import {
@@ -311,28 +311,12 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       // B147 / ADR 0008: first kind migrated onto the primitive vocabulary.
       slide(ctx, { uuid: intent.uuid, from: intent.from, to: intent.to, delay: intent.delay });
       return;
-    case 'enter': {
-      const liveEl = findCard(intent.uuid);
-      if (!liveEl) return;
-      hide(liveEl);
-      track(
-        liveEl.animate([{ opacity: 0, transform: 'scale(0.82)' }, { opacity: 1, transform: 'scale(1)' }],
-          { duration: DURATION, delay: intent.delay, fill: 'both', easing: EASING }),
-        () => show(liveEl),
-      );
+    case 'enter':
+      enterFade(ctx, { uuid: intent.uuid, delay: intent.delay });
       return;
-    }
-    case 'exit': {
-      const { rect: o, delay } = intent;
-      const clone = makeClone(o.html, rel(o), o.w, o.h);
-      overlay.appendChild(clone);
-      track(
-        clone.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.82)' }],
-          { duration: DURATION, delay, fill: 'backwards', easing: EASING }),
-        () => clone.remove(),
-      );
+    case 'exit':
+      exitFade(ctx, { from: intent.rect, delay: intent.delay });
       return;
-    }
     case 'leaderFlip': {
       // Crossfade between the two faces, each at its OWN natural size (rendering
       // one face's art in the other's box is what stretched it). The unit side

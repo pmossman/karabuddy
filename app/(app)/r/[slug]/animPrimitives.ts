@@ -45,3 +45,31 @@ export function slide(stage: Stage, p: { uuid: string; from: Snap; to: Snap; del
     () => { el.remove(); stage.show(live); },
   );
 }
+
+// ENTER (fade): a card materializing in place (e.g. a created token). Animates
+// the LIVE element — no clone — fading + scaling up from 0.82.
+export function enterFade(stage: Stage, p: { uuid: string; delay: number }): void {
+  const live = stage.findCard(p.uuid);
+  if (!live) return;
+  stage.hide(live);
+  stage.track(
+    live.animate(
+      [{ opacity: 0, transform: 'scale(0.82)' }, { opacity: 1, transform: 'scale(1)' }],
+      { duration: DURATION, delay: p.delay, fill: 'both', easing: EASING },
+    ),
+    () => stage.show(live),
+  );
+}
+
+// EXIT (fade): a card leaving the board (defeated / bounced). Clones its OLD
+// rect and fades + shrinks it out (the live card is already gone from the frame).
+export function exitFade(stage: Stage, p: { from: Snap; delay: number }): void {
+  const el = stage.clone(p.from);
+  stage.track(
+    el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.82)' }],
+      { duration: DURATION, delay: p.delay, fill: 'backwards', easing: EASING },
+    ),
+    () => el.remove(),
+  );
+}
