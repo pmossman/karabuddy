@@ -29,6 +29,12 @@ test('create a tournament, self-register, and add a guest entrant', async ({ pag
   await expect(page.getByTestId('entrant-row')).toHaveCount(1);
   await expect(page.getByText('You', { exact: true })).toBeVisible();
 
+  // B145: edit your own deck inline from your row → opens the deck modal.
+  await page.getByTestId('entrant-row').filter({ hasText: 'You' }).getByRole('button', { name: 'Add deck' }).click();
+  await expect(page.getByTestId('deck-modal')).toBeVisible();
+  await page.getByTestId('deck-modal').getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByTestId('deck-modal')).toHaveCount(0);
+
   // Organizer adds a guest (player without a karabuddy account) via the modal.
   await page.getByRole('button', { name: '+ Add guest player' }).click();
   await expect(page.getByTestId('guest-modal')).toBeVisible();
@@ -184,6 +190,9 @@ test('unregister removes the entrant while in setup', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Register', exact: true }).click();
   await expect(page.getByTestId('entrant-row')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Unregister' }).click();
+  // B145: Unregister lives on your row + confirms before removing.
+  await page.getByTestId('entrant-row').getByRole('button', { name: 'Unregister' }).click();
+  await expect(page.getByTestId('confirm-modal')).toBeVisible();
+  await page.getByTestId('confirm-modal').getByRole('button', { name: 'Unregister' }).click();
   await expect(page.getByTestId('entrant-row')).toHaveCount(0);
 });

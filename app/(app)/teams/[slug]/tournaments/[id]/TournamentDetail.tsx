@@ -355,6 +355,10 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   const [deckLink, setDeckLink] = useState('');
   // null = closed; 'add' = new-guest modal; an entrant = editing that guest.
   const [guestModal, setGuestModal] = useState<'add' | DetailEntrant | null>(null);
+  // B145: the viewer editing their OWN deck / confirming unregister (both inline
+  // from their entrant row).
+  const [deckModalOpen, setDeckModalOpen] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [copied, setCopied] = useState<string | null>(null); // feedback label
 
   // B126: get-or-create the invite code, then copy a link to the clipboard.
@@ -404,10 +408,6 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
     () => setDeckLink('')
   );
   const leave = () => act(() => fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'DELETE' }));
-  const submitDeck = () => act(() =>
-    fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deckLink: deckLink.trim() }) }),
-    () => setDeckLink('')
-  );
   const dropSelf = () => act(() =>
     fetch(`${base}/entrants/${viewer.entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dropped: true }) })
   );
@@ -446,6 +446,18 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
             ) : (
               <span style={{ fontSize: 11, color: '#4a4e56' }}>no deck</span>
             )}
+            {/* B145: manage your OWN entry inline on your row while registration
+                is open — edit deck (modal) + unregister (confirm modal). */}
+            {inSetup && e.id === viewer.entrantId && (
+              <>
+                <button type="button" onClick={() => setDeckModalOpen(true)} style={miniGhostStyle}>
+                  {e.hasDeck ? 'Edit deck' : 'Add deck'}
+                </button>
+                <button type="button" onClick={() => setConfirmLeave(true)} disabled={busy} style={dangerMiniStyle}>
+                  Unregister
+                </button>
+              </>
+            )}
             {/* Organizer manages a guest's name + decklist via the modal —
                 anytime (guests can't fix their own list). */}
             {viewer.isOrganizer && !e.userId && t.status !== 'complete' && (
@@ -476,31 +488,24 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
 
       {/* Self-registration / decklist controls (members, while setup). Guests
           are added via a separate modal so the two flows never read as one form. */}
-      {inSetup && (
+      {inSetup && (!myEntrant || viewer.isOrganizer) && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input
-              type="url"
-              value={deckLink}
-              onChange={(e) => setDeckLink(e.target.value)}
-              placeholder="Your decklist link (swubase, swustats, my-swu, …) — optional"
-              style={{ ...inputStyle, flex: 1, minWidth: 240 }}
-            />
-            {!myEntrant ? (
+          {/* Register is for viewers who haven't joined yet; once registered, the
+              deck + unregister controls live on the viewer's own row above. */}
+          {!myEntrant && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                type="url"
+                value={deckLink}
+                onChange={(e) => setDeckLink(e.target.value)}
+                placeholder="Your decklist link (swubase, swustats, my-swu, …) — optional"
+                style={{ ...inputStyle, flex: 1, minWidth: 240 }}
+              />
               <button type="button" onClick={join} disabled={busy} style={primaryButtonStyle}>
                 {busy ? 'Working…' : deckLink.trim() ? 'Register with deck' : 'Register'}
               </button>
-            ) : (
-              <>
-                <button type="button" onClick={submitDeck} disabled={busy || !deckLink.trim()} style={primaryButtonStyle}>
-                  {myEntrant.hasDeck ? 'Replace my deck' : 'Submit my deck'}
-                </button>
-                <button type="button" onClick={leave} disabled={busy} style={ghostButtonStyle}>
-                  Unregister
-                </button>
-              </>
-            )}
-          </div>
+            </div>
+          )}
 
           {viewer.isOrganizer && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -528,7 +533,162 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
           onSaved={async () => { setGuestModal(null); await onChanged(); }}
         />
       )}
+      {deckModalOpen && myEntrant && (
+        <DeckModal
+          base={base}
+          entrant={myEntrant}
+          onClose={() => setDeckModalOpen(false)}
+          onSaved={async () => { setDeckModalOpen(false); await onChanged(); }}
+        />
+      )}
+      {confirmLeave && myEntrant && (
+        <ConfirmModal
+          title="Unregister?"
+          message={`Remove your registration from ${t.name}? You'll lose your spot${myEntrant.hasDeck ? ' and submitted deck' : ''}. You can register again while registration is open.`}
+          confirmLabel="Unregister"
+          busy={busy}
+          onConfirm={async () => { await leave(); setConfirmLeave(false); }}
+          onClose={() => setConfirmLeave(false)}
+        />
+      )}
     </section>
+  );
+}
+
+// B145: a generic "are you sure?" confirmation modal (destructive confirm).
+function ConfirmModal({
+  title, message, confirmLabel, busy, onConfirm, onClose,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  busy: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      data-testid="confirm-modal-overlay"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', padding: 16,
+      }}
+    >
+      <div
+        data-testid="confirm-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#11141a', border: '1px solid #2e333c', borderRadius: 12,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', width: 'min(420px, 100%)',
+          padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>{title}</h3>
+          <button type="button" aria-label="Close" onClick={onClose} style={{ background: 'transparent', border: 0, color: '#a0a8b8', fontSize: 16, cursor: 'pointer', padding: 4 }}>✕</button>
+        </div>
+        <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5 }}>{message}</p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} style={ghostButtonStyle}>Cancel</button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            style={{ background: 'transparent', border: '1px solid rgba(255,107,107,0.5)', color: '#ff8a8a', fontSize: 12, fontWeight: 700, padding: '8px 16px', borderRadius: 6, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}
+          >
+            {busy ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// B145: a viewer changing their OWN decklist while registration is open — a
+// deck-link-only modal (no name field; members are named by their account).
+// PATCHes the entrant deckLink, which the API allows for the self entrant while
+// the tournament is in setup.
+function DeckModal({
+  base, entrant, onClose, onSaved,
+}: {
+  base: string;
+  entrant: DetailEntrant;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [link, setLink] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (busy || !link.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${base}/entrants/${entrant.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deckLink: link.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) { setError(body.error || `failed (${res.status})`); return; }
+      await onSaved();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      data-testid="deck-modal-overlay"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', padding: 16,
+      }}
+    >
+      <div
+        data-testid="deck-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#11141a', border: '1px solid #2e333c', borderRadius: 12,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', width: 'min(480px, 100%)',
+          padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>
+            {entrant.hasDeck ? 'Replace your deck' : 'Add your deck'}
+          </h3>
+          <button type="button" aria-label="Close" onClick={onClose} style={{ background: 'transparent', border: 0, color: '#a0a8b8', fontSize: 16, cursor: 'pointer', padding: 4 }}>✕</button>
+        </div>
+        <label style={modalLabelStyle}>
+          Decklist link <span style={{ color: '#4a4e56', textTransform: 'none', letterSpacing: 0 }}>(swubase, swustats, my-swu, …)</span>
+          <input
+            type="url"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+            placeholder={entrant.hasDeck ? 'Paste a new link to replace your deck' : 'https://…'}
+            style={inputStyle}
+            autoFocus
+          />
+        </label>
+        {entrant.hasDeck && !link.trim() && (
+          <span style={{ fontSize: 11, color: '#6c7588' }}>Current deck: {entrant.deckName || 'registered'} (kept unless you paste a new link)</span>
+        )}
+        {error && <div style={{ color: '#ff8a8a', fontSize: 12 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} style={ghostButtonStyle}>Cancel</button>
+          <button type="button" onClick={save} disabled={busy || !link.trim()} style={primaryButtonStyle}>
+            {busy ? 'Saving…' : 'Save deck'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
