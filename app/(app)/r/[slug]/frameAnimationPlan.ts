@@ -359,10 +359,15 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
   // upgrade with parentCardId) lands ATTACHED to a vehicle, so it has no own
   // rect in `next` (it renders as the vehicle's upgrade strip). Detect it here
   // (the exit loop then skips it via `staged`) and stage a rise-then-tuck.
+  // B149: require the leader to actually BE a deployed arena upgrade THIS frame
+  // (current zone is an arena) — not merely lingering on base with a stale
+  // parentCardId. A pilot whose host was bounced (e.g. Poe + Beguile) returns to
+  // base but karabast keeps its parentCardId set, which otherwise re-fired the
+  // deploy every subsequent frame (onto the host's now-in-hand rect).
   for (const uuid of leaders) {
     if (staged.has(uuid)) continue;
     const info = cards.get(uuid);
-    if (!info?.parentCardId || prevZones.get(uuid) !== 'base') continue;
+    if (!info?.parentCardId || prevZones.get(uuid) !== 'base' || !isArena(info.zone)) continue;
     const from = prev.get(uuid);
     const unit = next.get(info.parentCardId) ?? prev.get(info.parentCardId);
     if (!from || !unit) continue;

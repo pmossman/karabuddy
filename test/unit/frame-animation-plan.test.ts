@@ -292,6 +292,34 @@ describe('planFrameAnimations', () => {
     expect(u.faceUp).toMatch(/LOF.*091/);
   });
 
+  it('stages a PILOT deploy when a leader goes base → arena upgrade', () => {
+    const is = plan({
+      prev: snapshot({ L: snap(0, 0), veh: snap(100, 100, 'V', 20, 28) }),
+      next: snapshot({ veh: snap(100, 100, 'V', 20, 28) }), // L renders as the strip, no own rect
+      prevZones: new Map([['L', 'base']]),
+      leaders: new Set(['L']),
+      cards: cardsOf({
+        L: { zone: 'groundArena', ctrl: 'p1', parentCardId: 'veh', setId: { set: 'ASH', number: 1 } },
+        veh: { zone: 'groundArena', ctrl: 'p1' },
+      }),
+    });
+    expect(is.some((i) => i.type === 'pilotDeploy' && (i as any).uuid === 'L')).toBe(true);
+  });
+
+  it('B149: a pilot leader LINGERING on base with a stale parentCardId does NOT re-deploy', () => {
+    // Poe + Beguile: the host vehicle is bounced to hand, Poe returns to base,
+    // but karabast keeps Poe's parentCardId set. The deploy must NOT fire every
+    // subsequent frame just because (parentCardId set + prevZone base) holds.
+    const is = plan({
+      prev: snapshot({ L: snap(0, 0) }),
+      next: snapshot({ L: snap(0, 0) }),
+      prevZones: new Map([['L', 'base']]),
+      leaders: new Set(['L']),
+      cards: cardsOf({ L: { zone: 'base', ctrl: 'p1', parentCardId: 'veh' } }), // stale parent, still on base
+    });
+    expect(is.some((i) => i.type === 'pilotDeploy')).toBe(false);
+  });
+
   it('does NOT exit a defeated attacker — its lunge owns the visual', () => {
     const is = plan({
       prev: snapshot({ atk: snap(0, 0), tgt: snap(50, 0, 'T1') }),
