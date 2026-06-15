@@ -126,6 +126,8 @@ interface Props {
   onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
   // B101: open the per-game resourcing report (analyzed in the viewer).
   onOpenResourcing?: () => void;
+  // B150: open the sideboard-changes splash (swaps vs the previous game).
+  onOpenSideboard?: () => void;
   // B138: clips already created on this replay (desktop Clips section).
   clips?: ClipSummary[];
 }
@@ -162,7 +164,7 @@ const loadStoredSidebarWidth = (): number => {
   }
 };
 
-export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, anonymize, series, clips }: Props) {
+export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, onOpenSideboard, anonymize, series, clips }: Props) {
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
@@ -1138,8 +1140,21 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {/* B149: matchup-info actions — the resourcing report (moved here out of
           the review panel) above View decks. Desktop only; mobile surfaces both
           in the ⓘ MatchupPanel. */}
-      {!isMobile && (onOpenResourcing || (decks && Object.keys(decks).length > 0)) && (
+      {!isMobile && (onOpenResourcing || onOpenSideboard || (decks && Object.keys(decks).length > 0)) && (
         <section style={{ borderTop: '1px solid #2e333c', padding: '10px 22px', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {onOpenSideboard && (
+            <button
+              type="button"
+              onClick={onOpenSideboard}
+              style={{
+                background: 'transparent', border: '1px solid #2e333c', borderRadius: 4,
+                padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#a7d2ff',
+                cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left',
+              }}
+            >
+              ⇄ Sideboard changes
+            </button>
+          )}
           {onOpenResourcing && (
             <button
               type="button"

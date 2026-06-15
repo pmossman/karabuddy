@@ -10,6 +10,7 @@ import { GameProvider, useGame } from '@/app/_contexts/Game.context';
 import { FrameAnimator } from './FrameAnimator';
 import { computeActionStops, nextActionStop } from './actionStops';
 import { EndGameSummary } from './EndGameSummary';
+import { SideboardSplash } from './SideboardSplash';
 import { computeEndGameStats } from '@/lib/endGameStats';
 import { JumpToMenu } from './JumpToMenu';
 import { PovBubble } from './PovBubble';
@@ -23,6 +24,7 @@ import { mapFrameIndex } from '@/lib/replaySignature';
 import { TagSidebar } from './TagSidebar';
 import { StepModeOverlay, MobileControlsFab, MatchupPanel } from './MobileLandscapePanels';
 import type { SeriesInfo } from './SeriesNav';
+import type { SideboardChanges } from '@/lib/sideboardDiff';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import { ResourcingModal } from './ResourcingModal';
 import { ClipBubble } from './ClipBubble';
@@ -97,19 +99,22 @@ interface Props {
   // B129: the games of this replay's Bo3 series (identity-entitled viewers
   // only) — drives the Game-N title suffix + the series hop pills.
   series?: SeriesInfo | null;
+  // B150: sideboard swaps vs the previous game in this lobby (entitled viewers
+  // only) — drives the decks-modal Sideboard panel + the frame-0 splash.
+  sideboard?: SideboardChanges | null;
   // B133: the owner published this replay — anonymized viewers still fetch
   // tags (the server serves them redacted).
   publicComments?: boolean;
 }
 
-export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, publicComments }: Props) {
+export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, publicComments }: Props) {
   return (
     <ThemeContextProvider>
       <UserProvider>
         <CosmeticsProvider>
           <PopupProvider>
             <GameProvider>
-              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} publicComments={publicComments} />
+              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} sideboard={sideboard} publicComments={publicComments} />
             </GameProvider>
           </PopupProvider>
         </CosmeticsProvider>
@@ -132,7 +137,7 @@ function InfoIcon() {
   );
 }
 
-function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, publicComments }: Props) {
+function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, publicComments }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
   // B112: double-sided replay. `decoded` is always the CANONICAL perspective
@@ -444,6 +449,16 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   const atEnd = !!frames && frames.length > 1 && currentIndex >= frames.length - 1;
   useEffect(() => { if (!atEnd) setSummaryDismissed(false); }, [atEnd]);
   const showSummary = atEnd && !summaryDismissed && endStats != null;
+
+  // B150: sideboard splash — auto-shown at frame 0 of a post-sideboard game (a
+  // game with swaps vs the previous one), re-shown on returning to frame 0, and
+  // openable on demand from the "⇄ Sideboard" button. Mirrors the summary model.
+  const sideboardHasChanges = !!sideboard && sideboard.players.some((p) => p.changed);
+  const [sideboardDismissed, setSideboardDismissed] = useState(false);
+  const [sideboardOpen, setSideboardOpen] = useState(false);
+  const atStart = currentIndex === 0;
+  useEffect(() => { if (!atStart) setSideboardDismissed(false); }, [atStart]);
+  const showSideboard = !!sideboard && (sideboardOpen || (atStart && sideboardHasChanges && !sideboardDismissed));
 
   // B104: how long action-playback should dwell on each frame before advancing
   // — longer for frames with an attack, so the lunge→death→reflow choreography
@@ -914,6 +929,14 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 onClose={() => setSummaryDismissed(true)}
               />
             )}
+            {showSideboard && sideboard && (
+              <SideboardSplash
+                sideboard={sideboard}
+                currentGameNumber={series?.current ?? null}
+                localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
+                onClose={() => { setSideboardOpen(false); setSideboardDismissed(true); }}
+              />
+            )}
             {/* B128: the flip curtain — a snappy dip to black over ONLY the
                 gameboard (sidebar + floating controls stay up) that masks the
                 board mirroring while the POV swaps underneath. */}
@@ -976,6 +999,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         armedTeams={armedTeams}
         onArmedTeamsChange={setArmedTeams}
         onOpenResourcing={() => setResourcingOpen(true)}
+        onOpenSideboard={sideboard ? () => setSideboardOpen(true) : undefined}
         anonymize={anonymize}
         series={series ?? null}
         clips={clips}
@@ -1218,6 +1242,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           series={series ?? null}
           clips={clips}
           onOpenResourcing={() => setResourcingOpen(true)}
+          onOpenSideboard={sideboard ? () => setSideboardOpen(true) : undefined}
         />
       )}
       </div>

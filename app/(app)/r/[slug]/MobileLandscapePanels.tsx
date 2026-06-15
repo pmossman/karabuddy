@@ -527,6 +527,7 @@ export function MatchupPanel({
   series,
   clips,
   onOpenResourcing,
+  onOpenSideboard,
 }: {
   open: boolean;
   onClose: () => void;
@@ -551,6 +552,8 @@ export function MatchupPanel({
   clips?: ClipSummary[];
   // B149: open the resourcing report (moved here from the review panel).
   onOpenResourcing?: () => void;
+  // B150: open the sideboard-changes splash (swaps vs the previous game).
+  onOpenSideboard?: () => void;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
   const players = (replay.players as any[]) || [];
@@ -663,6 +666,26 @@ export function MatchupPanel({
           <MatchupPlayer player={p2} winners={replay.winners} />
         </div>
 
+        {onOpenSideboard && (
+          <button
+            type="button"
+            onClick={() => { onClose(); onOpenSideboard(); }}
+            style={{
+              background: 'transparent',
+              border: '1px solid #2e333c',
+              borderRadius: 4,
+              padding: '8px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#a7d2ff',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textAlign: 'left',
+            }}
+          >
+            ⇄ Sideboard changes
+          </button>
+        )}
         {onOpenResourcing && (
           <button
             type="button"

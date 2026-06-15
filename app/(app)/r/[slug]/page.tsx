@@ -12,6 +12,7 @@ import { auth } from '@/auth';
 import { canViewAltPerspective, canViewReplayIdentities } from '@/lib/altPerspective';
 import { verifyMoment } from '@/lib/shareToken';
 import { ReplayViewer } from './ReplayViewer';
+import { sideboardDiff } from '@/lib/sideboardDiff';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,46 @@ async function seriesFor(row: { slug: string; match: unknown }, anonymize: boole
   const current = games.find((g) => g.slug === row.slug)?.gameNumber;
   if (!current) return null;
   return { current, games };
+}
+
+// B150: sideboard changes from the PREVIOUS game in this lobby (same opponent,
+// same match). Per player, the deck diff (cards in/out). Exact for the recording
+// player (full deck captured each game); the opponent's deck is masked, so they
+// just don't appear. Entitlement-gated like series nav (decks already null for
+// anonymized viewers). Null on the first game / no diffable player.
+const loadLobbyDecks = cache(async (lobbyId: string) =>
+  getDb()
+    .select({ slug: replays.slug, decks: replays.decks })
+    .from(replays)
+    .where(sql`${replays.match}->>'lobbyId' = ${lobbyId}`)
+    .orderBy(asc(replays.createdAt)),
+);
+async function loadSideboardChanges(row: { slug: string; match: unknown; decks: unknown }, anonymize: boolean) {
+  const lobbyId = (row.match as any)?.lobbyId;
+  if (anonymize || typeof lobbyId !== 'string' || !lobbyId) return null;
+  const games = await loadLobbyDecks(lobbyId);
+  const idx = games.findIndex((g) => g.slug === row.slug);
+  if (idx < 1) return null; // first game (or not found) → nothing to diff against
+  const prevDecks = (games[idx - 1].decks as any) || {};
+  const curDecks = (row.decks as any) || {};
+
+  const players = [];
+  for (const pid of Object.keys(curDecks)) {
+    const cur = curDecks[pid], prev = prevDecks[pid];
+    if (!prev) continue;
+    const diff = sideboardDiff(prev.deck ?? null, cur.deck ?? null);
+    if (!diff) continue; // a deck is masked one/both games
+    players.push({
+      playerId: pid,
+      username: cur.username ?? prev.username ?? null,
+      leader: cur.leader ?? null,
+      in: diff.in,
+      out: diff.out,
+      changed: diff.changed,
+    });
+  }
+  if (players.length === 0) return null;
+  return { fromGameNumber: idx, players };
 }
 
 // B113: per-frame Open Graph so a shared `?f=` link unfurls into the moment card
@@ -136,6 +177,8 @@ export default async function ReplayPage({ params }: PageProps) {
 
   // B129: series hop + "Game N" title for the games of the same Bo3.
   const series = await seriesFor(row, anonymize);
+  // B150: sideboard changes from the previous game (entitled viewers only).
+  const sideboard = await loadSideboardChanges({ slug: row.slug, match: row.match, decks: (row as any).decks }, anonymize);
 
   const replay = {
     ...row,
@@ -153,5 +196,5 @@ export default async function ReplayPage({ params }: PageProps) {
   // GET /api/replays/[slug]/tags so the server can scope them to the
   // viewer (own + team-scoped only). SSR'ing all tags would leak other
   // teams' / others' personal comments into the initial HTML.
-  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} publicComments={!!(row as any).publicAt} />;
+  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} sideboard={sideboard} publicComments={!!(row as any).publicAt} />;
 }
