@@ -4,18 +4,19 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, replayTeamShares } from '@/lib/schema';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
-import { getTeamMembership } from '@/lib/teamSurface';
 import { notifyTeamReview } from '@/lib/reviewNotify';
 
 export const runtime = 'nodejs';
 
-// POST /api/replays/[slug]/review — B135: flag (or clear) a replay's share to a
-// team for review.
+// POST /api/replays/[slug]/review — B135/B149: REQUEST (or cancel) a replay's
+// review by a team.
 //   body: { teamSlug, requested: boolean }
 //   requested=true  → REQUEST review. Owner-only; the replay must already be
 //                     shared with the team (the queue lives off the share row).
-//   requested=false → MARK REVIEWED / un-request. Owner OR any member of the
-//                     team (a collaborative queue — whoever reviews closes it).
+//   requested=false → CANCEL the request. Owner-only (B149: this is the ask, not
+//                     the completion — members "mark reviewed" via /reviewed,
+//                     which leaves a durable per-user mark and keeps the request
+//                     open for more eyes).
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
@@ -42,21 +43,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     return NextResponse.json({ ok: false, error: 'replay is not shared with this team' }, { status: 400 });
   }
 
+  // B149: requesting AND cancelling are both the owner's call (the request is
+  // the ask; members complete it via per-user marks on /reviewed).
   const isOwner = canMutateReplay(replay, authContextFromRequest(req, userId));
-  if (requested) {
-    // Requesting review is the uploader's call.
-    if (!isOwner) return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
-  } else {
-    // Clearing (mark reviewed) — the owner, or any member of the team.
-    const member = userId ? await getTeamMembership(teamSlug, userId) : null;
-    if (!isOwner && !member) {
-      return NextResponse.json({ ok: false, error: 'must be the owner or a team member' }, { status: 403 });
-    }
-  }
+  if (!isOwner) return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
 
   await db
     .update(replayTeamShares)
-    .set({ reviewRequestedAt: requested ? new Date() : null })
+    .set({
+      reviewRequestedAt: requested ? new Date() : null,
+      reviewRequestedBy: requested ? userId : null,
+    })
     .where(and(eq(replayTeamShares.replaySlug, slug), eq(replayTeamShares.teamSlug, teamSlug)));
 
   // B144: best-effort Discord post (review added/cleared) — never blocks the write.

@@ -24,7 +24,13 @@ export function formatReviewMessage(opts: {
 }): string {
   return opts.added
     ? `🔍 **${opts.matchup}** added to **${opts.teamName}**'s review queue by **${opts.actorName}** — ${opts.url}`
-    : `✅ **${opts.matchup}** marked reviewed in **${opts.teamName}** by **${opts.actorName}** — ${opts.url}`;
+    : `🗑️ **${opts.matchup}** review request cleared in **${opts.teamName}** by **${opts.actorName}** — ${opts.url}`;
+}
+
+// B149: a member left their "I reviewed this" mark — the request STAYS open
+// (more eyes welcome), so this is distinct from clearing the request.
+export function formatReviewedByMessage(opts: { matchup: string; teamName: string; actorName: string; url: string }): string {
+  return `✅ **${opts.actorName}** reviewed **${opts.matchup}** in **${opts.teamName}** — ${opts.url}`;
 }
 
 // Build the "Leader vs Leader" matchup (the uploader's side first), preferring a
@@ -60,5 +66,32 @@ export async function notifyTeamReview(opts: {
     }));
   } catch (err) {
     console.error('[karabuddy] team review notify failed:', err);
+  }
+}
+
+// B149: post when a member marks a replay reviewed (the request stays open).
+export async function notifyReviewMark(opts: {
+  replaySlug: string;
+  teamSlug: string;
+  actingUserId: string | null;
+}): Promise<void> {
+  try {
+    const channel = await teamChannelFor(opts.teamSlug, 'review');
+    if (!channel) return;
+    const db = getDb();
+    const [replay] = await db.select().from(replays).where(eq(replays.slug, opts.replaySlug)).limit(1);
+    if (!replay) return;
+    const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.slug, opts.teamSlug)).limit(1);
+    const actor = opts.actingUserId
+      ? (await db.select({ name: users.name }).from(users).where(eq(users.id, opts.actingUserId)).limit(1))[0]?.name
+      : null;
+    await postToChannel(channel, formatReviewedByMessage({
+      matchup: matchupOf(replay),
+      teamName: team?.name ?? opts.teamSlug,
+      actorName: actor ?? 'Someone',
+      url: `${publicUrl()}/r/${opts.replaySlug}`,
+    }));
+  } catch (err) {
+    console.error('[karabuddy] review-mark notify failed:', err);
   }
 }

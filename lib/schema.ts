@@ -358,9 +358,12 @@ export const replayTeamShares = pgTable(
       .references(() => users.id, { onDelete: 'set null' as any }),
     sharedAt: timestamp('shared_at', { withTimezone: true }).notNull().defaultNow(),
     // B135: the uploader flagged this replay for review by this team. Null =
-    // not requested; a timestamp = requested at. Anyone on the team clears it
-    // (mark reviewed) → null. Drives the team's Review-queue tab.
+    // not requested; a timestamp = requested at. B149/ADR 0009: this now
+    // PERSISTS through review (it's the ask, not the completion — reviewer marks
+    // live in replay_reviews); only the owner sets/cancels it.
     reviewRequestedAt: timestamp('review_requested_at'),
+    // B149: who requested the review — drives the requester's "my requests" surface.
+    reviewRequestedBy: text('review_requested_by').references(() => users.id, { onDelete: 'set null' as any }),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.replaySlug, t.teamSlug] }),
@@ -370,6 +373,55 @@ export const replayTeamShares = pgTable(
 );
 
 export type ReplayTeamShare = typeof replayTeamShares.$inferSelect;
+
+// B149 / ADR 0009: a reviewer's explicit "I reviewed this" mark — one row per
+// (replay, team, reviewer). Replaces the single vanishing boolean; marks
+// accumulate ("reviewed by N") and never wipe the request. Per-team, mirroring
+// the per-team request model.
+export const replayReviews = pgTable(
+  'replay_reviews',
+  {
+    id: text('id').primaryKey(),
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    teamSlug: text('team_slug')
+      .notNull()
+      .references(() => teams.slug, { onDelete: 'cascade' }),
+    reviewerUserId: text('reviewer_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reviewedAt: timestamp('reviewed_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    unique: uniqueIndex('replay_reviews_unique').on(t.replaySlug, t.teamSlug, t.reviewerUserId),
+    teamIdx: index('replay_reviews_team_idx').on(t.teamSlug),
+    replayIdx: index('replay_reviews_replay_idx').on(t.replaySlug),
+    reviewerIdx: index('replay_reviews_reviewer_idx').on(t.reviewerUserId),
+  })
+);
+
+export type ReplayReview = typeof replayReviews.$inferSelect;
+
+// B149 / ADR 0009: per-user last-viewed timestamp, for the "new tags since you
+// last looked" marker in the viewer's review panel. Upserted on each open.
+export const replayViews = pgTable(
+  'replay_views',
+  {
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    viewedAt: timestamp('viewed_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.replaySlug, t.userId] }),
+  })
+);
+
+export type ReplayView = typeof replayViews.$inferSelect;
 
 // B136: replay clips — a saved [start,end] frame range of a replay with its own
 // shareable slug (the dedicated reel viewer at /c/<slug>). Frames are stored in
