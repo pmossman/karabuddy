@@ -1217,6 +1217,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           anonymize={anonymize}
           series={series ?? null}
           clips={clips}
+          onOpenResourcing={() => setResourcingOpen(true)}
         />
       )}
       </div>

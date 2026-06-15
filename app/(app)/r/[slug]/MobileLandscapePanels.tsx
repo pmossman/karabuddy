@@ -526,6 +526,7 @@ export function MatchupPanel({
   anonymize,
   series,
   clips,
+  onOpenResourcing,
 }: {
   open: boolean;
   onClose: () => void;
@@ -548,6 +549,8 @@ export function MatchupPanel({
   series?: SeriesInfo | null;
   // B138: clips already created on this replay → a Clips section in the panel.
   clips?: ClipSummary[];
+  // B149: open the resourcing report (moved here from the review panel).
+  onOpenResourcing?: () => void;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
   const players = (replay.players as any[]) || [];
@@ -660,6 +663,26 @@ export function MatchupPanel({
           <MatchupPlayer player={p2} winners={replay.winners} />
         </div>
 
+        {onOpenResourcing && (
+          <button
+            type="button"
+            onClick={onOpenResourcing}
+            style={{
+              background: 'transparent',
+              border: '1px solid #2e333c',
+              borderRadius: 4,
+              padding: '8px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#a7d2ff',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textAlign: 'left',
+            }}
+          >
+            ⚡ Resourcing report
+          </button>
+        )}
         {decks && Object.keys(decks).length > 0 && (
           <button
             type="button"

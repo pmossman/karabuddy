@@ -1015,11 +1015,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         <FooterBtn variant="outline" onClick={() => setFormOpen((v) => !v)} fullWidth>
           + Tag this frame
         </FooterBtn>
-        {onOpenResourcing && (
-          <FooterBtn variant="ghost" onClick={onOpenResourcing} fullWidth>
-            ⚡ Resourcing report
-          </FooterBtn>
-        )}
         {formOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: 'rgba(77, 157, 255, 0.08)', border: '1px solid rgba(77, 157, 255, 0.3)', borderRadius: 6 }}>
             <div style={{ fontSize: 11, color: '#a0a8b8', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1140,27 +1135,37 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {/* B42 / B64 / B66: deck snapshot launcher. Hidden on ANY mobile
           — the MatchupPanel (left/top) owns the View-decks button so
           the drawer stays slim and dedicated to discussion. */}
-      {decks && Object.keys(decks).length > 0 && !isMobile && (
-        <section style={{ borderTop: '1px solid #2e333c', padding: '10px 22px', flex: '0 0 auto' }}>
-          <button
-            type="button"
-            onClick={() => setDecksOpen(true)}
-            style={{
-              background: 'transparent',
-              border: '1px solid #2e333c',
-              borderRadius: 4,
-              padding: '8px 12px',
-              fontSize: 12,
-              fontWeight: 600,
-              color: '#a7d2ff',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              width: '100%',
-              textAlign: 'left',
-            }}
-          >
-            View decks →
-          </button>
+      {/* B149: matchup-info actions — the resourcing report (moved here out of
+          the review panel) above View decks. Desktop only; mobile surfaces both
+          in the ⓘ MatchupPanel. */}
+      {!isMobile && (onOpenResourcing || (decks && Object.keys(decks).length > 0)) && (
+        <section style={{ borderTop: '1px solid #2e333c', padding: '10px 22px', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {onOpenResourcing && (
+            <button
+              type="button"
+              onClick={onOpenResourcing}
+              style={{
+                background: 'transparent', border: '1px solid #2e333c', borderRadius: 4,
+                padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#a7d2ff',
+                cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left',
+              }}
+            >
+              ⚡ Resourcing report
+            </button>
+          )}
+          {decks && Object.keys(decks).length > 0 && (
+            <button
+              type="button"
+              onClick={() => setDecksOpen(true)}
+              style={{
+                background: 'transparent', border: '1px solid #2e333c', borderRadius: 4,
+                padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#a7d2ff',
+                cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left',
+              }}
+            >
+              View decks →
+            </button>
+          )}
         </section>
       )}
       {/* B138: clips on this replay — open a clip's reel. Desktop only (mobile
