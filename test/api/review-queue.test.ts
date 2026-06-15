@@ -5,6 +5,7 @@ import { POST as reviewed } from '@/app/api/replays/[slug]/reviewed/route';
 import { GET as queue } from '@/app/api/teams/[slug]/review-queue/route';
 import { GET as myRequests } from '@/app/api/me/review-requests/route';
 import { GET as reviewStatus } from '@/app/api/replays/[slug]/review-status/route';
+import { POST as viewed } from '@/app/api/replays/[slug]/viewed/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, replayTeamShares, tags, tagTeamScope } from '@/lib/schema';
 
@@ -294,6 +295,27 @@ describe('viewer review-status — /review-status', () => {
     expect((await (await getStatus(slug)).json()).data).toHaveLength(0); // not a member
     as(null);
     expect((await (await getStatus(slug)).json()).data).toHaveLength(0); // signed out
+  });
+});
+
+describe('last-viewed tracking — /viewed', () => {
+  const viewReq = (slug: string) => viewed(new Request('http://t', { method: 'POST' }), { params: Promise.resolve({ slug }) });
+
+  it('returns the PREVIOUS visit time and upserts the new one', async () => {
+    const u = await seedUser();
+    const slug = await seedReplay(u);
+    as(u);
+    const first = await (await viewReq(slug)).json();
+    expect(first.previousViewedAt).toBeNull();      // first visit → nothing prior
+    const second = await (await viewReq(slug)).json();
+    expect(second.previousViewedAt).toBeTruthy();    // now sees the first visit's stamp
+  });
+
+  it('is a no-op for signed-out viewers', async () => {
+    const u = await seedUser();
+    const slug = await seedReplay(u);
+    as(null);
+    expect((await (await viewReq(slug)).json()).previousViewedAt).toBeNull();
   });
 });
 

@@ -193,6 +193,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     if (userPickedTabRef.current) return;
     setPanelTab(topLevelTagCount > 0 ? 'tags' : 'log');
   }, [topLevelTagCount]);
+  // B149: stamp this visit + capture the PREVIOUS visit time, so tags left by
+  // others since then get a "new" marker. Signed-in only (per-user tracking).
+  const [lastViewedAt, setLastViewedAt] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   // B55c: structured mentions for the in-progress tag draft. Cleared on
   // submit/cancel. Userid + teamSlug picked from the autocomplete popover.
@@ -216,6 +219,18 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [resizeHandleActive, setResizeHandleActive] = useState(false);
   const dragStateRef = useRef<{ startX: number; startW: number } | null>(null);
   const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
+
+  // B149: stamp this visit + capture the PREVIOUS visit time (for the "new"
+  // markers). Below sessionUserId so it can gate on a signed-in viewer.
+  useEffect(() => {
+    if (!sessionUserId) return;
+    let live = true;
+    fetch(`/api/replays/${replay.slug}/viewed`, { method: 'POST' })
+      .then((r) => r.json())
+      .then((b) => { if (live && b?.ok) setLastViewedAt(b.previousViewedAt ?? null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [sessionUserId, replay.slug]);
 
   // B44/B46: isMobile + drawerOpen are now controlled by ReplayViewer so
   // sibling components (e.g. the gameboard frame-nav overlay) can react to
@@ -577,6 +592,12 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     color: '#6c7588', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
   };
 
+  // B149: a tag is "new" if someone ELSE left it since the viewer's last visit
+  // (own comments never flag as new). lastViewedAt is null on a first-ever visit
+  // — nothing is "new" then (it's all new, so the marker would be noise).
+  const isMineTag = (t: TagRow) => (!!t.userId && t.userId === sessionUserId) || t.authorToken === installToken;
+  const isNewTag = (t: TagRow) => !!lastViewedAt && !isMineTag(t) && t.createdAt > lastViewedAt;
+
   // B78: render a top-level tag with its replies nested one level beneath,
   // plus an inline Reply affordance. Replies reuse TagRowView (no further
   // reply button — one level only).
@@ -587,6 +608,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         tag={tag}
         color={tagColor(tag.authorName, playerUsernames)}
         isCurrent={current}
+        isNew={isNewTag(tag)}
         canEdit={canEditTag(tag, authCtx)}
         canDelete={canDeleteTag(tag, { userId: replay.userId, ownerToken: replay.ownerToken }, authCtx)}
         armedTeams={armedTeams}
@@ -1703,6 +1725,7 @@ function TagRowView({
   tag,
   color,
   isCurrent,
+  isNew,
   canEdit,
   canDelete,
   armedTeams,
@@ -1716,6 +1739,8 @@ function TagRowView({
   tag: TagRow;
   color: string;
   isCurrent: boolean;
+  // B149: someone else left this since the viewer's last visit.
+  isNew?: boolean;
   // B7: split tag-author affordance into edit vs delete. Replay owners
   // get delete on other people's tags but never edit (don't put words in
   // their mouth).
@@ -1789,10 +1814,19 @@ function TagRowView({
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: '#a0a8b8', display: 'flex', gap: 8 }}>
+        <div style={{ fontSize: 11, color: '#a0a8b8', display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ color, fontWeight: 600 }}>{tag.authorName}</span>
           <span style={{ color: '#4a4e56' }}>·</span>
           <span>frame {tag.frameIndex + 1}</span>
+          {isNew && (
+            <span
+              data-testid="tag-new-badge"
+              title="New since your last visit"
+              style={{ background: 'rgba(86, 199, 255, 0.18)', border: '1px solid rgba(86, 199, 255, 0.5)', color: '#8fd6ff', borderRadius: 999, padding: '0 6px', fontSize: 9, fontWeight: 800, letterSpacing: '0.05em' }}
+            >
+              NEW
+            </span>
+          )}
         </div>
         {editing ? (
           <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
