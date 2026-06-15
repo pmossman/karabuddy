@@ -87,12 +87,12 @@ test('mobile: ☰ opens the review sheet; it holds what-happened + tag form, nev
   await page.getByRole('button', { name: /Open tags/i }).click();
   const drawer = page.getByTestId('tags-drawer');
   await expect(drawer).toBeVisible();
-  // B100: log + tags split into tabs (the sheet can't fit both). Default tab
-  // is the game log.
+  // B100/B149: log + review split into a Review|Game log toggle. With no tags on
+  // this replay the default is the game log (content-aware default).
   await expect(drawer.getByText(/What happened/i)).toBeVisible();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toHaveCount(0);
-  // Switch to the Tags tab → the tag form appears, the log goes away.
-  await drawer.getByRole('button', { name: /^Tags/ }).click();
+  // Switch to the Review tab → the tag form appears, the log goes away.
+  await drawer.getByRole('button', { name: /^Review/ }).click();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toBeVisible();
   await expect(drawer.getByText(/What happened/i)).toHaveCount(0);
   // The matchup + decks live on the separate matchup sheet.
@@ -227,9 +227,9 @@ test('mobile portrait: matchup slides from the TOP, review from the BOTTOM (spli
   await page.getByRole('button', { name: /Open tags/i }).click();
   const drawer = page.getByTestId('tags-drawer');
   await expect(drawer).toBeVisible();
-  // Game-log tab by default; Tags tab holds the tag form.
+  // B149: Game-log tab by default (no tags on this replay); Review tab holds the form.
   await expect(drawer.getByText(/What happened/i)).toBeVisible();
-  await drawer.getByRole('button', { name: /^Tags/ }).click();
+  await drawer.getByRole('button', { name: /^Review/ }).click();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toBeVisible();
   await expect(drawer.getByRole('button', { name: /View decks/i })).toHaveCount(0);
 });

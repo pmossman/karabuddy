@@ -18,6 +18,7 @@ test('signed-in user: new tag attributes to session display name', async ({ page
   await claimInstallToken(page, r.installToken);
 
   await page.goto(`/r/${r.slug}`);
+  await page.getByRole('button', { name: /^Review/ }).click(); // B149: untagged → opens on Game log
   await page.getByRole('button', { name: /Tag this frame/i }).click();
   await page.locator('textarea').first().fill('important moment');
   await page.getByRole('button', { name: 'Save tag' }).click();
@@ -39,6 +40,7 @@ test('team-mention autocomplete suggestion shows team name, not slug', async ({ 
   await claimInstallToken(page, r.installToken);
 
   await page.goto(`/r/${r.slug}`);
+  await page.getByRole('button', { name: /^Review/ }).click(); // B149: untagged → opens on Game log
   // The autocomplete data is lazily fetched when the tag form first opens.
   // Typing before it resolves races the fetch (the source of this test's
   // historical flakiness), so wait for the response before typing @.

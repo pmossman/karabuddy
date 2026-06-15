@@ -28,7 +28,9 @@ test('scope chip reflects shares un-toggled in the same session', async ({ page 
   await page.goto(`/r/${slug}`);
 
   // Baseline: open the tag form — the chip shows because the replay is shared
-  // with two of my teams.
+  // with two of my teams. B149: an untagged replay opens on the Game log tab,
+  // so switch to Review to reach the form.
+  await page.getByRole('button', { name: /^Review/ }).click();
   await page.getByRole('button', { name: '+ Tag this frame' }).click();
   await expect(page.getByTestId('scope-chip')).toBeVisible();
 
