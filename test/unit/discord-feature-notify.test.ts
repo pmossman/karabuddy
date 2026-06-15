@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatReviewMessage } from '@/lib/reviewNotify';
+import { formatReviewMessage, formatReviewedByMessage } from '@/lib/reviewNotify';
 import {
   formatTournamentCreatedMessage,
   formatRegistrationMessage,
@@ -9,12 +9,20 @@ import {
 // B144: pure formatters for the new Discord channel posts.
 
 describe('formatReviewMessage', () => {
-  it('added vs cleared', () => {
+  it('B149: request added vs request cleared (cleared = cancel, not reviewed)', () => {
     const base = { matchup: 'Boba Fett vs Cad Bane', teamName: 'Squad', actorName: 'Parker', url: 'https://k/r/r1' };
     expect(formatReviewMessage({ ...base, added: true })).toContain('🔍');
     expect(formatReviewMessage({ ...base, added: true })).toContain("added to **Squad**'s review queue by **Parker**");
-    expect(formatReviewMessage({ ...base, added: false })).toContain('✅');
-    expect(formatReviewMessage({ ...base, added: false })).toContain('marked reviewed');
+    expect(formatReviewMessage({ ...base, added: false })).toContain('🗑️');
+    expect(formatReviewMessage({ ...base, added: false })).toContain('review request cleared');
+  });
+});
+
+describe('formatReviewedByMessage', () => {
+  it('B149: a member reviewed (the request stays open)', () => {
+    const msg = formatReviewedByMessage({ matchup: 'Boba Fett vs Cad Bane', teamName: 'Squad', actorName: 'Ann', url: 'https://k/r/r1' });
+    expect(msg).toContain('✅');
+    expect(msg).toContain('**Ann** reviewed **Boba Fett vs Cad Bane** in **Squad**');
   });
 });
 

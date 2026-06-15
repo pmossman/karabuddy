@@ -142,7 +142,7 @@ function TabBar({ slug, active }: { slug: string; active: Tab }) {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'discussion', label: 'Discussion' },
     { id: 'replays', label: 'Replays' },
-    { id: 'review', label: 'Review queue' },
+    { id: 'review', label: 'Reviews' },
     { id: 'tournaments', label: 'Tournaments' },
     { id: 'members', label: 'Members' },
     { id: 'settings', label: 'Settings' },

@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { eq, desc, inArray, count, asc } from 'drizzle-orm';
+import { eq, desc, inArray, count, asc, and, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, replayTeamShares, replayParticipants, replayAltPayload, teamMembers, teams, tags } from '@/lib/schema';
+import { replays, users, replayTeamShares, replayParticipants, replayAltPayload, teamMembers, teams, tags, replayReviews } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
@@ -104,6 +104,7 @@ async function MyReplays({ userId }: { userId: string }) {
   const slugs = rows.map((r) => r.replay.slug);
   const sharesBySlug = new Map<string, { slug: string; name: string }[]>();
   const commentCountBySlug = new Map<string, number>();
+  const reviewBySlug = new Map<string, { requested: boolean; reviewerCount: number }>();
   const doubleSidedSlugs = new Set<string>();
   if (slugs.length > 0) {
     // B128: which of these replays have BOTH recordings (alt payload exists) —
@@ -130,6 +131,25 @@ async function MyReplays({ userId }: { userId: string }) {
       .where(inArray(tags.replaySlug, slugs))
       .groupBy(tags.replaySlug);
     for (const c of countRows) commentCountBySlug.set(c.replaySlug, Number(c.n));
+
+    // B149: review-request status on the owner's OWN replays (the "in review" /
+    // "reviewed ×N" badge). Open request = the user requested it + it's not
+    // cancelled; reviewerCount = total durable marks across teams.
+    const reqRows = await db
+      .select({ slug: replayTeamShares.replaySlug })
+      .from(replayTeamShares)
+      .where(and(
+        inArray(replayTeamShares.replaySlug, slugs),
+        eq(replayTeamShares.reviewRequestedBy, userId),
+        isNotNull(replayTeamShares.reviewRequestedAt),
+      ));
+    const markRows = await db
+      .select({ slug: replayReviews.replaySlug, n: count() })
+      .from(replayReviews)
+      .where(inArray(replayReviews.replaySlug, slugs))
+      .groupBy(replayReviews.replaySlug);
+    const markCountBySlug = new Map(markRows.map((m) => [m.slug, Number(m.n)]));
+    for (const r of reqRows) reviewBySlug.set(r.slug, { requested: true, reviewerCount: markCountBySlug.get(r.slug) ?? 0 });
   }
 
   return (
@@ -143,7 +163,7 @@ async function MyReplays({ userId }: { userId: string }) {
         commentCount: commentCountBySlug.get(replay.slug) ?? 0,
         doubleSided: doubleSidedSlugs.has(replay.slug),
         isPublic: !!replay.publicAt,
-      }))}
+      })).map((row) => ({ ...row, reviewRequest: reviewBySlug.get(row.slug) ?? null }))}
       canManage
       showShareTabs
       emptyState={<MineEmpty />}

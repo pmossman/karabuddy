@@ -8,6 +8,7 @@ import { getSampleReplaySlugs } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
 import { HomeTeamActivity } from './HomeTeamActivity';
+import { HomeReviewRequests } from './HomeReviewRequests';
 import { HomeAnonymousReplays } from './HomeAnonymousReplays';
 import { Panel } from '@/app/_components/Panel';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
@@ -103,6 +104,9 @@ export default async function Home() {
 
   return (
     <Main>
+      {/* B149: the requester's own open review requests (renders nothing when none). */}
+      <HomeReviewRequests />
+
       <section style={{ marginBottom: 36 }}>
         <SectionHeader title="Team activity" />
         {myTeams.length > 0 ? (

@@ -39,6 +39,9 @@ interface ReplayRow {
   isMine?: boolean;
   // B128: both players' recordings exist — "⇄ both POVs" badge.
   doubleSided?: boolean;
+  // B149: this is the owner's replay with an open team review request — a badge
+  // showing reviewer progress in the "My replays" tab.
+  reviewRequest?: { requested: boolean; reviewerCount: number } | null;
 }
 
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
@@ -146,6 +149,21 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
               }}
             >
               ⇄ both POVs
+            </span>
+          )}
+          {replay.reviewRequest?.requested && (
+            <span
+              data-testid="review-request-chip"
+              title={replay.reviewRequest.reviewerCount > 0 ? `Reviewed by ${replay.reviewRequest.reviewerCount}` : 'Awaiting team review'}
+              style={{
+                background: replay.reviewRequest.reviewerCount > 0 ? 'rgba(107, 217, 104, 0.12)' : 'rgba(160, 168, 184, 0.12)',
+                border: `1px solid ${replay.reviewRequest.reviewerCount > 0 ? 'rgba(107, 217, 104, 0.4)' : 'rgba(160, 168, 184, 0.32)'}`,
+                color: replay.reviewRequest.reviewerCount > 0 ? '#7fd97f' : '#a0a8b8',
+                borderRadius: 999, padding: '1px 8px', fontSize: 10, fontWeight: 700,
+                letterSpacing: '0.04em', textTransform: 'uppercase',
+              }}
+            >
+              {replay.reviewRequest.reviewerCount > 0 ? `🔍 reviewed ×${replay.reviewRequest.reviewerCount}` : '🔍 in review'}
             </span>
           )}
           {matchChips(replay.match).map((label) => (
