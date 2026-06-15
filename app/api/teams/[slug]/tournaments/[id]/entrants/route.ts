@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
 import { importDeck } from '@/lib/deckImport';
+import { validateDeckServer } from '@/lib/deckLegalityServer';
 import { generateSlug } from '@/lib/slug';
 import { notifyEntrantRegistered } from '@/lib/tournamentNotify';
 
@@ -61,6 +62,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     const result = await importDeck(String(body.deckLink));
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+    }
+    // B152: reject illegal decklists (sideboard >10, maindeck <50, 3-copy limit, …).
+    const legality = await validateDeckServer(result.deck);
+    if (!legality.legal) {
+      return NextResponse.json({ ok: false, error: `Decklist isn't legal: ${legality.violations.map((v) => v.message).join('; ')}`, violations: legality.violations }, { status: 400 });
     }
     deckFields = { deckLink: String(body.deckLink).trim(), deckName: result.deckName, deck: result.deck };
   }

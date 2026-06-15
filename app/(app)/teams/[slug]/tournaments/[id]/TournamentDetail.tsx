@@ -42,6 +42,8 @@ export interface DetailEntrant {
   deckName: string | null;
   hasDeck: boolean;
   deckVisible: boolean;
+  // B152: deck legality (only when the viewer can see the deck). null otherwise.
+  legality?: { legal: boolean; violations: { code: string; message: string }[] } | null;
   claimToken: string | null; // organizer-only; guest's account-claim secret
 }
 export interface DetailGame { winner: string | null; replaySlug?: string }
@@ -465,6 +467,15 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
                   <Link href={`/teams/${teamSlug}/tournaments/${t.id}/decks/${e.id}`} style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none' }}>
                     {e.deckName || 'Decklist'} →
                   </Link>
+                  {e.legality && !e.legality.legal && (
+                    <span
+                      data-testid={`deck-illegal-${e.id}`}
+                      title={e.legality.violations.map((v) => v.message).join('\n')}
+                      style={{ fontSize: 10.5, fontWeight: 800, color: '#ffce4d', background: 'rgba(255,206,77,0.12)', border: '1px solid rgba(255,206,77,0.45)', borderRadius: 999, padding: '1px 7px', cursor: 'help' }}
+                    >
+                      ⚠ illegal
+                    </span>
+                  )}
                 </span>
               ) : (
                 <span style={{ fontSize: 11, color: '#6c7588' }}>🔒 deck registered</span>

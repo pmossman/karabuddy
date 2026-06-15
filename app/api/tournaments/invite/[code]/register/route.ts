@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { tournaments, tournamentEntrants, users } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { importDeck } from '@/lib/deckImport';
+import { validateDeckServer } from '@/lib/deckLegalityServer';
 import { generateSlug } from '@/lib/slug';
 import { notifyEntrantRegistered } from '@/lib/tournamentNotify';
 import type { TournamentDeck } from '@/lib/schema';
@@ -60,6 +61,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   if (body.deckLink) {
     const result = await importDeck(String(body.deckLink));
     if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+    const legality = await validateDeckServer(result.deck);
+    if (!legality.legal) {
+      return NextResponse.json({ ok: false, error: `Decklist isn't legal: ${legality.violations.map((v) => v.message).join('; ')}`, violations: legality.violations }, { status: 400 });
+    }
     deckFields = { deckLink: String(body.deckLink).trim(), deckName: result.deckName, deck: result.deck };
   }
 

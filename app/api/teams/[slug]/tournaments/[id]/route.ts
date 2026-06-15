@@ -9,6 +9,7 @@ import {
 } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer, canSeeDeck, serializeEntrant, getTournamentAccess } from '@/lib/tournamentAccess';
+import { validateDecks } from '@/lib/deckLegalityServer';
 import { computeStandings, suggestedRoundCount, type SwissMatch } from '@/lib/swiss';
 import { suggestResult, type CandidateReplay, type ResultSuggestion } from '@/lib/tournamentResults';
 
@@ -60,6 +61,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     ? await computeSuggestions(slug, entrants, rounds, matches)
     : {};
 
+  // B152: serialize entrants (decks filtered per visibility), then validate the
+  // VISIBLE decks in one batch and attach a legality flag (sideboard >10, etc.).
+  const serializedEntrants = entrants.map((e) =>
+    serializeEntrant(
+      e,
+      canSeeDeck({ visibility: t.decklistVisibility, entrant: e, viewerUserId: userId, viewerIsOrganizer: organizer, roundCount: rounds.length }),
+      { includeClaimToken: organizer },
+    ),
+  );
+  const legalities = await validateDecks(serializedEntrants.map((s) => (s.deckVisible ? s.deck : null)));
+  const entrantsOut = serializedEntrants.map((s, i) => ({ ...s, legality: s.deckVisible && s.deck ? legalities[i] : null }));
+
   return NextResponse.json({
     ok: true,
     data: {
@@ -85,19 +98,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
         isMember: access.isMember,
         entrantId: myEntrant?.id ?? null,
       },
-      entrants: entrants.map((e) =>
-        serializeEntrant(
-          e,
-          canSeeDeck({
-            visibility: t.decklistVisibility,
-            entrant: e,
-            viewerUserId: userId,
-            viewerIsOrganizer: organizer,
-            roundCount: rounds.length,
-          }),
-          { includeClaimToken: organizer }
-        )
-      ),
+      entrants: entrantsOut,
       rounds: rounds.map((r) => ({
         id: r.id,
         number: r.number,

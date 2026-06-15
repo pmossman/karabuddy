@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { tournamentEntrants } from '@/lib/schema';
 import { getTournamentAccess, loadEntrant } from '@/lib/tournamentAccess';
 import { importDeck } from '@/lib/deckImport';
+import { validateDeckServer } from '@/lib/deckLegalityServer';
 import { notifyEntrantRegistered } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
@@ -47,6 +48,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     }
     const result = await importDeck(String(body.deckLink || ''));
     if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+    const legality = await validateDeckServer(result.deck);
+    if (!legality.legal) {
+      return NextResponse.json({ ok: false, error: `Decklist isn't legal: ${legality.violations.map((v) => v.message).join('; ')}`, violations: legality.violations }, { status: 400 });
+    }
     update.deckLink = String(body.deckLink).trim();
     update.deckName = result.deckName;
     update.deck = result.deck;

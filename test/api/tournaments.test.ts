@@ -44,7 +44,8 @@ const upstreamDeck = {
   leader: { id: 'SOR_010', count: 1 },
   secondleader: null,
   base: { id: 'SOR_030', count: 1 },
-  deck: [{ id: 'SOR_100', count: 3 }, { id: 'JTL_045', count: 2 }],
+  // B152: a LEGAL maindeck (≥50, ≤3 per card) so the legality gate accepts it.
+  deck: Array.from({ length: 50 }, (_, i) => ({ id: `SOR_${100 + i}`, count: 1 })),
   sideboard: [{ id: 'SOR_200', count: 1 }],
 };
 const stubFetch = (status = 200, body: unknown = upstreamDeck) =>
@@ -191,8 +192,25 @@ describe('entrants', () => {
     const entrant = detail.data.entrants[0];
     expect(entrant.deckName).toBe('Test Deck');
     expect(entrant.deck.leader.id).toBe('SOR_010');
-    expect(entrant.deck.deck).toHaveLength(2);
+    expect(entrant.deck.deck).toHaveLength(50);
     expect(entrant.hasDeck).toBe(true);
+    expect(entrant.legality.legal).toBe(true); // B152: a legal deck passes the gate
+  });
+
+  it('B152: rejects an illegal deck (sideboard over 10) without registering', async () => {
+    const owner = await seedUser();
+    const slug = await seedTeam([owner]);
+    as(owner);
+    const id = await createT(slug, { decklistVisibility: 'open' });
+
+    stubFetch(200, { ...upstreamDeck, sideboard: Array.from({ length: 11 }, (_, i) => ({ id: `SOR_${300 + i}`, count: 1 })) });
+    const res = await addEntrant(jreq({ deckLink: 'https://swubase.com/decks/illegal' }), p(slug, { id }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/Sideboard has 11/);
+    // Nothing was registered.
+    const detail = await (await getDetail(new Request('http://t'), p(slug, { id }))).json();
+    expect(detail.data.entrants).toHaveLength(0);
   });
 
   it('broken deck link fails the request without registering', async () => {

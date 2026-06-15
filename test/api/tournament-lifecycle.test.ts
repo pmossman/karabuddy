@@ -262,7 +262,7 @@ describe('rounds + finish', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       metadata: { name: 'Hidden Deck' },
       leader: { id: 'SOR_010', count: 1 }, base: { id: 'SOR_030', count: 1 },
-      deck: [{ id: 'SOR_100', count: 3 }], sideboard: [],
+      deck: Array.from({ length: 50 }, (_, i) => ({ id: `SOR_${100 + i}`, count: 1 })), sideboard: [], // B152: legal ≥50
     }), { status: 200 })));
     as(m1);
     const m1Entrant = (await (await addEntrant(jreq({ deckLink: 'https://swubase.com/decks/x' }), p(slug, { id }))).json()).entrantId as string;
@@ -291,7 +291,7 @@ describe('rounds + finish', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       metadata: { name: 'Late Swap' },
       leader: { id: 'SOR_011', count: 1 }, base: { id: 'SOR_031', count: 1 },
-      deck: [{ id: 'SOR_101', count: 3 }], sideboard: [],
+      deck: Array.from({ length: 50 }, (_, i) => ({ id: `SOR_${200 + i}`, count: 1 })), sideboard: [], // B152: legal ≥50
     }), { status: 200 })));
     as(m1);
     expect((await patchEntrant(jreq({ deckLink: 'https://swubase.com/decks/y' }), p(slug, { id, entrantId: m1Entrant }))).status).toBe(403);
