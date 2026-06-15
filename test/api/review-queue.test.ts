@@ -4,6 +4,7 @@ import { POST as review } from '@/app/api/replays/[slug]/review/route';
 import { POST as reviewed } from '@/app/api/replays/[slug]/reviewed/route';
 import { GET as queue } from '@/app/api/teams/[slug]/review-queue/route';
 import { GET as myRequests } from '@/app/api/me/review-requests/route';
+import { GET as reviewStatus } from '@/app/api/replays/[slug]/review-status/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, replayTeamShares, tags, tagTeamScope } from '@/lib/schema';
 
@@ -48,6 +49,7 @@ const reviewReq = (slug: string, body: unknown) =>
 const markReq = (slug: string, body: unknown) =>
   reviewed(new Request('http://t', { method: 'POST', body: JSON.stringify(body) }), { params: Promise.resolve({ slug }) });
 const getQueue = (teamSlug: string) => queue(new Request('http://t'), { params: Promise.resolve({ slug: teamSlug }) });
+const getStatus = (slug: string) => reviewStatus(new Request('http://t'), { params: Promise.resolve({ slug }) });
 
 beforeEach(() => vi.mocked(auth).mockReset());
 
@@ -251,6 +253,47 @@ describe('requester surface — /me/review-requests', () => {
     expect((await (await myRequests()).json()).data).toHaveLength(0);
     as(null);
     expect((await myRequests()).status).toBe(401);
+  });
+});
+
+describe('viewer review-status — /review-status', () => {
+  it('returns per-team status for a member with an open request, gated on commenting', async () => {
+    const owner = await seedUser();
+    const a = await seedUser('Ann');
+    const team = await seedTeam(owner, [owner, a]);
+    const slug = await seedReplay(owner);
+    await share(slug, team, owner);
+    as(owner);
+    await reviewReq(slug, { teamSlug: team, requested: true });
+
+    // Member, no comment yet → status present, not yet reviewable.
+    as(a);
+    let s = await (await getStatus(slug)).json();
+    expect(s.data).toHaveLength(1);
+    expect(s.data[0]).toMatchObject({ teamSlug: team, reviewerCount: 0, viewerReviewed: false, viewerCommented: false });
+
+    // Comment + mark → reflected in status.
+    await seedTag(slug, team, 'Ann', a);
+    await markReq(slug, { teamSlug: team, reviewed: true });
+    s = await (await getStatus(slug)).json();
+    expect(s.data[0]).toMatchObject({ reviewerCount: 1, viewerReviewed: true, viewerCommented: true });
+    expect(s.data[0].reviewers[0].name).toBe('Ann');
+  });
+
+  it('omits teams with no open request, and is empty for non-members / signed-out', async () => {
+    const owner = await seedUser();
+    const stranger = await seedUser();
+    const team = await seedTeam(owner);
+    const slug = await seedReplay(owner);
+    await share(slug, team, owner); // shared but NOT requested
+    as(owner);
+    expect((await (await getStatus(slug)).json()).data).toHaveLength(0); // no open request
+
+    await reviewReq(slug, { teamSlug: team, requested: true });
+    as(stranger);
+    expect((await (await getStatus(slug)).json()).data).toHaveLength(0); // not a member
+    as(null);
+    expect((await (await getStatus(slug)).json()).data).toHaveLength(0); // signed out
   });
 });
 
