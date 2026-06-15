@@ -11,7 +11,7 @@
 
 import { and, eq, inArray, count } from 'drizzle-orm';
 import { getDb } from './db';
-import { accounts, users, tournamentEntrants, tournamentMatches, tournamentRounds, tournaments } from './schema';
+import { accounts, users, cards, tournamentEntrants, tournamentMatches, tournamentRounds, tournaments } from './schema';
 import { postToChannel } from './discord';
 import { teamChannelFor } from './teamDiscordChannel';
 import { computeStandings } from './swiss';
@@ -76,15 +76,38 @@ export function formatTournamentCreatedMessage(opts: {
   return `🆕 New tournament **${opts.tournamentName}** created${by} — register: ${opts.url}`;
 }
 
-// B144: an entrant registered.
+// B144/B151: an entrant registered (or, with `updated`, changed their deck).
+// Includes the decklist name + leader/base names when a deck is on file.
 export function formatRegistrationMessage(opts: {
   tournamentName: string;
   entrantName: string;
   entrantCount: number;
   url: string;
+  deckName?: string | null;
+  leaderName?: string | null;
+  baseName?: string | null;
+  updated?: boolean; // a deck change rather than a fresh registration
 }): string {
-  return `🎟️ **${opts.entrantName}** registered for **${opts.tournamentName}** ` +
-    `(${opts.entrantCount} entrant${opts.entrantCount === 1 ? '' : 's'}) — ${opts.url}`;
+  const ident = [opts.leaderName, opts.baseName].filter(Boolean).join(' / ');
+  // " with **DeckName** (Leader / Base)", any piece omitted if absent.
+  const deckPart = opts.deckName
+    ? ` **${opts.deckName}**${ident ? ` (${ident})` : ''}`
+    : ident ? ` ${ident}` : '';
+  if (opts.updated) {
+    return `🔄 **${opts.entrantName}** updated their deck for **${opts.tournamentName}**`
+      + (deckPart ? ` to${deckPart}` : '') + ` — ${opts.url}`;
+  }
+  return `🎟️ **${opts.entrantName}** registered for **${opts.tournamentName}**`
+    + (deckPart ? ` with${deckPart}` : '')
+    + ` (${opts.entrantCount} entrant${opts.entrantCount === 1 ? '' : 's'}) — ${opts.url}`;
+}
+
+// Resolve card ids (leader/base) → display names from the seeded `cards` catalog.
+async function cardNames(ids: (string | null | undefined)[]): Promise<Map<string, string>> {
+  const want = [...new Set(ids.filter((x): x is string => !!x))];
+  if (want.length === 0) return new Map();
+  const rows = await getDb().select({ cardId: cards.cardId, name: cards.name }).from(cards).where(inArray(cards.cardId, want));
+  return new Map(rows.map((r) => [r.cardId, r.name ?? r.cardId]));
 }
 
 // B144: a match result was reported. Draw when game wins tie; "awaiting
@@ -233,22 +256,36 @@ export async function notifyTournamentCreated(teamSlug: string, tournamentId: st
 }
 
 // B144: an entrant just registered (member, guest-add, or public invite).
-export async function notifyEntrantRegistered(teamSlug: string, tournamentId: string, entrantName: string): Promise<void> {
+export async function notifyEntrantRegistered(
+  teamSlug: string,
+  tournamentId: string,
+  opts: { entrantName: string; deckName?: string | null; leaderId?: string | null; baseId?: string | null; updated?: boolean },
+): Promise<void> {
   try {
     const channel = await teamChannel(teamSlug);
     if (!channel) return;
     const db = getDb();
     const [t] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId)).limit(1);
     if (!t) return;
-    const [{ n } = { n: 0 }] = await db
-      .select({ n: count() })
-      .from(tournamentEntrants)
-      .where(eq(tournamentEntrants.tournamentId, tournamentId));
+    const names = await cardNames([opts.leaderId, opts.baseId]);
+    // The entrant count is part of the "registered" line only.
+    let entrantCount = 0;
+    if (!opts.updated) {
+      const [{ n } = { n: 0 }] = await db
+        .select({ n: count() })
+        .from(tournamentEntrants)
+        .where(eq(tournamentEntrants.tournamentId, tournamentId));
+      entrantCount = Number(n);
+    }
     await postToChannel(channel, formatRegistrationMessage({
       tournamentName: t.name,
-      entrantName,
-      entrantCount: Number(n),
+      entrantName: opts.entrantName,
+      entrantCount,
       url: tUrl(teamSlug, tournamentId),
+      deckName: opts.deckName ?? null,
+      leaderName: opts.leaderId ? names.get(opts.leaderId) ?? null : null,
+      baseName: opts.baseId ? names.get(opts.baseId) ?? null : null,
+      updated: opts.updated,
     }));
   } catch (err) {
     console.error('[karabuddy] tournament registration notify failed:', err);

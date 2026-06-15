@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { tournamentEntrants } from '@/lib/schema';
 import { getTournamentAccess, loadEntrant } from '@/lib/tournamentAccess';
 import { importDeck } from '@/lib/deckImport';
+import { notifyEntrantRegistered } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
 
@@ -33,6 +34,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   const isSelf = !!entrant.userId && entrant.userId === userId;
   const body = await req.json().catch(() => ({}));
   const update: Record<string, unknown> = {};
+  // B151: captured to fire a "deck updated" Discord post after the write.
+  let deckChange: { deckName: string | null; leaderId: string | null; baseId: string | null } | null = null;
 
   if (body.deckLink !== undefined) {
     const allowed = organizer || (isSelf && t.status === 'setup');
@@ -47,6 +50,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     update.deckLink = String(body.deckLink).trim();
     update.deckName = result.deckName;
     update.deck = result.deck;
+    deckChange = { deckName: result.deckName, leaderId: result.deck.leader?.id ?? null, baseId: result.deck.base?.id ?? null };
   }
 
   if (body.displayName !== undefined) {
@@ -71,6 +75,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400 });
   }
   await getDb().update(tournamentEntrants).set(update).where(eq(tournamentEntrants.id, entrantId));
+
+  // B151: best-effort Discord post when the decklist changed — never blocks.
+  if (deckChange) {
+    try {
+      await notifyEntrantRegistered(slug, id, {
+        entrantName: (update.displayName as string) || entrant.displayName,
+        deckName: deckChange.deckName,
+        leaderId: deckChange.leaderId,
+        baseId: deckChange.baseId,
+        updated: true,
+      });
+    } catch (e) { console.error('[karabuddy] deck-update notify failed:', e); }
+  }
+
   return NextResponse.json({ ok: true });
 }
 

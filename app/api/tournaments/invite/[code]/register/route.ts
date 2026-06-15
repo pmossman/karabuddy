@@ -82,8 +82,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     }
     throw err;
   }
-  // B144: best-effort Discord post — never blocks the write.
-  try { await notifyEntrantRegistered(t.teamSlug, t.id, displayName); } catch (e) { console.error('[karabuddy] notifyEntrantRegistered failed:', e); }
+  // B144/B151: best-effort Discord post (with deck name + leader/base) — never blocks the write.
+  try {
+    await notifyEntrantRegistered(t.teamSlug, t.id, {
+      entrantName: displayName,
+      deckName: deckFields?.deckName ?? null,
+      leaderId: deckFields?.deck.leader?.id ?? null,
+      baseId: deckFields?.deck.base?.id ?? null,
+    });
+  } catch (e) { console.error('[karabuddy] notifyEntrantRegistered failed:', e); }
   // claimToken goes back to the registering browser ONLY — it's their secret.
   return NextResponse.json({ ok: true, entrantId, claimToken });
 }

@@ -1,8 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { cardImageUrl } from '@/lib/cardImage';
+
+// B151: small leader + base thumbnails for an entrant's registered deck. Ids are
+// "SET_NNN"; the leader image uses the `-base` (deployed) side.
+function artFromId(id: string | undefined, isLeader: boolean): string | null {
+  if (!id) return null;
+  const m = /^([A-Za-z0-9]+)_(\d+)$/.exec(id);
+  return m ? cardImageUrl({ set: m[1], number: m[2] }, isLeader) : null;
+}
+function DeckLeaderBase({ deck }: { deck: any }) {
+  const leader = artFromId(deck?.leader?.id, true);
+  const base = artFromId(deck?.base?.id, false);
+  if (!leader && !base) return null;
+  // Leaders (deployed side) + bases are LANDSCAPE cards — keep the thumbnails
+  // landscape so they don't crop weirdly.
+  const thumb: CSSProperties = { width: 40, height: 28, borderRadius: 4, objectFit: 'cover', border: '1px solid #2e333c', flex: '0 0 auto', background: '#0b0e14' };
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, flex: '0 0 auto' }}>
+      {leader && <img src={leader} alt="leader" title="Leader" style={thumb} />}
+      {base && <img src={base} alt="base" title="Base" style={thumb} />}
+    </span>
+  );
+}
 
 // B124: the tournament detail view. One GET drives everything; every action
 // POSTs/PATCHes then refetches. P2 scope: header + settings (organizer),
@@ -437,9 +460,12 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
             <span style={{ flex: 1 }} />
             {e.hasDeck ? (
               e.deckVisible ? (
-                <Link href={`/teams/${teamSlug}/tournaments/${t.id}/decks/${e.id}`} style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none' }}>
-                  {e.deckName || 'Decklist'} →
-                </Link>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <DeckLeaderBase deck={e.deck} />
+                  <Link href={`/teams/${teamSlug}/tournaments/${t.id}/decks/${e.id}`} style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none' }}>
+                    {e.deckName || 'Decklist'} →
+                  </Link>
+                </span>
               ) : (
                 <span style={{ fontSize: 11, color: '#6c7588' }}>🔒 deck registered</span>
               )

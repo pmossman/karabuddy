@@ -42,6 +42,27 @@ describe('formatRegistrationMessage', () => {
     expect(formatRegistrationMessage({ tournamentName: 'Cup', entrantName: 'Gus', entrantCount: 3, url: 'u' }))
       .toContain('(3 entrants)');
   });
+
+  it('B151: includes deck name + leader/base when present', () => {
+    const msg = formatRegistrationMessage({
+      tournamentName: 'Cup', entrantName: 'Gus', entrantCount: 2, url: 'u',
+      deckName: 'Green Aggro', leaderName: 'Boba Fett', baseName: 'Echo Base',
+    });
+    expect(msg).toBe('🎟️ **Gus** registered for **Cup** with **Green Aggro** (Boba Fett / Echo Base) (2 entrants) — u');
+  });
+
+  it('B151: a deck change uses the updated wording (no entrant count)', () => {
+    const msg = formatRegistrationMessage({
+      tournamentName: 'Cup', entrantName: 'Gus', entrantCount: 0, url: 'u', updated: true,
+      deckName: 'Blue Control', leaderName: 'Thrawn', baseName: null,
+    });
+    expect(msg).toBe('🔄 **Gus** updated their deck for **Cup** to **Blue Control** (Thrawn) — u');
+  });
+
+  it('B151: leader/base alone (no deck name) still renders', () => {
+    expect(formatRegistrationMessage({ tournamentName: 'Cup', entrantName: 'Gus', entrantCount: 1, url: 'u', leaderName: 'Boba Fett', baseName: 'Echo Base' }))
+      .toBe('🎟️ **Gus** registered for **Cup** with Boba Fett / Echo Base (1 entrant) — u');
+  });
 });
 
 describe('formatMatchResultMessage', () => {

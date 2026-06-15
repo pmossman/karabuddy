@@ -88,7 +88,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     }
     throw err;
   }
-  // B144: best-effort Discord post — never blocks the write.
-  try { await notifyEntrantRegistered(slug, id, displayName); } catch (e) { console.error('[karabuddy] notifyEntrantRegistered failed:', e); }
+  // B144/B151: best-effort Discord post (with deck name + leader/base) — never blocks the write.
+  try {
+    await notifyEntrantRegistered(slug, id, {
+      entrantName: displayName,
+      deckName: deckFields?.deckName ?? null,
+      leaderId: deckFields?.deck.leader?.id ?? null,
+      baseId: deckFields?.deck.base?.id ?? null,
+    });
+  } catch (e) { console.error('[karabuddy] notifyEntrantRegistered failed:', e); }
   return NextResponse.json({ ok: true, entrantId });
 }
