@@ -182,8 +182,17 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // here" is the context you read before tagging/discussing.
   // B149: the review panel is primary; the karabast game log lives behind a
   // Review|Log segmented toggle (desktop too, not just mobile), so each gets the
-  // full panel height instead of fighting for it stacked. Default = Review.
-  const [panelTab, setPanelTab] = useState<'log' | 'tags'>('tags');
+  // full panel height instead of fighting for it stacked. Default to whichever
+  // has content — Review when there are visible comments, the game log when none
+  // (an empty review panel is useless). Lazy-init from the SSR'd tags, then the
+  // effect below re-defaults once the scoped fetch resolves; a manual toggle wins.
+  const topLevelTagCount = tags.filter((t) => !t.parentTagId).length;
+  const [panelTab, setPanelTab] = useState<'log' | 'tags'>(() => (topLevelTagCount > 0 ? 'tags' : 'log'));
+  const userPickedTabRef = useRef(false);
+  useEffect(() => {
+    if (userPickedTabRef.current) return;
+    setPanelTab(topLevelTagCount > 0 ? 'tags' : 'log');
+  }, [topLevelTagCount]);
   const [draft, setDraft] = useState('');
   // B55c: structured mentions for the in-progress tag draft. Cleared on
   // submit/cancel. Userid + teamSlug picked from the autocomplete popover.
@@ -931,10 +940,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {/* B149: Review|Log toggle on EVERY viewport — the review panel is primary,
           the game log secondary. (Was mobile-only; desktop used to stack both.) */}
       <section style={{ padding: '8px 14px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6 }}>
-        <DrawerTab active={panelTab === 'tags'} onClick={() => setPanelTab('tags')}>
-          Review{tags.filter((t) => !t.parentTagId).length > 0 ? ` (${tags.filter((t) => !t.parentTagId).length})` : ''}
+        <DrawerTab active={panelTab === 'tags'} onClick={() => { userPickedTabRef.current = true; setPanelTab('tags'); }}>
+          Review{topLevelTagCount > 0 ? ` (${topLevelTagCount})` : ''}
         </DrawerTab>
-        <DrawerTab active={panelTab === 'log'} onClick={() => setPanelTab('log')}>Game log</DrawerTab>
+        <DrawerTab active={panelTab === 'log'} onClick={() => { userPickedTabRef.current = true; setPanelTab('log'); }}>Game log</DrawerTab>
       </section>
 
       {/* B66b dead-store: previous desktop-only nav/step row got replaced
