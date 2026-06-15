@@ -6,6 +6,7 @@ import { tournaments } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
 import { createRound, loadEntrantsAndMatches } from '@/lib/tournamentLifecycle';
+import { validateDecks } from '@/lib/deckLegalityServer';
 import { notifyRoundPaired } from '@/lib/tournamentNotify';
 
 export const runtime = 'nodejs';
@@ -29,6 +30,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
   }
 
   const { entrants } = await loadEntrantsAndMatches(id);
+
+  // B152: don't start a tournament with illegal decklists. Validate every
+  // non-dropped entrant that submitted a deck (a missing deck isn't blocked here
+  // — that's a registration policy, not a legality failure).
+  const active = entrants.filter((e) => !e.dropped);
+  const legalities = await validateDecks(active.map((e) => (e.deck as any) ?? null));
+  const illegal = active
+    .map((e, i) => ({ e, legality: legalities[i] }))
+    .filter(({ e, legality }) => !!e.deck && !legality.legal);
+  if (illegal.length) {
+    return NextResponse.json({
+      ok: false,
+      error: `Can't start — ${illegal.length === 1 ? 'an entrant has' : `${illegal.length} entrants have`} an illegal deck: ${illegal.map(({ e }) => e.displayName).join(', ')}. Ask them to fix it first.`,
+      illegal: illegal.map(({ e, legality }) => ({ id: e.id, name: e.displayName, violations: legality.violations })),
+    }, { status: 400 });
+  }
+
   const result = await createRound(id, 1, entrants, []);
   if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
 

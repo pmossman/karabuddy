@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, replays } from '@/lib/schema';
+import { users, teams, teamMembers, replays, tournamentEntrants } from '@/lib/schema';
 import { POST as createTournament } from '@/app/api/teams/[slug]/tournaments/route';
 import { GET as getDetail } from '@/app/api/teams/[slug]/tournaments/[id]/route';
 import { POST as addEntrant, } from '@/app/api/teams/[slug]/tournaments/[id]/entrants/route';
@@ -85,6 +85,28 @@ describe('start', () => {
     await addEntrant(jreq({}), p(slug, { id }));
     as(member);
     expect((await startTournament(noBody(), p(slug, { id }))).status).toBe(403);
+  });
+
+  it('B152: refuses to start when an entrant has an illegal deck', async () => {
+    const owner = await seedUser();
+    const slug = await seedTeam([owner]);
+    as(owner);
+    const id = (await (await createTournament(jreq({ name: 'Legal Check' }), p(slug))).json()).id as string;
+    await addEntrant(jreq({ displayName: 'G1' }), p(slug, { id })); // deckless is fine
+    // An entrant with an illegal deck (sideboard 12) — inserted directly.
+    await getDb().insert(tournamentEntrants).values({
+      id: `te_${randomUUID().slice(0, 8)}`, tournamentId: id, userId: null, displayName: 'BadDeck',
+      deckName: 'Bad', deck: {
+        leader: { id: 'SOR_010', count: 1 }, base: { id: 'SOR_030', count: 1 },
+        deck: Array.from({ length: 50 }, (_, i) => ({ id: `SOR_${100 + i}`, count: 1 })),
+        sideboard: Array.from({ length: 12 }, (_, i) => ({ id: `SOR_${300 + i}`, count: 1 })),
+      } as any,
+    });
+
+    const res = await startTournament(noBody(), p(slug, { id }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/BadDeck/);
+    expect((await detail(slug, id)).tournament.status).toBe('setup'); // not started
   });
 
   it('odd field gets a pre-confirmed 2-0 bye', async () => {

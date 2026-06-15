@@ -169,13 +169,19 @@ function OrganizerControls({ teamSlug, detail, onChanged }: { teamSlug: string; 
   };
 
   const activeEntrants = entrants.filter((e) => !e.dropped).length;
+  // B152: can't start with illegal decklists.
+  const illegalDecks = entrants.filter((e) => !e.dropped && e.legality && !e.legality.legal);
   const currentRound = detail.rounds.length > 0 ? detail.rounds[detail.rounds.length - 1] : null;
   const reachedPlanned = t.plannedRounds != null && (currentRound?.number ?? 0) >= t.plannedRounds;
+
+  const startBlock = activeEntrants < 2 ? 'Need at least 2 entrants'
+    : illegalDecks.length > 0 ? `Fix illegal decks first: ${illegalDecks.map((e) => e.displayName).join(', ')}`
+    : undefined;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
       {t.status === 'setup' && (
-        <button type="button" onClick={() => post('start')} disabled={busy || activeEntrants < 2} style={primaryButtonStyle} title={activeEntrants < 2 ? 'Need at least 2 entrants' : undefined}>
+        <button type="button" onClick={() => post('start')} disabled={busy || !!startBlock} style={primaryButtonStyle} title={startBlock}>
           {busy ? 'Working…' : `Start tournament (pair round 1)`}
         </button>
       )}
