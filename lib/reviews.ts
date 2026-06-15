@@ -83,6 +83,20 @@ export async function reviewCountsByShare(replaySlugs: string[]): Promise<Map<st
   return out;
 }
 
+// Slugs (from the given set) where `userId` authored a tag scoped to `teamSlug`
+// — i.e. they left feedback the team can see. Gates the "I reviewed" mark: you
+// can't claim a review without having commented on the replay.
+export async function viewerCommentedSlugs(replaySlugs: string[], teamSlug: string, userId: string | null): Promise<Set<string>> {
+  if (replaySlugs.length === 0 || !userId) return new Set();
+  const db = getDb();
+  const rows = await db
+    .selectDistinct({ slug: tags.replaySlug })
+    .from(tags)
+    .innerJoin(tagTeamScope, eq(tagTeamScope.tagId, tags.id))
+    .where(and(eq(tagTeamScope.teamSlug, teamSlug), eq(tags.userId, userId), inArray(tags.replaySlug, replaySlugs)));
+  return new Set(rows.map((r) => r.slug));
+}
+
 // Distinct team-scoped commenters (who left tags VISIBLE to the team, via
 // tag_team_scope) per replay, with a tag count — the "tags shown" side of the
 // review surface (reviewed vs commented are both visible). Personal tags (no

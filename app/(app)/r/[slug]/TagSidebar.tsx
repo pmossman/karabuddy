@@ -22,6 +22,7 @@ import { SeriesNav, type SeriesInfo } from './SeriesNav';
 import { scopeFromMentions, scopeLabel } from '@/lib/commentScope';
 import { LabelsRow } from './LabelsRow';
 import { Grabber } from './useDragSize';
+import { ReviewStatusHeader } from './ReviewStatusHeader';
 
 interface ReplayRow {
   slug: string;
@@ -179,7 +180,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // tags/discussion at once, so they split into two tabs. Desktop (tall docked
   // sidebar) ignores this and stacks both. Default to the log — "what happened
   // here" is the context you read before tagging/discussing.
-  const [mobileTab, setMobileTab] = useState<'log' | 'tags'>('log');
+  // B149: the review panel is primary; the karabast game log lives behind a
+  // Review|Log segmented toggle (desktop too, not just mobile), so each gets the
+  // full panel height instead of fighting for it stacked. Default = Review.
+  const [panelTab, setPanelTab] = useState<'log' | 'tags'>('tags');
   const [draft, setDraft] = useState('');
   // B55c: structured mentions for the in-progress tag draft. Cleared on
   // submit/cancel. Userid + teamSlug picked from the autocomplete popover.
@@ -924,16 +928,14 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         )}
       </section>
 
-      {/* B100: mobile tab switcher — Game log vs Tags. The sheet is too short
-          to show both; desktop stacks them so it never renders this. */}
-      {isMobile && (
-        <section style={{ padding: '8px 14px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6 }}>
-          <DrawerTab active={mobileTab === 'log'} onClick={() => setMobileTab('log')}>Game log</DrawerTab>
-          <DrawerTab active={mobileTab === 'tags'} onClick={() => setMobileTab('tags')}>
-            Tags{tags.filter((t) => !t.parentTagId).length > 0 ? ` (${tags.filter((t) => !t.parentTagId).length})` : ''}
-          </DrawerTab>
-        </section>
-      )}
+      {/* B149: Review|Log toggle on EVERY viewport — the review panel is primary,
+          the game log secondary. (Was mobile-only; desktop used to stack both.) */}
+      <section style={{ padding: '8px 14px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6 }}>
+        <DrawerTab active={panelTab === 'tags'} onClick={() => setPanelTab('tags')}>
+          Review{tags.filter((t) => !t.parentTagId).length > 0 ? ` (${tags.filter((t) => !t.parentTagId).length})` : ''}
+        </DrawerTab>
+        <DrawerTab active={panelTab === 'log'} onClick={() => setPanelTab('log')}>Game log</DrawerTab>
+      </section>
 
       {/* B66b dead-store: previous desktop-only nav/step row got replaced
           by the floating overlays. Block kept-but-gated so the imports
@@ -957,7 +959,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         </section>
       )}
 
-      {(!isMobile || mobileTab === 'log') && (
+      {panelTab === 'log' && (
         <FrameLog
           messagesByFrame={messagesByFrame}
           currentIndex={currentIndex}
@@ -966,8 +968,12 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         />
       )}
 
-      {(!isMobile || mobileTab === 'tags') && (
+      {panelTab === 'tags' && (
       <>
+      {/* B149: review-status strip — reviewer marks + in-place "Mark reviewed"
+          for the viewer's teams with an open request (refetches when a comment
+          is added, so the comment-gate flips live). */}
+      <ReviewStatusHeader replaySlug={replay.slug} refreshKey={tags.length} />
       <section style={{ padding: '14px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {/* B34: "+ Tag this frame" gets its own line (full-width button) so
             it's the primary action above the tag list. Prev/Next tag nav
@@ -1052,38 +1058,47 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       </section>
 
       <section ref={tagListScrollRef} style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
-        {tagsAtCurrent.some((t) => !t.parentTagId) && (
-          <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This frame</div>
-            {/* B78: render top-level tags only; replies nest inside via renderThread. */}
-            {tagsAtCurrent.filter((t) => !t.parentTagId).map((t) => renderThread(t, true))}
-          </div>
-        )}
-
-        {/* B132: only tags AT or AFTER the current frame — the list reads as
-            "what's coming up" while you review forward; past comments live at
-            the frames themselves (jump back with [ or the edge buttons). */}
-        <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Coming up ({tags.filter((t) => !t.parentTagId && t.frameIndex > currentIndex).length})</div>
+        {/* B149: three explicit sections — This frame (current) · Upcoming
+            (ahead, nearest-first) · Previous (behind, nearest-first, collapsed
+            by default). Replaces the B132 "only at-or-after" view, which hid the
+            backlog the reviewer wants back. */}
         {tags.length === 0 ? (
           <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No tags yet. Click &quot;+ Tag this frame&quot; to add one.</div>
         ) : (
-          // B3 + B7: current-frame tags are already shown in the callout
-          // above; render the upcoming rest with B7's per-tag canEdit
-          // / canDelete computation so replay owners can delete others'
-          // comments but only authors can edit text.
           (() => {
-            // B78: top-level tags after the current frame; their replies nest
-            // inside via renderThread (replies share the parent's frame).
-            const otherTags = tags.filter((t) => t.frameIndex > currentIndex && !t.parentTagId);
-            if (otherTags.length === 0) {
-              return (
-                <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>No more tags after this frame.</div>
-              );
-            }
+            const top = (t: TagRow) => !t.parentTagId;
+            const current = tagsAtCurrent.filter(top);
+            const upcoming = tags.filter((t) => top(t) && t.frameIndex > currentIndex).sort((a, b) => a.frameIndex - b.frameIndex);
+            const previous = tags.filter((t) => top(t) && t.frameIndex < currentIndex).sort((a, b) => b.frameIndex - a.frameIndex);
+            const label: React.CSSProperties = { fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' };
+            const empty: React.CSSProperties = { fontSize: 11, color: '#6c7588', fontStyle: 'italic' };
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {[...otherTags].sort((a, b) => a.frameIndex - b.frameIndex).map((t) => renderThread(t, false))}
-              </div>
+              <>
+                {/* This frame — only when there's something here. */}
+                {current.length > 0 && (
+                  <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={label}>This frame</div>
+                    {current.map((t) => renderThread(t, true))}
+                  </div>
+                )}
+
+                {/* Upcoming — ahead of the current frame, nearest-first. */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ ...label, marginBottom: 8 }}>Upcoming ({upcoming.length})</div>
+                  {upcoming.length === 0
+                    ? <div style={empty}>Nothing tagged ahead.</div>
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{upcoming.map((t) => renderThread(t, false))}</div>}
+                </div>
+
+                {/* Previous — behind the current frame, nearest-first. Lives at
+                    the bottom of the scroll area, so it's always expanded. */}
+                <div>
+                  <div style={{ ...label, marginBottom: 8 }}>Previous ({previous.length})</div>
+                  {previous.length === 0
+                    ? <div style={empty}>Nothing tagged earlier.</div>
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{previous.map((t) => renderThread(t, false))}</div>}
+                </div>
+              </>
             );
           })()
         )}
@@ -1143,7 +1158,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           natural "after you've read the current frame's tags, jump to the
           next one" flow. Hidden when there are no tags to jump to, and (mobile)
           only on the Tags tab. */}
-      {(!isMobile || mobileTab === 'tags') && tags.length > 0 && (
+      {panelTab === 'tags' && tags.length > 0 && (
         <section style={{ padding: '10px 22px', borderTop: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6, justifyContent: 'space-between' }}>
           <FooterBtn onClick={() => onJumpToAdjacentTag(-1)} variant="ghost" title="Previous tag ([)">‹ Prev tag</FooterBtn>
           <FooterBtn onClick={() => onJumpToAdjacentTag(1)} variant="ghost" title="Next tag (])">Next tag ›</FooterBtn>

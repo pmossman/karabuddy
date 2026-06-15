@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, replayTeamShares } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
-import { markReviewed, unmarkReviewed } from '@/lib/reviews';
+import { markReviewed, unmarkReviewed, viewerCommentedSlugs } from '@/lib/reviews';
 import { notifyReviewMark } from '@/lib/reviewNotify';
 
 export const runtime = 'nodejs';
@@ -45,8 +45,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     .limit(1);
   if (!share) return NextResponse.json({ ok: false, error: 'no open review request for this team' }, { status: 400 });
 
-  if (reviewed) await markReviewed(slug, teamSlug, userId);
-  else await unmarkReviewed(slug, teamSlug, userId);
+  if (reviewed) {
+    // A review means you left feedback — gate the mark on a team-scoped comment.
+    const commented = await viewerCommentedSlugs([slug], teamSlug, userId);
+    if (!commented.has(slug)) {
+      return NextResponse.json({ ok: false, error: 'leave a comment for the team before marking reviewed' }, { status: 400 });
+    }
+    await markReviewed(slug, teamSlug, userId);
+  } else {
+    await unmarkReviewed(slug, teamSlug, userId);
+  }
 
   // Best-effort Discord post on a NEW mark (never blocks the write).
   if (reviewed) {

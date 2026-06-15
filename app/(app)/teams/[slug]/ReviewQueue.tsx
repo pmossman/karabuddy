@@ -15,6 +15,7 @@ type Row = {
   reviewers: Reviewer[];
   reviewerCount: number;
   viewerReviewed: boolean;
+  viewerCommented: boolean;
   commenters: string[];
   commentCount: number;
   [k: string]: unknown;
@@ -78,7 +79,7 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
     return (
       <div style={{ fontSize: 13, color: '#6c7588', padding: '24px 0', lineHeight: 1.5 }}>
         No replays up for review. An uploader requests one from its{' '}
-        <strong style={{ color: '#a0a8b8' }}>Share</strong> menu — &ldquo;Request team review&rdquo; on a team they&apos;ve shared it with.
+        <strong style={{ color: '#a0a8b8' }}>Share</strong>{' '}menu — &ldquo;Request team review&rdquo; on a team they&apos;ve shared it with.
       </div>
     );
   }
@@ -133,21 +134,36 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => toggleReviewed(r.slug, r.viewerReviewed)}
-                disabled={marking.has(r.slug)}
-                data-testid={`mark-reviewed-${r.slug}`}
-                style={{
-                  alignSelf: 'flex-start',
-                  background: r.viewerReviewed ? 'rgba(107, 217, 104, 0.18)' : 'rgba(107, 217, 104, 0.08)',
-                  border: `1px solid rgba(107, 217, 104, ${r.viewerReviewed ? 0.55 : 0.32})`,
-                  color: '#7fd97f', borderRadius: tokens.radius.md, padding: '6px 12px',
-                  fontSize: 12.5, fontWeight: 700, cursor: marking.has(r.slug) ? 'default' : 'pointer', fontFamily: 'inherit',
-                }}
-              >
-                {marking.has(r.slug) ? '…' : r.viewerReviewed ? '✓ You reviewed — undo' : '✓ I reviewed'}
-              </button>
+              {(() => {
+                // A review means you left feedback — the mark is gated on a
+                // team-scoped comment (you can always undo your own mark).
+                const canMark = r.viewerReviewed || r.viewerCommented;
+                const busy = marking.has(r.slug);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => canMark && toggleReviewed(r.slug, r.viewerReviewed)}
+                    disabled={busy || !canMark}
+                    data-testid={`mark-reviewed-${r.slug}`}
+                    title={canMark ? undefined : 'Leave a comment on the replay before marking it reviewed'}
+                    style={{
+                      alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 7,
+                      background: !canMark ? 'transparent' : r.viewerReviewed ? 'rgba(107, 217, 104, 0.18)' : 'rgba(107, 217, 104, 0.08)',
+                      border: `1px solid ${!canMark ? 'rgba(160,168,184,0.22)' : `rgba(107, 217, 104, ${r.viewerReviewed ? 0.55 : 0.32})`}`,
+                      color: !canMark ? '#6c7588' : '#7fd97f', borderRadius: tokens.radius.md, padding: '6px 12px',
+                      fontSize: 12.5, fontWeight: 700,
+                      cursor: busy ? 'default' : canMark ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                    }}
+                  >
+                    {busy ? '…' : (
+                      <>
+                        <span aria-hidden>{r.viewerReviewed ? '✓' : canMark ? '✓' : '💬'}</span>
+                        <span>{r.viewerReviewed ? 'You reviewed — undo' : canMark ? 'I reviewed' : 'Comment to review'}</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
             </div>
           ))}
         </div>

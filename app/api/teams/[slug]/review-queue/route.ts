@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { replays, replayTeamShares, replayAltPayload, users } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { serializeReplayRow } from '@/lib/replayRow';
-import { reviewersForTeam, commentersForTeam } from '@/lib/reviews';
+import { reviewersForTeam, commentersForTeam, viewerCommentedSlugs } from '@/lib/reviews';
 
 export const runtime = 'nodejs';
 
@@ -56,9 +56,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
       .where(inArray(replayAltPayload.replaySlug, slugs))).map((r) => r.slug),
   );
 
-  // B149: durable reviewer marks + team-scoped commenters per replay.
+  // B149: durable reviewer marks + team-scoped commenters per replay, and which
+  // the viewer has commented on (gates "I reviewed").
   const reviewers = await reviewersForTeam(slugs, slug);
   const commenters = await commentersForTeam(slugs, slug);
+  const viewerCommented = await viewerCommentedSlugs(slugs, slug, userId);
 
   const data = rows
     .map(({ replay, ownerName }) => {
@@ -75,6 +77,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
         reviewers: marks.map((m) => ({ userId: m.userId, name: m.name, reviewedAt: m.reviewedAt })),
         reviewerCount: marks.length,
         viewerReviewed: marks.some((m) => m.userId === userId),
+        viewerCommented: viewerCommented.has(replay.slug),
         commenters: commenters.get(replay.slug)?.names ?? [],
         commentCount: commenters.get(replay.slug)?.count ?? 0,
       };

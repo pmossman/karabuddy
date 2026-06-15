@@ -38,9 +38,9 @@ async function seedReplay(ownerUserId: string) {
 async function share(slug: string, teamSlug: string, by: string) {
   await getDb().insert(replayTeamShares).values({ replaySlug: slug, teamSlug, sharedBy: by });
 }
-async function seedTag(slug: string, teamSlug: string, authorName: string) {
+async function seedTag(slug: string, teamSlug: string, authorName: string, userId?: string) {
   const id = randomUUID();
-  await getDb().insert(tags).values({ id, replaySlug: slug, frameIndex: 0, authorToken: `kbx_${randomUUID()}`, authorName, comment: 'gg' });
+  await getDb().insert(tags).values({ id, replaySlug: slug, frameIndex: 0, authorToken: `kbx_${randomUUID()}`, authorName, userId: userId ?? null, comment: 'gg' });
   await getDb().insert(tagTeamScope).values({ tagId: id, teamSlug });
 }
 const reviewReq = (slug: string, body: unknown) =>
@@ -110,6 +110,8 @@ describe('per-user review marks (members)', () => {
     const team = await seedTeam(owner, [owner, a, b]);
     const slug = await seedReplay(owner);
     await share(slug, team, owner);
+    await seedTag(slug, team, 'Ann', a);   // a review requires a comment
+    await seedTag(slug, team, 'Bo', b);
     as(owner);
     await reviewReq(slug, { teamSlug: team, requested: true });
 
@@ -141,6 +143,7 @@ describe('per-user review marks (members)', () => {
     const team = await seedTeam(owner, [owner, a]);
     const slug = await seedReplay(owner);
     await share(slug, team, owner);
+    await seedTag(slug, team, 'A', a);
     as(owner);
     await reviewReq(slug, { teamSlug: team, requested: true });
 
@@ -150,6 +153,30 @@ describe('per-user review marks (members)', () => {
     expect((await (await getQueue(team)).json()).data[0].reviewerCount).toBe(1);
     await markReq(slug, { teamSlug: team, reviewed: false }); // un-review
     expect((await (await getQueue(team)).json()).data[0].reviewerCount).toBe(0);
+  });
+
+  it('cannot mark reviewed without leaving a comment (gated on team-scoped feedback)', async () => {
+    const owner = await seedUser();
+    const a = await seedUser('Ann');
+    const team = await seedTeam(owner, [owner, a]);
+    const slug = await seedReplay(owner);
+    await share(slug, team, owner);
+    as(owner);
+    await reviewReq(slug, { teamSlug: team, requested: true });
+
+    // No comment yet → blocked, and the queue flags it for the UI.
+    as(a);
+    expect((await markReq(slug, { teamSlug: team, reviewed: true })).status).toBe(400);
+    let q = await (await getQueue(team)).json();
+    expect(q.data[0].viewerCommented).toBe(false);
+    expect(q.data[0].reviewerCount).toBe(0);
+
+    // Comment, then the mark goes through.
+    await seedTag(slug, team, 'Ann', a);
+    q = await (await getQueue(team)).json();
+    expect(q.data[0].viewerCommented).toBe(true);
+    expect((await markReq(slug, { teamSlug: team, reviewed: true })).status).toBe(200);
+    expect((await (await getQueue(team)).json()).data[0].reviewerCount).toBe(1);
   });
 
   it('requires an OPEN request (requested-only) and team membership', async () => {
@@ -196,6 +223,7 @@ describe('requester surface — /me/review-requests', () => {
     const team = await seedTeam(owner, [owner, a]);
     const slug = await seedReplay(owner);
     await share(slug, team, owner);
+    await seedTag(slug, team, 'Ann', a);
     as(owner);
     await reviewReq(slug, { teamSlug: team, requested: true });
     as(a);
