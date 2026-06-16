@@ -7,18 +7,20 @@ import { TacticalHeading } from '@/app/_components/TacticalHeading';
 import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
-// The team dashboard "hub": a full-width card grid that summarizes everything
-// going on in the team without making you click through tabs. Self-fetches the
-// member-gated /overview bundle (mirrors HomeTeamActivity / TeamDiscussion);
-// each card deep-links to its full tab. Analytics is a separate client fetch so
-// stats logic isn't duplicated and it degrades cleanly when empty.
+// The team dashboard "hub": one section per feature (Members, Tournaments,
+// Reviews, Team Replays) so you get a real summary of what's going on without
+// clicking through tabs. Self-fetches the member-gated /overview bundle; each
+// section deep-links to its full tab.
 
+interface Member { userId: string; role: string; name: string | null; image: string | null }
+interface Tourney { id: string; name: string; status: string; entrantCount: number }
 interface OverviewData {
   counts: { tournaments: number; openReviews: number; surfacedReplays: number; members: number };
-  openTournaments: { id: string; name: string; status: string; entrantCount: number }[];
+  members: Member[];
+  openTournaments: Tourney[];
+  reviewReplays: any[];
   recentReplays: any[];
 }
-interface LeaderStat { leader: string; games: number; wins: number; winRate: number | null }
 
 const actionLink: React.CSSProperties = {
   font: `700 11px ${tokens.led.mono}`, letterSpacing: '0.08em', color: tokens.color.accent, textDecoration: 'none', textTransform: 'uppercase',
@@ -26,7 +28,6 @@ const actionLink: React.CSSProperties = {
 
 export function TeamOverview({ slug }: { slug: string }) {
   const [data, setData] = useState<OverviewData | null>(null);
-  const [leaders, setLeaders] = useState<LeaderStat[] | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -35,36 +36,37 @@ export function TeamOverview({ slug }: { slug: string }) {
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((j) => { if (live) setData(j); })
       .catch(() => { if (live) setError(true); });
-    fetch(`/api/stats?scope=team&team=${slug}&type=leaders`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((j) => { if (live) setLeaders(Array.isArray(j.data) ? j.data : []); })
-      .catch(() => { if (live) setLeaders([]); });
     return () => { live = false; };
   }, [slug]);
 
-  if (error) {
-    return <p style={{ color: '#a0a8b8', fontSize: 13 }}>Couldn’t load the dashboard. Try refreshing.</p>;
-  }
+  if (error) return <p style={{ color: '#a0a8b8', fontSize: 13 }}>Couldn’t load the dashboard. Try refreshing.</p>;
   if (!data) return <DashboardSkeleton />;
 
-  const { counts, openTournaments, recentReplays } = data;
+  const { counts, members, openTournaments, reviewReplays, recentReplays } = data;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-        <Kpi label="Members" value={counts.members} href={`/teams/${slug}?tab=members`} />
-        <Kpi label="Replays" value={counts.surfacedReplays} href={`/teams/${slug}?tab=replays`} />
-        <Kpi label="Open reviews" value={counts.openReviews} href={`/teams/${slug}?tab=review`} accent={counts.openReviews > 0} />
-        <Kpi label="Tournaments" value={counts.tournaments} href={`/teams/${slug}?tab=tournaments`} />
-      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, alignItems: 'start' }}>
+        {/* Members */}
+        <Panel style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <TacticalHeading action={<Link href={`/teams/${slug}?tab=members`} style={actionLink}>View all →</Link>}>
+            Members · {counts.members}
+          </TacticalHeading>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {members.map((m) => (
+              <div key={m.userId} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px 5px 5px', borderRadius: 999, background: 'rgba(255,255,255,0.03)', border: '1px solid #21262f' }}>
+                <Avatar name={m.name} image={m.image} size={22} />
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#d6d6d6' }}>{m.name || 'Unnamed'}</span>
+                {m.role === 'owner' && <span style={{ fontSize: 9, fontWeight: 700, color: '#5db4ff', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Owner</span>}
+              </div>
+            ))}
+          </div>
+        </Panel>
 
-      {/* Content cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 16 }}>
         {/* Tournaments */}
         <Panel accent={openTournaments.length > 0} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <TacticalHeading action={<Link href={`/teams/${slug}?tab=tournaments`} style={actionLink}>View all →</Link>}>
-            Tournaments
+            Tournaments{counts.tournaments > 0 ? ` · ${counts.tournaments}` : ''}
           </TacticalHeading>
           {openTournaments.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -86,46 +88,29 @@ export function TeamOverview({ slug }: { slug: string }) {
         {/* Reviews */}
         <Panel accent={counts.openReviews > 0} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <TacticalHeading action={<Link href={`/teams/${slug}?tab=review`} style={actionLink}>View all →</Link>}>
-            Reviews
+            Reviews{counts.openReviews > 0 ? ` · ${counts.openReviews}` : ''}
           </TacticalHeading>
-          {counts.openReviews > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-              <span style={{ font: `700 38px ${tokens.led.mono}`, color: tokens.led.on, lineHeight: 1 }}>{counts.openReviews}</span>
-              <span style={{ fontSize: 13, color: '#a0a8b8' }}>replay{counts.openReviews === 1 ? '' : 's'} awaiting review</span>
+          {reviewReplays.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {reviewReplays.map((r) => (
+                <Link key={r.slug} href={`/r/${r.slug}`} style={rowLink}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#e6e6e6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replayLabel(r)}</span>
+                  <span style={{ fontSize: 11, color: '#8a93a3', flexShrink: 0 }}>
+                    {r.requestedByName ? `${r.requestedByName} · ` : ''}{timeAgo(r.requestedAt)}
+                  </span>
+                </Link>
+              ))}
             </div>
           ) : (
             <Empty>All caught up — no replays are waiting on a review.</Empty>
           )}
         </Panel>
-
-        {/* Analytics */}
-        <Panel style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <TacticalHeading action={<Link href={`/stats?scope=team&team=${slug}`} style={actionLink}>View all →</Link>}>
-            Analytics
-          </TacticalHeading>
-          {leaders === null ? (
-            <Empty>Loading…</Empty>
-          ) : leaders.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {leaders.slice(0, 4).map((l) => (
-                <div key={l.leader} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 13, color: '#d6d6d6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.leader}</span>
-                  <span style={{ fontSize: 12, color: '#8a93a3', flexShrink: 0 }}>
-                    {l.games}g{l.winRate != null ? ` · ${Math.round(l.winRate * 100)}%` : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <Empty>No tracked games yet. Record a few and the meta shows up here.</Empty>
-          )}
-        </Panel>
       </div>
 
-      {/* Recent replays — full width */}
+      {/* Team Replays — full width */}
       <section>
         <TacticalHeading action={<Link href={`/teams/${slug}?tab=replays`} style={actionLink}>View all →</Link>}>
-          Recent replays
+          Team replays{counts.surfacedReplays > 0 ? ` · ${counts.surfacedReplays}` : ''}
         </TacticalHeading>
         {recentReplays.length > 0 ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
@@ -149,14 +134,15 @@ const rowLink: React.CSSProperties = {
   background: 'rgba(255,255,255,0.025)', border: '1px solid #21262f',
 };
 
-function Kpi({ label, value, href, accent = false }: { label: string; value: number; href: string; accent?: boolean }) {
+function Avatar({ name, image, size }: { name: string | null; image: string | null; size: number }) {
+  const initials = (name || '?').replace(/@.*/, '').trim().slice(0, 2).toUpperCase() || '?';
   return (
-    <Link href={href} style={{ textDecoration: 'none' }}>
-      <Panel hud={false} accent={accent} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={{ font: `700 30px ${tokens.led.mono}`, color: accent ? tokens.led.on : '#e6e6e6', lineHeight: 1 }}>{value}</span>
-        <span style={{ fontSize: 11, color: '#8a93a3', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{label}</span>
-      </Panel>
-    </Link>
+    <span style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: image ? 'transparent' : '#2e333c', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      {image
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        : <span style={{ fontSize: size * 0.4, fontWeight: 700, color: '#d6d6d6' }}>{initials}</span>}
+    </span>
   );
 }
 
@@ -175,6 +161,27 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
+function replayLabel(r: any): string {
+  if (r.displayName) return r.displayName;
+  const players = (r.players as any[]) || [];
+  const names = players.map((p) => p?.username || p?.name).filter(Boolean);
+  return names.length >= 2 ? `${names[0]} vs ${names[1]}` : (names[0] || 'Replay');
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 function Empty({ children }: { children: React.ReactNode }) {
   return <p style={{ margin: 0, fontSize: 13, color: '#8a93a3', lineHeight: 1.5 }}>{children}</p>;
 }
@@ -182,12 +189,10 @@ function Empty({ children }: { children: React.ReactNode }) {
 function DashboardSkeleton() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-        {[0, 1, 2, 3].map((i) => <Panel key={i} hud={false} padding={14} style={{ height: 64 }}><span /></Panel>)}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
+        {[0, 1, 2].map((i) => <Panel key={i} style={{ height: 150 }}><span /></Panel>)}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 16 }}>
-        {[0, 1, 2].map((i) => <Panel key={i} style={{ height: 140 }}><span /></Panel>)}
-      </div>
+      <Panel hud={false} style={{ height: 120, border: '1px dashed #2e333c', background: 'transparent', boxShadow: 'none' }}><span /></Panel>
     </div>
   );
 }

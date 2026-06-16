@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, desc, eq, inArray, isNotNull, count } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, users, teamMembers, replayTeamShares, tournaments, tournamentEntrants } from '@/lib/schema';
@@ -8,14 +8,15 @@ import { serializeReplayRow } from '@/lib/replayRow';
 
 export const runtime = 'nodejs';
 
-const RECENT_REPLAYS = 4;
-const OPEN_TOURNAMENTS = 3;
+const RECENT_REPLAYS = 6;
+const REVIEW_PREVIEW = 5;
+const OPEN_TOURNAMENTS = 5;
 
 // GET /api/teams/[slug]/overview — the team dashboard "hub" bundle: one
-// member-gated fetch that summarizes everything going on in the team, built by
-// reusing the SAME helpers the individual tabs use (so the summary can't drift
-// from the drill-in pages). Returns counts + small preview lists; the dashboard
-// cards each deep-link to their full tab.
+// member-gated fetch that gives a real summary of everything going on in the
+// team, one section per feature (members / tournaments / reviews / replays).
+// Built by reusing the SAME helpers the individual tabs use so the summary
+// can't drift from the drill-in pages.
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
@@ -26,6 +27,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   }
 
   const db = getDb();
+
+  // Members — the full roster (teams are small); the card shows avatars + names.
+  const memberRows = await db
+    .select({ userId: teamMembers.userId, role: teamMembers.role, name: users.name, image: users.image })
+    .from(teamMembers)
+    .innerJoin(users, eq(users.id, teamMembers.userId))
+    .where(eq(teamMembers.teamSlug, slug))
+    .orderBy(teamMembers.joinedAt);
 
   // Surfaced replays for this team (same rule as the Replays tab).
   const surfaceSlugs = await surfacedReplaySlugs([slug]);
@@ -45,17 +54,46 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     );
   }
 
-  // Open review requests for this team (same flag the Reviews tab reads).
-  const [{ n: openReviews }] = await db
-    .select({ n: count() })
+  // Open review requests for this team (same flag the Reviews tab reads), newest
+  // first — count for the heading + a preview list of the actual replays.
+  const flagged = await db
+    .select({
+      replaySlug: replayTeamShares.replaySlug,
+      requestedAt: replayTeamShares.reviewRequestedAt,
+      requestedBy: replayTeamShares.reviewRequestedBy,
+    })
     .from(replayTeamShares)
-    .where(and(eq(replayTeamShares.teamSlug, slug), isNotNull(replayTeamShares.reviewRequestedAt)));
+    .where(and(eq(replayTeamShares.teamSlug, slug), isNotNull(replayTeamShares.reviewRequestedAt)))
+    .orderBy(desc(replayTeamShares.reviewRequestedAt));
 
-  // Members count.
-  const [{ n: memberCount }] = await db
-    .select({ n: count() })
-    .from(teamMembers)
-    .where(eq(teamMembers.teamSlug, slug));
+  let reviewReplays: any[] = [];
+  if (flagged.length > 0) {
+    const previewSlugs = flagged.slice(0, REVIEW_PREVIEW).map((f) => f.replaySlug);
+    const requesterIds = Array.from(new Set(flagged.map((f) => f.requestedBy).filter(Boolean))) as string[];
+    const requesterNames = new Map<string, string | null>();
+    if (requesterIds.length > 0) {
+      const rn = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, requesterIds));
+      for (const r of rn) requesterNames.set(r.id, r.name ?? null);
+    }
+    const rows = await db
+      .select({ replay: replays, ownerName: users.name })
+      .from(replays)
+      .leftJoin(users, eq(users.id, replays.userId))
+      .where(inArray(replays.slug, previewSlugs));
+    const bySlug = new Map(rows.map((r) => [r.replay.slug, r]));
+    reviewReplays = previewSlugs
+      .map((s) => {
+        const row = bySlug.get(s);
+        if (!row) return null;
+        const f = flagged.find((x) => x.replaySlug === s)!;
+        return {
+          ...serializeReplayRow(row.replay, { ownerName: row.ownerName ?? null, viewerPlayerId: null }),
+          requestedAt: f.requestedAt instanceof Date ? f.requestedAt.toISOString() : (f.requestedAt as any) ?? null,
+          requestedByName: f.requestedBy ? requesterNames.get(f.requestedBy) ?? null : null,
+        };
+      })
+      .filter(Boolean);
+  }
 
   // Tournaments — all for the count, the active/recent few (not completed) for
   // the card, with entrant counts.
@@ -69,27 +107,28 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   const openIds = openTournamentRows.map((t) => t.id);
   if (openIds.length > 0) {
     const ec = await db
-      .select({ id: tournamentEntrants.tournamentId, n: count() })
+      .select({ id: tournamentEntrants.tournamentId, n: tournamentEntrants.userId })
       .from(tournamentEntrants)
-      .where(inArray(tournamentEntrants.tournamentId, openIds))
-      .groupBy(tournamentEntrants.tournamentId);
-    for (const r of ec) entrantCounts.set(r.id, Number(r.n));
+      .where(inArray(tournamentEntrants.tournamentId, openIds));
+    for (const r of ec) entrantCounts.set(r.id, (entrantCounts.get(r.id) ?? 0) + 1);
   }
 
   return NextResponse.json({
     ok: true,
     counts: {
       tournaments: tRows.length,
-      openReviews: Number(openReviews),
+      openReviews: flagged.length,
       surfacedReplays: surfaceSlugs.length,
-      members: Number(memberCount),
+      members: memberRows.length,
     },
+    members: memberRows,
     openTournaments: openTournamentRows.map((t) => ({
       id: t.id,
       name: t.name,
       status: t.status,
       entrantCount: entrantCounts.get(t.id) ?? 0,
     })),
+    reviewReplays,
     recentReplays,
   });
 }
