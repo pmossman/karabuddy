@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { POST as upload } from '@/app/api/replays/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, tags, replayTeamShares, tagTeamScope } from '@/lib/schema';
-import { getMemoryBlob } from '@/lib/blob';
+import { getMemoryBlob, getMemoryPutOptions } from '@/lib/blob';
 import { decodeReplay } from '@/lib/replayDecoder';
 import { eq } from 'drizzle-orm';
 
@@ -67,6 +67,18 @@ describe('POST /api/replays — new upload', () => {
     const tagRows = await getDb().select().from(tags).where(eq(tags.replaySlug, row.slug));
     expect(tagRows).toHaveLength(1);
     expect(tagRows[0].comment).toBe('nice');
+  });
+
+  it('writes the payload blob with a short cache TTL (create + overwrite)', async () => {
+    // The blob is overwritten in place at a stable path as the game streams in,
+    // so it must NOT carry a 1-year browser cache — a viewer who fetched an early
+    // partial would be pinned to it for a year. Both the initial create and the
+    // in-place overwrite set a short max-age so stale copies self-heal.
+    as(null);
+    const { slug } = await (await doUpload('kbx_ttl', { gameId: 'g-ttl', actionCount: 5 })).json();
+    expect(getMemoryPutOptions(`replays/${slug}.json`)?.cacheControlMaxAge).toBe(300);
+    await doUpload('kbx_ttl', { gameId: 'g-ttl', actionCount: 12 }); // overwrite path
+    expect(getMemoryPutOptions(`replays/${slug}.json`)?.cacheControlMaxAge).toBe(300);
   });
 
   it('extracts + normalizes the winner username to a playerId', async () => {

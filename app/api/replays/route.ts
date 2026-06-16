@@ -16,6 +16,10 @@ import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
+// The replay payload blob is overwritten in place at a stable path as a game
+// streams in, so it's a MUTABLE resource and must not get the @vercel/blob
+// default 1-year browser cache (which permanently pins an early partial fetch).
+const PAYLOAD_CACHE_MAX_AGE_SECONDS = 300;
 
 export function OPTIONS(req: Request) {
   return preflight(req);
@@ -277,6 +281,11 @@ export async function POST(req: Request) {
         access: 'public',
         contentType: 'application/json',
         addRandomSuffix: false,
+        // This blob is overwritten in place as the game streams in (B120 merge),
+        // so it must NOT carry the default 1-year browser cache — a viewer who
+        // fetched an early partial would be pinned to it for a year. A short TTL
+        // (matching s-maxage) lets stale copies self-heal within minutes.
+        cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS,
       });
 
       // Refresh metadata; bump userId if the install has since claimed an
@@ -356,6 +365,10 @@ export async function POST(req: Request) {
       access: 'public',
       contentType: 'application/json',
       addRandomSuffix: false,
+      // Short TTL: this path is overwritten in place on later snapshots/merges
+      // (see the upsert branch above), so an immutable-length cache poisons
+      // early viewers. Self-heals within minutes instead.
+      cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS,
     });
 
     await db.insert(replays).values({

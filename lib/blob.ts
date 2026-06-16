@@ -15,22 +15,31 @@ type PutFn = typeof vercelPut;
 // is a single Node process; tests run in the same process so they can
 // also read directly via `getMemoryBlob` for assertions.
 const memoryStore = new Map<string, string>();
+// Records the options each write was made with, so tests can assert e.g. the
+// cache TTL (which isn't observable from the stored body).
+const memoryPutOptions = new Map<string, any>();
 
 export function getMemoryBlob(pathname: string): string | undefined {
   return memoryStore.get(pathname);
 }
 
-export function clearMemoryBlobs(): void {
-  memoryStore.clear();
+export function getMemoryPutOptions(pathname: string): any {
+  return memoryPutOptions.get(pathname);
 }
 
-const memoryPut: PutFn = async (pathname, body) => {
+export function clearMemoryBlobs(): void {
+  memoryStore.clear();
+  memoryPutOptions.clear();
+}
+
+const memoryPut: PutFn = async (pathname, body, options) => {
   const text = typeof body === 'string'
     ? body
     : body instanceof ArrayBuffer
       ? new TextDecoder().decode(new Uint8Array(body))
       : '';
   memoryStore.set(pathname, text);
+  memoryPutOptions.set(pathname, options);
   const url = `${process.env.KARABUDDY_TEST_ORIGIN || 'http://localhost:3000'}/api/test/blob/${pathname}`;
   return {
     url,
