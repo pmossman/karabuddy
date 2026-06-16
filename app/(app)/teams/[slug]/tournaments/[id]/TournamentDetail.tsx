@@ -12,6 +12,24 @@ function artFromId(id: string | undefined, isLeader: boolean): string | null {
   const m = /^([A-Za-z0-9]+)_(\d+)$/.exec(id);
   return m ? cardImageUrl({ set: m[1], number: m[2] }, isLeader) : null;
 }
+// B153: inline icons for the deck re-sync button (refresh → check on success).
+// SVG over a unicode glyph so they render crisp + consistent across platforms.
+function RefreshIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+function CheckIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
 function DeckLeaderBase({ deck }: { deck: any }) {
   const leader = artFromId(deck?.leader?.id, true);
   const base = artFromId(deck?.base?.id, false);
@@ -391,6 +409,13 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   const [deckModalOpen, setDeckModalOpen] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [copied, setCopied] = useState<string | null>(null); // feedback label
+  // B153: entrant ids that just re-synced — flashes a green ✓ on their button
+  // for a couple seconds (a TO can click down the list and see each confirm).
+  const [synced, setSynced] = useState<Record<string, boolean>>({});
+  const flashSynced = (entrantId: string) => {
+    setSynced((s) => ({ ...s, [entrantId]: true }));
+    setTimeout(() => setSynced((s) => { const n = { ...s }; delete n[entrantId]; return n; }), 2500);
+  };
 
   // B126: get-or-create the invite code, then copy a link to the clipboard.
   // `claimToken` appends a guest's personal claim secret to the same link.
@@ -445,12 +470,47 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
   const setDropped = (entrantId: string, dropped: boolean) => act(() =>
     fetch(`${base}/entrants/${entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dropped }) })
   );
+  // B153: re-pull the entrant's stored deck link (the snapshot is point-in-time,
+  // so a fix made on swudb doesn't show until it's re-imported).
+  const resyncDeck = (entrantId: string) => act(
+    () => fetch(`${base}/entrants/${entrantId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resync: true }) }),
+    () => flashSynced(entrantId)
+  );
+  // B153: organizer bulk re-sync — re-pull every active entrant's deck in turn
+  // (sequential to stay polite to swudb), flashing each ✓ and collecting any
+  // failures (e.g. a deck that's still illegal) into the shared error line.
+  const resyncAll = async () => {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    const targets = entrants.filter((e) => e.hasDeck && !e.dropped);
+    const failures: string[] = [];
+    for (const e of targets) {
+      try {
+        const res = await fetch(`${base}/entrants/${e.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resync: true }) });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.ok === false) failures.push(`${e.displayName} (${body.error || res.status})`);
+        else flashSynced(e.id);
+      } catch { failures.push(`${e.displayName} (network error)`); }
+    }
+    if (failures.length) setActionError(`Couldn't re-sync: ${failures.join('; ')}`);
+    await onChanged();
+    setBusy(false);
+  };
 
   return (
     <section style={panelStyle}>
-      <h2 style={sectionTitleStyle}>
-        Entrants <span style={{ color: '#6c7588', fontWeight: 400 }}>{entrants.length}</span>
+      <h2 style={{ ...sectionTitleStyle, display: 'flex', alignItems: 'center' }}>
+        Entrants <span style={{ color: '#6c7588', fontWeight: 400, marginLeft: 6 }}>{entrants.length}</span>
         {inSetup && <span style={{ fontSize: 11, color: '#6c7588', fontWeight: 400, marginLeft: 8 }}>suggested rounds: {t.suggestedRounds}</span>}
+        {/* B153: organizer one-shot to re-pull every entrant's deck (after a
+            round of "fix your list on swudb" nudges). */}
+        {viewer.isOrganizer && t.status !== 'complete' && entrants.some((e) => e.hasDeck && !e.dropped) && (
+          <button type="button" data-testid="deck-resync-all" onClick={resyncAll} disabled={busy} style={{ ...miniGhostStyle, display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }} title="Re-pull every entrant's deck from its source link">
+            <RefreshIcon />
+            {busy ? 'Re-syncing…' : 'Re-sync all decks'}
+          </button>
+        )}
       </h2>
 
       {entrants.length === 0 && (
@@ -473,6 +533,25 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
                   <Link href={`/teams/${teamSlug}/tournaments/${t.id}/decks/${e.id}`} style={{ fontSize: 12, color: '#5db4ff', textDecoration: 'none' }}>
                     {e.deckName || 'Decklist'} →
                   </Link>
+                  {/* B153: re-pull the stored deck link without re-pasting — for
+                      an entrant who fixed their list on swudb. Self while in
+                      setup, or organizer anytime before completion. Flashes a
+                      green ✓ on success. */}
+                  {((inSetup && e.id === viewer.entrantId) || (viewer.isOrganizer && t.status !== 'complete')) && (
+                    <button
+                      type="button"
+                      data-testid={`deck-resync-${e.id}`}
+                      onClick={() => resyncDeck(e.id)}
+                      disabled={busy}
+                      title="Re-pull this deck from its source link (e.g. after fixing it on swudb)"
+                      style={synced[e.id]
+                        ? { ...miniGhostStyle, display: 'inline-flex', alignItems: 'center', gap: 4, color: '#6bd968', borderColor: 'rgba(107,217,104,0.5)', cursor: 'default' }
+                        : { ...miniGhostStyle, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      {synced[e.id] ? <CheckIcon /> : <RefreshIcon />}
+                      {synced[e.id] ? 'Synced' : 'Re-sync'}
+                    </button>
+                  )}
                   {e.legality && !e.legality.legal && (
                     <span
                       data-testid={`deck-illegal-${e.id}`}

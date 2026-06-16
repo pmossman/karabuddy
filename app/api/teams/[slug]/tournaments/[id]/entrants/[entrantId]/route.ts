@@ -14,6 +14,10 @@ export const runtime = 'nodejs';
 //   { deckLink }        — (re)import + snapshot the decklist. Self while the
 //                         tournament is in setup; organizer anytime (covers
 //                         guests + post-start fixes).
+//   { resync: true }    — re-import the ALREADY-STORED deckLink (no re-paste).
+//                         The snapshot is point-in-time, so editing the deck on
+//                         swudb (e.g. to fix an illegal list) doesn't propagate
+//                         until it's re-pulled. Same authz as { deckLink }.
 //   { displayName }     — rename. Organizer-only, guests only (a linked
 //                         member's name tracks their account).
 //   { dropped: bool }   — drop / undrop. Organizer anytime; a linked entrant
@@ -38,7 +42,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   // B151: captured to fire a "deck updated" Discord post after the write.
   let deckChange: { deckName: string | null; leaderId: string | null; baseId: string | null } | null = null;
 
-  if (body.deckLink !== undefined) {
+  const resync = body.resync === true && body.deckLink === undefined;
+  if (body.deckLink !== undefined || resync) {
     const allowed = organizer || (isSelf && t.status === 'setup');
     if (!allowed) {
       return NextResponse.json(
@@ -46,13 +51,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
         { status: 403 }
       );
     }
-    const result = await importDeck(String(body.deckLink || ''));
+    // resync re-pulls the stored link (the snapshot is point-in-time, so a
+    // swudb edit won't show until it's re-imported); otherwise use the new link.
+    const link = resync ? String(entrant.deckLink || '').trim() : String(body.deckLink || '').trim();
+    if (resync && !link) {
+      return NextResponse.json({ ok: false, error: 'no saved deck link to re-sync' }, { status: 400 });
+    }
+    const result = await importDeck(link);
     if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
     const legality = await validateDeckServer(result.deck);
     if (!legality.legal) {
       return NextResponse.json({ ok: false, error: `Decklist isn't legal: ${legality.violations.map((v) => v.message).join('; ')}`, violations: legality.violations }, { status: 400 });
     }
-    update.deckLink = String(body.deckLink).trim();
+    update.deckLink = link;
     update.deckName = result.deckName;
     update.deck = result.deck;
     deckChange = { deckName: result.deckName, leaderId: result.deck.leader?.id ?? null, baseId: result.deck.base?.id ?? null };

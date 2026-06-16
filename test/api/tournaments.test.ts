@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers } from '@/lib/schema';
+import { users, teams, teamMembers, tournamentEntrants } from '@/lib/schema';
 import { GET as listTournaments, POST as createTournament } from '@/app/api/teams/[slug]/tournaments/route';
 import { GET as getDetail, PATCH as patchTournament, DELETE as deleteTournament } from '@/app/api/teams/[slug]/tournaments/[id]/route';
 import { POST as addEntrant } from '@/app/api/teams/[slug]/tournaments/[id]/entrants/route';
@@ -235,6 +235,62 @@ describe('entrants', () => {
     stubFetch(200, { ...upstreamDeck, deck: [{ id: 'DROP TABLE;--', count: 3 }] });
     const res = await addEntrant(jreq({ deckLink: 'https://swubase.com/decks/abc123' }), p(slug, { id }));
     expect(res.status).toBe(422);
+  });
+
+  it('B153: resync re-imports the STORED deck link — fixes an illegal deck after a swudb edit', async () => {
+    const owner = await seedUser();
+    const slug = await seedTeam([owner]);
+    as(owner);
+    const id = await createT(slug, { decklistVisibility: 'open' });
+
+    // An entrant whose stored snapshot is illegal (sideboard 12) but whose
+    // deckLink points at a deck the player has since fixed on swudb.
+    const entrantId = `te_${randomUUID().slice(0, 8)}`;
+    await getDb().insert(tournamentEntrants).values({
+      id: entrantId, tournamentId: id, userId: null, displayName: 'FixMe',
+      deckName: 'Bad', deckLink: 'https://swubase.com/decks/fixme', deck: {
+        leader: { id: 'SOR_010', count: 1 }, base: { id: 'SOR_030', count: 1 },
+        deck: Array.from({ length: 50 }, (_, i) => ({ id: `SOR_${100 + i}`, count: 1 })),
+        sideboard: Array.from({ length: 12 }, (_, i) => ({ id: `SOR_${300 + i}`, count: 1 })),
+      } as any,
+    });
+
+    // swudb now returns the fixed (legal) deck. Re-sync with NO link — it pulls
+    // the stored one — and the snapshot updates + passes legality.
+    stubFetch(200, { ...upstreamDeck, metadata: { name: 'Fixed Deck' } });
+    const res = await patchEntrant(jreq({ resync: true }), p(slug, { id, entrantId }));
+    expect(res.status).toBe(200);
+    const e = (await (await getDetail(new Request('http://t'), p(slug, { id }))).json()).data.entrants[0];
+    expect(e.deckName).toBe('Fixed Deck');
+    expect(e.legality.legal).toBe(true);
+  });
+
+  it('B153: resync rejects when the re-pulled deck is still illegal', async () => {
+    const owner = await seedUser();
+    const slug = await seedTeam([owner]);
+    as(owner);
+    const id = await createT(slug, { decklistVisibility: 'open' });
+    stubFetch();
+    const reg = await (await addEntrant(jreq({ deckLink: 'https://swubase.com/decks/abc123' }), p(slug, { id }))).json();
+
+    // swudb now returns an illegal deck (sideboard 11) — re-sync must refuse.
+    vi.unstubAllGlobals();
+    stubFetch(200, { ...upstreamDeck, sideboard: Array.from({ length: 11 }, (_, i) => ({ id: `SOR_${300 + i}`, count: 1 })) });
+    const res = await patchEntrant(jreq({ resync: true }), p(slug, { id, entrantId: reg.entrantId }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/Sideboard has 11/);
+  });
+
+  it('B153: resync with no stored deck link is a 400', async () => {
+    const owner = await seedUser();
+    const slug = await seedTeam([owner]);
+    as(owner);
+    const id = await createT(slug, { decklistVisibility: 'open' });
+    const reg = await (await addEntrant(jreq({ displayName: 'Deckless' }), p(slug, { id }))).json();
+
+    const res = await patchEntrant(jreq({ resync: true }), p(slug, { id, entrantId: reg.entrantId }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/no saved deck link/);
   });
 });
 
