@@ -1,13 +1,14 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { eq, desc, inArray, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { teams, teamMembers, replays } from '@/lib/schema';
+import { replays } from '@/lib/schema';
+import { resolveActiveTeam } from '@/lib/activeTeam';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { getSampleReplaySlugs } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
-import { HomeTeamActivity } from './HomeTeamActivity';
 import { HomeReviewRequests } from './HomeReviewRequests';
 import { HomeAnonymousReplays } from './HomeAnonymousReplays';
 import { Panel } from '@/app/_components/Panel';
@@ -84,21 +85,22 @@ export default async function Home() {
     );
   }
 
+  // Team-centric home: a member lands on their active team's dashboard, never
+  // this personal digest. redirect() must sit outside any try/catch (it throws
+  // a control-flow signal Next catches). Only the no-team user falls through to
+  // the personal home below.
+  const { active } = await resolveActiveTeam(userId);
+  if (active) {
+    redirect(`/teams/${active.slug}`);
+  }
+
   const db = getDb();
-  const [myTeams, recentRows] = await Promise.all([
-    db
-      .select({ slug: teams.slug, name: teams.name })
-      .from(teamMembers)
-      .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
-      .where(eq(teamMembers.userId, userId))
-      .orderBy(teamMembers.joinedAt),
-    db
-      .select()
-      .from(replays)
-      .where(eq(replays.userId, userId))
-      .orderBy(desc(replays.createdAt))
-      .limit(RECENT_LIMIT),
-  ]);
+  const recentRows = await db
+    .select()
+    .from(replays)
+    .where(eq(replays.userId, userId))
+    .orderBy(desc(replays.createdAt))
+    .limit(RECENT_LIMIT);
 
   const recent = recentRows.map(serializeRow);
 
@@ -109,11 +111,7 @@ export default async function Home() {
 
       <section style={{ marginBottom: 36 }}>
         <SectionHeader title="Team activity" />
-        {myTeams.length > 0 ? (
-          <HomeTeamActivity teams={myTeams} />
-        ) : (
-          <TeamCta />
-        )}
+        <TeamCta />
       </section>
 
       <section data-testid="home-recent-replays">

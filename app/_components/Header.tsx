@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { userHasLinkedExtension } from '@/lib/userResolution';
+import { resolveActiveTeam } from '@/lib/activeTeam';
 import { HeaderBar } from '@/app/_components/HeaderBar';
 
 // Persistent header — KARA/buddy mark always links home, nav exposes
@@ -13,12 +14,19 @@ import { HeaderBar } from '@/app/_components/HeaderBar';
 export async function Header() {
   const session = await auth();
   const signedIn = !!session?.user;
+  const userId: string | null = (session?.user as any)?.id ?? null;
 
   // B121-followup: a signed-in user who already has ≥1 linked extension has
   // obviously onboarded — suppress the install CTA, regardless of the per-browser
   // bridge probe (which doesn't run on the :3001 dev origin and can race the
   // extension's document_idle injection on prod).
-  const hasLinkedExtension = await userHasLinkedExtension((session?.user as any)?.id ?? null);
+  // Team-centric revamp: resolve the active team here so the header can render
+  // the switcher + team nav. Scope is carried by the links, so the pages
+  // themselves mostly don't need to read the cookie.
+  const [hasLinkedExtension, { active, teams }] = await Promise.all([
+    userHasLinkedExtension(userId),
+    resolveActiveTeam(userId),
+  ]);
 
   return (
     <header
@@ -32,7 +40,12 @@ export async function Header() {
         borderBottom: '1px solid #2e333c',
       }}
     >
-      <HeaderBar signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} />
+      <HeaderBar
+        signedIn={signedIn}
+        hasLinkedExtension={hasLinkedExtension}
+        active={active}
+        teams={teams}
+      />
     </header>
   );
 }
