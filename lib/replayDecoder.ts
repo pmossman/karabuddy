@@ -452,6 +452,60 @@ export function positionKey(state: any): string {
   return canonicalize({ players: state?.players ?? null, phase: state?.phase ?? null });
 }
 
+// B154: transient UI/combat flags that karabast leaves on cards/leaders/players
+// and that frequently differ between a rollback and its origin even though the
+// board is really the same. A real-data probe showed ~30% of undos slip past the
+// strict positionKey for exactly these. The RELAXED key ignores them — used ONLY
+// to locate an undo's rollback target (confirmed by the game-log alert), never to
+// merge ordinary frames. The flags stay in recordings (they drive highlights).
+const RELAXED_STRIP = new Set([
+  'selected', 'selectable', 'unselectable',
+  'isAttacker', 'isDefender', 'sentinel', 'cannotBeAttacked',
+  'isActionPhaseActivePlayer',
+]);
+function stripTransient(v: any): any {
+  if (Array.isArray(v)) return v.map(stripTransient);
+  if (v && typeof v === 'object') {
+    const out: any = {};
+    for (const k of Object.keys(v)) {
+      if (RELAXED_STRIP.has(k)) continue;
+      const val = v[k];
+      // Normalize default values to "absent" so 0/false/null === omitted.
+      // karabast serializes e.g. a leader's `damage` as 0 in one frame and drops
+      // the field entirely in another — the board is the same, so an undo
+      // between them must still match. Safe to be loose here: the relaxed key is
+      // ONLY consulted on frames the game log already marks as a completed undo.
+      if (val === 0 || val === false || val === null) continue;
+      out[k] = stripTransient(val);
+    }
+    return out;
+  }
+  return v;
+}
+export function relaxedPositionKey(state: any): string {
+  return canonicalize({ players: stripTransient(state?.players ?? null), phase: state?.phase ?? null });
+}
+
+// B154: karabast pushes a game-log alert on every COMPLETED undo —
+// `{ message: { alert: { type:'notification', message:[player, ' has rolled back
+// to ', '…'] } } }`. This is the authoritative, already-recorded undo signal.
+// Pass the frame's NEWLY-ADDED messages (newMessages is cumulative, so the alert
+// would otherwise read true on every later frame). "has requested to undo" is a
+// request that can be denied — deliberately excluded.
+const ROLLBACK_RE = /\bhas rolled back to\b/i;
+export function isUndoMessage(deltaMsgs: any[]): boolean {
+  if (!Array.isArray(deltaMsgs)) return false;
+  for (const m of deltaMsgs) {
+    const alert = m?.message?.alert;
+    if (!alert || alert.type !== 'notification') continue;
+    const text = Array.isArray(alert.message)
+      ? alert.message.filter((p: any) => typeof p === 'string').join(' ')
+      : String(alert.message ?? '');
+    if (ROLLBACK_RE.test(text)) return true;
+  }
+  return false;
+}
+
 interface KeptEntry {
   src: number;         // original frame index that created this collapsed frame
   msgSrcs: number[];   // original indices whose newMessages this frame shows
@@ -461,49 +515,83 @@ interface KeptEntry {
 // Pure core: given the per-frame position keys, decide which frames survive and
 // where every original frame maps. Separated from state-munging so it's trivial
 // to unit-test the collapse logic on plain string sequences.
-export function planCollapse(keys: string[]): {
+// B154: takes the STRICT keys (exact board), the RELAXED keys (transient flags
+// ignored), and a per-frame `isUndoFrame` flag derived from the game log. The
+// strict path is unchanged (board-static + exact-rewind); the log-driven branch
+// catches rewinds whose board differs only by transient flags.
+export function planCollapse(
+  strictKeys: string[],
+  relaxedKeys: string[],
+  isUndoFrame: boolean[],
+): {
   kept: KeptEntry[];
   frameRemap: number[]; // orig index -> collapsed index
 } {
   const kept: KeptEntry[] = [];
-  const posToCollapsed = new Map<string, number>();
-  const frameRemap = new Array<number>(keys.length).fill(0);
+  const posToCollapsed = new Map<string, number>();      // strict key -> collapsed idx
+  const relaxedToCollapsed = new Map<string, number>();  // relaxed key -> collapsed idx
+  const frameRemap = new Array<number>(strictKeys.length).fill(0);
   let msgBuffer: number[] = []; // original indices pending attach to next board frame
 
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
+  // Truncate the undone branch back to collapsed index `idx`; frame `i` becomes
+  // that surviving position. Shared by the strict + log-driven undo branches.
+  const truncateTo = (idx: number, i: number) => {
+    for (let j = idx + 1; j < kept.length; j++) {
+      posToCollapsed.delete(strictKeys[kept[j].src]);
+      relaxedToCollapsed.delete(relaxedKeys[kept[j].src]);
+      for (const s of kept[j].allSrcs) frameRemap[s] = idx;
+      kept[idx].allSrcs.push(...kept[j].allSrcs);
+    }
+    kept.length = idx + 1;
+    msgBuffer = []; // undone branch's pending log lines are discarded
+    frameRemap[i] = idx;
+    kept[idx].allSrcs.push(i);
+    // This frame == kept[idx]; don't re-add it, and drop its own log line
+    // (undo noise like "X has rolled back to …").
+  };
 
-    // Board-static: same position as the current kept frame → drop, buffer its
-    // log lines for the next board frame; tags on it point at the current pos.
-    if (kept.length > 0 && key === keys[kept[kept.length - 1].src]) {
+  for (let i = 0; i < strictKeys.length; i++) {
+    const sk = strictKeys[i];
+
+    // Board-static: same STRICT position as the current kept frame → drop, buffer
+    // its log lines for the next board frame; tags on it point at the current pos.
+    if (kept.length > 0 && sk === strictKeys[kept[kept.length - 1].src]) {
       msgBuffer.push(i);
       frameRemap[i] = kept.length - 1;
       continue;
     }
 
-    // Undo: this position was kept earlier (and isn't the current one) → the
-    // player rewound. Truncate the undone branch back to that frame.
-    if (posToCollapsed.has(key)) {
-      const idx = posToCollapsed.get(key)!;
-      for (let j = idx + 1; j < kept.length; j++) {
-        posToCollapsed.delete(keys[kept[j].src]);
-        for (const s of kept[j].allSrcs) frameRemap[s] = idx;
-        kept[idx].allSrcs.push(...kept[j].allSrcs);
-      }
-      kept.length = idx + 1;
-      msgBuffer = []; // undone branch's pending log lines are discarded
-      frameRemap[i] = idx;
-      kept[idx].allSrcs.push(i);
-      // This frame == kept[idx]; don't re-add it, and drop its own log line
-      // (undo noise like "X undid their action").
+    // Strict undo: this exact position was kept earlier (and isn't the current
+    // one) → the player rewound. Truncate the undone branch back to it.
+    if (posToCollapsed.has(sk)) {
+      truncateTo(posToCollapsed.get(sk)!, i);
       continue;
+    }
+
+    // Log-driven undo: the game log marks an undo here, but the strict key didn't
+    // match (transient flags differ). Locate the rollback target by RELAXED key
+    // among earlier kept frames. Only the undo branch trusts the relaxed key.
+    if (isUndoFrame[i]) {
+      const idx = relaxedToCollapsed.get(relaxedKeys[i]);
+      if (idx !== undefined) {
+        if (idx === kept.length - 1) {
+          // Relaxed-equal to where we already are → treat as board-static.
+          msgBuffer.push(i);
+          frameRemap[i] = idx;
+        } else {
+          truncateTo(idx, i);
+        }
+        continue;
+      }
+      // No relaxed match (target not recorded) → fall through, keep the frame.
     }
 
     // New board position.
     const collapsedIdx = kept.length;
     kept.push({ src: i, msgSrcs: [...msgBuffer, i], allSrcs: [i] });
     msgBuffer = [];
-    posToCollapsed.set(key, collapsedIdx);
+    posToCollapsed.set(sk, collapsedIdx);
+    relaxedToCollapsed.set(relaxedKeys[i], collapsedIdx);
     frameRemap[i] = collapsedIdx;
   }
 
@@ -523,8 +611,19 @@ export function collapseReplay(decoded: DecodedReplay): CollapsedReplay {
     return { ...decoded, frameRemap: [], collapsedToOrig: [] };
   }
 
-  const keys = frames.map((f) => positionKey(f.state));
-  const { kept, frameRemap } = planCollapse(keys);
+  const strictKeys = frames.map((f) => positionKey(f.state));
+  const relaxedKeys = frames.map((f) => relaxedPositionKey(f.state));
+  // B154: the undo trigger reads the frame's NEWLY-ADDED log lines (newMessages
+  // is cumulative — a rollback alert otherwise reads true on every later frame).
+  const isUndoFrame = frames.map((_, i) => {
+    const cur = Array.isArray(messagesByFrame[i]) ? messagesByFrame[i] : [];
+    if (i === 0) return isUndoMessage(cur);
+    const prev = new Set(
+      (Array.isArray(messagesByFrame[i - 1]) ? messagesByFrame[i - 1] : []).map((m) => JSON.stringify(m)),
+    );
+    return isUndoMessage(cur.filter((m) => !prev.has(JSON.stringify(m))));
+  });
+  const { kept, frameRemap } = planCollapse(strictKeys, relaxedKeys, isUndoFrame);
 
   const collapsedToOrig = kept.map((e) => e.src);
 

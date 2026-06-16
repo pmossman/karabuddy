@@ -4,16 +4,21 @@ import { planCollapse, positionKey, collapseReplay, type DecodedReplay } from '.
 // B102: undo + board-static collapse. planCollapse is the pure core (operates
 // on per-frame position keys); collapseReplay applies it to a decoded replay.
 
+// B154: planCollapse now also takes relaxed keys + a per-frame undo flag. These
+// strict-key cases drive undo via exact-position repetition (the relaxed key ==
+// the strict key here, and no log-driven undo), so behavior is unchanged.
+const pc = (keys: string[]) => planCollapse(keys, keys, keys.map(() => false));
+
 describe('planCollapse', () => {
   it('keeps every frame when all positions are distinct', () => {
-    const { kept, frameRemap } = planCollapse(['A', 'B', 'C']);
+    const { kept, frameRemap } = pc(['A', 'B', 'C']);
     expect(kept.map((k) => k.src)).toEqual([0, 1, 2]);
     expect(frameRemap).toEqual([0, 1, 2]);
   });
 
   it('drops a board-static frame and carries its log to the next board frame', () => {
     // A, A(only-log-changed), B
-    const { kept, frameRemap } = planCollapse(['A', 'A', 'B']);
+    const { kept, frameRemap } = pc(['A', 'A', 'B']);
     expect(kept.map((k) => k.src)).toEqual([0, 2]);
     expect(frameRemap).toEqual([0, 0, 1]);
     // The static frame (1) + the next board frame (2) feed collapsed frame 1's log.
@@ -23,7 +28,7 @@ describe('planCollapse', () => {
 
   it('truncates a simple undo branch back to the rewound position', () => {
     // A, B, C, (undo)->B, D
-    const { kept, frameRemap } = planCollapse(['A', 'B', 'C', 'B', 'D']);
+    const { kept, frameRemap } = pc(['A', 'B', 'C', 'B', 'D']);
     expect(kept.map((k) => k.src)).toEqual([0, 1, 4]);
     expect(frameRemap).toEqual([0, 1, 1, 1, 2]);
   });
@@ -31,12 +36,12 @@ describe('planCollapse', () => {
   it('handles nested undos (rewind past an already-rewound point)', () => {
     // A, B, C, D, (undo)->C, (undo)->B, E. The second undo (to B) discards
     // everything from C onward, so C/D/re-C all collapse onto B.
-    const { frameRemap } = planCollapse(['A', 'B', 'C', 'D', 'C', 'B', 'E']);
+    const { frameRemap } = pc(['A', 'B', 'C', 'D', 'C', 'B', 'E']);
     expect(frameRemap).toEqual([0, 1, 1, 1, 1, 1, 2]);
   });
 
   it('flushes trailing board-static log lines onto the last frame', () => {
-    const { kept, frameRemap } = planCollapse(['A', 'A']);
+    const { kept, frameRemap } = pc(['A', 'A']);
     expect(kept.map((k) => k.src)).toEqual([0]);
     expect(frameRemap).toEqual([0, 0]);
     expect(kept[0].msgSrcs).toEqual([0, 1]);
@@ -44,7 +49,7 @@ describe('planCollapse', () => {
 
   it('does not treat a board-static dup of the current frame as an undo', () => {
     // A, A is static (drop), not a rewind. B, B static. distinct A vs B.
-    const { kept } = planCollapse(['A', 'A', 'B', 'B']);
+    const { kept } = pc(['A', 'A', 'B', 'B']);
     expect(kept.map((k) => k.src)).toEqual([0, 2]);
   });
 });
