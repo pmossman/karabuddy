@@ -11,8 +11,8 @@ import { orderPlayersOwnerFirst } from '@/lib/players';
 export const runtime = 'nodejs';
 
 const RECENT_REPLAYS = 6;
-const REVIEW_PREVIEW = 5;
-const DISCUSSION_PREVIEW = 6;
+const REVIEW_PREVIEW = 8;
+const DISCUSSION_PREVIEW = 5;
 const OPEN_TOURNAMENTS = 4;
 
 // GET /api/teams/[slug]/overview — the team dashboard bundle: one member-gated
@@ -94,11 +94,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
         const row = bySlug.get(s);
         if (!row) return null;
         const f = flagged.find((x) => x.replaySlug === s)!;
+        const marks = reviewerMarks.get(s) ?? [];
         return {
           ...serializeReplayRow(row.replay, { ownerName: row.ownerName ?? null, viewerPlayerId: null }),
           requestedAt: f.requestedAt instanceof Date ? f.requestedAt.toISOString() : (f.requestedAt as any) ?? null,
           requestedByName: f.requestedBy ? requesterNames.get(f.requestedBy) ?? null : null,
           reviewedByYou: reviewedByYou(s),
+          reviewerCount: marks.length,
+          reviewerNames: marks.map((m) => m.name).filter(Boolean),
         };
       })
       .filter(Boolean);
