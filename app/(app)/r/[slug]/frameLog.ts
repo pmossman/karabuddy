@@ -162,6 +162,26 @@ export function exhaustBaseAttacks(prevState: any, curState: any, alreadyAttacke
   return out;
 }
 
+// B161: units defeated this frame, from the BOARD diff — a unit that was in an
+// arena last frame and is now in DISCARD. Log-independent, so it catches the
+// ~29% of defeats the recorder logged no line for (an event / indirect-damage
+// kill that the timeline's log + attack signals miss entirely). Excludes leaders
+// (they don't die to discard) and upgrades (they follow their host to discard,
+// not a unit death of their own). The CALLER excludes units an attack on this
+// frame already kills — those deaths are part of the attacker's lunge.
+export function boardDefeats(prevState: any, curState: any): string[] {
+  if (!prevState || !curState) return [];
+  const prev = extractFrameCards(prevState).cards;
+  const cur = extractFrameCards(curState);
+  const out: string[] = [];
+  for (const [u, info] of cur.cards) {
+    if (info.zone !== 'discard') continue;          // landed in discard…
+    if (cur.leaders.has(u) || info.parentCardId) continue; // …not a leader/upgrade
+    if (isArenaZone(prev.get(u)?.zone)) out.push(u); // …and was on the board last frame
+  }
+  return out;
+}
+
 // B147 / ADR 0008 step 2d: THE single attack classifier — the one place that
 // resolves a frame's full attack set, layering the three detection signals
 // (weakest-last) and deduping so each attacker lunges once:

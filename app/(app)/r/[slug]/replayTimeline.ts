@@ -7,7 +7,7 @@
 // Step 1 of the migration (ADR 0008) wires `frameDwell` to consume this; later
 // steps make the planner + renderer consume it too (so they can never drift).
 import type { Frame } from '@/lib/replayDecoder';
-import { classifyStagedPlays, unitPlayUuids, extractAttacks, extractFrameCards, frameAttacks } from './frameLog';
+import { classifyStagedPlays, unitPlayUuids, extractAttacks, extractFrameCards, frameAttacks, boardDefeats } from './frameLog';
 import {
   PLAYBACK_TICK_MS,
   EVENT_TOTAL_MS,
@@ -16,6 +16,7 @@ import {
   RESOURCE_TOTAL_MS,
   LEADER_DEPLOY_FULL_MS,
   ATTACK_TOTAL_MS,
+  DEFEAT_TOTAL_MS,
   UNIT_PLAY_TOTAL_MS,
   dwellFor,
 } from './animationTiming';
@@ -23,7 +24,7 @@ import {
 // A geometry-free description of one animation on a frame. `uuid` is carried
 // where the board diff knows it (so a future renderer can resolve geometry from
 // it); the dwell only needs `kind`.
-export type AnimKind = 'leaderDeploy' | 'play' | 'ambush' | 'upgrade' | 'event' | 'resource' | 'attack';
+export type AnimKind = 'leaderDeploy' | 'play' | 'ambush' | 'upgrade' | 'event' | 'resource' | 'attack' | 'defeat';
 export interface AnimSpec { kind: AnimKind; uuid?: string }
 
 // One frame's worth of the timeline: what animates, how long the longest beat
@@ -43,6 +44,7 @@ const ANIM_DURATION_MS: Record<AnimKind, number> = {
   resource: RESOURCE_TOTAL_MS,
   leaderDeploy: LEADER_DEPLOY_FULL_MS,
   attack: ATTACK_TOTAL_MS,
+  defeat: DEFEAT_TOTAL_MS,
   play: UNIT_PLAY_TOTAL_MS,
 };
 
@@ -151,8 +153,18 @@ export function buildTimeline(frames: Frame[]): Beat[] {
     // ADR 0008 step 2d: attacks come from the ONE classifier the renderer also
     // uses (frameAttacks: log + isAttacker flag + exhaust/damage fallback), so the
     // dwell budgets exactly the lunges the planner produces — they can't drift.
-    for (const a of i > 0 ? frameAttacks(frames[i - 1].state, f.state) : [])
-      anims.push({ kind: 'attack', uuid: a.attackerUuid });
+    const attacks = i > 0 ? frameAttacks(frames[i - 1].state, f.state) : [];
+    for (const a of attacks) anims.push({ kind: 'attack', uuid: a.attackerUuid });
+    // B161: a unit that left the arena for the discard WITHOUT an attack killing
+    // it (an event / indirect-damage defeat) has no lunge to animate its death —
+    // give it its own beat. Attack-killed units are already covered by the lunge.
+    if (i > 0) {
+      // Both ends of a detected attack are part of its lunge (a trade kills the
+      // attacker too) — don't also give them a standalone defeat beat.
+      const inAttack = new Set(attacks.flatMap((a) => [a.targetUuid, a.attackerUuid]));
+      for (const u of boardDefeats(frames[i - 1].state, f.state))
+        if (!inAttack.has(u)) anims.push({ kind: 'defeat', uuid: u });
+    }
 
     // The dwell must outlast the LONGEST animation on the frame (the max, not a
     // priority-pick, so concurrent beats — deploy + attack — budget the longer).

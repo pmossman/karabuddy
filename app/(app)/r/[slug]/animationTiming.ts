@@ -42,6 +42,12 @@ export const VIGNETTE_LINGER_MS = 380; // deploy spotlight tail past the landing
 // what the dwell must cover.
 export const UNIT_PLAY_TOTAL_MS = PLAY_MOVE_MS + PLAY_FLIP_MS;                  // 700
 export const ATTACK_TOTAL_MS = TRACER_MS + LUNGE_MS;                            // 740
+// B161: a unit defeated NOT by an attack (an event / indirect damage) has no
+// lunge to animate its death — its own beat so playback dwells on the unit's
+// fade-out (the planner's existing `exit` fade — DURATION, no delay for a silent
+// defeat) instead of skipping past it. Sized to the fade + a little presence;
+// dwellFor() adds the read buffer on top.
+export const DEFEAT_TOTAL_MS = DURATION + 150; // ~450
 export const AMBUSH_TOTAL_MS = UNIT_PLAY_TOTAL_MS + LUNGE_MS;                   // 1140 (play, then lunge)
 export const LEADER_DEPLOY_FULL_MS = LEADER_DEPLOY_TOTAL + VIGNETTE_LINGER_MS;  // 1710
 
