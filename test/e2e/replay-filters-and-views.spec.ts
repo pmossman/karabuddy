@@ -362,6 +362,33 @@ test('table Member column visible on the team page too', async ({ page, request 
   await expect(page.getByTestId('member-cell').first()).toContainText('TeamOwnerName');
 });
 
+test('B159: team replays can be grouped by member (team grid only)', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'GroupOwner', email: 'go159@example.com' });
+  const { slug: teamSlug } = await createTeam(page, 'Group Team');
+  const { slug: replaySlug, installToken } = await uploadReplay(request, {
+    local: { username: 'GroupOwner' }, opponent: { username: 'Opp' },
+  });
+  await claimInstallToken(page, installToken);
+  await page.request.post(`/api/replays/${replaySlug}/team-shares`, {
+    data: { teamSlug }, headers: { 'X-Install-Token': installToken },
+  });
+
+  await page.goto(`/teams/${teamSlug}?tab=replays`);
+  const byMember = page.getByRole('button', { name: 'By member' });
+  await expect(byMember).toBeVisible();
+  await byMember.click();
+  await expect(page.getByTestId('member-group-heading').filter({ hasText: 'GroupOwner' })).toBeVisible();
+});
+
+test('B159: "By member" is hidden on the personal library', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'SoloUser', email: 'solo159@example.com' });
+  const { installToken } = await uploadReplay(request, { local: { username: 'SoloUser' }, opponent: { username: 'Opp' } });
+  await claimInstallToken(page, installToken);
+  await page.goto('/replays?tab=mine');
+  await expect(page.getByRole('button', { name: 'By leader' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'By member' })).toHaveCount(0);
+});
+
 // -- Cohesion: team replays page shares the same filter UI + URL persistence --
 
 test('team page renders the same filter controls', async ({ page, request }) => {

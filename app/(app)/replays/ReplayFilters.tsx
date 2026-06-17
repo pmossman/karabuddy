@@ -80,8 +80,8 @@ const isShared = (r: Row): boolean => (r.sharedTeams?.length ?? 0) > 0;
 // one adaptive `replays` view — the dense sortable table on desktop, cards on
 // phones — alongside the two grouping views. Legacy ?view=table / ?view=grid map
 // to `replays` for back-compat.
-type ViewMode = 'replays' | 'by-leader' | 'timeline';
-const VIEW_MODES: readonly ViewMode[] = ['replays', 'by-leader', 'timeline'] as const;
+type ViewMode = 'replays' | 'by-leader' | 'by-member' | 'timeline';
+const VIEW_MODES: readonly ViewMode[] = ['replays', 'by-leader', 'by-member', 'timeline'] as const;
 const DEFAULT_VIEW: ViewMode = 'replays';
 
 const SINCE_OPTIONS = [
@@ -92,7 +92,7 @@ const SINCE_OPTIONS = [
 ];
 
 function parseView(raw: string | null): ViewMode {
-  if (raw === 'by-leader' || raw === 'timeline') return raw;
+  if (raw === 'by-leader' || raw === 'by-member' || raw === 'timeline') return raw;
   // Everything else — incl. the legacy 'table' / 'grid' / 'card' values and any
   // unknown/empty param — resolves to the adaptive default.
   return DEFAULT_VIEW;
@@ -281,7 +281,7 @@ export function ReplayFilters({
           <span style={{ fontSize: 11, color: '#6c7588', whiteSpace: 'nowrap' }}>
             Showing {filtered.length} of {rows.length}
           </span>
-          <ViewSwitcher view={view} setView={setView} />
+          <ViewSwitcher view={view} setView={setView} showMember={showUploaderFilter} />
         </div>
       </div>
 
@@ -306,6 +306,8 @@ export function ReplayFilters({
         </div>
       ) : view === 'by-leader' ? (
         <ByLeaderGroups rows={filtered} canManage={canManage} />
+      ) : view === 'by-member' ? (
+        <ByMemberGroups rows={filtered} canManage={canManage} />
       ) : view === 'timeline' ? (
         <TimelineGroups rows={filtered} canManage={canManage} />
       ) : (
@@ -456,6 +458,37 @@ function ByLeaderGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }
   }, [rows]);
 
   return <AccordionGroups items={items} canManage={canManage} testid="leader-group-heading" />;
+}
+
+// B159: group a TEAM's replays by the member who recorded them (team grid only —
+// on a personal library every row is yours). Mirrors ByLeaderGroups.
+function ByMemberGroups({ rows, canManage }: { rows: Row[]; canManage: boolean }) {
+  const items = useMemo<AccordionItem[]>(() => {
+    const m = new Map<string, Row[]>();
+    for (const r of rows) {
+      const name = r.ownerName || 'Unknown member';
+      const arr = m.get(name);
+      if (arr) arr.push(r); else m.set(name, [r]);
+    }
+    return Array.from(m.entries())
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([name, rs]) => ({ key: name, label: name, rows: rs, adornment: <MemberAvatar name={name} /> }));
+  }, [rows]);
+  return <AccordionGroups items={items} canManage={canManage} testid="member-group-heading" />;
+}
+
+// Initial-circle avatar for the by-member accordion rows.
+function MemberAvatar({ name }: { name: string }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 26, height: 26, borderRadius: '50%', flex: '0 0 auto',
+      background: 'rgba(77,157,255,0.18)', border: '1px solid rgba(77,157,255,0.4)',
+      color: '#a7d2ff', fontSize: 12, fontWeight: 700,
+    }}>
+      {(name.trim()[0] || '?').toUpperCase()}
+    </span>
+  );
 }
 
 // Small landscape leader thumbnail for the by-leader accordion rows.
@@ -857,9 +890,19 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
         </thead>
         <tbody>
           {groups.map((g) => {
-            const gameRow = (r: Row, inSeries: boolean, gameNumber?: number) => (
-              <tr key={r.slug} style={{ borderTop: '1px solid #2e333c', ...(inSeries ? { boxShadow: 'inset 3px 0 0 rgba(77,157,255,0.5)' } : {}) }}>
-                <td style={cellStyle}>{formatDateShort(r.createdAt)}</td>
+            // B158: series rows read as one contained block — a continuous left
+            // rail (shared with the SERIES header), a faint tint, an indented
+            // first cell, and a closing edge under the last game.
+            const gameRow = (r: Row, inSeries: boolean, gameNumber?: number, isLast = false) => (
+              <tr key={r.slug} style={{
+                borderTop: '1px solid #2e333c',
+                ...(inSeries ? {
+                  boxShadow: SERIES_RAIL,
+                  background: 'rgba(77,157,255,0.045)',
+                  ...(isLast ? { borderBottom: '2px solid rgba(77,157,255,0.4)' } : {}),
+                } : {}),
+              }}>
+                <td style={inSeries ? { ...cellStyle, paddingLeft: 30 } : cellStyle}>{formatDateShort(r.createdAt)}</td>
                 <td style={cellStyle} data-testid="replay-cell">
                   <ReplayCellLink replay={r} gameNumber={gameNumber} />
                 </td>
@@ -893,13 +936,13 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
             if (!g.isSeries) return gameRow(g.rows[0], false);
             return (
               <Fragment key={g.key}>
-                <tr data-testid="series-group" style={{ borderTop: '1px solid #2e333c', background: 'rgba(77,157,255,0.06)' }}>
-                  <td colSpan={colCount} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#a7d2ff' }}>
+                <tr data-testid="series-group" style={{ borderTop: '2px solid rgba(77,157,255,0.4)', background: 'rgba(77,157,255,0.1)', boxShadow: SERIES_RAIL }}>
+                  <td colSpan={colCount} style={{ padding: '7px 10px 7px 14px', fontSize: 11, fontWeight: 700, color: '#a7d2ff' }}>
                     <span style={{ background: 'rgba(77,157,255,0.18)', border: '1px solid rgba(77,157,255,0.5)', borderRadius: 999, padding: '1px 8px', fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', marginRight: 8 }}>Series</span>
                     {seriesHeadline(g)}
                   </td>
                 </tr>
-                {g.rows.map((r, i) => gameRow(r, true, i + 1))}
+                {g.rows.map((r, i) => gameRow(r, true, i + 1, i === g.rows.length - 1))}
               </Fragment>
             );
           })}
@@ -1072,6 +1115,9 @@ function PlainHeader({ children }: { children: React.ReactNode }) {
 }
 
 const cellStyle: React.CSSProperties = { padding: '8px 10px', verticalAlign: 'middle' };
+// B158: the continuous left "rail" shared by a series' header + its game rows so
+// the group reads as one contained block in the long table.
+const SERIES_RAIL = 'inset 4px 0 0 rgba(77,157,255,0.6)';
 const labelChipStyle: React.CSSProperties = {
   background: 'rgba(160, 196, 255, 0.08)',
   border: '1px solid rgba(160, 196, 255, 0.2)',
@@ -1178,7 +1224,7 @@ function FiltersToggle({ open, count, onClick }: { open: boolean; count: number;
   );
 }
 
-function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode) => void }) {
+function ViewSwitcher({ view, setView, showMember = false }: { view: ViewMode; setView: (v: ViewMode) => void; showMember?: boolean }) {
   const item = (v: ViewMode, label: string) => (
     <button
       key={v}
@@ -1204,6 +1250,7 @@ function ViewSwitcher({ view, setView }: { view: ViewMode; setView: (v: ViewMode
     <div role="group" style={{ display: 'flex', gap: 4 }}>
       {item('replays', 'Replays')}
       {item('by-leader', 'By leader')}
+      {showMember && item('by-member', 'By member')}
       {item('timeline', 'Timeline')}
     </div>
   );
