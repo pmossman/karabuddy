@@ -111,10 +111,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         {new Date(team.createdAt).toLocaleDateString()}
       </p>
 
-      {/* The dashboard is the hub — nav lives in the sidebar, so no tab bar here.
-          Drill-in tabs keep the bar for quick lateral switching. */}
-      {!isOverview && <TabBar slug={slug} active={tab} />}
-
+      {/* Section nav lives in the left sidebar now — no in-page tab bar. */}
       <div style={{ marginTop: isOverview ? 4 : 20 }}>
         {tab === 'overview' && <TeamOverview slug={slug} />}
         {tab === 'discussion' && <TeamDiscussion teamSlug={slug} />}
@@ -146,49 +143,6 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         )}
       </div>
     </main>
-  );
-}
-
-function TabBar({ slug, active }: { slug: string; active: Tab }) {
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Dashboard' },
-    { id: 'discussion', label: 'Discussion' },
-    { id: 'replays', label: 'Replays' },
-    { id: 'review', label: 'Reviews' },
-    { id: 'tournaments', label: 'Tournaments' },
-    { id: 'members', label: 'Members' },
-    { id: 'settings', label: 'Settings' },
-  ];
-  return (
-    <div role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid #2e333c' }}>
-      {tabs.map((t) => {
-        const isActive = active === t.id;
-        // Default tab omits ?tab=X for clean URLs.
-        const href = t.id === DEFAULT_TAB ? `/teams/${slug}` : `/teams/${slug}?tab=${t.id}`;
-        return (
-          <Link
-            key={t.id}
-            role="tab"
-            aria-selected={isActive}
-            href={href}
-            style={{
-              padding: '8px 14px',
-              fontSize: 13,
-              fontWeight: 600,
-              color: isActive ? '#e6e6e6' : '#a0a8b8',
-              textDecoration: 'none',
-              borderBottom: `2px solid ${isActive ? tokens.led.on : 'transparent'}`,
-              marginBottom: -1,
-              background: isActive ? tokens.led.rowOn : 'transparent',
-              boxShadow: isActive ? '0 0 10px rgba(77, 210, 255, 0.1)' : 'none',
-              borderRadius: '4px 4px 0 0',
-            }}
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </div>
   );
 }
 
