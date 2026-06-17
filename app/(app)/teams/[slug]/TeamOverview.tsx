@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Panel } from '@/app/_components/Panel';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
-import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
-import { cardImageUrl } from '@/lib/cardImage';
+import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // The team dashboard "hub" for someone actively running a team. Asymmetric
@@ -80,11 +79,11 @@ export function TeamOverview({ slug }: { slug: string }) {
                 <SectionLabel>Needs review</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {needsReview.slice(0, 4).map((r) => (
-                    <Link key={r.slug} href={`/r/${r.slug}`} style={rowLink}>
-                      <span style={ellip}>{replayLabel(r)}</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
+                      <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={30} />
+                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         {!r.reviewedByYou && <span style={{ fontSize: 11, color: tokens.led.on, fontWeight: 700 }}>needs you</span>}
-                        <span style={metaText}>{r.requestedByName ? `${r.requestedByName} · ` : ''}{timeAgo(r.requestedAt)}</span>
+                        <span style={{ ...metaText, marginLeft: 'auto' }}>{r.requestedByName ? `${r.requestedByName} · ` : ''}{timeAgo(r.requestedAt)}</span>
                       </span>
                     </Link>
                   ))}
@@ -97,10 +96,10 @@ export function TeamOverview({ slug }: { slug: string }) {
                 <SectionLabel>Recently reviewed</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {reviewed.slice(0, 3).map((r) => (
-                    <Link key={r.slug} href={`/r/${r.slug}`} style={rowLink}>
-                      <span style={ellip}>{replayLabel(r)}</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                        <span style={{ fontSize: 11, color: '#6bd968', fontWeight: 700 }}>✓ {r.reviewerCount}</span>
+                    <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
+                      <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={30} />
+                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 11, color: '#6bd968', fontWeight: 700 }}>✓ reviewed ×{r.reviewerCount}</span>
                         <span style={metaText}>{(r.reviewerNames ?? []).slice(0, 2).join(', ')}</span>
                       </span>
                     </Link>
@@ -117,20 +116,12 @@ export function TeamOverview({ slug }: { slug: string }) {
             </TacticalHeading>
             {recentReplays.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {recentReplays.map((r) => {
-                  const [p1, p2] = (r.players as any[]) || [];
-                  return (
-                    <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <MiniDeck player={p1} align="left" />
-                        <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, flexShrink: 0 }}>VS</span>
-                        <MiniDeck player={p2} align="right" />
-                        <span style={{ fontSize: 13, flexShrink: 0, minWidth: 16, textAlign: 'right' }}><ResultBadge playerId={r.ownerPlayerId} winners={r.winners} /></span>
-                      </span>
-                      <span style={metaText}>{r.ownerName ? `${r.ownerName} · ` : ''}{timeAgo(r.createdAt)}</span>
-                    </Link>
-                  );
-                })}
+                {recentReplays.map((r) => (
+                  <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
+                    <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={36} />
+                    <span style={metaText}>{r.ownerName ? `${r.ownerName} · ` : ''}{timeAgo(r.createdAt)}</span>
+                  </Link>
+                ))}
               </div>
             ) : (
               <Empty>No replays surfaced to this team yet. Share or tag a game to get started.</Empty>
@@ -219,31 +210,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 10, color: '#5b6472', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, margin: '4px 0 6px' }}>{children}</div>;
 }
 
-function MiniDeck({ player, align }: { player: any; align: 'left' | 'right' }) {
-  const leaderImg = cardImageUrl(player?.leader ?? null, true);
-  const baseImg = cardImageUrl(player?.base ?? null, false);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
-      <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-        <CardThumb src={leaderImg} alt={player?.leader?.name} w={36} h={26} />
-        <CardThumb src={baseImg} alt={player?.base?.name} w={36} h={26} />
-      </span>
-      <span style={{ minWidth: 0, textAlign: align === 'right' ? 'right' : 'left' }}>
-        <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#e6e6e6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player?.leader?.name || 'Unknown'}</span>
-        <span style={{ display: 'block', fontSize: 10.5, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player?.base?.name || ''}</span>
-      </span>
-    </div>
-  );
-}
-
-function CardThumb({ src, alt, w, h }: { src: string | null; alt?: string; w: number; h: number }) {
-  if (!src) {
-    return <span style={{ width: w, height: h, borderRadius: 3, background: '#0a0c10', display: 'inline-block', flexShrink: 0 }} title={alt} />;
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={{ width: w, height: h, objectFit: 'contain', borderRadius: 3, background: '#0a0c10', flexShrink: 0 }} />;
-}
-
 function Avatar({ name, image, size }: { name: string | null; image: string | null; size: number }) {
   const initials = (name || '?').replace(/@.*/, '').trim().slice(0, 2).toUpperCase() || '?';
   return (
@@ -279,13 +245,6 @@ function tournamentSummary(t: Tourney): string {
   if (s === 'completed') return `Completed · ${t.entrantCount} players`;
   const round = t.roundCount > 0 ? `Round ${t.roundCount}${t.plannedRounds ? ` of ${t.plannedRounds}` : ''}` : 'Underway';
   return `${round} · ${t.entrantCount} players`;
-}
-
-function replayLabel(r: any): string {
-  if (r.displayName) return r.displayName;
-  const players = (r.players as any[]) || [];
-  const names = players.map((p) => p?.username || p?.name).filter(Boolean);
-  return names.length >= 2 ? `${names[0]} vs ${names[1]}` : (names[0] || 'Replay');
 }
 
 function timeAgo(iso: string | null): string {

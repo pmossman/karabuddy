@@ -6,15 +6,26 @@ import { orderPlayersOwnerFirst } from './players';
 export interface LastReplayRef {
   slug: string;
   label: string;
+  players: any[];
+  ownerPlayerId: string | null;
+  winners: string[] | null;
+  createdAt: string;
 }
 
 // The signed-in user's most recently recorded replay (their own uploads), for
 // the sidebar "jump straight back into your last game" shortcut — a very common
-// reason to open karabuddy. Label prefers the user's display name, else the
-// leader matchup.
+// reason to open karabuddy. Carries the leader/base players + winners so the
+// sidebar renders a real replay card (art + W/L), not just text.
 export async function getMyLastReplay(userId: string): Promise<LastReplayRef | null> {
   const [row] = await getDb()
-    .select({ slug: replays.slug, players: replays.players, ownerPlayerId: replays.ownerPlayerId, displayName: replays.displayName })
+    .select({
+      slug: replays.slug,
+      players: replays.players,
+      ownerPlayerId: replays.ownerPlayerId,
+      winners: replays.winners,
+      displayName: replays.displayName,
+      createdAt: replays.createdAt,
+    })
     .from(replays)
     .where(eq(replays.userId, userId))
     .orderBy(desc(replays.createdAt))
@@ -26,5 +37,12 @@ export async function getMyLastReplay(userId: string): Promise<LastReplayRef | n
     const names = players.map((p) => p?.leader?.name).filter(Boolean);
     label = names.length >= 2 ? `${names[0]} vs ${names[1]}` : (names[0] || 'Last game');
   }
-  return { slug: row.slug, label };
+  return {
+    slug: row.slug,
+    label,
+    players,
+    ownerPlayerId: row.ownerPlayerId ?? null,
+    winners: (row.winners as string[] | null) ?? null,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+  };
 }

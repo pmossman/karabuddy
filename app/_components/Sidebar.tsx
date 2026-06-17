@@ -1,10 +1,11 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
+import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
 import type { TeamRef } from '@/lib/activeTeam';
 import type { LastReplayRef } from '@/lib/lastReplay';
 
@@ -253,13 +254,9 @@ function SidebarBody({
         )}
 
         <NavGroup label="You">
-          {youItems.map((it) => (
-            <Fragment key={it.label}>
-              <NavRow item={it} />
-              {/* Jump straight back into your last game — a very common entry. */}
-              {it.label === 'My replays' && lastReplay && <LastReplayRow lastReplay={lastReplay} />}
-            </Fragment>
-          ))}
+          {/* Jump straight back into your last game — a very common entry. */}
+          {lastReplay && <LatestReplayCard lastReplay={lastReplay} />}
+          {youItems.map((it) => <NavRow key={it.label} item={it} />)}
         </NavGroup>
       </div>
 
@@ -317,30 +314,29 @@ function NavRow({ item }: { item: NavItem }) {
   );
 }
 
-// Indented shortcut beneath "My replays" → the viewer for your most recent game.
-function LastReplayRow({ lastReplay }: { lastReplay: LastReplayRef }) {
+// "Latest replay" card at the top of the You group → one click back into the
+// viewer for your most recent game. A real replay card: leader/base art + W/L.
+function LatestReplayCard({ lastReplay }: { lastReplay: LastReplayRef }) {
   const pathname = usePathname();
   const active = pathname === `/r/${lastReplay.slug}`;
   return (
-    <Link
-      href={`/r/${lastReplay.slug}`}
-      prefetch={false}
-      aria-current={active ? 'page' : undefined}
-      title={`Last replay — ${lastReplay.label}`}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px 6px 33px', borderRadius: 8,
-        textDecoration: 'none', color: active ? '#ffffff' : '#8a93a3',
-        background: active ? 'rgba(77,210,255,0.10)' : 'transparent',
-      }}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.8 }}>
-        <polygon points="6 4 20 12 6 20 6 4" />
-      </svg>
-      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.25 }}>
-        <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, color: '#5b6472' }}>Last replay</span>
-        <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastReplay.label}</span>
-      </span>
-    </Link>
+    <div style={{ padding: '2px 4px 6px' }}>
+      <div style={{ padding: '2px 8px 5px', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, color: '#5b6472' }}>Latest replay</div>
+      <Link
+        href={`/r/${lastReplay.slug}`}
+        prefetch={false}
+        aria-current={active ? 'page' : undefined}
+        title={lastReplay.label}
+        style={{
+          display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 9px', borderRadius: 8, textDecoration: 'none',
+          background: active ? 'rgba(77,210,255,0.10)' : 'rgba(255,255,255,0.025)',
+          border: `1px solid ${active ? '#4dd2ff44' : '#21262f'}`,
+        }}
+      >
+        <ReplayMatchup players={lastReplay.players} ownerPlayerId={lastReplay.ownerPlayerId} winners={lastReplay.winners} thumb={26} showNames={false} />
+        <span style={{ fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastReplay.label}</span>
+      </Link>
+    </div>
   );
 }
 
