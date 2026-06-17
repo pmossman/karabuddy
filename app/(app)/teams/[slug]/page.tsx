@@ -7,6 +7,7 @@ import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
 import { TransferOwnership } from './TransferOwnership';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
+import { TeamOverview } from './TeamOverview';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
 import { TeamTournaments } from './TeamTournaments';
@@ -23,9 +24,12 @@ interface PageProps {
 // B61 split the team page into discussion + replays. B62 tabs it: one
 // page, three+ distinct concerns, separate tab per concern. Active tab
 // is URL-persisted (`?tab=X`) so deep-links + browser back work.
-const VALID_TABS = ['discussion', 'replays', 'review', 'tournaments', 'members', 'settings'] as const;
+// Overview is the default landing "hub"; the rest stay as drill-in tabs. The
+// clean-URL rule maps the default tab to bare /teams/<slug>, so old ?tab= deep
+// links keep working — only change: bare /teams/<slug> now lands on Overview.
+const VALID_TABS = ['overview', 'discussion', 'replays', 'review', 'tournaments', 'members', 'settings'] as const;
 type Tab = (typeof VALID_TABS)[number];
-const DEFAULT_TAB: Tab = 'discussion';
+const DEFAULT_TAB: Tab = 'overview';
 
 function parseTab(raw: string | undefined): Tab {
   return VALID_TABS.includes(raw as Tab) ? (raw as Tab) : DEFAULT_TAB;
@@ -89,28 +93,30 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
     .where(eq(teamMembers.teamSlug, slug))
     .orderBy(teamMembers.joinedAt);
 
+  const isOverview = tab === 'overview';
+
   return (
     <main
       style={{
-        maxWidth: 1100,
+        maxWidth: isOverview ? 1440 : 1100,
         margin: '0 auto',
         padding: '32px 28px 80px',
         color: '#e6e6e6',
         fontFamily: 'var(--font-barlow), sans-serif',
       }}
     >
-      <div style={{ marginBottom: 8 }}>
-        <Link href="/teams" style={{ color: '#a0a8b8', fontSize: 12, textDecoration: 'none' }}>← Teams</Link>
-      </div>
       <h1 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 600 }}>{team.name}</h1>
       <p style={{ margin: '0 0 20px', fontSize: 12, color: '#6c7588' }}>
         {members.length} {members.length === 1 ? 'member' : 'members'} · Created{' '}
         {new Date(team.createdAt).toLocaleDateString()}
       </p>
 
-      <TabBar slug={slug} active={tab} />
+      {/* The dashboard is the hub — nav lives in the sidebar, so no tab bar here.
+          Drill-in tabs keep the bar for quick lateral switching. */}
+      {!isOverview && <TabBar slug={slug} active={tab} />}
 
-      <div style={{ marginTop: 20 }}>
+      <div style={{ marginTop: isOverview ? 4 : 20 }}>
+        {tab === 'overview' && <TeamOverview slug={slug} />}
         {tab === 'discussion' && <TeamDiscussion teamSlug={slug} />}
         {tab === 'replays' && <TeamReplays teamSlug={slug} />}
         {tab === 'review' && <ReviewQueue teamSlug={slug} />}
@@ -145,6 +151,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
 
 function TabBar({ slug, active }: { slug: string; active: Tab }) {
   const tabs: { id: Tab; label: string }[] = [
+    { id: 'overview', label: 'Dashboard' },
     { id: 'discussion', label: 'Discussion' },
     { id: 'replays', label: 'Replays' },
     { id: 'review', label: 'Reviews' },
