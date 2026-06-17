@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import { cookies } from 'next/headers';
 import { auth } from '@/auth';
 import { userHasLinkedExtension } from '@/lib/userResolution';
 import { resolveActiveTeam } from '@/lib/activeTeam';
@@ -16,14 +17,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await auth();
   const signedIn = !!session?.user;
   const userId: string | null = (session?.user as any)?.id ?? null;
-  const [hasLinkedExtension, { active, teams }] = await Promise.all([
+  const [hasLinkedExtension, { active, teams }, cookieStore] = await Promise.all([
     userHasLinkedExtension(userId),
     resolveActiveTeam(userId),
+    cookies(),
   ]);
+  // Sidebar collapse is a non-sensitive UI pref — read server-side so the rail
+  // width renders without a flash. Default (cookie absent) = expanded.
+  const navCollapsed = cookieStore.get('kb_nav')?.value === 'rail';
 
   return (
     <KaraBuddyThemeProvider>
-      <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams}>
+      <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams} navCollapsed={navCollapsed}>
         {children}
       </AppShell>
       {/* B54: silently link the extension's install token to the account. */}
