@@ -385,6 +385,7 @@ function TeamSwitcherInline({ active, teams, collapsed }: { active: TeamRef; tea
         aria-label="Switch team"
         title={collapsed ? active.name : undefined}
         style={collapsed ? {
+          position: 'relative', overflow: 'visible',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, cursor: 'pointer',
           borderRadius: 9, font: '700 15px var(--font-barlow), sans-serif', color: '#0d1016',
           background: 'linear-gradient(135deg, #4dd2ff, #4d9dff)', border: open ? '2px solid #fff' : '2px solid transparent',
@@ -395,7 +396,22 @@ function TeamSwitcherInline({ active, teams, collapsed }: { active: TeamRef; tea
           border: `1px solid ${open ? '#4d9dff' : '#2a303a'}`,
         }}
       >
-        {collapsed ? initial : (
+        {collapsed ? (
+          <>
+            {initial}
+            {/* Caret badge so the tile reads as an interactive menu. */}
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute', right: -4, bottom: -4, width: 16, height: 16, borderRadius: '50%',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: '#11141a', border: '1px solid #2e333c', color: '#aab1bf',
+              }}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </span>
+          </>
+        ) : (
           <>
             <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: '#4dd2ff', boxShadow: '0 0 6px #4dd2ff' }} />
             <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.name}</span>
@@ -405,7 +421,10 @@ function TeamSwitcherInline({ active, teams, collapsed }: { active: TeamRef; tea
       </button>
 
       {collapsed && (
-        <span title={active.name} style={{ fontSize: 9.5, fontWeight: 600, color: '#8a93a3', maxWidth: RAIL_WIDTH - 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.name}</span>
+        <span title={active.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: RAIL_WIDTH - 14, fontSize: 9.5, fontWeight: 600, color: '#aab1bf' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.name}</span>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" style={{ flexShrink: 0, opacity: 0.7 }}><polyline points="6 9 12 15 18 9" /></svg>
+        </span>
       )}
 
       {open && (
