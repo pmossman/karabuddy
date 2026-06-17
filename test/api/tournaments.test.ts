@@ -14,6 +14,11 @@ vi.mock('@/auth', () => ({ auth: vi.fn() }));
 const { auth } = await import('@/auth');
 const as = (id: string | null) => vi.mocked(auth).mockResolvedValue(id ? ({ user: { id } } as any) : (null as any));
 
+// B162: assert the deck-update Discord post fires on a real deck change but NOT
+// on a re-sync (best-effort no-op without Discord config otherwise).
+vi.mock('@/lib/tournamentNotify', () => ({ notifyEntrantRegistered: vi.fn(), notifyRoundPaired: vi.fn() }));
+const { notifyEntrantRegistered } = await import('@/lib/tournamentNotify');
+
 async function seedUser(name = 'u') {
   const id = randomUUID();
   await getDb().insert(users).values({ id, name: `${name}-${id.slice(0, 4)}`, email: `${id}@e.com` });
@@ -51,7 +56,7 @@ const upstreamDeck = {
 const stubFetch = (status = 200, body: unknown = upstreamDeck) =>
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })));
 
-beforeEach(() => vi.mocked(auth).mockReset());
+beforeEach(() => { vi.mocked(auth).mockReset(); vi.mocked(notifyEntrantRegistered).mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('tournament CRUD', () => {
@@ -263,6 +268,29 @@ describe('entrants', () => {
     const e = (await (await getDetail(new Request('http://t'), p(slug, { id }))).json()).data.entrants[0];
     expect(e.deckName).toBe('Fixed Deck');
     expect(e.legality.legal).toBe(true);
+    // B162: a re-sync is a refresh, not a submission — no Discord post.
+    expect(notifyEntrantRegistered).not.toHaveBeenCalled();
+  });
+
+  it('B162: a real deck-link change DOES post to Discord (re-sync does not)', async () => {
+    const owner = await seedUser();
+    const slug = await seedTeam([owner]);
+    as(owner);
+    const id = await createT(slug, { decklistVisibility: 'open' });
+    stubFetch();
+    const reg = await (await addEntrant(jreq({ deckLink: 'https://swubase.com/decks/abc123' }), p(slug, { id }))).json();
+    vi.mocked(notifyEntrantRegistered).mockClear();
+
+    // Submitting a NEW link → notifies (it's a real change).
+    vi.unstubAllGlobals();
+    stubFetch(200, { ...upstreamDeck, metadata: { name: 'Swapped' } });
+    await patchEntrant(jreq({ deckLink: 'https://swubase.com/decks/new' }), p(slug, { id, entrantId: reg.entrantId }));
+    expect(notifyEntrantRegistered).toHaveBeenCalledTimes(1);
+
+    // Re-syncing the same link afterwards → silent.
+    vi.mocked(notifyEntrantRegistered).mockClear();
+    await patchEntrant(jreq({ resync: true }), p(slug, { id, entrantId: reg.entrantId }));
+    expect(notifyEntrantRegistered).not.toHaveBeenCalled();
   });
 
   it('B153: resync rejects when the re-pulled deck is still illegal', async () => {

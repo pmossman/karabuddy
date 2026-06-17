@@ -66,7 +66,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     update.deckLink = link;
     update.deckName = result.deckName;
     update.deck = result.deck;
-    deckChange = { deckName: result.deckName, leaderId: result.deck.leader?.id ?? null, baseId: result.deck.base?.id ?? null };
+    // B162: a re-sync just re-pulls the SAME stored link — don't post a "deck
+    // updated" Discord message for it (it's a refresh, not a new submission). A
+    // real deck-link change (the edit-deck flow) still notifies.
+    if (!resync) {
+      deckChange = { deckName: result.deckName, leaderId: result.deck.leader?.id ?? null, baseId: result.deck.base?.id ?? null };
+    }
   }
 
   if (body.displayName !== undefined) {
