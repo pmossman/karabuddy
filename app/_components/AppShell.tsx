@@ -3,7 +3,7 @@
 import { Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 import { HeaderBar } from '@/app/_components/HeaderBar';
-import { Sidebar, FULL_WIDTH } from '@/app/_components/Sidebar';
+import { Sidebar, FULL_WIDTH, VIEWER_BAR_H } from '@/app/_components/Sidebar';
 import { Footer } from '@/app/_components/Footer';
 import type { TeamRef } from '@/lib/activeTeam';
 
@@ -31,15 +31,15 @@ export function AppShell({
   const isViewer = pathname.startsWith('/r/');
 
   if (signedIn && isViewer) {
-    // Immersive viewer: no in-flow column — the nav is a translucent slide-over
-    // (persistent home logo + menu top-left). Zero --kb-header-h here so the
-    // board uses the full height (there's no top header in the sidebar shell).
+    // Immersive viewer: a slim in-flow top bar (home logo + menu) so nothing
+    // covers the board, and the nav opens as a translucent slide-over. The
+    // board reserves --kb-header-h for the bar so there's no overflow/gap.
     return (
-      <div style={{ ['--kb-header-h' as string]: '0px' } as React.CSSProperties}>
-        <Suspense fallback={null}>
+      <div style={{ ['--kb-header-h' as string]: `${VIEWER_BAR_H}px`, display: 'flex', flexDirection: 'column', minHeight: '100vh' } as React.CSSProperties}>
+        <Suspense fallback={<div style={{ height: VIEWER_BAR_H, flexShrink: 0 }} />}>
           <Sidebar active={active} teams={teams} hasLinkedExtension={hasLinkedExtension} variant="overlay" />
         </Suspense>
-        {children}
+        <div style={{ flex: '1 1 auto', minWidth: 0 }}>{children}</div>
       </div>
     );
   }

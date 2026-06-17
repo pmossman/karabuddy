@@ -12,6 +12,7 @@ import type { TeamRef } from '@/lib/activeTeam';
 // an account footer. Desktop = a fixed sticky column; below the breakpoint it
 // collapses entirely behind a hamburger → slide-in drawer.
 export const FULL_WIDTH = 224;
+export const VIEWER_BAR_H = 46; // px — slim top bar on the immersive viewer
 const MOBILE_BP = 860; // px — below this the column becomes a top bar + drawer
 
 type IconName =
@@ -78,27 +79,33 @@ export function Sidebar({
     />
   );
 
-  // Immersive viewer: persistent home logo + menu top-left, nav as a translucent
-  // slide-over drawer. No in-flow column, so the gameboard gets full width.
+  // Immersive viewer: a slim IN-FLOW top bar (home logo + menu) so it never
+  // covers board content, and the full nav opens as a translucent drawer that
+  // slides OVER the board. The drawer sits above the viewer's own floating
+  // controls (z 90) so they don't poke through it.
   if (variant === 'overlay') {
-    const floatChip: React.CSSProperties = {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(13,16,22,0.62)', backdropFilter: 'blur(8px)',
-      border: '1px solid #21262f', borderRadius: 10,
-    };
     return (
       <>
-        <div style={{ position: 'fixed', top: 10, left: 12, zIndex: 55, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ ...floatChip, padding: '6px 10px' }}>
-            <Logo slug={active?.slug ?? null} />
-          </span>
+        <div
+          style={{
+            height: VIEWER_BAR_H, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
+            padding: '0 12px', background: 'rgba(13,16,22,0.92)', borderBottom: '1px solid #21262f',
+            backdropFilter: 'blur(8px)', position: 'relative', zIndex: 50,
+          }}
+        >
+          <Logo slug={active?.slug ?? null} />
           <button
             type="button"
             aria-label="Menu"
             aria-haspopup="menu"
             aria-expanded={drawerOpen}
             onClick={() => setDrawerOpen(true)}
-            style={{ ...floatChip, width: 34, height: 34, color: '#e6e6e6', cursor: 'pointer', padding: 0 }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32,
+              background: drawerOpen ? 'rgba(77,157,255,0.12)' : 'transparent',
+              border: `1px solid ${drawerOpen ? '#4d9dff' : '#2e333c'}`, borderRadius: 8,
+              color: '#e6e6e6', cursor: 'pointer', padding: 0,
+            }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
@@ -109,7 +116,7 @@ export function Sidebar({
         {drawerOpen && (
           <div
             onClick={() => setDrawerOpen(false)}
-            style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.35)', display: 'flex' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.35)', display: 'flex' }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
