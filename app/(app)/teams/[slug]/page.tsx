@@ -12,6 +12,8 @@ import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
 import { TeamTournaments } from './TeamTournaments';
 import { ReviewQueue } from './ReviewQueue';
+import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
+import { teamClips } from '@/lib/clipBrowser';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +29,7 @@ interface PageProps {
 // Overview is the default landing "hub"; the rest stay as drill-in tabs. The
 // clean-URL rule maps the default tab to bare /teams/<slug>, so old ?tab= deep
 // links keep working — only change: bare /teams/<slug> now lands on Overview.
-const VALID_TABS = ['overview', 'discussion', 'replays', 'review', 'tournaments', 'members', 'settings'] as const;
+const VALID_TABS = ['overview', 'discussion', 'replays', 'clips', 'review', 'tournaments', 'members', 'settings'] as const;
 type Tab = (typeof VALID_TABS)[number];
 const DEFAULT_TAB: Tab = 'overview';
 
@@ -95,6 +97,12 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
 
   const isOverview = tab === 'overview';
 
+  // Team clips live here (TEAM section), mirroring team Replays — the personal
+  // /clips page no longer carries per-team tabs.
+  const teamClipRows = tab === 'clips'
+    ? await teamClips(slug, { sessionUserId: userId, installToken: null })
+    : [];
+
   return (
     <main
       style={{
@@ -116,6 +124,9 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         {tab === 'overview' && <TeamOverview slug={slug} />}
         {tab === 'discussion' && <TeamDiscussion teamSlug={slug} />}
         {tab === 'replays' && <TeamReplays teamSlug={slug} />}
+        {tab === 'clips' && (
+          <ClipsBrowser rows={teamClipRows} showCreator emptyLabel="No clips on this team’s replays yet." />
+        )}
         {tab === 'review' && <ReviewQueue teamSlug={slug} />}
         {tab === 'tournaments' && <TeamTournaments teamSlug={slug} />}
         {tab === 'members' && <MembersList members={members} viewerUserId={userId} />}

@@ -5,33 +5,19 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
-// B117: the All-Replays hub scope switcher — "My replays" + a tab per team.
-// B123-followup: responsive. On desktop it's an inline tab strip (familiar, all
-// scopes visible at a glance). On mobile a horizontal tab row isn't obviously
-// scrollable and overflows, so it becomes a tap-to-open **scope picker** (the
-// standard context-switcher pattern): a button showing the current scope that
-// opens a menu of every scope. Scales to any number of teams.
-type Scope = { slug: string; name: string };
-
-// B133: activeSlug additionally accepts the sentinel 'public' (the ?tab=public
-// discovery scope — not a team).
-export function LibraryTabs({ teams, activeSlug }: { teams: Scope[]; activeSlug: string | null }) {
-  // SSR-safe: false on the server + first tick → desktop strip renders first,
-  // then flips to the picker on mobile (no hydration mismatch).
+// The /replays scope switcher — PERSONAL + discovery only: "My replays" and the
+// 🌐 Public browse. Team replays moved to the team page (TEAM section), so this
+// page no longer carries per-team tabs. Desktop = inline strip; mobile = picker.
+// `activeSlug` is null (My replays) | 'public'.
+export function LibraryTabs({ activeSlug }: { activeSlug: string | null }) {
   const isNarrow = useMediaQuery('(max-width: 720px)');
-  return isNarrow
-    ? <ScopePicker teams={teams} activeSlug={activeSlug} />
-    : <ScopeStrip teams={teams} activeSlug={activeSlug} />;
+  return isNarrow ? <ScopePicker activeSlug={activeSlug} /> : <ScopeStrip activeSlug={activeSlug} />;
 }
 
-// -- Desktop: inline tab strip ----------------------------------------------
-function ScopeStrip({ teams, activeSlug }: { teams: Scope[]; activeSlug: string | null }) {
+function ScopeStrip({ activeSlug }: { activeSlug: string | null }) {
   return (
     <div role="tablist" style={{ display: 'flex', alignItems: 'flex-end', gap: 4, borderBottom: '1px solid #2e333c', flexWrap: 'wrap' }}>
       <Tab href="/replays" active={!activeSlug}>My replays</Tab>
-      {teams.map((t) => (
-        <Tab key={t.slug} href={`/replays?team=${t.slug}`} active={activeSlug === t.slug}>{t.name}</Tab>
-      ))}
       <Tab href="/replays?tab=public" active={activeSlug === 'public'}>🌐 Public</Tab>
     </div>
   );
@@ -62,18 +48,14 @@ function tabStyle(active: boolean): React.CSSProperties {
 }
 
 // -- Mobile: tap-to-open scope picker ---------------------------------------
-function ScopePicker({ teams, activeSlug }: { teams: Scope[]; activeSlug: string | null }) {
+function ScopePicker({ activeSlug }: { activeSlug: string | null }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const activeName = activeSlug === 'public'
-    ? '🌐 Public'
-    : activeSlug ? (teams.find((t) => t.slug === activeSlug)?.name ?? 'My replays') : 'My replays';
+  const activeName = activeSlug === 'public' ? '🌐 Public' : 'My replays';
 
-  // Close on navigation (the component persists across client nav) + outside
-  // click / Escape.
   useEffect(() => { setOpen(false); }, [pathname, searchParams]);
   useEffect(() => {
     if (!open) return;
@@ -108,15 +90,9 @@ function ScopePicker({ teams, activeSlug }: { teams: Scope[]; activeSlug: string
             position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 30, minWidth: 220, maxWidth: '90vw',
             background: '#11141a', border: '1px solid #2e333c', borderRadius: 10, padding: 6,
             boxShadow: '0 8px 24px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: 2,
-            maxHeight: '60vh', overflowY: 'auto',
           }}
         >
           <ScopeMenuItem href="/replays" active={!activeSlug} onSelect={() => setOpen(false)}>My replays</ScopeMenuItem>
-          {teams.map((t) => (
-            <ScopeMenuItem key={t.slug} href={`/replays?team=${t.slug}`} active={activeSlug === t.slug} onSelect={() => setOpen(false)}>
-              {t.name}
-            </ScopeMenuItem>
-          ))}
           <ScopeMenuItem href="/replays?tab=public" active={activeSlug === 'public'} onSelect={() => setOpen(false)}>🌐 Public</ScopeMenuItem>
         </div>
       )}

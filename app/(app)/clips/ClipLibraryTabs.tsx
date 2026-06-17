@@ -5,23 +5,20 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
-// B142: the /clips scope switcher — My Clips · On My Replays · a tab per team.
-// Mirrors the replay browser's LibraryTabs (desktop strip / mobile picker).
-// `active` is 'created' (My Clips) | 'on-my-replays' | a team slug.
-type Scope = { slug: string; name: string };
-
-export function ClipLibraryTabs({ teams, active }: { teams: Scope[]; active: string }) {
+// The /clips scope switcher — PERSONAL scopes only (My clips · On my replays).
+// Team clips moved to the team page (TEAM section), so this page stays personal.
+// `active` is 'created' (My clips) | 'on-my-replays'.
+export function ClipLibraryTabs({ active }: { active: string }) {
   const isNarrow = useMediaQuery('(max-width: 720px)');
-  const items = buildItems(teams);
+  const items = buildItems();
   return isNarrow ? <Picker items={items} active={active} /> : <Strip items={items} active={active} />;
 }
 
 type Item = { key: string; label: string; href: string };
-function buildItems(teams: Scope[]): Item[] {
+function buildItems(): Item[] {
   return [
-    { key: 'created', label: 'My Clips', href: '/clips' },
-    { key: 'on-my-replays', label: 'On My Replays', href: '/clips?tab=on-my-replays' },
-    ...teams.map((t) => ({ key: t.slug, label: t.name, href: `/clips?team=${t.slug}` })),
+    { key: 'created', label: 'My clips', href: '/clips' },
+    { key: 'on-my-replays', label: 'On my replays', href: '/clips?tab=on-my-replays' },
   ];
 }
 

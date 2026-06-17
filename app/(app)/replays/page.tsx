@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { eq, desc, inArray, count, asc, and, isNotNull } from 'drizzle-orm';
+import { eq, desc, inArray, count, and, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, replayTeamShares, replayAltPayload, teamMembers, teams, tags, replayReviews } from '@/lib/schema';
+import { replays, users, replayTeamShares, replayAltPayload, teams, tags, replayReviews } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { recordedReplaySlugs } from '@/lib/recordedReplays';
 import { MineEmpty } from './MineEmpty';
@@ -10,7 +10,6 @@ import { MineAnonymous } from './MineAnonymous';
 import { LibraryTabs } from './LibraryTabs';
 import { ReplayFilters } from './ReplayFilters';
 import { PublicReplays } from './PublicReplays';
-import { TeamReplays } from '@/app/(app)/teams/[slug]/TeamReplays';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,8 +18,8 @@ const PAGE_STYLE: React.CSSProperties = { maxWidth: 1100, margin: '0 auto', padd
 // B117: "/replays" is the All-Replays hub — a tab strip switches between MY
 // replays (default) and each team I'm on, in place via `?team=<slug>`. Signed-in
 // only; anonymous visitors still see their own extension-token library.
-export default async function ReplaysIndex({ searchParams }: { searchParams: Promise<{ team?: string; tab?: string }> }) {
-  const { team: teamParam, tab: tabParam } = await searchParams;
+export default async function ReplaysIndex({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const { tab: tabParam } = await searchParams;
   const session = await auth();
   const userId: string | null = (session?.user as any)?.id || null;
 
@@ -39,7 +38,7 @@ export default async function ReplaysIndex({ searchParams }: { searchParams: Pro
           extension to replay them frame-by-frame, tag key turns, and review matchups. Browse public replays below, or{' '}
           <Link href="/signin?callbackUrl=/replays" style={{ color: '#5db4ff' }}>sign in</Link> to save your own.
         </p>
-        <LibraryTabs teams={[]} activeSlug={publicTab ? 'public' : null} />
+        <LibraryTabs activeSlug={publicTab ? 'public' : null} />
         <div style={{ marginTop: 18 }}>
           {publicTab ? <PublicReplays /> : <MineAnonymous />}
         </div>
@@ -47,25 +46,16 @@ export default async function ReplaysIndex({ searchParams }: { searchParams: Pro
     );
   }
 
-  const db = getDb();
-  const myTeams = await db
-    .select({ slug: teams.slug, name: teams.name })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
-    .where(eq(teamMembers.userId, userId))
-    .orderBy(asc(teams.name));
-
-  // An unknown / non-member ?team falls back to My replays (tab reads as such).
-  const activeTeam = teamParam && myTeams.some((t) => t.slug === teamParam) ? teamParam : null;
-  // B133: the public discovery scope (?tab=public) — not a team.
-  const publicTab = !activeTeam && tabParam === 'public';
+  // B133: the public discovery scope (?tab=public) — not a team. Team replays
+  // moved to the team page (TEAM section), so this page is personal + public.
+  const publicTab = tabParam === 'public';
 
   return (
     <main style={PAGE_STYLE}>
       <h1 style={{ margin: '0 0 14px', fontSize: 24, fontWeight: 700 }}>Replays</h1>
-      <LibraryTabs teams={myTeams} activeSlug={publicTab ? 'public' : activeTeam} />
+      <LibraryTabs activeSlug={publicTab ? 'public' : null} />
       <div style={{ marginTop: 18 }}>
-        {publicTab ? <PublicReplays /> : activeTeam ? <TeamReplays teamSlug={activeTeam} /> : <MyReplays userId={userId} />}
+        {publicTab ? <PublicReplays /> : <MyReplays userId={userId} />}
       </div>
     </main>
   );

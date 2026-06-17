@@ -56,6 +56,7 @@ export function Sidebar({
     { href: `/teams/${active.slug}`, label: 'Dashboard', icon: 'dashboard', active: onTeam && (!tab || tab === 'overview') },
     { href: `/teams/${active.slug}?tab=discussion`, label: 'Discussion', icon: 'discussion', active: onTeam && tab === 'discussion' },
     { href: `/teams/${active.slug}?tab=replays`, label: 'Replays', icon: 'replays', active: onTeam && tab === 'replays' },
+    { href: `/teams/${active.slug}?tab=clips`, label: 'Clips', icon: 'clips', active: onTeam && tab === 'clips' },
     { href: `/teams/${active.slug}?tab=review`, label: 'Reviews', icon: 'reviews', active: onTeam && tab === 'review' },
     { href: `/teams/${active.slug}?tab=tournaments`, label: 'Tournaments', icon: 'tournaments', active: onTeam && tab === 'tournaments' },
     { href: `/teams/${active.slug}?tab=members`, label: 'Members', icon: 'members', active: onTeam && tab === 'members' },
