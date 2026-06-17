@@ -392,13 +392,11 @@ function TeamSwitcherInline({ active, teams }: { active: TeamRef; teams: TeamRef
     return () => { document.removeEventListener('mousedown', onClick); document.removeEventListener('keydown', onKey); };
   }, [open]);
 
-  async function pick(slug: string) {
+  function pick(slug: string) {
     setOpen(false);
-    if (slug !== active.slug) {
-      await fetch('/api/me/active-team', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug }) }).catch(() => {});
-    }
+    // Navigating to the team page is enough — middleware syncs the kb_team
+    // cookie and the sidebar tracks the active team off the URL.
     router.push(`/teams/${slug}`);
-    router.refresh();
   }
 
   return (

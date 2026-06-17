@@ -38,6 +38,20 @@ function parseTab(raw: string | undefined): Tab {
   return VALID_TABS.includes(raw as Tab) ? (raw as Tab) : DEFAULT_TAB;
 }
 
+// Small electric-blue eyebrow above the team name on each feature page — orients
+// the user + differentiates the tabs (which all share the team-name header). The
+// dashboard (overview) is the landing, so it stands on the team name alone.
+const TAB_EYEBROW: Partial<Record<Tab, string>> = {
+  discussion: 'Team Discussion',
+  replays: 'Team Replays',
+  clips: 'Team Clips',
+  review: 'Team Reviews',
+  tournaments: 'Team Tournaments',
+  stats: 'Team Stats',
+  members: 'Team Members',
+  settings: 'Team Settings',
+};
+
 // B81: the "Add to Discord" bot-invite URL (scope=bot, View+Send perms). State
 // carries the team slug so the callback binds the guild to this team. Null when
 // Discord isn't configured (no client id) → the connect UI shows a hint instead.
@@ -114,6 +128,11 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         fontFamily: 'var(--font-barlow), sans-serif',
       }}
     >
+      {TAB_EYEBROW[tab] && (
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: tokens.led.on, margin: '0 0 3px' }}>
+          {TAB_EYEBROW[tab]}
+        </div>
+      )}
       <h1 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 600 }}>{team.name}</h1>
       <p style={{ margin: '0 0 20px', fontSize: 12, color: '#6c7588' }}>
         {members.length} {members.length === 1 ? 'member' : 'members'} · Created{' '}
