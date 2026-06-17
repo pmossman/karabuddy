@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { replays, users, teamMembers, replayTeamShares, tournaments, tournamentEntrants, tournamentMatches, tournamentRounds, tags, tagTeamScope } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
 import { serializeReplayRow } from '@/lib/replayRow';
-import { reviewersForTeam } from '@/lib/reviews';
+import { commentersForTeam } from '@/lib/reviews';
 import { computeStandings, type SwissMatch } from '@/lib/swiss';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 
@@ -52,23 +52,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     recentReplays = rows.map((r) => serializeReplayRow(r.replay, { ownerName: r.ownerName ?? null, viewerPlayerId: null }));
   }
 
-  // Open review requests — count + "awaiting you" + a preview list.
+  // EXPLICIT review requests — a teammate flagged their replay for review. The
+  // actionable ones are those with no team feedback yet (no comments); a request
+  // counts as reviewed once it has comments (the durable "I reviewed" mark is
+  // unused by most teams). Surface the awaiting ones prominently.
   const flagged = await db
     .select({ replaySlug: replayTeamShares.replaySlug, requestedAt: replayTeamShares.reviewRequestedAt, requestedBy: replayTeamShares.reviewRequestedBy })
     .from(replayTeamShares)
     .where(and(eq(replayTeamShares.teamSlug, slug), isNotNull(replayTeamShares.reviewRequestedAt)))
     .orderBy(desc(replayTeamShares.reviewRequestedAt));
 
-  let reviewReplays: any[] = [];
-  let awaitingYou = 0;
+  let awaitingReviews: any[] = [];
+  let awaitingCount = 0;
   if (flagged.length > 0) {
     const flaggedSlugs = flagged.map((f) => f.replaySlug);
-    const reviewerMarks = await reviewersForTeam(flaggedSlugs, slug);
-    const reviewedByYou = (s: string) => (reviewerMarks.get(s) ?? []).some((m) => m.userId === userId);
-    awaitingYou = flagged.filter((f) => !reviewedByYou(f.replaySlug)).length;
+    const commenters = await commentersForTeam(flaggedSlugs, slug);
+    const awaiting = flagged.filter((f) => (commenters.get(f.replaySlug)?.count ?? 0) === 0);
+    awaitingCount = awaiting.length;
 
-    const previewSlugs = flaggedSlugs.slice(0, REVIEW_PREVIEW);
-    const requesterIds = Array.from(new Set(flagged.map((f) => f.requestedBy).filter(Boolean))) as string[];
+    const previewSlugs = awaiting.slice(0, REVIEW_PREVIEW).map((f) => f.replaySlug);
+    const requesterIds = Array.from(new Set(awaiting.map((f) => f.requestedBy).filter(Boolean))) as string[];
     const requesterNames = new Map<string, string | null>();
     if (requesterIds.length > 0) {
       const rn = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, requesterIds));
@@ -76,16 +79,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     }
     const rows = await db.select({ replay: replays, ownerName: users.name }).from(replays).leftJoin(users, eq(users.id, replays.userId)).where(inArray(replays.slug, previewSlugs));
     const bySlug = new Map(rows.map((r) => [r.replay.slug, r]));
-    reviewReplays = previewSlugs.map((s) => {
+    awaitingReviews = previewSlugs.map((s) => {
       const row = bySlug.get(s);
       if (!row) return null;
-      const f = flagged.find((x) => x.replaySlug === s)!;
+      const f = awaiting.find((x) => x.replaySlug === s)!;
       return {
         ...serializeReplayRow(row.replay, { ownerName: row.ownerName ?? null, viewerPlayerId: null }),
         requestedAt: f.requestedAt instanceof Date ? f.requestedAt.toISOString() : (f.requestedAt as any) ?? null,
         requestedByName: f.requestedBy ? requesterNames.get(f.requestedBy) ?? null : null,
-        reviewedByYou: reviewedByYou(s),
-        reviewerCount: (reviewerMarks.get(s) ?? []).length,
       };
     }).filter(Boolean);
   }
@@ -215,13 +216,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     ok: true,
     counts: {
       tournaments: tRows.length,
-      openReviews: flagged.length,
-      awaitingYou,
+      openRequests: flagged.length,
+      awaiting: awaitingCount,
       surfacedReplays: surfaceSlugs.length,
       members: memberCount,
     },
     activeTournaments,
-    reviewReplays,
+    awaitingReviews,
     recentlyReviewed,
     recentDiscussion,
     recentReplays,

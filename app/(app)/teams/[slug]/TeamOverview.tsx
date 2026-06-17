@@ -17,9 +17,9 @@ interface Pairing { table: number; name1: string; name2: string | null; winnerNa
 interface ActiveTournament { id: string; name: string; status: string; entrantCount: number; currentRound: number; currentRoundNumber: number; plannedRounds: number | null; standings: Standing[]; pairings: Pairing[]; registrants: string[] }
 interface Disc { id: string; replaySlug: string; comment: string; createdAt: string; author: string; authorImage: string | null; matchup: string }
 interface OverviewData {
-  counts: { tournaments: number; openReviews: number; awaitingYou: number; surfacedReplays: number; members: number };
+  counts: { tournaments: number; openRequests: number; awaiting: number; surfacedReplays: number; members: number };
   activeTournaments: ActiveTournament[];
-  reviewReplays: any[];
+  awaitingReviews: any[];
   recentlyReviewed: any[];
   recentDiscussion: Disc[];
   recentReplays: any[];
@@ -45,8 +45,7 @@ export function TeamOverview({ slug }: { slug: string }) {
   if (error) return <p style={{ color: '#a0a8b8', fontSize: 13 }}>Couldn’t load the dashboard. Try refreshing.</p>;
   if (!data) return <DashboardSkeleton />;
 
-  const { counts, activeTournaments, reviewReplays, recentlyReviewed, recentDiscussion, recentReplays } = data;
-  const needsReview = reviewReplays.filter((r) => (r.reviewerCount ?? 0) === 0);
+  const { counts, activeTournaments, awaitingReviews, recentlyReviewed, recentDiscussion, recentReplays } = data;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -91,41 +90,36 @@ export function TeamOverview({ slug }: { slug: string }) {
           )}
         </Panel>
 
-        {/* Reviews — pending requests (if any) + the team's review feedback */}
-        <Panel accent={counts.awaitingYou > 0} style={cardStyle}>
+        {/* Reviews — explicit requests awaiting feedback (prominent) + the
+            team's actual review feedback (comments on replays). */}
+        <Panel accent={counts.awaiting > 0} style={cardStyle}>
           <TacticalHeading action={<Link href={`/teams/${slug}?tab=review`} style={actionLink}>View all →</Link>}>
             Reviews
           </TacticalHeading>
 
-          {counts.openReviews > 0 && (
-            <>
-              <div style={{ fontSize: 13 }}>
-                {counts.awaitingYou > 0
-                  ? <span><b style={{ font: `700 20px ${tokens.led.mono}`, color: tokens.led.on }}>{counts.awaitingYou}</b> <span style={{ color: '#dff4ff' }}>awaiting your review</span></span>
-                  : <span style={{ color: '#a0a8b8' }}>{counts.openReviews} open · you’re caught up</span>}
+          {awaitingReviews.length > 0 && (
+            <div>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>
+                <b style={{ font: `700 20px ${tokens.led.mono}`, color: tokens.led.on }}>{counts.awaiting}</b>{' '}
+                <span style={{ color: '#dff4ff' }}>requested {counts.awaiting === 1 ? 'review' : 'reviews'} awaiting feedback</span>
               </div>
-              {needsReview.length > 0 && (
-                <div>
-                  <SectionLabel>Needs review</SectionLabel>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {needsReview.slice(0, 3).map((r) => (
-                      <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
-                        <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={28} />
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {!r.reviewedByYou && <span style={{ fontSize: 11, color: tokens.led.on, fontWeight: 700 }}>needs you</span>}
-                          <span style={{ ...metaText, marginLeft: 'auto' }}>{r.requestedByName ? `${r.requestedByName} · ` : ''}{timeAgo(r.requestedAt)}</span>
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {awaitingReviews.map((r) => (
+                  <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5, borderColor: 'rgba(77,210,255,0.3)', background: 'rgba(77,210,255,0.05)' }}>
+                    <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={28} />
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: tokens.led.on, fontWeight: 700 }}>needs review</span>
+                      <span style={{ ...metaText, marginLeft: 'auto' }}>{r.requestedByName ? `${r.requestedByName} requested · ` : ''}{timeAgo(r.requestedAt)}</span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
           )}
 
           {recentlyReviewed.length > 0 ? (
             <div>
-              <SectionLabel>{counts.openReviews > 0 ? 'Recently reviewed' : 'Recent feedback'}</SectionLabel>
+              <SectionLabel>Recent feedback</SectionLabel>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {recentlyReviewed.map((r) => (
                   <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
@@ -138,7 +132,7 @@ export function TeamOverview({ slug }: { slug: string }) {
                 ))}
               </div>
             </div>
-          ) : counts.openReviews === 0 ? (
+          ) : awaitingReviews.length === 0 ? (
             <Empty>No review feedback yet — comment on a teammate’s replay to leave one, or request a review on yours.</Empty>
           ) : null}
         </Panel>
