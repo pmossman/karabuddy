@@ -50,7 +50,6 @@ export function Sidebar({
 
   const onTeam = active ? pathname === `/teams/${active.slug}` : false;
   const tab = sp.get('tab');
-  const scope = sp.get('scope');
 
   const teamItems: NavItem[] = active ? [
     { href: `/teams/${active.slug}`, label: 'Dashboard', icon: 'dashboard', active: onTeam && (!tab || tab === 'overview') },
@@ -59,14 +58,14 @@ export function Sidebar({
     { href: `/teams/${active.slug}?tab=clips`, label: 'Clips', icon: 'clips', active: onTeam && tab === 'clips' },
     { href: `/teams/${active.slug}?tab=review`, label: 'Reviews', icon: 'reviews', active: onTeam && tab === 'review' },
     { href: `/teams/${active.slug}?tab=tournaments`, label: 'Tournaments', icon: 'tournaments', active: onTeam && tab === 'tournaments' },
-    { href: `/stats?scope=team&team=${active.slug}`, label: 'Stats', icon: 'stats', active: pathname === '/stats' && scope === 'team' },
+    { href: `/teams/${active.slug}?tab=stats`, label: 'Stats', icon: 'stats', active: onTeam && tab === 'stats' },
     { href: `/teams/${active.slug}?tab=members`, label: 'Members', icon: 'members', active: onTeam && tab === 'members' },
     { href: `/teams/${active.slug}?tab=settings`, label: 'Team settings', icon: 'settings', active: onTeam && tab === 'settings' },
   ] : [];
 
   const youItems: NavItem[] = [
     { href: '/replays?tab=mine', label: 'My replays', icon: 'replays', active: pathname === '/replays' && tab === 'mine' },
-    { href: '/stats?scope=personal', label: 'My stats', icon: 'stats', active: pathname === '/stats' && scope !== 'team' },
+    { href: '/stats', label: 'My stats', icon: 'stats', active: pathname === '/stats' },
     { href: '/clips', label: 'My clips', icon: 'clips', active: pathname === '/clips' || pathname.startsWith('/clips/') },
     { href: '/mentions', label: 'Mentions', icon: 'mentions', active: pathname.startsWith('/mentions') },
   ];

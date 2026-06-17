@@ -13,6 +13,7 @@ import { TeamDiscussion } from './TeamDiscussion';
 import { TeamTournaments } from './TeamTournaments';
 import { ReviewQueue } from './ReviewQueue';
 import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
+import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
@@ -29,7 +30,7 @@ interface PageProps {
 // Overview is the default landing "hub"; the rest stay as drill-in tabs. The
 // clean-URL rule maps the default tab to bare /teams/<slug>, so old ?tab= deep
 // links keep working — only change: bare /teams/<slug> now lands on Overview.
-const VALID_TABS = ['overview', 'discussion', 'replays', 'clips', 'review', 'tournaments', 'members', 'settings'] as const;
+const VALID_TABS = ['overview', 'discussion', 'replays', 'clips', 'review', 'tournaments', 'stats', 'members', 'settings'] as const;
 type Tab = (typeof VALID_TABS)[number];
 const DEFAULT_TAB: Tab = 'overview';
 
@@ -128,6 +129,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
           <ClipsBrowser rows={teamClipRows} showCreator emptyLabel="No clips on this team’s replays yet." />
         )}
         {tab === 'review' && <ReviewQueue teamSlug={slug} />}
+        {tab === 'stats' && <StatsClient scope="team" teamSlug={slug} teamName={team.name} signedIn embedded />}
         {tab === 'tournaments' && <TeamTournaments teamSlug={slug} />}
         {tab === 'members' && <MembersList members={members} viewerUserId={userId} />}
         {tab === 'settings' && (

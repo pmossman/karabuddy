@@ -241,7 +241,7 @@ function StatsTrendCard({ slug }: { slug: string }) {
 
   return (
     <Panel style={cardStyle}>
-      <TacticalHeading action={<Link href={`/stats?scope=team&team=${slug}`} style={actionLink}>View all →</Link>}>
+      <TacticalHeading action={<Link href={`/teams/${slug}?tab=stats`} style={actionLink}>View all →</Link>}>
         Leader win rates
       </TacticalHeading>
       {rows === null ? (
