@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { eq, desc, inArray, count, asc, and, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, replayTeamShares, replayParticipants, replayAltPayload, teamMembers, teams, tags, replayReviews } from '@/lib/schema';
+import { replays, users, replayTeamShares, replayAltPayload, teamMembers, teams, tags, replayReviews } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
+import { recordedReplaySlugs } from '@/lib/recordedReplays';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
 import { LibraryTabs } from './LibraryTabs';
@@ -71,24 +72,14 @@ export default async function ReplaysIndex({ searchParams }: { searchParams: Pro
 }
 
 // -- My replays (the default tab) -------------------------------------------
-// B116: "My Replays" = every replay I RECORDED — my own uploads, replays I'm a
-// participant of, and double-sided games I recorded as the alt (2nd) player
-// (whose canonical row is attributed to my teammate). Union the three signals.
+// B116/B156: "My Replays" = every replay I RECORDED — my own uploads + the
+// double-sided games where I recorded the alt (2nd) player side (canonical row
+// attributed to my teammate). Deliberately NOT replays I'm merely a resolved
+// `replay_participants` entry of: that included OPPONENTS (handle-matched on
+// upload) and leaked their name + private team shares into my library (B156).
 async function MyReplays({ userId }: { userId: string }) {
   const db = getDb();
-  const altSideBySlug = new Map<string, string | null>();
-
-  const [ownSlugRows, partSlugRows, altRows] = await Promise.all([
-    db.select({ slug: replays.slug }).from(replays).where(eq(replays.userId, userId)),
-    db.select({ slug: replayParticipants.replaySlug }).from(replayParticipants).where(eq(replayParticipants.userId, userId)),
-    db.select({ slug: replayAltPayload.replaySlug, altOwnerPlayerId: replayAltPayload.altOwnerPlayerId }).from(replayAltPayload).where(eq(replayAltPayload.altUserId, userId)),
-  ]);
-  for (const a of altRows) altSideBySlug.set(a.slug, a.altOwnerPlayerId);
-  const mineSlugs = Array.from(new Set([
-    ...ownSlugRows.map((r) => r.slug),
-    ...partSlugRows.map((r) => r.slug),
-    ...altRows.map((r) => r.slug),
-  ]));
+  const { slugs: mineSlugs, altSideBySlug } = await recordedReplaySlugs(userId);
 
   // One ordered+limited fetch over the union (apply the limit ONCE, post-union).
   const rows = mineSlugs.length > 0

@@ -5,10 +5,11 @@
 // so the wire shape can't drift.
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { getDb } from './db';
-import { clips, replays, users, replayParticipants, replayAltPayload } from './schema';
+import { clips, replays, users } from './schema';
 import { type AuthContext, canMutateClip } from './replayPermissions';
 import { canViewReplayIdentities } from './altPerspective';
 import { surfacedReplaySlugs } from './teamSurface';
+import { recordedReplaySlugs } from './recordedReplays';
 import { isSampleReplaySlug } from './sampleReplays';
 import { serializeClipRow, type SerializedClipRow } from './clipRow';
 
@@ -55,19 +56,15 @@ export async function myCreatedClips(ctx: AuthContext): Promise<SerializedClipRo
   return finishRows(rows as ClipJoin[], ctx);
 }
 
-// Clips OTHERS made of replays the caller recorded (uploaded / participated /
-// recorded the alt side) — excludes the caller's own clips (those are "My
-// Clips"). Signed-in only.
+// Clips OTHERS made of replays the caller RECORDED (their own uploads or the
+// alt side they recorded) — excludes the caller's own clips (those are "My
+// Clips"). Signed-in only. B156: scoped to recorded-only — NOT replays the
+// caller is merely a resolved participant of (an opponent handle-matched on
+// upload), which leaked the opponent's clips/identity into this tab.
 export async function clipsOnMyReplays(ctx: AuthContext): Promise<SerializedClipRow[]> {
   const me = ctx.sessionUserId;
   if (!me) return [];
-  const db = getDb();
-  const [own, part, alt] = await Promise.all([
-    db.select({ slug: replays.slug }).from(replays).where(eq(replays.userId, me)),
-    db.select({ slug: replayParticipants.replaySlug }).from(replayParticipants).where(eq(replayParticipants.userId, me)),
-    db.select({ slug: replayAltPayload.replaySlug }).from(replayAltPayload).where(eq(replayAltPayload.altUserId, me)),
-  ]);
-  const mineSlugs = Array.from(new Set([...own, ...part, ...alt].map((r) => r.slug)));
+  const { slugs: mineSlugs } = await recordedReplaySlugs(me);
   if (mineSlugs.length === 0) return [];
   const rows = (await baseSelect()
     .where(inArray(clips.replaySlug, mineSlugs))
