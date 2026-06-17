@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import type { TeamRef } from '@/lib/activeTeam';
+import type { LastReplayRef } from '@/lib/lastReplay';
 
 // Left-nav app shell for signed-in users. Holds the team switcher, the active
 // team's surfaces (TEAM group), the ambient personal surfaces (YOU group), and
@@ -25,11 +26,13 @@ export function Sidebar({
   active,
   teams,
   hasLinkedExtension,
+  lastReplay,
   variant = 'column',
 }: {
   active: TeamRef | null;
   teams: TeamRef[];
   hasLinkedExtension: boolean;
+  lastReplay: LastReplayRef | null;
   // 'column' = the normal persistent left column (with a mobile drawer).
   // 'overlay' = the immersive-viewer treatment: no in-flow column, just a
   // persistent home logo + menu button top-left, and the full nav opens as a
@@ -77,6 +80,7 @@ export function Sidebar({
       teamItems={teamItems}
       youItems={youItems}
       hasLinkedExtension={hasLinkedExtension}
+      lastReplay={lastReplay}
     />
   );
 
@@ -216,12 +220,14 @@ function SidebarBody({
   teamItems,
   youItems,
   hasLinkedExtension,
+  lastReplay,
 }: {
   active: TeamRef | null;
   teams: TeamRef[];
   teamItems: NavItem[];
   youItems: NavItem[];
   hasLinkedExtension: boolean;
+  lastReplay: LastReplayRef | null;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '14px 10px' }}>
@@ -247,7 +253,13 @@ function SidebarBody({
         )}
 
         <NavGroup label="You">
-          {youItems.map((it) => <NavRow key={it.label} item={it} />)}
+          {youItems.map((it) => (
+            <Fragment key={it.label}>
+              <NavRow item={it} />
+              {/* Jump straight back into your last game — a very common entry. */}
+              {it.label === 'My replays' && lastReplay && <LastReplayRow lastReplay={lastReplay} />}
+            </Fragment>
+          ))}
         </NavGroup>
       </div>
 
@@ -301,6 +313,33 @@ function NavRow({ item }: { item: NavItem }) {
     >
       <Icon name={item.icon} active={item.active} />
       {item.label}
+    </Link>
+  );
+}
+
+// Indented shortcut beneath "My replays" → the viewer for your most recent game.
+function LastReplayRow({ lastReplay }: { lastReplay: LastReplayRef }) {
+  const pathname = usePathname();
+  const active = pathname === `/r/${lastReplay.slug}`;
+  return (
+    <Link
+      href={`/r/${lastReplay.slug}`}
+      prefetch={false}
+      aria-current={active ? 'page' : undefined}
+      title={`Last replay — ${lastReplay.label}`}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px 6px 33px', borderRadius: 8,
+        textDecoration: 'none', color: active ? '#ffffff' : '#8a93a3',
+        background: active ? 'rgba(77,210,255,0.10)' : 'transparent',
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.8 }}>
+        <polygon points="6 4 20 12 6 20 6 4" />
+      </svg>
+      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.25 }}>
+        <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, color: '#5b6472' }}>Last replay</span>
+        <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastReplay.label}</span>
+      </span>
     </Link>
   );
 }

@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { auth } from '@/auth';
 import { userHasLinkedExtension } from '@/lib/userResolution';
 import { resolveActiveTeam } from '@/lib/activeTeam';
+import { getMyLastReplay } from '@/lib/lastReplay';
 import { AppShell } from '@/app/_components/AppShell';
 import { AutoClaim } from '@/app/_components/AutoClaim';
 import { ExtensionSigninReturn } from '@/app/_components/ExtensionSigninReturn';
@@ -16,14 +17,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await auth();
   const signedIn = !!session?.user;
   const userId: string | null = (session?.user as any)?.id ?? null;
-  const [hasLinkedExtension, { active, teams }] = await Promise.all([
+  const [hasLinkedExtension, { active, teams }, lastReplay] = await Promise.all([
     userHasLinkedExtension(userId),
     resolveActiveTeam(userId),
+    userId ? getMyLastReplay(userId) : Promise.resolve(null),
   ]);
 
   return (
     <KaraBuddyThemeProvider>
-      <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams}>
+      <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams} lastReplay={lastReplay}>
         {children}
       </AppShell>
       {/* B54: silently link the extension's install token to the account. */}

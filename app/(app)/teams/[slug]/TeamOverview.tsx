@@ -120,14 +120,14 @@ export function TeamOverview({ slug }: { slug: string }) {
                 {recentReplays.map((r) => {
                   const [p1, p2] = (r.players as any[]) || [];
                   return (
-                    <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, gap: 8 }}>
-                      <MiniDeck player={p1} align="left" />
-                      <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, flexShrink: 0 }}>VS</span>
-                      <MiniDeck player={p2} align="right" />
-                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, flexShrink: 0, minWidth: 40 }}>
-                        <span style={{ fontSize: 13 }}><ResultBadge playerId={r.ownerPlayerId} winners={r.winners} /></span>
-                        <span style={metaText}>{timeAgo(r.createdAt)}</span>
+                    <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <MiniDeck player={p1} align="left" />
+                        <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, flexShrink: 0 }}>VS</span>
+                        <MiniDeck player={p2} align="right" />
+                        <span style={{ fontSize: 13, flexShrink: 0, minWidth: 16, textAlign: 'right' }}><ResultBadge playerId={r.ownerPlayerId} winners={r.winners} /></span>
                       </span>
+                      <span style={metaText}>{r.ownerName ? `${r.ownerName} · ` : ''}{timeAgo(r.createdAt)}</span>
                     </Link>
                   );
                 })}
@@ -136,9 +136,6 @@ export function TeamOverview({ slug }: { slug: string }) {
               <Empty>No replays surfaced to this team yet. Share or tag a game to get started.</Empty>
             )}
           </Panel>
-
-          {/* Stats — leader win-rate bars */}
-          <StatsTrendCard slug={slug} />
         </div>
 
         {/* SIDE column */}
@@ -205,73 +202,6 @@ export function TeamOverview({ slug }: { slug: string }) {
         </div>
       </div>
     </>
-  );
-}
-
-// -- Stats card (separate client fetch; stats logic stays out of /overview) ---
-interface LeaderStat { leader: string; games: number; wins: number; winRate: number | null }
-function StatsTrendCard({ slug }: { slug: string }) {
-  const [rows, setRows] = useState<LeaderStat[] | null>(null);
-  const [names, setNames] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let live = true;
-    fetch(`/api/stats?scope=team&team=${slug}&type=leaders`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((j) => {
-        if (!live) return;
-        const data: LeaderStat[] = Array.isArray(j.data) ? j.data : [];
-        setRows(data);
-        const ids = data.map((r) => r.leader).filter(Boolean);
-        if (ids.length) {
-          fetch(`/api/cards?ids=${ids.join(',')}`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((cb) => { if (live && cb?.cards) setNames(Object.fromEntries(Object.entries(cb.cards).map(([id, v]: any) => [id, v.name || id]))); })
-            .catch(() => {});
-        }
-      })
-      .catch(() => { if (live) setRows([]); });
-    return () => { live = false; };
-  }, [slug]);
-
-  const top = (rows ?? [])
-    .filter((r) => r.games >= 2 && r.winRate != null)
-    .sort((a, b) => (b.winRate ?? 0) - (a.winRate ?? 0))
-    .slice(0, 5);
-
-  return (
-    <Panel style={cardStyle}>
-      <TacticalHeading action={<Link href={`/teams/${slug}?tab=stats`} style={actionLink}>View all →</Link>}>
-        Leader win rates
-      </TacticalHeading>
-      {rows === null ? (
-        <Empty>Loading…</Empty>
-      ) : top.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          {top.map((r) => {
-            const pct = Math.round((r.winRate ?? 0) * 100);
-            const [set, num] = r.leader.split('_');
-            const img = cardImageUrl({ set, number: num }, true);
-            return (
-              <div key={r.leader} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <CardThumb src={img} alt={names[r.leader]} w={40} h={28} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 3 }}>
-                    <span style={{ ...ellip, fontSize: 12.5, fontWeight: 600, color: '#e6e6e6' }}>{names[r.leader] || r.leader}</span>
-                    <span style={{ fontSize: 11.5, color: '#8a93a3', flexShrink: 0 }}><b style={{ color: '#dff4ff' }}>{pct}%</b> · {r.games}g</span>
-                  </div>
-                  <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: 'linear-gradient(90deg, #4d9dff, #4dd2ff)' }} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <Empty>Not enough games tracked yet. Record a few and your team’s meta shows up here.</Empty>
-      )}
-    </Panel>
   );
 }
 
