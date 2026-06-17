@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { POST as upload } from '@/app/api/replays/route';
 import { GET as perspective } from '@/app/api/replays/[slug]/perspective/route';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, extensionTokens, replayAltPayload } from '@/lib/schema';
+import { users, teams, teamMembers, extensionTokens, replayAltPayload, replays } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 
 // B112: double-sided replays. The 2nd teammate's recording is RETAINED as the
@@ -79,25 +79,28 @@ describe('B112 alt-perspective storage gating', () => {
     expect(((await altRow(slug)).altClientMeta as any)).toMatchObject({ extVersion: '0.5.10', browser: 'firefox' });
   });
 
-  it('does NOT store the alt when the recorders share no team', async () => {
+  it('B158: a NON-teammate 2nd recording becomes a SEPARATE private replay (no alt)', async () => {
     const a = await seedUser();
-    const b = await seedUser(); // not on any shared team
+    const b = await seedUser(); // not on any shared team — an opponent
     const team = await seedTeam(a.id, [a.id]);
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-noteam', { share: [team] })).json();
-    as(b.id); const res = await (await doUpload(b.token, 'g-noteam')).json();
-    expect(res.deduped).toBe(true);
-    expect(res.altStored).toBe(false);
-    expect(await altRow(slug)).toBeUndefined();
+    as(a.id); const first = await (await doUpload(a.token, 'g-noteam', { share: [team] })).json();
+    as(b.id); const second = await (await doUpload(b.token, 'g-noteam', { localPlayerId: 'p2' })).json();
+    // B keeps their own row (their POV) instead of being discarded/alt-linked.
+    expect(second.slug).not.toBe(first.slug);
+    expect(second.deduped).toBeUndefined();
+    expect(await altRow(first.slug)).toBeUndefined(); // no double-sided across teams
+    const rows = await getDb().select().from(replays).where(eq(replays.gameId, 'g-noteam'));
+    expect(rows.map((r) => r.ownerToken).sort()).toEqual([a.token, b.token].sort());
   });
 
-  it('does NOT store the alt for an anonymous 2nd uploader', async () => {
+  it('B158: an anonymous NON-teammate 2nd recording is its own row too', async () => {
     const a = await seedUser();
     const team = await seedTeam(a.id, [a.id]);
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-anon', { share: [team] })).json();
+    as(a.id); const first = await (await doUpload(a.token, 'g-anon', { share: [team] })).json();
     // 2nd uploader: no session, unlinked token → resolves to no account.
-    as(null); const res = await (await doUpload(`kbx_${randomUUID()}`, 'g-anon')).json();
-    expect(res.altStored).toBe(false);
-    expect(await altRow(slug)).toBeUndefined();
+    as(null); const second = await (await doUpload(`kbx_${randomUUID()}`, 'g-anon')).json();
+    expect(second.slug).not.toBe(first.slug);
+    expect(await altRow(first.slug)).toBeUndefined();
   });
 
   it('stale-guards the alt: a lower actionCount snapshot does not overwrite', async () => {

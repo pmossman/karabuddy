@@ -180,7 +180,10 @@ export const replays = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    gameIdIdx: uniqueIndex('replays_game_id_idx').on(t.gameId),
+    // B158 piece 2: NOT unique — two non-teammate opponents who both record the
+    // same karabast game each keep their own row (one per uploader). Dedup is now
+    // per-(gameId, owner) in the upload route. Still indexed for that lookup.
+    gameIdIdx: index('replays_game_id_idx').on(t.gameId),
     ownerIdx: index('replays_owner_idx').on(t.ownerToken),
     userIdx: index('replays_user_idx').on(t.userId),
     createdAtIdx: index('replays_created_at_idx').on(t.createdAt),

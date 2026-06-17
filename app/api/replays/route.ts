@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { put } from '@/lib/blob';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, replayAltPayload, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
 import { sharedTeam } from '@/lib/altPerspective';
@@ -169,17 +169,28 @@ export async function POST(req: Request) {
     // existing blob + metadata + upserts payload-carried tags. Same slug
     // throughout the match so the in-game "Open on karabuddy →" link is
     // stable and karabuddy-side tag edits aren't blown away.
-    const existing = await db.select().from(replays).where(eq(replays.gameId, gameId)).limit(1);
-    if (existing.length > 0) {
-      const replay = existing[0];
+    // B158: per-owner upsert key. gameId is no longer unique — an OPPONENT's
+    // recording of the same game is a SEPARATE row owned by them. Find MY prior
+    // recording of this game (a periodic/finalize snapshot) by (gameId, owner).
+    const ownerCond = userId
+      ? or(eq(replays.ownerToken, installToken), eq(replays.userId, userId))
+      : eq(replays.ownerToken, installToken);
+    const [mine] = await db.select().from(replays)
+      .where(and(eq(replays.gameId, gameId), ownerCond)).limit(1);
 
-      // Different owner uploading the same gameId = both players in the match
-      // have the extension. Preserve the original recording's ownership and
-      // return its slug (today's behavior; a (gameId, ownerToken) unique
-      // constraint to give each player their own row is its own task).
-      const sameOwner = replay.ownerToken === installToken;
-      const sameUser = replay.userId && userId && replay.userId === userId;
-      if (!sameOwner && !sameUser) {
+    // B82/B112: I haven't recorded this game myself — did a TEAMMATE? If so,
+    // retain my POV as their double-sided alt (+ enrich decks). A NON-teammate
+    // (opponent) falls through to a NEW row of my own (B158) — each player keeps
+    // their own private recording, no double-sided across teams.
+    let teammateCanonical: typeof replays.$inferSelect | null = null;
+    if (!mine && userId) {
+      const coRecorded = await db.select().from(replays).where(eq(replays.gameId, gameId));
+      for (const r of coRecorded) {
+        if (r.userId && (await sharedTeam(r.userId, userId))) { teammateCanonical = r; break; }
+      }
+    }
+    if (teammateCanonical) {
+      const replay = teammateCanonical;
         // B82: teammate-vs-teammate — both players recorded the same match.
         // Don't discard the second upload's deck snapshot; merge it into the
         // canonical replay so the (otherwise-masked) opponent's FULL list is
@@ -231,8 +242,11 @@ export async function POST(req: Request) {
         // intra-team detection + the match shows in their library too).
         await recordParticipant(replay.slug, userId);
         return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched, altStored }, { headers });
-      }
+    }
 
+    // My own prior recording of this game → snapshot merge / overwrite.
+    if (mine) {
+      const replay = mine;
       // B120: slice-and-merge. A game can be split across two karabast tabs
       // (the server rebinds the single game socket → the tabs flip-flop), so
       // each tab captures only part of the stream. If BOTH the incoming slice

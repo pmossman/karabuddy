@@ -111,14 +111,26 @@ describe('POST /api/replays — upsert by gameId', () => {
     expect(row.actionCount).toBe(20); // unchanged
   });
 
-  it('a different owner uploading the same gameId is deduped to the original', async () => {
+  it('B158: a different (non-teammate) owner gets their OWN separate row', async () => {
     as(null);
     const first = await (await doUpload('kbx_owner', { gameId: 'g3' })).json();
     const second = await (await doUpload('kbx_other', { gameId: 'g3' })).json();
-    expect(second.deduped).toBe(true);
+    // gameId is no longer unique — each opponent keeps their own POV row.
+    expect(second.slug).not.toBe(first.slug);
+    const rows = await getDb().select().from(replays).where(eq(replays.gameId, 'g3'));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.ownerToken).sort()).toEqual(['kbx_other', 'kbx_owner']);
+  });
+
+  it('same owner re-uploading the same gameId still upserts ONE row (snapshot)', async () => {
+    as(null);
+    const first = await (await doUpload('kbx_solo', { gameId: 'g-solo', actionCount: 5 })).json();
+    const second = await (await doUpload('kbx_solo', { gameId: 'g-solo', actionCount: 12 })).json();
+    expect(second.snapshot).toBe(true);
     expect(second.slug).toBe(first.slug);
-    const [row] = await getDb().select().from(replays).where(eq(replays.gameId, 'g3'));
-    expect(row.ownerToken).toBe('kbx_owner'); // original ownership preserved
+    const rows = await getDb().select().from(replays).where(eq(replays.gameId, 'g-solo'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actionCount).toBe(12);
   });
 });
 
