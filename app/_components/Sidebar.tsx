@@ -52,19 +52,36 @@ export function Sidebar({
     return () => document.removeEventListener('keydown', onKey);
   }, [drawerOpen]);
 
-  const onTeam = active ? pathname === `/teams/${active.slug}` : false;
+  // The sidebar lives in the (app) layout, which does NOT re-render on client-
+  // side navigation — so the server-resolved `active` prop would go stale the
+  // moment you navigate to a different team's page. Track the displayed active
+  // team in state that updates to the URL slug whenever you're on a team page
+  // (and persists across soft-navs, since this component stays mounted). The
+  // middleware keeps the kb_team COOKIE in lockstep for hard reloads + server
+  // reads, so the switcher and the page can never disagree.
+  const [activeTeam, setActiveTeam] = useState<TeamRef | null>(active);
+  useEffect(() => {
+    const m = pathname.match(/^\/teams\/([^/]+)/);
+    const slug = m?.[1];
+    if (slug && slug !== 'join') {
+      const t = teams.find((x) => x.slug === slug);
+      if (t) setActiveTeam(t);
+    }
+  }, [pathname, teams]);
+
+  const onTeam = activeTeam ? pathname === `/teams/${activeTeam.slug}` : false;
   const tab = sp.get('tab');
 
-  const teamItems: NavItem[] = active ? [
-    { href: `/teams/${active.slug}`, label: 'Dashboard', icon: 'dashboard', active: onTeam && (!tab || tab === 'overview') },
-    { href: `/teams/${active.slug}?tab=discussion`, label: 'Discussion', icon: 'discussion', active: onTeam && tab === 'discussion' },
-    { href: `/teams/${active.slug}?tab=replays`, label: 'Replays', icon: 'replays', active: onTeam && tab === 'replays' },
-    { href: `/teams/${active.slug}?tab=clips`, label: 'Clips', icon: 'clips', active: onTeam && tab === 'clips' },
-    { href: `/teams/${active.slug}?tab=review`, label: 'Reviews', icon: 'reviews', active: onTeam && tab === 'review' },
-    { href: `/teams/${active.slug}?tab=tournaments`, label: 'Tournaments', icon: 'tournaments', active: onTeam && tab === 'tournaments' },
-    { href: `/teams/${active.slug}?tab=stats`, label: 'Stats', icon: 'stats', active: onTeam && tab === 'stats' },
-    { href: `/teams/${active.slug}?tab=members`, label: 'Members', icon: 'members', active: onTeam && tab === 'members' },
-    { href: `/teams/${active.slug}?tab=settings`, label: 'Team settings', icon: 'settings', active: onTeam && tab === 'settings' },
+  const teamItems: NavItem[] = activeTeam ? [
+    { href: `/teams/${activeTeam.slug}`, label: 'Dashboard', icon: 'dashboard', active: onTeam && (!tab || tab === 'overview') },
+    { href: `/teams/${activeTeam.slug}?tab=discussion`, label: 'Discussion', icon: 'discussion', active: onTeam && tab === 'discussion' },
+    { href: `/teams/${activeTeam.slug}?tab=replays`, label: 'Replays', icon: 'replays', active: onTeam && tab === 'replays' },
+    { href: `/teams/${activeTeam.slug}?tab=clips`, label: 'Clips', icon: 'clips', active: onTeam && tab === 'clips' },
+    { href: `/teams/${activeTeam.slug}?tab=review`, label: 'Reviews', icon: 'reviews', active: onTeam && tab === 'review' },
+    { href: `/teams/${activeTeam.slug}?tab=tournaments`, label: 'Tournaments', icon: 'tournaments', active: onTeam && tab === 'tournaments' },
+    { href: `/teams/${activeTeam.slug}?tab=stats`, label: 'Stats', icon: 'stats', active: onTeam && tab === 'stats' },
+    { href: `/teams/${activeTeam.slug}?tab=members`, label: 'Members', icon: 'members', active: onTeam && tab === 'members' },
+    { href: `/teams/${activeTeam.slug}?tab=settings`, label: 'Team settings', icon: 'settings', active: onTeam && tab === 'settings' },
   ] : [];
 
   const youItems: NavItem[] = [
@@ -76,7 +93,7 @@ export function Sidebar({
 
   const body = (
     <SidebarBody
-      active={active}
+      active={activeTeam}
       teams={teams}
       teamItems={teamItems}
       youItems={youItems}
@@ -99,7 +116,7 @@ export function Sidebar({
             backdropFilter: 'blur(8px)', position: 'relative', zIndex: 50,
           }}
         >
-          <Logo slug={active?.slug ?? null} />
+          <Logo slug={activeTeam?.slug ?? null} />
           <button
             type="button"
             aria-label="Menu"
@@ -189,7 +206,7 @@ export function Sidebar({
             <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
-        <Logo slug={active?.slug ?? null} />
+        <Logo slug={activeTeam?.slug ?? null} />
         <AccountAvatar />
       </div>
 
