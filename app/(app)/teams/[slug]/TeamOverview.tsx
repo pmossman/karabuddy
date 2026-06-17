@@ -13,7 +13,8 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 // Discussion activity feed. Self-fetches the member-gated /overview bundle.
 
 interface Standing { rank: number; name: string; wins: number; losses: number; draws: number; points: number }
-interface ActiveTournament { id: string; name: string; status: string; entrantCount: number; currentRound: number; plannedRounds: number | null; standings: Standing[]; registrants: string[] }
+interface Pairing { table: number; name1: string; name2: string | null; winnerName: string | null; status: string; score: string }
+interface ActiveTournament { id: string; name: string; status: string; entrantCount: number; currentRound: number; currentRoundNumber: number; plannedRounds: number | null; standings: Standing[]; pairings: Pairing[]; registrants: string[] }
 interface Disc { id: string; replaySlug: string; comment: string; createdAt: string; author: string; authorImage: string | null; matchup: string }
 interface OverviewData {
   counts: { tournaments: number; openReviews: number; awaitingYou: number; surfacedReplays: number; members: number };
@@ -52,7 +53,9 @@ export function TeamOverview({ slug }: { slug: string }) {
       <style>{`
         .kb-dash-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
         @media (max-width: 1000px) { .kb-dash-2col { grid-template-columns: 1fr; } }
-        .kb-tourney-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+        .kb-tourney-grid { display: flex; flex-direction: column; gap: 16px; }
+        .kb-tourney-split { display: grid; grid-template-columns: 1.05fr 1fr; gap: 18px; }
+        @media (max-width: 760px) { .kb-tourney-split { grid-template-columns: 1fr; } }
       `}</style>
 
       {/* Active tournament(s) — full-width hero above everything else. */}
@@ -168,40 +171,112 @@ export function TeamOverview({ slug }: { slug: string }) {
   );
 }
 
-// One active tournament inside the hero — live standings (in-progress) or the
-// registrant list (registration).
+const MEDAL = ['#f2c14e', '#cfd4dd', '#cd7f4d']; // gold / silver / bronze
+
+// One active tournament inside the hero — round progress, podium standings with
+// points bars, and the current round's pairings (the live "bracket" view), or
+// the registrant roster while in registration.
 function TournamentPanel({ slug, t }: { slug: string; t: ActiveTournament }) {
   const href = `/teams/${slug}/tournaments/${t.id}`;
+  const inProgress = t.standings.length > 0;
+  const maxPoints = Math.max(1, ...t.standings.map((s) => s.points));
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid #21262f' }}>
-      <Link href={href} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textDecoration: 'none' }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: '#e6e6e6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-        <StatusChip status={t.status} />
-      </Link>
-      <span style={metaText}>{tournamentSummary(t)}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, borderRadius: 12, background: 'linear-gradient(180deg, rgba(77,157,255,0.06), rgba(255,255,255,0.015))', border: '1px solid #2a3340' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <Link href={href} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', minWidth: 0 }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+          <StatusChip status={t.status} />
+        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={metaText}>{tournamentSummary(t)}</span>
+          {t.plannedRounds ? <RoundDots current={t.currentRoundNumber} total={t.plannedRounds} /> : null}
+        </div>
+      </div>
 
-      {t.standings.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {t.standings.map((s) => (
-            <div key={s.rank} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 12.5 }}>
-              <span style={{ width: 18, color: '#6c7588', fontWeight: 700, flexShrink: 0, textAlign: 'right' }}>{s.rank}</span>
-              <span style={{ flex: 1, color: '#d6d6d6', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
-              <span style={{ color: '#8a93a3', flexShrink: 0 }}>{s.wins}-{s.losses}{s.draws ? `-${s.draws}` : ''}</span>
-              <span style={{ color: '#dff4ff', fontWeight: 700, flexShrink: 0, minWidth: 34, textAlign: 'right' }}>{s.points} pt</span>
+      {inProgress ? (
+        <div className="kb-tourney-split">
+          {/* Standings — podium + points bars */}
+          <div>
+            <SectionLabel>Standings</SectionLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {t.standings.map((s) => {
+                const medal = s.rank <= 3 ? MEDAL[s.rank - 1] : null;
+                return (
+                  <div key={s.rank} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <span style={{
+                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 800, color: medal ? '#0d1016' : '#8a93a3',
+                      background: medal ?? 'rgba(255,255,255,0.05)', border: medal ? 'none' : '1px solid #2e333c',
+                    }}>{s.rank}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', color: '#e6e6e6', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                      <span style={{ display: 'block', height: 4, borderRadius: 2, marginTop: 3, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                        <span style={{ display: 'block', height: '100%', width: `${(s.points / maxPoints) * 100}%`, background: medal ? `linear-gradient(90deg, ${medal}, #4dd2ff)` : 'linear-gradient(90deg, #4d9dff, #4dd2ff)' }} />
+                      </span>
+                    </span>
+                    <span style={{ flexShrink: 0, color: '#8a93a3', fontSize: 12, minWidth: 42, textAlign: 'right' }}>{s.wins}-{s.losses}{s.draws ? `-${s.draws}` : ''}</span>
+                    <span style={{ flexShrink: 0, color: '#dff4ff', fontWeight: 800, minWidth: 28, textAlign: 'right' }}>{s.points}</span>
+                  </div>
+                );
+              })}
             </div>
-          ))}
-          <Link href={href} style={{ ...actionLink, marginTop: 4 }}>Full standings →</Link>
+            <Link href={href} style={{ ...actionLink, display: 'inline-block', marginTop: 8 }}>Full standings →</Link>
+          </div>
+
+          {/* Current round pairings — the live board */}
+          <div>
+            <SectionLabel>Round {t.currentRoundNumber}{t.plannedRounds ? ` of ${t.plannedRounds}` : ''}</SectionLabel>
+            {t.pairings.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {t.pairings.slice(0, 8).map((p) => <PairingRow key={p.table} p={p} />)}
+              </div>
+            ) : (
+              <Empty>Pairings not posted yet.</Empty>
+            )}
+          </div>
         </div>
       ) : t.registrants.length > 0 ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {t.registrants.map((n, i) => (
-            <span key={`${n}-${i}`} style={{ fontSize: 12, fontWeight: 600, color: '#d6d6d6', padding: '3px 9px', borderRadius: 999, background: 'rgba(255,255,255,0.03)', border: '1px solid #21262f' }}>{n}</span>
-          ))}
+        <div>
+          <SectionLabel>Registered · {t.entrantCount}</SectionLabel>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {t.registrants.map((n, i) => (
+              <span key={`${n}-${i}`} style={{ fontSize: 12.5, fontWeight: 600, color: '#d6d6d6', padding: '4px 11px', borderRadius: 999, background: 'rgba(77,157,255,0.07)', border: '1px solid rgba(77,157,255,0.22)' }}>{n}</span>
+            ))}
+          </div>
+          <Link href={href} style={{ ...actionLink, display: 'inline-block', marginTop: 10 }}>Manage tournament →</Link>
         </div>
       ) : (
         <Empty>No entrants yet. <Link href={href} style={{ color: tokens.color.accent, textDecoration: 'none' }}>Manage →</Link></Empty>
       )}
     </div>
+  );
+}
+
+function PairingRow({ p }: { p: Pairing }) {
+  const done = !!p.winnerName || p.name2 === null;
+  const w1 = p.winnerName != null && p.winnerName === p.name1;
+  const w2 = p.winnerName != null && p.winnerName === p.name2;
+  const side = (name: string | null, win: boolean) => (
+    <span style={{ flex: 1, minWidth: 0, color: win ? '#7fe08a' : name === null ? '#6c7588' : '#d6d6d6', fontWeight: win ? 800 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name ?? 'BYE'}</span>
+  );
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 8px', borderRadius: 7, background: 'rgba(255,255,255,0.02)', border: '1px solid #21262f' }}>
+      <span style={{ width: 16, flexShrink: 0, color: '#6c7588', fontWeight: 700, fontSize: 11 }}>{p.table}</span>
+      {side(p.name1, w1)}
+      <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: done ? '#8a93a3' : tokens.led.on, minWidth: 30, textAlign: 'center' }}>{p.name2 === null ? 'bye' : done ? p.score : 'live'}</span>
+      {side(p.name2, w2)}
+    </div>
+  );
+}
+
+function RoundDots({ current, total }: { current: number; total: number }) {
+  return (
+    <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+      {Array.from({ length: Math.min(total, 8) }, (_, i) => (
+        <span key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: i < current ? tokens.led.on : 'rgba(255,255,255,0.12)', boxShadow: i < current ? '0 0 5px rgba(77,210,255,0.6)' : 'none' }} />
+      ))}
+    </span>
   );
 }
 

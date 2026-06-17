@@ -157,8 +157,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   for (const t of activeRows) {
     const [entrants, matches, rounds] = await Promise.all([
       db.select({ id: tournamentEntrants.id, displayName: tournamentEntrants.displayName, dropped: tournamentEntrants.dropped }).from(tournamentEntrants).where(eq(tournamentEntrants.tournamentId, t.id)).orderBy(asc(tournamentEntrants.createdAt)),
-      db.select({ entrant1Id: tournamentMatches.entrant1Id, entrant2Id: tournamentMatches.entrant2Id, games: tournamentMatches.games }).from(tournamentMatches).where(eq(tournamentMatches.tournamentId, t.id)),
-      db.select({ id: tournamentRounds.id }).from(tournamentRounds).where(eq(tournamentRounds.tournamentId, t.id)),
+      db.select({ entrant1Id: tournamentMatches.entrant1Id, entrant2Id: tournamentMatches.entrant2Id, games: tournamentMatches.games, status: tournamentMatches.status, tableNumber: tournamentMatches.tableNumber, roundId: tournamentMatches.roundId }).from(tournamentMatches).where(eq(tournamentMatches.tournamentId, t.id)),
+      db.select({ id: tournamentRounds.id, number: tournamentRounds.number }).from(tournamentRounds).where(eq(tournamentRounds.tournamentId, t.id)).orderBy(asc(tournamentRounds.number)),
     ]);
     const nameById = new Map(entrants.map((e) => [e.id, e.displayName]));
     const swissMatches: SwissMatch[] = matches.map((m) => ({ entrant1Id: m.entrant1Id, entrant2Id: m.entrant2Id, games: (m.games as { winner: string | null }[]) ?? [] }));
@@ -167,14 +167,37 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
           .slice(0, STANDINGS_PREVIEW)
           .map((s) => ({ rank: s.rank, name: nameById.get(s.entrantId) ?? '—', wins: s.wins, losses: s.losses, draws: s.draws, points: s.points }))
       : [];
+    // Current round pairings — the live "who's playing whom" view.
+    const currentRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+    const pairings = currentRound
+      ? matches
+          .filter((m) => m.roundId === currentRound.id)
+          .sort((a, b) => a.tableNumber - b.tableNumber)
+          .map((m) => {
+            const games = (m.games as { winner: string | null }[]) ?? [];
+            let w1 = 0, w2 = 0;
+            for (const g of games) { if (g.winner === m.entrant1Id) w1++; else if (g.winner && g.winner === m.entrant2Id) w2++; }
+            const winnerId = m.entrant2Id === null ? m.entrant1Id : w1 > w2 ? m.entrant1Id : w2 > w1 ? m.entrant2Id : null;
+            return {
+              table: m.tableNumber,
+              name1: nameById.get(m.entrant1Id) ?? '—',
+              name2: m.entrant2Id ? nameById.get(m.entrant2Id) ?? '—' : null, // null = bye
+              winnerName: winnerId ? nameById.get(winnerId) ?? null : null,
+              status: m.status,
+              score: m.entrant2Id === null ? 'bye' : `${w1}–${w2}`,
+            };
+          })
+      : [];
     activeTournaments.push({
       id: t.id,
       name: t.name,
       status: t.status,
       entrantCount: entrants.length,
       currentRound: rounds.length,
+      currentRoundNumber: currentRound?.number ?? 0,
       plannedRounds: t.plannedRounds ?? null,
       standings,
+      pairings,
       registrants: entrants.slice(0, REGISTRANTS_PREVIEW).map((e) => e.displayName),
     });
   }
