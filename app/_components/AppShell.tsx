@@ -30,6 +30,20 @@ export function AppShell({
   const pathname = usePathname();
   const isViewer = pathname.startsWith('/r/');
 
+  if (signedIn && isViewer) {
+    // Immersive viewer: no in-flow column — the nav is a translucent slide-over
+    // (persistent home logo + menu top-left). Zero --kb-header-h here so the
+    // board uses the full height (there's no top header in the sidebar shell).
+    return (
+      <div style={{ ['--kb-header-h' as string]: '0px' } as React.CSSProperties}>
+        <Suspense fallback={null}>
+          <Sidebar active={active} teams={teams} hasLinkedExtension={hasLinkedExtension} variant="overlay" />
+        </Suspense>
+        {children}
+      </div>
+    );
+  }
+
   if (signedIn) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', minHeight: '100vh' }}>
@@ -40,7 +54,7 @@ export function AppShell({
         </Suspense>
         <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
           <main style={{ flex: '1 1 auto', minWidth: 0 }}>{children}</main>
-          {!isViewer && <Footer />}
+          <Footer />
         </div>
       </div>
     );

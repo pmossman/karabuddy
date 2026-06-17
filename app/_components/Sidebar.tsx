@@ -24,10 +24,16 @@ export function Sidebar({
   active,
   teams,
   hasLinkedExtension,
+  variant = 'column',
 }: {
   active: TeamRef | null;
   teams: TeamRef[];
   hasLinkedExtension: boolean;
+  // 'column' = the normal persistent left column (with a mobile drawer).
+  // 'overlay' = the immersive-viewer treatment: no in-flow column, just a
+  // persistent home logo + menu button top-left, and the full nav opens as a
+  // translucent drawer that slides OVER the content.
+  variant?: 'column' | 'overlay';
 }) {
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -71,6 +77,57 @@ export function Sidebar({
       hasLinkedExtension={hasLinkedExtension}
     />
   );
+
+  // Immersive viewer: persistent home logo + menu top-left, nav as a translucent
+  // slide-over drawer. No in-flow column, so the gameboard gets full width.
+  if (variant === 'overlay') {
+    const floatChip: React.CSSProperties = {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(13,16,22,0.62)', backdropFilter: 'blur(8px)',
+      border: '1px solid #21262f', borderRadius: 10,
+    };
+    return (
+      <>
+        <div style={{ position: 'fixed', top: 10, left: 12, zIndex: 55, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ ...floatChip, padding: '6px 10px' }}>
+            <Logo slug={active?.slug ?? null} />
+          </span>
+          <button
+            type="button"
+            aria-label="Menu"
+            aria-haspopup="menu"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
+            style={{ ...floatChip, width: 34, height: 34, color: '#e6e6e6', cursor: 'pointer', padding: 0 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {drawerOpen && (
+          <div
+            onClick={() => setDrawerOpen(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.35)', display: 'flex' }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              role="menu"
+              style={{
+                width: FULL_WIDTH, maxWidth: '82vw', height: '100%', overflowY: 'auto',
+                background: 'rgba(13,16,22,0.92)', backdropFilter: 'blur(12px)',
+                borderRight: '1px solid #2b323d', animation: 'kb-slide-in 0.16s ease-out',
+              }}
+            >
+              <style>{`@keyframes kb-slide-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
+              {body}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
