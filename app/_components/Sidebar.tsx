@@ -9,13 +9,9 @@ import type { TeamRef } from '@/lib/activeTeam';
 
 // Left-nav app shell for signed-in users. Holds the team switcher, the active
 // team's surfaces (TEAM group), the ambient personal surfaces (YOU group), and
-// an account footer. Three presentations:
-//   - desktop FULL  (labels)            — width FULL_WIDTH
-//   - desktop RAIL  (icons only)        — width RAIL_WIDTH, collapse toggle
-//   - mobile        (slim bar + drawer; the drawer is always the full body)
-// Collapse is persisted in the kb_nav cookie (read server-side, so no flash).
-export const FULL_WIDTH = 248;
-export const RAIL_WIDTH = 92;
+// an account footer. Desktop = a fixed sticky column; below the breakpoint it
+// collapses entirely behind a hamburger → slide-in drawer.
+export const FULL_WIDTH = 224;
 const MOBILE_BP = 860; // px — below this the column becomes a top bar + drawer
 
 type IconName =
@@ -24,30 +20,18 @@ type IconName =
 
 interface NavItem { href: string; label: string; icon: IconName; active: boolean }
 
-function setNavCookie(rail: boolean) {
-  document.cookie = `kb_nav=${rail ? 'rail' : 'full'}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-}
-
 export function Sidebar({
   active,
   teams,
   hasLinkedExtension,
-  collapsed: collapsedProp,
-  lockCollapsed = false,
 }: {
   active: TeamRef | null;
   teams: TeamRef[];
   hasLinkedExtension: boolean;
-  collapsed: boolean;
-  lockCollapsed?: boolean;
 }) {
   const pathname = usePathname();
   const sp = useSearchParams();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(collapsedProp);
-
-  // The viewer locks the rail; everywhere else honors the cookie/prop.
-  const isRail = lockCollapsed || collapsed;
 
   useEffect(() => { setDrawerOpen(false); }, [pathname, sp]);
   useEffect(() => {
@@ -56,10 +40,6 @@ export function Sidebar({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [drawerOpen]);
-
-  function toggleCollapsed() {
-    setCollapsed((v) => { const next = !v; setNavCookie(next); return next; });
-  }
 
   const onTeam = active ? pathname === `/teams/${active.slug}` : false;
   const tab = sp.get('tab');
@@ -81,16 +61,13 @@ export function Sidebar({
     { href: '/mentions', label: 'Mentions', icon: 'mentions', active: pathname.startsWith('/mentions') },
   ];
 
-  const body = (railMode: boolean) => (
+  const body = (
     <SidebarBody
       active={active}
       teams={teams}
       teamItems={teamItems}
       youItems={youItems}
       hasLinkedExtension={hasLinkedExtension}
-      collapsed={railMode}
-      lockCollapsed={lockCollapsed}
-      onToggle={toggleCollapsed}
     />
   );
 
@@ -105,17 +82,16 @@ export function Sidebar({
         }
       `}</style>
 
-      {/* Desktop: fixed-width sticky column (full or rail). */}
+      {/* Desktop: fixed-width sticky column. */}
       <aside
         className="kb-sb-desktop"
         style={{
-          flexDirection: 'column', width: isRail ? RAIL_WIDTH : FULL_WIDTH, flexShrink: 0,
+          flexDirection: 'column', width: FULL_WIDTH, flexShrink: 0,
           position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', overflowX: 'hidden',
           background: 'rgba(13, 16, 22, 0.92)', borderRight: '1px solid #21262f',
-          transition: 'width 0.14s ease',
         }}
       >
-        {body(isRail)}
+        {body}
       </aside>
 
       {/* Mobile: slim top bar + slide-in drawer. */}
@@ -142,7 +118,7 @@ export function Sidebar({
             <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
-        <Logo slug={active?.slug ?? null} mark={false} />
+        <Logo slug={active?.slug ?? null} />
         <AccountAvatar />
       </div>
 
@@ -160,8 +136,7 @@ export function Sidebar({
             }}
           >
             <style>{`@keyframes kb-slide-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
-            {/* Drawer is always the full body — collapse is a desktop concept. */}
-            {body(false)}
+            {body}
           </div>
         </div>
       )}
@@ -175,94 +150,54 @@ function SidebarBody({
   teamItems,
   youItems,
   hasLinkedExtension,
-  collapsed,
-  lockCollapsed,
-  onToggle,
 }: {
   active: TeamRef | null;
   teams: TeamRef[];
   teamItems: NavItem[];
   youItems: NavItem[];
   hasLinkedExtension: boolean;
-  collapsed: boolean;
-  lockCollapsed: boolean;
-  onToggle: () => void;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: collapsed ? '14px 8px' : '14px 12px' }}>
-      <div style={{ padding: collapsed ? '4px 0 10px' : '4px 8px 10px', display: 'flex', justifyContent: 'center' }}>
-        <Logo slug={active?.slug ?? null} mark={collapsed} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: '14px 10px' }}>
+      <div style={{ padding: '4px 8px 10px' }}>
+        <Logo slug={active?.slug ?? null} />
       </div>
 
-      <div style={{ padding: collapsed ? '0 0 10px' : '0 4px 10px' }}>
+      <div style={{ padding: '0 4px 10px' }}>
         {active
-          ? <TeamSwitcherInline active={active} teams={teams} collapsed={collapsed} />
-          : <CreateTeamButton collapsed={collapsed} />}
+          ? <TeamSwitcherInline active={active} teams={teams} />
+          : <CreateTeamButton />}
       </div>
 
       {teamItems.length > 0 && (
         <>
-          <NavGroup label="Team" collapsed={collapsed}>
-            {teamItems.map((it) => <NavRow key={it.label} item={it} collapsed={collapsed} />)}
+          <NavGroup label="Team">
+            {teamItems.map((it) => <NavRow key={it.label} item={it} />)}
           </NavGroup>
-          <div style={{ height: 1, background: '#21262f', margin: collapsed ? '10px 6px' : '10px 8px' }} />
+          <div style={{ height: 1, background: '#21262f', margin: '10px 8px' }} />
         </>
       )}
 
-      <NavGroup label="You" collapsed={collapsed}>
-        {youItems.map((it) => <NavRow key={it.label} item={it} collapsed={collapsed} />)}
+      <NavGroup label="You">
+        {youItems.map((it) => <NavRow key={it.label} item={it} />)}
       </NavGroup>
 
       <div style={{ flex: '1 1 auto' }} />
 
-      {!hasLinkedExtension && !collapsed && (
+      {!hasLinkedExtension && (
         <div style={{ padding: '10px 8px' }}>
           <InstallExtensionCta variant="header" />
         </div>
       )}
 
-      {/* Collapse toggle — hidden on the viewer (rail is locked) and on mobile. */}
-      {!lockCollapsed && (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand' : 'Collapse'}
-          style={{
-            display: 'flex', alignItems: 'center',
-            flexDirection: collapsed ? 'column' : 'row', gap: collapsed ? 3 : 9,
-            margin: collapsed ? '4px 0' : '4px 4px',
-            padding: collapsed ? '8px 2px' : '8px 10px', justifyContent: collapsed ? 'center' : 'flex-start',
-            borderRadius: 8, cursor: 'pointer', font: 'inherit', fontWeight: 600,
-            fontSize: collapsed ? 9.5 : 12.5, color: '#8a93a3', background: 'transparent', border: '1px solid transparent',
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            {collapsed
-              ? <polyline points="9 18 15 12 9 6" />
-              : <polyline points="15 18 9 12 15 6" />}
-          </svg>
-          {collapsed ? 'Expand' : 'Collapse'}
-        </button>
-      )}
-
-      <div style={{ height: 1, background: '#21262f', margin: collapsed ? '6px 6px' : '6px 8px' }} />
-      <AccountFooter collapsed={collapsed} />
+      <div style={{ height: 1, background: '#21262f', margin: '6px 8px' }} />
+      <AccountFooter />
     </div>
   );
 }
 
-function Logo({ slug, mark }: { slug: string | null; mark: boolean }) {
+function Logo({ slug }: { slug: string | null }) {
   const href = slug ? `/teams/${slug}` : '/';
-  if (mark) {
-    // Rail: KARA stacked over buddy.
-    return (
-      <Link href={href} prefetch={false} aria-label="KaraBuddy" title="KaraBuddy" style={{ textDecoration: 'none', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: 1 }}>
-        <span style={{ fontFamily: 'var(--font-barlow), -apple-system, sans-serif', fontWeight: 400, fontSize: 14, textTransform: 'uppercase', color: '#e6e6e6' }}>KARA</span>
-        <span style={{ fontFamily: 'var(--font-logo), var(--font-barlow), sans-serif', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', background: 'linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', WebkitTextFillColor: 'transparent' }}>buddy</span>
-      </Link>
-    );
-  }
   return (
     <Link href={href} prefetch={false} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'baseline', gap: 6, lineHeight: 1, userSelect: 'none' }}>
       <span style={{ fontFamily: 'var(--font-barlow), -apple-system, sans-serif', fontWeight: 400, fontSize: 20, textTransform: 'uppercase', color: '#e6e6e6' }}>KARA</span>
@@ -271,40 +206,18 @@ function Logo({ slug, mark }: { slug: string | null; mark: boolean }) {
   );
 }
 
-function NavGroup({ label, collapsed, children }: { label: string; collapsed: boolean; children: React.ReactNode }) {
+function NavGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      {!collapsed && (
-        <div style={{ padding: '6px 12px 4px', fontSize: 10, color: '#5b6472', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
-          {label}
-        </div>
-      )}
+      <div style={{ padding: '6px 12px 4px', fontSize: 10, color: '#5b6472', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
+        {label}
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>{children}</div>
     </div>
   );
 }
 
-function NavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
-  if (collapsed) {
-    // Rail: icon with a small label beneath it.
-    return (
-      <Link
-        href={item.href}
-        prefetch={false}
-        aria-current={item.active ? 'page' : undefined}
-        title={item.label}
-        style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-          padding: '8px 2px', borderRadius: 8, textDecoration: 'none', textAlign: 'center',
-          color: item.active ? '#ffffff' : '#aab1bf',
-          background: item.active ? 'rgba(77,210,255,0.10)' : 'transparent',
-        }}
-      >
-        <Icon name={item.icon} active={item.active} />
-        <span style={{ fontSize: 9.5, fontWeight: 600, lineHeight: 1.15, letterSpacing: '0.01em', color: item.active ? '#dff4ff' : '#8a93a3' }}>{item.label}</span>
-      </Link>
-    );
-  }
+function NavRow({ item }: { item: NavItem }) {
   return (
     <Link
       href={item.href}
@@ -325,30 +238,26 @@ function NavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   );
 }
 
-function CreateTeamButton({ collapsed }: { collapsed: boolean }) {
+function CreateTeamButton() {
   return (
     <Link
       href="/teams"
       prefetch={false}
-      title={collapsed ? 'Create or join a team' : undefined}
       style={{
-        display: 'flex', alignItems: 'center',
-        flexDirection: collapsed ? 'column' : 'row', gap: collapsed ? 4 : 9,
-        justifyContent: 'center', textAlign: 'center',
-        padding: collapsed ? '8px 2px' : '8px 10px', borderRadius: 8, textDecoration: 'none',
-        fontSize: collapsed ? 9.5 : 13, fontWeight: 600, color: '#5db4ff',
+        display: 'flex', alignItems: 'center', gap: 9, justifyContent: 'flex-start',
+        padding: '8px 10px', borderRadius: 8, textDecoration: 'none',
+        fontSize: 13, fontWeight: 600, color: '#5db4ff',
         background: 'rgba(77,157,255,0.08)', border: '1px solid rgba(77,157,255,0.25)',
       }}
     >
       <Icon name="addTeam" active={false} />
-      {collapsed ? 'New team' : 'Create or join a team'}
+      Create or join a team
     </Link>
   );
 }
 
-// Team switcher. Full: a labeled pill. Rail: a square team-initial button. Both
-// open the same dropdown (POST /api/me/active-team then route to the dashboard).
-function TeamSwitcherInline({ active, teams, collapsed }: { active: TeamRef; teams: TeamRef[]; collapsed: boolean }) {
+// Team switcher (POST /api/me/active-team then route to the dashboard).
+function TeamSwitcherInline({ active, teams }: { active: TeamRef; teams: TeamRef[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -373,66 +282,31 @@ function TeamSwitcherInline({ active, teams, collapsed }: { active: TeamRef; tea
     router.refresh();
   }
 
-  const initial = (active.name || '?').trim().slice(0, 1).toUpperCase();
-
   return (
-    <div ref={ref} style={{ position: 'relative', display: collapsed ? 'flex' : 'block', flexDirection: collapsed ? 'column' : undefined, alignItems: collapsed ? 'center' : undefined, gap: collapsed ? 4 : undefined, justifyContent: 'center' }}>
+    <div ref={ref} style={{ position: 'relative' }}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Switch team"
-        title={collapsed ? active.name : undefined}
-        style={collapsed ? {
-          position: 'relative', overflow: 'visible',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, cursor: 'pointer',
-          borderRadius: 9, font: '700 15px var(--font-barlow), sans-serif', color: '#0d1016',
-          background: 'linear-gradient(135deg, #4dd2ff, #4d9dff)', border: open ? '2px solid #fff' : '2px solid transparent',
-        } : {
+        style={{
           display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', cursor: 'pointer',
           padding: '8px 10px', borderRadius: 8, font: 'inherit', color: '#e6e6e6',
           background: open ? 'rgba(77,157,255,0.12)' : 'rgba(255,255,255,0.04)',
           border: `1px solid ${open ? '#4d9dff' : '#2a303a'}`,
         }}
       >
-        {collapsed ? (
-          <>
-            {initial}
-            {/* Caret badge so the tile reads as an interactive menu. */}
-            <span
-              aria-hidden
-              style={{
-                position: 'absolute', right: -4, bottom: -4, width: 16, height: 16, borderRadius: '50%',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                background: '#11141a', border: '1px solid #2e333c', color: '#aab1bf',
-              }}
-            >
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-            </span>
-          </>
-        ) : (
-          <>
-            <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: '#4dd2ff', boxShadow: '0 0 6px #4dd2ff' }} />
-            <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.name}</span>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ opacity: 0.6, flexShrink: 0 }}><polyline points="6 9 12 15 18 9" /></svg>
-          </>
-        )}
+        <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: '#4dd2ff', boxShadow: '0 0 6px #4dd2ff' }} />
+        <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.name}</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ opacity: 0.6, flexShrink: 0 }}><polyline points="6 9 12 15 18 9" /></svg>
       </button>
-
-      {collapsed && (
-        <span title={active.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: RAIL_WIDTH - 14, fontSize: 9.5, fontWeight: 600, color: '#aab1bf' }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.name}</span>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" style={{ flexShrink: 0, opacity: 0.7 }}><polyline points="6 9 12 15 18 9" /></svg>
-        </span>
-      )}
 
       {open && (
         <div
           role="menu"
           style={{
-            position: 'absolute', zIndex: 80,
-            ...(collapsed ? { left: 'calc(100% + 8px)', top: 0, minWidth: 200 } : { left: 0, right: 0, top: 'calc(100% + 6px)' }),
+            position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 80,
             background: '#11141a', border: '1px solid #2e333c', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
             padding: 6, display: 'flex', flexDirection: 'column', gap: 2,
           }}
@@ -450,16 +324,15 @@ function TeamSwitcherInline({ active, teams, collapsed }: { active: TeamRef; tea
                   display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', boxSizing: 'border-box',
                   padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', border: 0,
                   color: isActive ? '#ffffff' : '#d6d6d6', background: isActive ? 'rgba(77,157,255,0.12)' : 'transparent',
-                  whiteSpace: 'nowrap',
                 }}
               >
                 <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: isActive ? '#4dd2ff' : '#3a3f48', boxShadow: isActive ? '0 0 6px #4dd2ff' : 'none' }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
               </button>
             );
           })}
           <div style={{ borderTop: '1px solid #2e333c', marginTop: 4, paddingTop: 4 }}>
-            <Link href="/teams" role="menuitem" prefetch={false} onClick={() => setOpen(false)} style={{ display: 'block', padding: '8px 10px', borderRadius: 6, fontSize: 13, fontWeight: 600, color: '#5db4ff', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            <Link href="/teams" role="menuitem" prefetch={false} onClick={() => setOpen(false)} style={{ display: 'block', padding: '8px 10px', borderRadius: 6, fontSize: 13, fontWeight: 600, color: '#5db4ff', textDecoration: 'none' }}>
               Create or join a team →
             </Link>
           </div>
@@ -485,7 +358,7 @@ function AccountAvatar() {
   );
 }
 
-function AccountFooter({ collapsed }: { collapsed: boolean }) {
+function AccountFooter() {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -503,44 +376,33 @@ function AccountFooter({ collapsed }: { collapsed: boolean }) {
   if (!u) return null;
   const label = u.name || u.email || '';
   const initials = label.replace(/@.*/, '').trim().slice(0, 2).toUpperCase() || '?';
-  const item: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', boxSizing: 'border-box', padding: '8px 10px', fontSize: 13, color: '#d6d6d6', textDecoration: 'none', borderRadius: 6, background: 'transparent', border: 0, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-  const avatar = (
-    <span style={{ width: 28, height: 28, borderRadius: '50%', overflow: 'hidden', background: u.image ? 'transparent' : '#2e333c', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {u.image
-        // eslint-disable-next-line @next/next/no-img-element
-        ? <img src={u.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        : <span style={{ fontSize: 11, fontWeight: 700, color: '#d6d6d6' }}>{initials}</span>}
-    </span>
-  );
+  const item: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', boxSizing: 'border-box', padding: '8px 10px', fontSize: 13, color: '#d6d6d6', textDecoration: 'none', borderRadius: 6, background: 'transparent', border: 0, cursor: 'pointer', fontFamily: 'inherit' };
 
   return (
-    <div ref={ref} style={{ position: 'relative', padding: collapsed ? '4px 0 0' : '4px 4px 0', display: collapsed ? 'flex' : 'block', justifyContent: 'center' }}>
+    <div ref={ref} style={{ position: 'relative', padding: '4px 4px 0' }}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account"
-        title={collapsed ? label : undefined}
-        style={collapsed ? {
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 5, borderRadius: 999, cursor: 'pointer',
-          background: open ? 'rgba(77,157,255,0.12)' : 'transparent', border: '1px solid transparent',
-        } : {
+        style={{
           display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', cursor: 'pointer',
           padding: '8px 8px', borderRadius: 8, font: 'inherit', color: '#e6e6e6',
           background: open ? 'rgba(77,157,255,0.10)' : 'transparent', border: '1px solid transparent',
         }}
       >
-        {avatar}
-        {!collapsed && (
-          <>
-            <span style={{ flex: 1, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ opacity: 0.6, flexShrink: 0 }}><polyline points="18 15 12 9 6 15" /></svg>
-          </>
-        )}
+        <span style={{ width: 28, height: 28, borderRadius: '50%', overflow: 'hidden', background: u.image ? 'transparent' : '#2e333c', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {u.image
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={u.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <span style={{ fontSize: 11, fontWeight: 700, color: '#d6d6d6' }}>{initials}</span>}
+        </span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ opacity: 0.6, flexShrink: 0 }}><polyline points="18 15 12 9 6 15" /></svg>
       </button>
       {open && (
-        <div role="menu" style={{ position: 'absolute', zIndex: 80, ...(collapsed ? { left: 'calc(100% + 8px)', bottom: 0, minWidth: 160 } : { left: 4, right: 4, bottom: 'calc(100% + 6px)' }), background: '#11141a', border: '1px solid #2e333c', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', padding: 6 }}>
+        <div role="menu" style={{ position: 'absolute', left: 4, right: 4, bottom: 'calc(100% + 6px)', background: '#11141a', border: '1px solid #2e333c', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', padding: 6, zIndex: 80 }}>
           <a href="/settings" role="menuitem" style={item} onClick={() => setOpen(false)}>Settings</a>
           <button type="button" role="menuitem" style={item} onClick={() => signOut({ callbackUrl: window.location.href })}>Sign out</button>
         </div>
