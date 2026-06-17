@@ -243,7 +243,29 @@ test('Bo3 games sharing a lobby render as a single series group', async ({ page,
 
   await page.goto('/replays?tab=mine');
   await expect(page.getByTestId('series-group')).toHaveCount(1);
-  await expect(page.getByTestId('series-group').first()).toContainText(/Best of 2/);
+  // B158: the label comes from the FORMAT (Bo3), not the 2 games recorded.
+  await expect(page.getByTestId('series-group').first()).toContainText(/Best of 3/);
+});
+
+// -- B158: a persistent lobby with several matches splits into separate series --
+
+test('multiple Bo3 matches in one lobby split into separate series groups', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'Grinder', email: 'grinder@example.com' });
+  const lobbyId = 'lobby-multi-' + Date.now();
+  // Four games, all won by the viewer → two 2-0 Bo3 matches in the same lobby.
+  for (let i = 0; i < 4; i++) {
+    const r = await uploadReplay(request, {
+      local: { username: 'Grinder' },
+      opponent: { username: 'Rival' },
+      match: { gamesToWinMode: 'bestOfThree', lobbyId },
+      winners: ['Grinder'],
+    });
+    await claimInstallToken(page, r.installToken);
+  }
+  await page.goto('/replays?tab=mine');
+  // Segments into two matches (2-0, 2-0), not one "Best of 4".
+  await expect(page.getByTestId('series-group')).toHaveCount(2);
+  await expect(page.getByTestId('series-group').first()).toContainText(/Best of 3/);
 });
 
 // -- Default view = table (renamed Cards → Grid), table is sortable --

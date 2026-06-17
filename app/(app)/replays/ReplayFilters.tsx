@@ -8,6 +8,7 @@ import { RowActions } from './RowActions';
 import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
+import { segmentMatches, bestOfLabel } from '@/lib/seriesGrouping';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
 import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -668,6 +669,9 @@ interface SeriesGroup {
   isSeries: boolean;  // 2+ games sharing a lobby
 }
 
+// B158: group by lobby, then SEGMENT each lobby's games into individual matches
+// by the format — a persistent karabast lobby can hold many Bo3s/Bo1s, so
+// grouping by lobbyId alone produced bogus "Best of 11" series.
 function buildSeriesGroups(rows: Row[]): SeriesGroup[] {
   const m = new Map<string, Row[]>();
   for (const r of rows) {
@@ -675,11 +679,20 @@ function buildSeriesGroups(rows: Row[]): SeriesGroup[] {
     const arr = m.get(key);
     if (arr) arr.push(r); else m.set(key, [r]);
   }
-  return Array.from(m.entries()).map(([key, rs]) => ({
-    key,
-    rows: [...rs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
-    isSeries: rs.length > 1,
-  }));
+  const groups: SeriesGroup[] = [];
+  for (const [key, rs] of m.entries()) {
+    const ordered = [...rs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const wonOf = (r: Row) => {
+      const winners = Array.isArray(r.winners) ? r.winners : null;
+      if (!winners || !r.viewerPlayerId) return null;
+      return winners.includes(r.viewerPlayerId);
+    };
+    const matches = segmentMatches(ordered, wonOf, ordered[0]?.match?.gamesToWinMode ?? null);
+    matches.forEach((match, i) => {
+      groups.push({ key: matches.length > 1 ? `${key}#${i}` : key, rows: match, isSeries: match.length > 1 });
+    });
+  }
+  return groups;
 }
 
 // W–L tally across a series from the viewer/uploader's perspective. Games with
@@ -701,7 +714,11 @@ function seriesHeadline(group: SeriesGroup): string {
   const matchup = own || opp ? `${own || '?'} vs ${opp || '?'}` : matchupText(first);
   const { wins, losses } = seriesRecord(group);
   const rec = wins + losses > 0 ? ` · ${wins}–${losses}` : '';
-  return `Best of ${group.rows.length} · ${matchup}${rec}`;
+  // B158: "Best of N" from the match FORMAT (the BO3 badge), not the number of
+  // games the viewer happens to have — a 2-0 sweep is still "Best of 3", and a
+  // viewer missing a game (opponent recorded it) shouldn't read as "Best of 2".
+  const label = bestOfLabel(first?.match?.gamesToWinMode) ?? `Best of ${group.rows.length}`;
+  return `${label} · ${matchup}${rec}`;
 }
 
 // -- Table view --------------------------------------------------------------
