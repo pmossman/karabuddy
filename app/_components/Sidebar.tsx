@@ -152,7 +152,7 @@ export function Sidebar({
         className="kb-sb-desktop"
         style={{
           flexDirection: 'column', width: FULL_WIDTH, flexShrink: 0,
-          position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', overflowX: 'hidden',
+          position: 'sticky', top: 0, height: '100vh', overflow: 'hidden',
           background: 'rgba(13, 16, 22, 0.92)', borderRight: '1px solid #21262f',
         }}
       >
@@ -223,39 +223,40 @@ function SidebarBody({
   hasLinkedExtension: boolean;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', padding: '14px 10px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '14px 10px' }}>
+      {/* Pinned top: brand + team switcher. */}
       <div style={{ padding: '4px 8px 10px' }}>
         <Logo slug={active?.slug ?? null} />
       </div>
-
       <div style={{ padding: '0 4px 10px' }}>
         {active
           ? <TeamSwitcherInline active={active} teams={teams} />
           : <CreateTeamButton />}
       </div>
 
-      {teamItems.length > 0 && (
-        <>
-          <NavGroup label="Team">
-            {teamItems.map((it) => <NavRow key={it.label} item={it} />)}
-          </NavGroup>
-          <div style={{ height: 1, background: '#21262f', margin: '10px 8px' }} />
-        </>
-      )}
+      {/* Scrollable nav region — only this scrolls if the lists are tall. */}
+      <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {teamItems.length > 0 && (
+          <>
+            <NavGroup label="Team">
+              {teamItems.map((it) => <NavRow key={it.label} item={it} />)}
+            </NavGroup>
+            <div style={{ height: 1, background: '#21262f', margin: '10px 8px' }} />
+          </>
+        )}
 
-      <NavGroup label="You">
-        {youItems.map((it) => <NavRow key={it.label} item={it} />)}
-      </NavGroup>
+        <NavGroup label="You">
+          {youItems.map((it) => <NavRow key={it.label} item={it} />)}
+        </NavGroup>
+      </div>
 
-      <div style={{ flex: '1 1 auto' }} />
-
+      {/* Pinned bottom: install CTA + account. */}
       {!hasLinkedExtension && (
-        <div style={{ padding: '10px 8px' }}>
+        <div style={{ padding: '10px 8px 0' }}>
           <InstallExtensionCta variant="header" />
         </div>
       )}
-
-      <div style={{ height: 1, background: '#21262f', margin: '6px 8px' }} />
+      <div style={{ height: 1, background: '#21262f', margin: '8px 8px 6px' }} />
       <AccountFooter />
     </div>
   );
