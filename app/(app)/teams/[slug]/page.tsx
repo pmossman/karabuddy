@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
+import { TransferOwnerButton } from './TransferOwnerButton';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
@@ -114,7 +115,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         {tab === 'replays' && <TeamReplays teamSlug={slug} />}
         {tab === 'review' && <ReviewQueue teamSlug={slug} />}
         {tab === 'tournaments' && <TeamTournaments teamSlug={slug} />}
-        {tab === 'members' && <MembersList members={members} viewerUserId={userId} />}
+        {tab === 'members' && <MembersList members={members} viewerUserId={userId} viewerRole={me.role} slug={slug} />}
         {tab === 'settings' && (
           <>
             <TeamControls
@@ -180,7 +181,7 @@ function TabBar({ slug, active }: { slug: string; active: Tab }) {
   );
 }
 
-function MembersList({ members, viewerUserId }: { members: any[]; viewerUserId: string }) {
+function MembersList({ members, viewerUserId, viewerRole, slug }: { members: any[]; viewerUserId: string; viewerRole: string; slug: string }) {
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {members.map((m: any) => (
@@ -217,6 +218,11 @@ function MembersList({ members, viewerUserId }: { members: any[]; viewerUserId: 
             <span style={{ fontSize: 10, color: '#6bd968', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
               You
             </span>
+          )}
+          {/* B160: an owner can hand the team to another member (steps down to
+              member themselves). Not shown on yourself or existing owners. */}
+          {viewerRole === 'owner' && m.userId !== viewerUserId && m.role !== 'owner' && (
+            <TransferOwnerButton slug={slug} targetUserId={m.userId} targetName={m.name || 'this member'} />
           )}
         </div>
       ))}
