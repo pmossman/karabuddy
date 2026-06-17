@@ -16,9 +16,10 @@ import { signInAsTestUser, uploadReplay, claimInstallToken } from './helpers';
 // top-left landscape — matching where its panel slides in). Playback controls
 // collapsed off the cramped bottom edge into a single joined capsule in the
 // bottom-right cluster: a one-tap play/pause fused to a "Playback settings"
-// opener that surfaces a bubble (Speed / Step by / Card animation). The
-// always-visible "Step by:" pill is desktop-only now. The prev/next chevrons
-// are pinned to the screen edges and don't move when a sheet opens.
+// opener that surfaces a bubble (Speed / Step by / Card animation). On desktop
+// those same finer controls collapse behind a settings cog on the playback pill
+// (play + cog always visible). The prev/next chevrons are pinned to the screen
+// edges and don't move when a sheet opens.
 //
 // Portrait + landscape share the model now (the old portrait/landscape split
 // only differed in which edges the sheets slide from).
@@ -154,12 +155,29 @@ test('desktop: no matchup FAB (matchup lives in the docked sidebar header)', asy
   await expect(page.getByRole('button', { name: /matchup info/i })).toHaveCount(0);
 });
 
-test('desktop: step-mode overlay renders too (with "Step by:" label)', async ({ page, request }) => {
+test('desktop: playback pill is collapsed by default; the cog expands the full controls', async ({ page, request }) => {
   const r = await loadReplay(page, request);
   await page.goto(`/r/${r.slug}`);
   const overlay = page.getByTestId('step-mode-overlay');
   await expect(overlay).toBeVisible();
+  // Always visible: the play button + the settings cog. Everything else (speed /
+  // step-by / animate) is collapsed behind the cog so the pill isn't a wide bar.
+  await expect(overlay.getByRole('button', { name: /^Play$/ })).toBeVisible();
+  const cog = overlay.getByTestId('controls-collapse-toggle');
+  await expect(cog).toBeVisible();
+  await expect(cog).toHaveAttribute('aria-expanded', 'false');
+  await expect(overlay.getByTestId('playback-extra-controls')).toHaveAttribute('data-open', '0');
+
+  // Cog expands → the finer controls slide out and become interactive.
+  await cog.click();
+  await expect(cog).toHaveAttribute('aria-expanded', 'true');
+  await expect(overlay.getByTestId('playback-extra-controls')).toHaveAttribute('data-open', '1');
   await expect(overlay.getByText(/Step by/i)).toBeVisible();
+  await expect(overlay.getByRole('button', { name: /^Action$/ })).toBeVisible();
+
+  // Cog collapses again (preference persists, but here we just verify the toggle).
+  await cog.click();
+  await expect(overlay.getByTestId('playback-extra-controls')).toHaveAttribute('data-open', '0');
 });
 
 test('desktop: sidebar opens on the RIGHT and can be dismissed via ☰', async ({ page, request }) => {

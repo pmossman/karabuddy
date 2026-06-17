@@ -35,6 +35,11 @@ interface ReplayShape {
   winners?: string[] | null;
 }
 
+// B-followup: the desktop playback pill collapses to just the play button so it
+// doesn't sit as a wide bar over the board; a "More"/"Less" toggle slides the
+// rest (speed / step-by / animate) out. Remembered across frames+visits.
+const CONTROLS_OPEN_KEY = 'karabuddy:playbackControlsOpen';
+
 export function StepModeOverlay({
   mode,
   setMode,
@@ -88,6 +93,15 @@ export function StepModeOverlay({
   // they press play (remembered across visits in the viewer).
   pulse?: boolean;
 }) {
+  // Collapsed by default → just the play button + a slide-out handle. Restore the
+  // viewer's last choice on mount (avoids an SSR flash by reading post-hydrate).
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    try { const v = window.localStorage.getItem(CONTROLS_OPEN_KEY); if (v != null) setOpen(v === '1'); } catch {}
+  }, []);
+  const toggleOpen = () =>
+    setOpen((v) => { const n = !v; try { window.localStorage.setItem(CONTROLS_OPEN_KEY, n ? '1' : '0'); } catch {} return n; });
+
   const positionStyle: React.CSSProperties = landscape
     ? {
         bottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
@@ -150,50 +164,75 @@ export function StepModeOverlay({
       >
         {playing ? <PauseGlyph /> : <PlayGlyph />}
       </button>
-      <SpeedMenu speed={speed} speeds={speeds} onSetSpeed={onSetSpeed} />
-      <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 0', background: 'rgba(77, 157, 255, 0.25)' }} />
-      {landscape && (
-        <span style={{
-          fontSize: 10,
-          color: '#6c7588',
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          fontWeight: 700,
-          fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
-        }}>
-          Step by:
-        </span>
-      )}
-      <div style={{ display: 'flex', gap: 0 }}>
-        <ModeButton active={mode === 'action'} onClick={() => setMode('action')}>Action</ModeButton>
-        <ModeButton active={mode === 'frame'} onClick={() => setMode('frame')}>Frame</ModeButton>
-      </div>
-      <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 0', background: 'rgba(77, 157, 255, 0.25)' }} />
-      <button
-        type="button"
-        onClick={onToggleAnimate}
-        aria-pressed={animate}
-        title={animate ? 'Card animation on — tap to disable' : 'Card animation off — tap to enable'}
+      {/* Collapsible region: speed / step-by / animate. A grid 1fr→0fr animates
+          to the exact content width; the inner clip + `inert` keep the hidden
+          controls out of the tab order while collapsed. Right-anchored, so it
+          unfurls leftward and the play button stays put at the edge. The cog
+          (after this) stays pinned to the pill's right edge in both states. */}
+      <div
+        data-testid="playback-extra-controls"
+        data-open={open ? '1' : '0'}
         style={{
-          background: animate ? 'rgba(77, 157, 255, 0.4)' : 'transparent',
-          color: animate ? '#fff' : '#6c7588',
-          border: 0,
-          padding: landscape ? '4px 8px' : '4px 7px',
-          fontSize: 12,
-          fontWeight: 700,
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          borderRadius: 4,
-          lineHeight: 1,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          flex: '0 0 auto',
+          display: 'grid',
+          gridTemplateColumns: open ? '1fr' : '0fr',
+          opacity: open ? 1 : 0,
+          transition: dragging
+            ? 'none'
+            : 'grid-template-columns 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease',
         }}
+        inert={!open}
       >
-        <span style={{ fontSize: 12 }}>✦</span>
-        {landscape && <span style={{ fontSize: 11 }}>Animate</span>}
-      </button>
+        <div style={{ overflow: 'hidden', minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <SpeedMenu speed={speed} speeds={speeds} onSetSpeed={onSetSpeed} />
+          <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 0', background: 'rgba(77, 157, 255, 0.25)' }} />
+          {landscape && (
+            <span style={{
+              fontSize: 10,
+              color: '#6c7588',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              fontWeight: 700,
+              fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
+              whiteSpace: 'nowrap',
+            }}>
+              Step by:
+            </span>
+          )}
+          <div style={{ display: 'flex', gap: 0 }}>
+            <ModeButton active={mode === 'action'} onClick={() => setMode('action')}>Action</ModeButton>
+            <ModeButton active={mode === 'frame'} onClick={() => setMode('frame')}>Frame</ModeButton>
+          </div>
+          <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 0', background: 'rgba(77, 157, 255, 0.25)' }} />
+          <button
+            type="button"
+            onClick={onToggleAnimate}
+            aria-pressed={animate}
+            title={animate ? 'Card animation on — tap to disable' : 'Card animation off — tap to enable'}
+            style={{
+              background: animate ? 'rgba(77, 157, 255, 0.4)' : 'transparent',
+              color: animate ? '#fff' : '#6c7588',
+              border: 0,
+              padding: landscape ? '4px 8px' : '4px 7px',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              borderRadius: 4,
+              lineHeight: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              flex: '0 0 auto',
+            }}
+          >
+            <span style={{ fontSize: 12 }}>✦</span>
+            {landscape && <span style={{ fontSize: 11 }}>Animate</span>}
+          </button>
+          <span style={{ width: 1, alignSelf: 'stretch', margin: '2px 0', background: 'rgba(77, 157, 255, 0.25)' }} />
+        </div>
+      </div>
+      {/* Settings cog — pinned to the pill's far-right edge; lit while expanded. */}
+      <CollapseToggle open={open} onClick={toggleOpen} />
       {/* B128: the Flip control moved to the dedicated double-sided bubble
           (PovBubble) alongside the auto-switch toggle. */}
     </div>
@@ -314,6 +353,32 @@ function SpeedMenu({ speed, speeds, onSetSpeed }: { speed: number; speeds: { lab
         </div>
       )}
     </div>
+  );
+}
+
+// The expand/collapse handle for the desktop playback pill — a settings cog
+// pinned to the pill's far-right edge (in both states). Lit while the controls
+// are expanded so it reads as the active "more controls" affordance.
+function CollapseToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      aria-label={open ? 'Hide playback controls' : 'Show playback controls'}
+      title={open ? 'Hide controls' : 'Show controls'}
+      data-testid="controls-collapse-toggle"
+      style={{
+        width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: open ? 'rgba(77, 157, 255, 0.4)' : 'transparent',
+        color: open ? '#fff' : '#a7d2ff',
+        border: 0, borderRadius: 4, padding: 0, cursor: 'pointer', flex: '0 0 auto',
+      }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+      </svg>
+    </button>
   );
 }
 
