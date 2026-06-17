@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
 
 // B101/Phase2 (reframed): the Stats/Meta client, centered on the team/personal
@@ -29,8 +30,16 @@ const baseKeyOf = (baseId: string | null, baseAspect: string | null) =>
 const deckKeyOf = (leader: string, baseId: string | null, baseAspect: string | null) => `${leader}#${baseKeyOf(baseId, baseAspect)}`;
 
 export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { slug: string; name: string }[] }) {
-  const [scope, setScope] = useState<Scope>(teams.length && !signedIn ? 'team' : 'personal');
-  const [teamSlug, setTeamSlug] = useState<string>(teams[0]?.slug || '');
+  // Scope is driven by the URL (the sidebar splits "My stats" → ?scope=personal
+  // and team "Stats" → ?scope=team&team=<slug>). Personal NEVER exposes a team
+  // option; team scope is team-only (a picker when you're on more than one).
+  const sp = useSearchParams();
+  const urlScope = sp.get('scope');
+  const urlTeam = sp.get('team');
+  const [scope] = useState<Scope>(urlScope === 'team' && teams.length ? 'team' : 'personal');
+  const [teamSlug, setTeamSlug] = useState<string>(
+    urlTeam && teams.some((t) => t.slug === urlTeam) ? urlTeam : (teams[0]?.slug || ''),
+  );
   const [view, setView] = useState<View>('leaders');
   const [format, setFormat] = useState<string>('');
   const [event, setEvent] = useState<CardEvent>('played');
@@ -174,26 +183,24 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
     return { axes: ordered, cell, totals };
   }, [view, data, matchupLens]);
 
-  const scopeOptions: [Scope, string][] = [
-    ...(signedIn ? [['personal', 'Mine'] as [Scope, string]] : []),
-    ...(teams.length ? [['team', 'Team'] as [Scope, string]] : []),
-  ];
+  const teamName = teams.find((t) => t.slug === teamSlug)?.name;
 
   return (
     <div style={{ maxWidth: 940, margin: '0 auto', padding: '24px 16px 64px', color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif' }}>
       <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 4px', color: '#fff' }}>
-        Meta <span style={{ color: '#4dd2ff' }}>Stats</span>
+        {scope === 'team' ? 'Team' : 'My'} <span style={{ color: '#4dd2ff' }}>Stats</span>
       </h1>
       <p style={{ color: '#6c7588', fontSize: 13, margin: '0 0 18px' }}>
-        Your leader matchups and card stats for the decks you play. Win rates over games with a recorded result; every figure shows its sample size.
+        {scope === 'team'
+          ? `Leader matchups and card stats across ${teamName ? `${teamName}’s` : 'your team’s'} recorded games. Win rates over games with a result; every figure shows its sample size.`
+          : 'Your leader matchups and card stats for the decks you play. Win rates over games with a recorded result; every figure shows its sample size.'}
       </p>
 
       {!signedIn ? (
-        <div style={dim}>Sign in to see your personal and team stats.</div>
+        <div style={dim}>Sign in to see your personal stats.</div>
       ) : (<>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
-        <Segmented options={scopeOptions} value={scope} onChange={(v) => setScope(v as Scope)} />
-        {scope === 'team' && teams.length > 0 && <Select value={teamSlug} onChange={setTeamSlug} options={teams.map((t) => [t.slug, t.name])} />}
+        {scope === 'team' && teams.length > 1 && <Select value={teamSlug} onChange={setTeamSlug} options={teams.map((t) => [t.slug, t.name])} />}
         <Select value={format} onChange={setFormat} options={FORMATS as any} />
       </div>
 

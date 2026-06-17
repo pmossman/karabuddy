@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
@@ -20,5 +21,10 @@ export default async function StatsPage() {
       .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
       .where(eq(teamMembers.userId, userId));
   }
-  return <StatsClient signedIn={!!userId} teams={myTeams} />;
+  // StatsClient reads ?scope/?team via useSearchParams → needs a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <StatsClient signedIn={!!userId} teams={myTeams} />
+    </Suspense>
+  );
 }

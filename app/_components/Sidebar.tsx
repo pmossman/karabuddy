@@ -59,6 +59,7 @@ export function Sidebar({
     { href: `/teams/${active.slug}?tab=clips`, label: 'Clips', icon: 'clips', active: onTeam && tab === 'clips' },
     { href: `/teams/${active.slug}?tab=review`, label: 'Reviews', icon: 'reviews', active: onTeam && tab === 'review' },
     { href: `/teams/${active.slug}?tab=tournaments`, label: 'Tournaments', icon: 'tournaments', active: onTeam && tab === 'tournaments' },
+    { href: `/stats?scope=team&team=${active.slug}`, label: 'Stats', icon: 'stats', active: pathname === '/stats' && scope === 'team' },
     { href: `/teams/${active.slug}?tab=members`, label: 'Members', icon: 'members', active: onTeam && tab === 'members' },
     { href: `/teams/${active.slug}?tab=settings`, label: 'Team settings', icon: 'settings', active: onTeam && tab === 'settings' },
   ] : [];
