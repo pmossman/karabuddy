@@ -37,7 +37,9 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
   const urlScope = sp.get('scope');
   const urlTeam = sp.get('team');
   const [scope] = useState<Scope>(urlScope === 'team' && teams.length ? 'team' : 'personal');
-  const [teamSlug, setTeamSlug] = useState<string>(
+  // Team scope follows the active team (the sidebar passes ?team=<active>). No
+  // in-feature team picker — team selection is top-level (the sidebar switcher).
+  const [teamSlug] = useState<string>(
     urlTeam && teams.some((t) => t.slug === urlTeam) ? urlTeam : (teams[0]?.slug || ''),
   );
   const [view, setView] = useState<View>('leaders');
@@ -200,7 +202,6 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
         <div style={dim}>Sign in to see your personal stats.</div>
       ) : (<>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
-        {scope === 'team' && teams.length > 1 && <Select value={teamSlug} onChange={setTeamSlug} options={teams.map((t) => [t.slug, t.name])} />}
         <Select value={format} onChange={setFormat} options={FORMATS as any} />
       </div>
 
