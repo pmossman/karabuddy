@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { signInAsTestUser, createTeam, uploadReplay, claimInstallToken } from './helpers';
+import { signInAsTestUser, createTeam, generateInvite, uploadReplay, claimInstallToken } from './helpers';
 
 // B62: team page is now tabbed — Discussion (default) | Replays |
 // Members | Settings. Each tab's data is server-rendered or
@@ -78,4 +78,35 @@ test('deep-link ?tab=members lands on Members tab', async ({ page }) => {
 
   await expect(page.getByRole('tab', { name: /Members/i, selected: true })).toBeVisible();
   await expect(page.getByText('DeepTab')).toBeVisible();
+});
+
+// B160: an owner transfers the team to another member from Settings (and steps
+// down to a regular member). The per-row "Make owner" button was replaced by a
+// deliberate Settings flow with a confirmation.
+test('owner transfers ownership from Settings and steps down', async ({ page, browser }) => {
+  await signInAsTestUser(page, { name: 'OwnerA', email: 'ownera-xfer@example.com' });
+  const { slug } = await createTeam(page, 'Transfer Team');
+  const { code } = await generateInvite(page, slug);
+
+  // A second member joins via the invite.
+  const ctxB = await browser.newContext();
+  const pageB = await ctxB.newPage();
+  await signInAsTestUser(pageB, { name: 'MemberB', email: 'memberb-xfer@example.com' });
+  const join = await pageB.request.post('/api/teams/join', { data: { code } });
+  expect(join.ok()).toBeTruthy();
+
+  // A: on a solo team there'd be no transfer section; with B present it shows.
+  await page.goto(`/teams/${slug}?tab=settings`);
+  await expect(page.getByTestId('transfer-target')).toBeVisible();
+  await page.getByTestId('transfer-target').selectOption({ label: 'MemberB' });
+  await page.getByTestId('transfer-open').click();
+  await page.getByTestId('transfer-confirm').click();
+
+  // A has stepped down — the owner-only transfer control is gone.
+  await expect(page.getByTestId('transfer-target')).toHaveCount(0);
+
+  // B is now the owner — they see the transfer control on their Settings.
+  await pageB.goto(`/teams/${slug}?tab=settings`);
+  await expect(pageB.getByTestId('transfer-target')).toBeVisible();
+  await ctxB.close();
 });

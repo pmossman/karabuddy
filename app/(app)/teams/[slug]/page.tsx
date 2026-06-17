@@ -5,7 +5,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
-import { TransferOwnerButton } from './TransferOwnerButton';
+import { TransferOwnership } from './TransferOwnership';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
@@ -115,7 +115,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         {tab === 'replays' && <TeamReplays teamSlug={slug} />}
         {tab === 'review' && <ReviewQueue teamSlug={slug} />}
         {tab === 'tournaments' && <TeamTournaments teamSlug={slug} />}
-        {tab === 'members' && <MembersList members={members} viewerUserId={userId} viewerRole={me.role} slug={slug} />}
+        {tab === 'members' && <MembersList members={members} viewerUserId={userId} />}
         {tab === 'settings' && (
           <>
             <TeamControls
@@ -125,12 +125,16 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
               memberCount={members.length}
             />
             {me.role === 'owner' && (
-              <TeamDiscordConnect
-                slug={slug}
-                authorizeUrl={discordAuthorizeUrl(slug)}
-                initialGuildId={team.discordGuildId}
-                initialChannelId={team.discordChannelId}
-              />
+              <>
+                <TeamDiscordConnect
+                  slug={slug}
+                  authorizeUrl={discordAuthorizeUrl(slug)}
+                  initialGuildId={team.discordGuildId}
+                  initialChannelId={team.discordChannelId}
+                />
+                {/* B160: hand the team to another member (you step down). */}
+                <TransferOwnership slug={slug} members={members} viewerUserId={userId} />
+              </>
             )}
           </>
         )}
@@ -181,7 +185,7 @@ function TabBar({ slug, active }: { slug: string; active: Tab }) {
   );
 }
 
-function MembersList({ members, viewerUserId, viewerRole, slug }: { members: any[]; viewerUserId: string; viewerRole: string; slug: string }) {
+function MembersList({ members, viewerUserId }: { members: any[]; viewerUserId: string }) {
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {members.map((m: any) => (
@@ -218,11 +222,6 @@ function MembersList({ members, viewerUserId, viewerRole, slug }: { members: any
             <span style={{ fontSize: 10, color: '#6bd968', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
               You
             </span>
-          )}
-          {/* B160: an owner can hand the team to another member (steps down to
-              member themselves). Not shown on yourself or existing owners. */}
-          {viewerRole === 'owner' && m.userId !== viewerUserId && m.role !== 'owner' && (
-            <TransferOwnerButton slug={slug} targetUserId={m.userId} targetName={m.name || 'this member'} />
           )}
         </div>
       ))}
