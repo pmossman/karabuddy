@@ -11,14 +11,17 @@
 // audiences can never leak into each other. Aggregation is plain SQL via the
 // drizzle query builder (portable across neon / pg / pglite).
 
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
 import { matchPlayers, matches, replays, replayTeamShares, cardEvents, cards } from './schema';
 
 export type StatsScope =
   | { kind: 'personal'; userId: string }
-  | { kind: 'team'; teamSlug: string };
+  // restrictSlugs (optional): further limit team stats to a subset of replays
+  // — e.g. internal (teammate-vs-teammate) vs external games. Omitted = all of
+  // the team's shared games. An empty array means "no matching games".
+  | { kind: 'team'; teamSlug: string; restrictSlugs?: string[] };
 
 export interface StatsQueryOpts {
   scope: StatsScope;
@@ -83,10 +86,15 @@ function baseIdentityCols(bc: ReturnType<typeof alias>) {
 }
 
 // Compose the scope predicate over the matches⋈replays join. Returns the
-// predicate; callers add their own filters.
+// predicate; callers add their own filters. For team scope, an optional
+// restrictSlugs narrows to a subset (internal vs external games) — an empty
+// list means "no games" (always-false), not "all".
 function scopePredicate(scope: StatsScope) {
   if (scope.kind === 'personal') return eq(replays.userId, scope.userId);
-  return eq(replayTeamShares.teamSlug, scope.teamSlug);
+  const teamCond = eq(replayTeamShares.teamSlug, scope.teamSlug);
+  if (scope.restrictSlugs === undefined) return teamCond;
+  if (scope.restrictSlugs.length === 0) return sql`false`;
+  return and(teamCond, inArray(replays.slug, scope.restrictSlugs));
 }
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);

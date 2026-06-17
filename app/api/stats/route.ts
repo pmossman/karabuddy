@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
+import { teamGameSlugs } from '@/lib/teamSurface';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
@@ -40,7 +41,16 @@ export async function GET(req: Request) {
       .where(and(eq(teamMembers.userId, userId), eq(teamMembers.teamSlug, teamSlug)))
       .limit(1);
     if (!member) return NextResponse.json({ ok: false, error: 'not a team member' }, { status: 403 });
-    scope = { kind: 'team', teamSlug };
+    // Team stats default to INTERNAL games (teammate-vs-teammate) — the team is
+    // here to test against each other. `games=external` = a member vs an
+    // outsider; `games=all` = both. (Dashboard card sends no param → internal.)
+    const games = url.searchParams.get('games') || 'internal';
+    let restrictSlugs: string[] | undefined;
+    if (games !== 'all') {
+      const sets = await teamGameSlugs(teamSlug);
+      restrictSlugs = games === 'external' ? sets.external : sets.internal;
+    }
+    scope = { kind: 'team', teamSlug, restrictSlugs };
   } else {
     // Global/community stats are intentionally not exposed — personal + team only.
     return NextResponse.json({ ok: false, error: 'global stats are disabled; use scope=personal or scope=team' }, { status: 400 });

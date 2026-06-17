@@ -15,9 +15,9 @@
 // team the caller is a member of. Single helper means the three
 // surfaces can't drift.
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from './db';
-import { replayTeamShares, tags, tagTeamScope, teamMembers } from './schema';
+import { replayParticipants, replayTeamShares, tags, tagTeamScope, teamMembers } from './schema';
 
 // Membership-gate helper. Returns the membership row or null. Callers
 // decide whether null is 401/403/etc — this stays pure DB.
@@ -64,6 +64,29 @@ export async function surfacedReplaySlugs(teamSlugs: string[]): Promise<string[]
       ...sharedSlugs.map((r) => r.slug),
     ])
   );
+}
+
+// Partition a team's recorded games into INTERNAL (teammate-vs-teammate) and
+// EXTERNAL (a member vs an outsider), by the B84 rule: count the DISTINCT team-
+// member recorders (replay_participants ∩ team_members) per replay. ≥2 members
+// recorded → internal; exactly 1 → external. (Internal detection needs both
+// teammates to have recorded; a one-sided recording reads as external.)
+// Used by team Stats to default to internal testing results.
+export async function teamGameSlugs(teamSlug: string): Promise<{ internal: string[]; external: string[] }> {
+  const db = getDb();
+  const rows = await db
+    .select({ slug: replayParticipants.replaySlug, n: sql<number>`count(distinct ${replayParticipants.userId})::int` })
+    .from(replayParticipants)
+    .innerJoin(teamMembers, and(eq(teamMembers.userId, replayParticipants.userId), eq(teamMembers.teamSlug, teamSlug)))
+    .groupBy(replayParticipants.replaySlug);
+  const internal: string[] = [];
+  const external: string[] = [];
+  for (const r of rows) {
+    const n = Number(r.n);
+    if (n >= 2) internal.push(r.slug);
+    else if (n === 1) external.push(r.slug);
+  }
+  return { internal, external };
 }
 
 // Convenience: the team-slugs the caller belongs to. Used by callers

@@ -59,13 +59,17 @@ export function StatsClient({
   const [leaderOptions, setLeaderOptions] = useState<string[]>([]); // leader cardIds in scope (for the deck picker)
   const [deckBases, setDeckBases] = useState<{ baseId: string | null; baseAspect: string | null; games: number }[]>([]); // bases played with the picked leader
   const [loading, setLoading] = useState(false);
+  // Team stats default to internal (teammate-vs-teammate); a member's games vs
+  // outsiders are a separate view. Personal scope ignores this.
+  const [teamGames, setTeamGames] = useState<'internal' | 'external' | 'all'>('internal');
 
   const scopeQs = useMemo(() => {
     const p = new URLSearchParams({ scope });
     if (format) p.set('format', format);
     if (scope === 'team' && teamSlug) p.set('team', teamSlug);
+    if (scope === 'team') p.set('games', teamGames);
     return p;
-  }, [scope, format, teamSlug]);
+  }, [scope, format, teamSlug, teamGames]);
 
   const resolveNames = async (ids: Set<string>) => {
     if (!ids.size) return;
@@ -207,6 +211,13 @@ export function StatsClient({
         <div style={dim}>Sign in to see your personal stats.</div>
       ) : (<>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+        {scope === 'team' && (
+          <Segmented
+            options={[['internal', 'Internal'], ['external', 'vs Outsiders'], ['all', 'All']]}
+            value={teamGames}
+            onChange={(v) => setTeamGames(v as 'internal' | 'external' | 'all')}
+          />
+        )}
         <Select value={format} onChange={setFormat} options={FORMATS as any} />
       </div>
 
