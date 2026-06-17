@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { and, asc, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, teamMembers, replayTeamShares, replayReviews, tournaments, tournamentEntrants, tournamentMatches, tournamentRounds, tags, tagTeamScope } from '@/lib/schema';
+import { replays, users, teamMembers, replayTeamShares, tournaments, tournamentEntrants, tournamentMatches, tournamentRounds, tags, tagTeamScope } from '@/lib/schema';
 import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { reviewersForTeam } from '@/lib/reviews';
@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 
 const RECENT_REPLAYS = 6;
 const REVIEW_PREVIEW = 8;
-const REVIEWED_PREVIEW = 4;
+const REVIEWED_PREVIEW = 6;
 const DISCUSSION_PREVIEW = 5;
 const STANDINGS_PREVIEW = 6;
 const REGISTRANTS_PREVIEW = 16;
@@ -90,36 +90,45 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     }).filter(Boolean);
   }
 
-  // Recently COMPLETED reviews — durable reviewer marks, newest first, grouped
-  // per replay. Surfaces even when there are no open requests so the card is
-  // never empty when the team is reviewing actively.
-  const markRows = await db
-    .select({ replaySlug: replayReviews.replaySlug, reviewedAt: replayReviews.reviewedAt, reviewerName: users.name })
-    .from(replayReviews)
-    .innerJoin(users, eq(users.id, replayReviews.reviewerUserId))
-    .where(eq(replayReviews.teamSlug, slug))
-    .orderBy(desc(replayReviews.reviewedAt));
-  const reviewedByReplay = new Map<string, { reviewedAt: Date | string; names: string[] }>();
-  for (const m of markRows) {
-    let e = reviewedByReplay.get(m.replaySlug);
-    if (!e) { e = { reviewedAt: m.reviewedAt, names: [] }; reviewedByReplay.set(m.replaySlug, e); } // first = latest (desc)
-    if (m.reviewerName) e.names.push(m.reviewerName);
-  }
+  // Recently REVIEWED replays = replays that received team FEEDBACK (comments
+  // scoped to the team). The formal review-request flag + durable "I reviewed"
+  // mark are unused by most teams; the real review activity is teammates
+  // commenting on shared replays. Aggregate per replay: latest comment time,
+  // distinct commenters, comment count. Surfaces even with zero open requests.
   let recentlyReviewed: any[] = [];
-  const reviewedSlugs = Array.from(reviewedByReplay.keys()).slice(0, REVIEWED_PREVIEW);
-  if (reviewedSlugs.length > 0) {
-    const rows = await db.select({ replay: replays, ownerName: users.name }).from(replays).leftJoin(users, eq(users.id, replays.userId)).where(inArray(replays.slug, reviewedSlugs));
-    const bySlug = new Map(rows.map((r) => [r.replay.slug, r]));
-    recentlyReviewed = reviewedSlugs.map((s) => {
-      const row = bySlug.get(s);
-      if (!row) return null;
-      const e = reviewedByReplay.get(s)!;
-      return {
-        ...serializeReplayRow(row.replay, { ownerName: row.ownerName ?? null, viewerPlayerId: null }),
-        reviewedAt: e.reviewedAt instanceof Date ? e.reviewedAt.toISOString() : String(e.reviewedAt),
-        reviewerNames: Array.from(new Set(e.names)),
-      };
-    }).filter(Boolean);
+  if (surfaceSlugs.length > 0) {
+    const tagRows = await db
+      .select({ replaySlug: tags.replaySlug, createdAt: tags.createdAt, authorName: tags.authorName, authorUserName: users.name })
+      .from(tags)
+      .innerJoin(tagTeamScope, and(eq(tagTeamScope.tagId, tags.id), eq(tagTeamScope.teamSlug, slug)))
+      .leftJoin(users, eq(users.id, tags.userId))
+      .where(inArray(tags.replaySlug, surfaceSlugs))
+      .orderBy(desc(tags.createdAt))
+      .limit(200);
+    const agg = new Map<string, { latest: Date | string; names: Set<string>; count: number }>();
+    for (const r of tagRows) {
+      let e = agg.get(r.replaySlug);
+      if (!e) { e = { latest: r.createdAt, names: new Set(), count: 0 }; agg.set(r.replaySlug, e); } // first seen = latest (desc)
+      e.count++;
+      const a = r.authorUserName || r.authorName;
+      if (a) e.names.add(a);
+    }
+    const reviewedSlugs = Array.from(agg.keys()).slice(0, REVIEWED_PREVIEW);
+    if (reviewedSlugs.length > 0) {
+      const rows = await db.select({ replay: replays, ownerName: users.name }).from(replays).leftJoin(users, eq(users.id, replays.userId)).where(inArray(replays.slug, reviewedSlugs));
+      const bySlug = new Map(rows.map((r) => [r.replay.slug, r]));
+      recentlyReviewed = reviewedSlugs.map((s) => {
+        const row = bySlug.get(s);
+        if (!row) return null;
+        const e = agg.get(s)!;
+        return {
+          ...serializeReplayRow(row.replay, { ownerName: row.ownerName ?? null, viewerPlayerId: null }),
+          reviewedAt: e.latest instanceof Date ? e.latest.toISOString() : String(e.latest),
+          reviewerNames: Array.from(e.names),
+          commentCount: e.count,
+        };
+      }).filter(Boolean);
+    }
   }
 
   // Recent discussion — latest team-scoped tags on surfaced replays.
