@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import type { Metadata } from 'next';
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, tags } from '@/lib/schema';
+import { replays, replayAltPayload, tags } from '@/lib/schema';
+import { segmentMatches } from '@/lib/seriesGrouping';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
@@ -27,48 +28,82 @@ const loadReplay = cache(async (slug: string) => {
   return row ?? null;
 });
 
-// B129: the other games of this replay's Bo3 series (same match.lobbyId,
-// play order). Cached so generateMetadata + the page share one query. Only
-// queried for identity-entitled viewers (uploader/teammate) — series links
-// would otherwise hand an anonymous link-visitor the sibling slugs.
-const loadSeriesGames = cache(async (lobbyId: string) => {
-  const rows = await getDb()
-    .select({ slug: replays.slug })
+// B129/B158: the games of this replay's MATCH (same match.lobbyId), in play
+// order. A karabast lobby can hold many matches, and (B158 p2) opponents now have
+// their OWN separate rows in the same lobby — so we (a) keep only the games
+// recorded by THIS replay's side (its owner + the alt recorder — the two people
+// who recorded it), then (b) segment by format into matches and take the one
+// containing this replay. Cached so generateMetadata + the page share the query.
+// Entitlement-gated by the caller (anonymized viewers never get the sibling slugs).
+const loadLobbyForSeries = cache(async (lobbyId: string) => {
+  const reps = await getDb()
+    .select({
+      slug: replays.slug,
+      createdAt: replays.createdAt,
+      userId: replays.userId,
+      ownerToken: replays.ownerToken,
+      winners: replays.winners,
+      ownerPlayerId: replays.ownerPlayerId,
+      decks: replays.decks,
+      fmt: sql<string | null>`${replays.match}->>'gamesToWinMode'`,
+    })
     .from(replays)
     .where(sql`${replays.match}->>'lobbyId' = ${lobbyId}`)
     .orderBy(asc(replays.createdAt));
-  return rows.map((r, i) => ({ slug: r.slug, gameNumber: i + 1 }));
+  const slugs = reps.map((r) => r.slug);
+  const alts = slugs.length
+    ? await getDb()
+        .select({ slug: replayAltPayload.replaySlug, altUserId: replayAltPayload.altUserId })
+        .from(replayAltPayload)
+        .where(inArray(replayAltPayload.replaySlug, slugs))
+    : [];
+  const altBySlug = new Map(alts.map((a) => [a.slug, a.altUserId]));
+  return reps.map((r) => ({ ...r, altUserId: altBySlug.get(r.slug) ?? null }));
 });
+
+type LobbyGame = Awaited<ReturnType<typeof loadLobbyForSeries>>[number];
+
+// The games of the SAME match as `currentSlug`, in play order — scoped to this
+// replay's side (owner + alt recorder) and segmented out of the rest of the lobby.
+function currentMatchGames(all: LobbyGame[], currentSlug: string): LobbyGame[] {
+  const current = all.find((g) => g.slug === currentSlug);
+  if (!current) return [];
+  const idOf = (g: LobbyGame) => g.userId ?? `tok:${g.ownerToken}`;
+  const recorders = new Set<string>([idOf(current)]);
+  if (current.altUserId) recorders.add(current.altUserId);
+  const mine = all.filter((g) => recorders.has(idOf(g)) || (g.altUserId != null && recorders.has(g.altUserId)));
+  const wonOf = (g: LobbyGame) => {
+    const w = Array.isArray(g.winners) ? (g.winners as string[]) : null;
+    if (!w || !g.ownerPlayerId) return null;
+    return w.includes(g.ownerPlayerId);
+  };
+  const matches = segmentMatches(mine, wonOf, current.fmt);
+  return matches.find((m) => m.some((g) => g.slug === currentSlug)) ?? mine;
+}
 
 async function seriesFor(row: { slug: string; match: unknown }, anonymize: boolean) {
   const lobbyId = (row.match as any)?.lobbyId;
   if (anonymize || typeof lobbyId !== 'string' || !lobbyId) return null;
-  const games = await loadSeriesGames(lobbyId);
-  if (games.length < 2) return null;
+  const match = currentMatchGames(await loadLobbyForSeries(lobbyId), row.slug);
+  if (match.length < 2) return null;
+  const games = match.map((g, i) => ({ slug: g.slug, gameNumber: i + 1 }));
   const current = games.find((g) => g.slug === row.slug)?.gameNumber;
   if (!current) return null;
   return { current, games };
 }
 
-// B150: sideboard changes from the PREVIOUS game in this lobby (same opponent,
-// same match). Per player, the deck diff (cards in/out). Exact for the recording
-// player (full deck captured each game); the opponent's deck is masked, so they
-// just don't appear. Entitlement-gated like series nav (decks already null for
-// anonymized viewers). Null on the first game / no diffable player.
-const loadLobbyDecks = cache(async (lobbyId: string) =>
-  getDb()
-    .select({ slug: replays.slug, decks: replays.decks })
-    .from(replays)
-    .where(sql`${replays.match}->>'lobbyId' = ${lobbyId}`)
-    .orderBy(asc(replays.createdAt)),
-);
+// B150: sideboard changes from the PREVIOUS game IN THIS MATCH (same opponent,
+// same series — B158: not just the previous row in the lobby, which could now be
+// an opponent's separate recording or a different match). Per player, the deck
+// diff (cards in/out). Exact for the recording player; the opponent's deck is
+// masked so they don't appear. Entitlement-gated like series nav.
 async function loadSideboardChanges(row: { slug: string; match: unknown; decks: unknown }, anonymize: boolean) {
   const lobbyId = (row.match as any)?.lobbyId;
   if (anonymize || typeof lobbyId !== 'string' || !lobbyId) return null;
-  const games = await loadLobbyDecks(lobbyId);
-  const idx = games.findIndex((g) => g.slug === row.slug);
-  if (idx < 1) return null; // first game (or not found) → nothing to diff against
-  const prevDecks = (games[idx - 1].decks as any) || {};
+  const match = currentMatchGames(await loadLobbyForSeries(lobbyId), row.slug);
+  const idx = match.findIndex((g) => g.slug === row.slug);
+  if (idx < 1) return null; // first game of THIS match → nothing to diff against
+  const prevDecks = (match[idx - 1].decks as any) || {};
   const curDecks = (row.decks as any) || {};
 
   const players = [];

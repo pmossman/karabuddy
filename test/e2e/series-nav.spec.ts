@@ -47,6 +47,24 @@ test('series: viewer shows Game-N title + hop pills; browser chips each game', a
   await expect(page.getByTestId('game-number-chip')).toHaveCount(2);
 });
 
+test('B158: series nav scopes to the viewer\'s own side (opponent rows excluded)', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'Mine', email: 'mine-series@example.com' });
+  const lobbyId = 'lobby-' + randomUUID();
+  const myToken = `kbx_${randomUUID()}`;
+  await claimInstallToken(page, myToken);
+  const g1 = await uploadReplay(request, { installToken: myToken, local: { username: 'Mine' }, opponent: { username: 'Opp' }, match: { gamesToWinMode: 'bestOfThree', lobbyId } });
+  await uploadReplay(request, { installToken: myToken, local: { username: 'Mine' }, opponent: { username: 'Opp' }, match: { gamesToWinMode: 'bestOfThree', lobbyId } });
+  // The opponent records their OWN game in the SAME karabast lobby (B158 p2 — a
+  // separate row owned by them). It must NOT appear in my series nav.
+  const oppToken = `kbx_${randomUUID()}`;
+  await uploadReplay(request, { installToken: oppToken, local: { username: 'Opp' }, opponent: { username: 'Mine' }, match: { gamesToWinMode: 'bestOfThree', lobbyId } });
+
+  await page.goto(`/r/${g1.slug}`);
+  await expect(page.getByTestId('series-nav')).toBeVisible();
+  await expect(page.getByTestId('series-game-2')).toBeVisible();
+  await expect(page.getByTestId('series-game-3')).toHaveCount(0); // opponent's row not a sibling
+});
+
 test('series nav is hidden from a viewer without identity access', async ({ page, browser, request }) => {
   await signInAsTestUser(page, { name: 'SeriesOwner', email: 'series-owner@example.com' });
   const lobbyId = 'lobby-' + randomUUID();
