@@ -102,21 +102,8 @@ describe('getLeaderStats — scope isolation', () => {
     expect(m.L3).toBeUndefined(); // L3 only appears in userB/anon games
   });
 
-  it('global excludes an opted-out uploader but keeps anonymous uploads', async () => {
-    const m = byLeader(await getLeaderStats({ scope: { kind: 'global' } }));
-    // L1: userA ×2 + anon ×1 = 3 (userB's game excluded). Wins: g1 win, g2 loss, anon win = 2.
-    expect(m.L1.games).toBe(3);
-    expect(m.L1.wins).toBe(2);
-    // L3 appears only via the anon game (userB's L3 game excluded) → 1, not 2.
-    expect(m.L3.games).toBe(1);
-  });
-
-  it('min-N gates low-sample rows out of global', async () => {
-    const m = byLeader(await getLeaderStats({ scope: { kind: 'global' }, minGames: 3 }));
-    expect(m.L1).toBeDefined(); // 3 games
-    expect(m.L2).toBeUndefined(); // 2 games — below the floor
-    expect(m.L3).toBeUndefined(); // 1 game
-  });
+  // Global/community scope was removed — karabuddy is team-internal only, with
+  // no userbase-wide aggregate (see lib/statsQuery). Personal + team only.
 
   it('team = only replays shared with that team', async () => {
     const m = byLeader(await getLeaderStats({ scope: { kind: 'team', teamSlug: 'tT' } }));

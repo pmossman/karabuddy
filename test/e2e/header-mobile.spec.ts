@@ -1,33 +1,26 @@
 import { test, expect } from '@playwright/test';
 import { signInAsTestUser } from './helpers';
 
-// The header overflowed off-screen on phones (centered nav + right cluster wider
-// than the viewport). Below the 720px breakpoint the inline nav collapses into a
-// hamburger; above it the inline nav shows and the hamburger is hidden.
+// Team-centric revamp: signed-in users get the left sidebar, which collapses
+// below the breakpoint into a hamburger that opens the nav as a slide-in drawer.
 
-test('mobile: nav collapses into a hamburger menu', async ({ page }) => {
+test('mobile: the sidebar collapses into a hamburger drawer', async ({ page }) => {
   await signInAsTestUser(page, { name: 'Mobile Nav' });
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/replays');
 
-  // Inline nav is hidden; hamburger is shown; the dropdown isn't mounted yet.
+  // Sidebar column is hidden; the hamburger is shown; the drawer isn't mounted.
   await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
   await expect(page.getByRole('menu')).toHaveCount(0);
 
-  // Open it → the nav links live inside the dropdown menu.
+  // Open it → the nav links live inside the slide-in drawer.
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitem', { name: 'Stats' })).toBeVisible();
-  await expect(menu.getByRole('menuitem', { name: 'Teams' })).toBeVisible();
+  await expect(menu.getByRole('link', { name: 'My replays', exact: true })).toBeVisible();
+  await expect(menu.getByRole('link', { name: 'My stats', exact: true })).toBeVisible();
 
-  // Clicking the toggle again (now an X) closes it and does NOT immediately
-  // reopen (the outside-click vs toggle race).
-  await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await expect(page.getByRole('menu')).toHaveCount(0);
-
-  // Re-open, then navigate from the menu — navigation also closes it.
-  await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await page.getByRole('menu').getByRole('menuitem', { name: 'Stats' }).click();
+  // Navigate from the drawer — navigation also closes it.
+  await menu.getByRole('link', { name: 'My stats', exact: true }).click();
   await expect(page).toHaveURL(/\/stats/);
   await expect(page.getByRole('menu')).toHaveCount(0);
 });

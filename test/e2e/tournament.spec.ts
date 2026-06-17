@@ -27,7 +27,8 @@ test('create a tournament, self-register, and add a guest entrant', async ({ pag
   // Self-register (no deck).
   await page.getByRole('button', { name: 'Register', exact: true }).click();
   await expect(page.getByTestId('entrant-row')).toHaveCount(1);
-  await expect(page.getByText('You', { exact: true })).toBeVisible();
+  // Scope to the entrant row — the sidebar has a "You" group heading too.
+  await expect(page.getByTestId('entrant-row').getByText('You', { exact: true })).toBeVisible();
 
   // B145: edit your own deck inline from your row → opens the deck modal.
   await page.getByTestId('entrant-row').filter({ hasText: 'You' }).getByRole('button', { name: 'Add deck' }).click();

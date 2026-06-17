@@ -42,9 +42,11 @@ test('invite + accept: second user joins as member', async ({ page, browser }) =
   // navigate to the Members tab so the member-list rows render where it
   // does match.
   await page2.goto(`/teams/${slug}?tab=members`);
-  await expect(page2.getByText('Owner', { exact: true })).toBeVisible();
-  await expect(page2.getByText('Invitee')).toBeVisible();
-  await expect(page2.getByText(/2 members/)).toBeVisible();
+  // Scope to the page body — the sidebar footer also shows the signed-in name.
+  const main2 = page2.getByRole('main');
+  await expect(main2.getByText('Owner', { exact: true })).toBeVisible();
+  await expect(main2.getByText('Invitee')).toBeVisible();
+  await expect(main2.getByText(/2 members/)).toBeVisible();
 
   await ctx2.close();
 });

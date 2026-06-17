@@ -4,17 +4,17 @@ import { signInAsTestUser } from './helpers';
 // B83: avatar dropdown (account actions behind the avatar) + Slack-style
 // sectioned settings rail.
 
-test('header avatar menu holds Settings + Sign out (hidden until opened)', async ({ page }) => {
+// Team-centric revamp: account actions live in the sidebar footer (avatar →
+// Settings / Sign out), not a header avatar menu.
+test('sidebar account footer holds Settings + Sign out (hidden until opened)', async ({ page }) => {
   await signInAsTestUser(page, { name: 'MenuUser', email: 'menu@example.com' });
   await page.goto('/');
-  const trigger = page.getByRole('button', { name: 'Account menu' });
+  const trigger = page.getByRole('button', { name: 'Account', exact: true });
   await expect(trigger).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Sign out' })).toHaveCount(0); // closed
   await trigger.click();
   await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
-  // The old always-visible header "Settings" nav link is gone.
-  await expect(page.getByRole('navigation').getByRole('link', { name: 'Settings' })).toHaveCount(0);
 });
 
 test('settings rail navigates between the four sections', async ({ page }) => {

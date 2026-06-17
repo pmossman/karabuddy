@@ -36,13 +36,13 @@ test('multi-team user switches via the header; URL + dashboard follow and reload
   await expect(page.getByRole('heading', { name: 'Bravo Squad' })).toBeVisible();
 });
 
-test('You menu opens personal replays without changing the active team', async ({ page }) => {
+test('the You section reaches personal replays without changing the active team', async ({ page }) => {
   await signInAsTestUser(page, { name: 'Ambient', email: 'ambient-ctx@example.com' });
   const { slug } = await createTeam(page, 'Ambient Squad');
 
   await page.goto(`/teams/${slug}`);
-  await page.getByRole('button', { name: 'You' }).click();
-  await page.getByRole('menuitem', { name: 'My replays' }).click();
+  // The sidebar's ambient "You" group reaches personal surfaces.
+  await page.getByRole('link', { name: 'My replays', exact: true }).click();
   await expect(page).toHaveURL(/\/replays\?tab=mine/);
 
   // Active team is unchanged — / still redirects to the same team.

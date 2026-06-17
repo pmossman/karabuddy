@@ -19,7 +19,7 @@ test('empty discussion: friendly empty state when no team replays have tags', as
     headers: { 'X-Install-Token': r.installToken },
   });
 
-  await page.goto(`/teams/${teamSlug}`);
+  await page.goto(`/teams/${teamSlug}?tab=discussion`);
   await expect(page.getByText(/No discussion yet/i)).toBeVisible();
 });
 
@@ -41,7 +41,7 @@ test('discussion item surfaces with latest comment + author byline', async ({ pa
     data: { installToken: r.installToken, authorName: 'CommenterA', frameIndex: 0, comment: 'most recent comment' },
   });
 
-  await page.goto(`/teams/${teamSlug}`);
+  await page.goto(`/teams/${teamSlug}?tab=discussion`);
   const item = page.getByTestId('discussion-item').first();
   await expect(item).toBeVisible();
   await expect(item).toContainText('most recent comment');
@@ -71,7 +71,7 @@ test('replays without tags do not appear in Discussion', async ({ page, request 
     headers: { 'X-Install-Token': quiet.installToken },
   });
 
-  await page.goto(`/teams/${teamSlug}`);
+  await page.goto(`/teams/${teamSlug}?tab=discussion`);
   const discItems = page.getByTestId('discussion-item');
   await expect(discItems).toHaveCount(1);
   // The tagged replay is the one that shows up in Discussion.
@@ -91,7 +91,7 @@ test('clicking a discussion item navigates to the replay at the latest tagged fr
     data: { installToken: r.installToken, authorName: 'Clicker', frameIndex: 0, comment: 'jump here' },
   });
 
-  await page.goto(`/teams/${teamSlug}`);
+  await page.goto(`/teams/${teamSlug}?tab=discussion`);
   await page.getByTestId('discussion-item').first().click();
   // Frame is 1-based in the URL (B48: ?f=N where N starts at 1).
   await page.waitForURL(new RegExp(`/r/${r.slug}\\?f=1`));
@@ -122,7 +122,7 @@ test('participant bubbles render one per unique tag author', async ({ page, requ
     data: { installToken: 'kbx_authorb_install', authorName: 'AuthorB', frameIndex: 0, comment: 'B says hi' },
   });
 
-  await page.goto(`/teams/${teamSlug}`);
+  await page.goto(`/teams/${teamSlug}?tab=discussion`);
   const item = page.getByTestId('discussion-item').first();
   // Two distinct authors → two participant bubbles.
   await expect(item.getByTestId('participant-bubble')).toHaveCount(2);
@@ -153,7 +153,7 @@ test('discussion items ordered by latest-tag DESC', async ({ page, request }) =>
     data: { installToken: newer.installToken, authorName: 'Orderer', frameIndex: 0, comment: 'newer' },
   });
 
-  await page.goto(`/teams/${teamSlug}`);
+  await page.goto(`/teams/${teamSlug}?tab=discussion`);
   const items = page.getByTestId('discussion-item');
   await expect(items).toHaveCount(2);
   // NewOpp's replay was tagged more recently → must be first.

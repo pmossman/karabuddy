@@ -8,7 +8,9 @@ import { signInAsTestUser, createTeam, uploadReplay, claimInstallToken } from '.
 // - The /claim pitch is gone (linking is fully automated now).
 // - Signed-out visitors lead with their (anonymous) recent replays.
 
-test('signed-in member: home surfaces a per-team activity section linking into the team', async ({ page, request }) => {
+// Team-centric revamp: a signed-in member's home redirects straight to their
+// active team's dashboard, which surfaces the team's recent activity.
+test('signed-in member: home redirects to the team dashboard, which surfaces activity', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'HomeMember', email: 'home-member@example.com' });
   const { slug: teamSlug } = await createTeam(page, 'Home Squad');
 
@@ -23,11 +25,10 @@ test('signed-in member: home surfaces a per-team activity section linking into t
   });
 
   await page.goto('/');
-
-  const section = page.getByTestId('home-team-section').first();
-  await expect(section).toBeVisible();
-  await expect(section.getByRole('link', { name: /Home Squad/i })).toHaveAttribute('href', `/teams/${teamSlug}`);
-  await expect(section).toContainText('home feed comment');
+  await page.waitForURL(new RegExp(`/teams/${teamSlug}$`));
+  await expect(page.getByRole('heading', { name: 'Home Squad' })).toBeVisible();
+  // The dashboard's Discussion feed surfaces the recent comment.
+  await expect(page.getByRole('main').getByText('home feed comment')).toBeVisible();
 });
 
 test('signed-in: home shows the most recent recorded replays', async ({ page, request }) => {
