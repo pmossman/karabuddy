@@ -20,7 +20,8 @@ Two cooperating pieces:
 
 ## Architecture map
 
-- `app/(app)/` — pages: `page.tsx` (home, teams-centric per B70), `r/[slug]` (viewer) + `r/[slug]/deck/[playerId]` (deck page), `replays`, `teams` + `teams/[slug]` + `teams/join`, `mentions`, `settings`, `signin`, `claim`, `install`, `privacy`.
+- `app/(app)/` — pages: `page.tsx` (home — signed-in members **redirect** to their active team's dashboard; no-team → personal home), `r/[slug]` (viewer) + `r/[slug]/deck/[playerId]` (deck page), `replays` (personal: My replays + Public), `clips` (personal), `stats` ("My Stats", personal), `teams` + `teams/[slug]` (tabbed: overview/discussion/replays/clips/review/tournaments/stats/members/settings) + `teams/join`, `mentions`, `settings`, `signin`, `claim`, `install`, `privacy`. Chrome is the left-sidebar `AppShell` (see Team-centric IA below).
+- `middleware.ts` — syncs the `kb_team` active-team cookie to the team page you're viewing (`/teams/<slug>`), so the sidebar switcher + page can't disagree.
 - `app/api/` — route handlers. Notable: `replays/` (upload + upsert), `replays/[slug]/tags` (incl. **GET** for the scoped client-fetch), `replays/[slug]/team-shares`, `teams/...`, `me/...` (whoami, claim, extensions, mentions, teams-mention-data), `extension/status` (kill-switch), `auth/[...nextauth]`, and `test/sign-in` + `test/blob` (test-only).
 - `lib/` — backend + shared logic:
   - `db.ts` — driver-agnostic Drizzle handle (`KARABUDDY_DB_DRIVER`: `neon` default / `pg` / `pglite`).
@@ -28,12 +29,23 @@ Two cooperating pieces:
   - `replayDecoder.ts` — decode payloads, extract winners / seen cards / decks / match meta.
   - `tagScope.ts` — server-side comment-scoping (resolve / visible / load / backfill). **The security boundary.**
   - `commentScope.js` (+ `.d.ts`) — the SHARED mentions→scope rule. Web imports it; the extension uses a byte-identical copy at `extension/replays/00-comment-scope.js`. UX convenience, re-clamped server-side.
-  - `teamSurface.ts` — which replays surface to a team. `extensionPolicy.ts` — kill-switch tiers. `installToken.ts`, `mentions.ts`, `players.ts`, `replayPermissions.ts`, `slug.ts`, `userResolution.ts`, `blob.ts`, `cors.ts`.
+  - `teamSurface.ts` — which replays surface to a team (+ `teamGameSlugs` = internal/external split for team stats). `activeTeam.ts` — active-team cookie resolver. `lastReplay.ts` — your most recent replay (sidebar shortcut). `extensionPolicy.ts` — kill-switch tiers. `installToken.ts`, `mentions.ts`, `players.ts`, `replayPermissions.ts`, `slug.ts`, `userResolution.ts`, `blob.ts`, `cors.ts`.
 - `extension/` — MV3 extension. `manifest.json`, `background.js` (service worker), `content.js` + `karabuddy-bridge.js` (bridge), `replays/00..07-*.js` (MAIN-world content scripts: `00-comment-scope` → `01-namespace` → `02-decoder` → `03-recorder` → `05-footer` → `06-bootstrap` → `07-toast`). Excluded from the Vercel build.
 - `drizzle/` — generated migrations + `meta/_journal.json`.
 - `scripts/` — `maybe-migrate.js` (prod-build prebuild), `validate-migration-journal.js`, `pull-prod-snapshot.sh`, `package-extension.sh`, backfills.
 - `test/` — `unit/`, `api/`, `e2e/` (+ `fixtures/`), `smoke/`.
 - `.github/workflows/` — `test.yml` (PR), `deploy.yml` (gated prod deploy), `extension-release.yml`, `extension-submit-cws.yml` (Chrome), `extension-submit-amo.yml` (Firefox).
+
+## Team-centric IA (read before touching nav / teams / dashboard / stats)
+
+The app revolves around one **active team** at a time (Slack/Linear pattern).
+
+- **Chrome.** Signed-in users get a **left-sidebar app shell** (`app/_components/AppShell.tsx` chooses it; `Sidebar.tsx` renders it) on every page; signed-out keeps the old top `HeaderBar`. Sidebar = team switcher → TEAM group (Dashboard/Discussion/Replays/Clips/Reviews/Tournaments/Stats/Members/Team settings) → "Latest replay" card + YOU group (My replays/My stats/My clips/Mentions) → account footer. The immersive viewer (`/r/`) gets a slim top bar + a translucent slide-over drawer instead of the column. `Header.tsx`/`TeamSwitcher.tsx`/`YouMenu.tsx` are dead (header-only, superseded).
+- **Active team** is the `kb_team=<slug>` cookie. `lib/activeTeam.resolveActiveTeam` reads it, **re-validates membership every read** (the boundary), falls back to first team by `joinedAt`. Kept in lockstep with the VIEWED team two ways so the switcher + page can't disagree: `middleware.ts` sets the cookie on `/teams/<slug>` visits, and `Sidebar` tracks active off the URL (the `(app)` layout doesn't re-render on soft-nav, so the server-resolved prop would go stale). `POST /api/me/active-team` still exists but is now redundant.
+- **Scope is carried by the links** — pages mostly don't read the cookie. `/` redirects signed-in members to `/teams/<active>`.
+- **Team dashboard** = the overview tab (default), client-fetched from `/api/teams/[slug]/overview` (one bundle, composed from the tabs' own queries so it can't drift). Layout: a full-width **active-tournament hero** (live Swiss standings via `lib/swiss.computeStandings` + current-round pairings, or the registrant roster) → **Team replays** + **Reviews** side-by-side → **Discussion** feed. Reviews shows explicit requests *awaiting feedback* + "Recent feedback" = replays with team comments (the formal request flag + durable `replay_reviews` mark are unused by real teams — comments ARE the review). `app/_components/ReplayMatchup.tsx` (leader/base art + W/L) is the shared replay-card primitive used everywhere.
+- **Stats are split:** `/stats` = personal "My Stats"; team stats are a team-page tab (`?tab=stats`). `StatsClient` takes an explicit `scope` prop (NOT URL-derived — that caused a stale-scope bug). Team stats **default to internal** games (teammate-vs-teammate; B84 rule = ≥2 team-member recorders, `teamGameSlugs`) with an Internal/vs-Outsiders/All toggle; the dashboard card inherits internal. The userbase-wide **`global`/community scope is removed** (team-internal tool only — no "whole-meta").
+- `/replays` + `/clips` are **personal-only** (My replays + Public; My clips + On my replays). Team replays/clips live as team-page tabs.
 
 ## Auth
 
