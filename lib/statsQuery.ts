@@ -1,31 +1,29 @@
 // B101/P1 (ADR 0007): the scoping + aggregation layer. Reads the materialized
 // fact tables (match_players / matches / card_events) and produces the numbers
-// the /stats UI renders — over one of three audiences:
+// the /stats UI renders — over one of two audiences:
 //
 //   personal — the signed-in user's own replays
 //   team     — a team's shared replays (via replay_team_shares)
-//   global   — everyone's, EXCLUDING uploaders who opted out, and only above a
-//              minimum sample size (min-N) so no single game is identifiable
 //
-// Scope is a WHERE/JOIN over matches → replays (the uploader + shares), applied
-// uniformly to every query here, so the three audiences can never leak into
-// each other. Aggregation is plain SQL via the drizzle query builder (portable
-// across neon / pg / pglite).
+// karabuddy is a team-internal testing tool: there is NO userbase-wide /
+// community aggregate. Scope is a WHERE/JOIN over matches → replays (the
+// uploader + shares), applied uniformly to every query here, so the two
+// audiences can never leak into each other. Aggregation is plain SQL via the
+// drizzle query builder (portable across neon / pg / pglite).
 
-import { and, eq, isNull, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
-import { matchPlayers, matches, replays, replayTeamShares, users, cardEvents, cards } from './schema';
+import { matchPlayers, matches, replays, replayTeamShares, cardEvents, cards } from './schema';
 
 export type StatsScope =
   | { kind: 'personal'; userId: string }
-  | { kind: 'team'; teamSlug: string }
-  | { kind: 'global' };
+  | { kind: 'team'; teamSlug: string };
 
 export interface StatsQueryOpts {
   scope: StatsScope;
   format?: string | null; // filter to one format; omit/null = all formats
-  minGames?: number; // min sample size to surface a row (global privacy floor)
+  minGames?: number; // min sample size to surface a row
 }
 
 export interface LeaderStat {
@@ -84,24 +82,19 @@ function baseIdentityCols(bc: ReturnType<typeof alias>) {
   };
 }
 
-// Compose the scope predicate over the matches⋈replays join. For global we also
-// left-join users to honour the opt-out (anonymous uploads have no user to opt
-// out, so they stay in). Returns the predicate; callers add their own filters.
+// Compose the scope predicate over the matches⋈replays join. Returns the
+// predicate; callers add their own filters.
 function scopePredicate(scope: StatsScope) {
   if (scope.kind === 'personal') return eq(replays.userId, scope.userId);
-  if (scope.kind === 'team') return eq(replayTeamShares.teamSlug, scope.teamSlug);
-  // global: include anonymous uploads + signed-in users who haven't opted out.
-  return or(isNull(replays.userId), eq(users.excludeFromGlobalStats, false));
+  return eq(replayTeamShares.teamSlug, scope.teamSlug);
 }
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
 
-// Attach the scope-specific join (team share / global opt-out) to a $dynamic
-// match_players query builder. Shared by every aggregation so scoping can't
-// drift between them.
+// Attach the scope-specific join (team share) to a $dynamic match_players query
+// builder. Shared by every aggregation so scoping can't drift between them.
 function applyScopeJoins(q: any, scope: StatsScope) {
   if (scope.kind === 'team') return q.innerJoin(replayTeamShares, eq(replayTeamShares.replaySlug, matches.replaySlug));
-  if (scope.kind === 'global') return q.leftJoin(users, eq(users.id, replays.userId));
   return q;
 }
 
@@ -168,7 +161,7 @@ export async function getLeaderMatchups(opts: StatsQueryOpts): Promise<LeaderMat
 // in the UI as Σwasted/Σavailable; each row also stands alone as a trend point.
 // Each row carries its deck (leader + base-identity) so the UI can break the
 // trend down by deck. personal/team only — resourcing is a first-person coaching
-// stat, not a global meta figure.
+// stat over your own recorded games.
 export interface ResourcingGame {
   gameId: string;
   replaySlug: string;
@@ -251,7 +244,7 @@ export interface CardStat {
 // `leader` / `baseAspect` scope card stats to a DECK context — i.e. only count
 // events where the side that triggered them was playing that leader (and a base
 // of that aspect). This is the "how does card X do in MY Krennic/Vigilance deck"
-// view the teams actually want, not whole-meta card rates.
+// view the teams actually want, scoped to your own / your team's recorded games.
 export async function getCardStats(
   opts: StatsQueryOpts & { event: CardEventKind; leader?: string | null; baseAspect?: string | null; baseId?: string | null },
 ): Promise<CardStat[]> {

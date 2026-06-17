@@ -221,9 +221,15 @@ export function StatsClient({ signedIn, teams }: { signedIn: boolean; teams: { s
             ]} />
           )}
           <Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} />
-          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: RECORDER_SIDE[event] ? '#e0c64a' : '#6bd968' }}>
-            {RECORDER_SIDE[event] ? 'recorder-side only' : 'whole-meta'}
-          </span>
+          {/* Drawn/resourced live in a hidden zone only the recorder can see, so
+              that data covers your side only. Played/discarded are public — no
+              caveat (and never a userbase-wide "meta" figure; this is your own /
+              your team's recorded games). */}
+          {RECORDER_SIDE[event] && (
+            <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>
+              your side only
+            </span>
+          )}
           <div style={{ flexBasis: '100%', height: 0 }} />
           <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort:</span>
           <Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} />

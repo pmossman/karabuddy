@@ -22,14 +22,13 @@ export const DEFAULT_MIN_UPLOAD_ACTIONS = 5;
 async function loadSettings(userId: string) {
   const db = getDb();
   const [user] = await db
-    .select({ slugs: users.defaultShareTeamSlugs, minActions: users.minUploadActions, excludeGlobal: users.excludeFromGlobalStats })
+    .select({ slugs: users.defaultShareTeamSlugs, minActions: users.minUploadActions })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
   return {
     shareTeamSlugs: user?.slugs ?? [],
     minUploadActions: user?.minActions ?? DEFAULT_MIN_UPLOAD_ACTIONS,
-    excludeFromGlobalStats: user?.excludeGlobal ?? false,
   };
 }
 
@@ -44,10 +43,7 @@ export async function PATCH(req: Request) {
   if (!userId) return NextResponse.json({ ok: false, error: 'not signed in' }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const db = getDb();
-  const patch: { defaultShareTeamSlugs?: string[]; minUploadActions?: number; excludeFromGlobalStats?: boolean } = {};
-
-  // B101: opt out of the global stats corpus (personal/team scopes unaffected).
-  if (typeof body.excludeFromGlobalStats === 'boolean') patch.excludeFromGlobalStats = body.excludeFromGlobalStats;
+  const patch: { defaultShareTeamSlugs?: string[]; minUploadActions?: number } = {};
 
   if (Array.isArray(body.shareTeamSlugs)) {
     // Clamp to the user's actual memberships — never persist a slug they
