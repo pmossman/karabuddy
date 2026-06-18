@@ -106,6 +106,10 @@ _empty_
 
 ## Done
 
+### [B169] CI: cache Playwright browsers + retry the install (apt-mirror stall hardening)
+_completed: 2026-06-18 by claude_
+A deploy's `npx playwright install --with-deps chromium` hung 30+ min on a transient apt-mirror stall. Cache the browser binaries (`~/.cache/ms-playwright`, keyed on package-lock) and wrap the install in a 3× retry with a 6-min per-attempt `timeout`, so a mirror stall is killed + retried instead of hanging. Applied to all three install steps (deploy.yml test + smoke; test.yml PR). YAML validated.
+
 ### [B168] Comment audience reverts to "Just me" on save (optimistic-UI fix)
 _completed: 2026-06-18 by claude_
 A just-saved comment showed "Visible to: Just me" until a refetch even though it was saved team-scoped: the optimistic tag row dropped the server-resolved `body.scope` (the edit/reply paths already carried it; only create didn't). Server scoping was always correct — no data repair needed. Carry `body.scope` + mentions into the optimistic row; e2e regression added (1-team default save shows the team, not "Just me"). unit 430 / api 220 / e2e 156.

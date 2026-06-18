@@ -73,7 +73,19 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright chromium (+ deps; retried — apt mirror stalls)
+        run: |
+          for i in 1 2 3; do
+            timeout 360 npx playwright install --with-deps chromium && exit 0
+            echo "::warning::playwright install attempt $i stalled/failed; retrying"
+            sleep 5
+          done
+          echo "::error::playwright install failed after 3 attempts"; exit 1
       - run: npm run test:e2e
         env:
           POSTGRES_URL: postgres://karabuddy_test:karabuddy_test@localhost:5433/karabuddy_test
