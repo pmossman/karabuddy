@@ -78,14 +78,19 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - name: Install Playwright chromium (+ deps; retried — apt mirror stalls)
+      - name: Install Playwright chromium + deps (free the apt lock first)
         run: |
-          for i in 1 2 3; do
-            timeout 360 npx playwright install --with-deps chromium && exit 0
-            echo "::warning::playwright install attempt $i stalled/failed; retrying"
-            sleep 5
+          # GitHub runners start unattended-upgrades, which holds the dpkg lock
+          # — playwright's `--with-deps` apt-get then hangs (the 30-min stalls)
+          # or fails ("Could not get lock"). Stop it + wait for the lock, then
+          # install. The browser binaries themselves come from the cache above.
+          sudo systemctl stop unattended-upgrades.service 2>/dev/null || true
+          sudo killall -q unattended-upgr 2>/dev/null || true
+          for i in $(seq 1 60); do
+            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+            echo "apt/dpkg lock still held; waiting ($i/60)…"; sleep 5
           done
-          echo "::error::playwright install failed after 3 attempts"; exit 1
+          npx playwright install --with-deps chromium
       - run: npm run test:e2e
         env:
           POSTGRES_URL: postgres://karabuddy_test:karabuddy_test@localhost:5433/karabuddy_test
