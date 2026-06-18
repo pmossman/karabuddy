@@ -50,8 +50,13 @@ export function TeamOverview({ slug }: { slug: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <style>{`
-        .kb-dash-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        .kb-dash-2col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+        .kb-dash-2col > * { min-width: 0; }
         @media (max-width: 1000px) { .kb-dash-2col { grid-template-columns: 1fr; } }
+        /* Intermediate band (e.g. DevTools docked): the 2-col tracks get too
+           narrow for the matchup names two-up, so drop the names — the
+           leader/base art + W/L still identify each replay. */
+        @media (max-width: 1280px) { .kb-dash-2col .kb-rm-names { display: none; } }
         .kb-tourney-grid { display: flex; flex-direction: column; gap: 16px; }
         .kb-tourney-split { display: grid; grid-template-columns: 1.05fr 1fr; gap: 18px; }
         @media (max-width: 760px) { .kb-tourney-split { grid-template-columns: 1fr; } }
