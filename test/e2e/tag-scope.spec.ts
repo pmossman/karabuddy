@@ -257,6 +257,34 @@ test('web comment form: scope chip narrows a comment to one team', async ({ page
   expect(await comments(teamB)).not.toContain('chip-narrowed to alpha');
 });
 
+// B168: regression — a just-saved comment must show its SERVER-resolved
+// audience immediately, not "Just me". The optimistic row used to drop the
+// returned scope, so a team-shared comment looked personal until a refetch
+// (the reported "it switches to visible just to me" on save).
+test('web comment form: a saved comment immediately shows its team audience (not Just me)', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'SaveScope', email: 'savescope@example.com' });
+  const { slug: team } = await createTeam(page, 'Lone Star Destroyers');
+
+  const r = await uploadReplay(request, { local: { username: 'SaveScope' }, opponent: { username: 'Foe' } });
+  await claimInstallToken(page, r.installToken);
+  await page.request.post(`/api/replays/${r.slug}/team-shares`, {
+    data: { teamSlug: team }, headers: { 'X-Install-Token': r.installToken },
+  });
+
+  await page.goto(`/r/${r.slug}`);
+  await page.getByRole('button', { name: /^Review/ }).click();
+  await page.getByRole('button', { name: '+ Tag this frame' }).click();
+
+  // Leave the scope at its default (the shared team), then save.
+  await page.getByPlaceholder(/Your note about this moment/).fill('team-shared by default');
+  await page.getByText('Save tag').click();
+
+  // The new comment's readout reflects the team it was actually saved to —
+  // NOT "Just me".
+  await expect(page.getByText('Visible to: Lone Star Destroyers').first()).toBeVisible();
+  await expect(page.getByText('Visible to: Just me')).toHaveCount(0);
+});
+
 // --- Editing an existing tag's scope (viewer). PATCH /tags/[id] honours
 // teamSlugs, re-resolving + replacing the tag's scope. B71-followup. ---
 

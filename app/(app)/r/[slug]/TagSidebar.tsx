@@ -444,6 +444,12 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         authorName,
         comment: draft,
         createdAt: new Date().toISOString(),
+        // Carry the SERVER-resolved audience (+ mentions) so the new comment's
+        // "Visible to:" readout is correct immediately. Without this the
+        // optimistic row had no scope and rendered as "Just me" until a refetch,
+        // even though the tag was saved team-scoped.
+        scope: body.scope ?? [],
+        mentions: hasMentions ? draftMentions : null,
       },
     ]);
     setDraft('');
