@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, replayTeamShares, replayAltPayload, users } from '@/lib/schema';
+import { replays, replayTeamShares, users } from '@/lib/schema';
+import { gameIdsWithSibling } from '@/lib/doubleSided';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { reviewersForTeam, commentersForTeam, viewerCommentedSlugs } from '@/lib/reviews';
@@ -49,12 +50,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     .leftJoin(users, eq(users.id, replays.userId))
     .where(inArray(replays.slug, slugs));
 
-  const doubleSidedSlugs = new Set(
-    (await db
-      .select({ slug: replayAltPayload.replaySlug })
-      .from(replayAltPayload)
-      .where(inArray(replayAltPayload.replaySlug, slugs))).map((r) => r.slug),
-  );
+  // B166: "both POVs" = the game has >=2 distinct recorders (a sibling row).
+  const dsGames = await gameIdsWithSibling(rows.map((r) => r.replay.gameId));
 
   // B149: durable reviewer marks + team-scoped commenters per replay, and which
   // the viewer has commented on (gates "I reviewed").
@@ -70,7 +67,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
           ownerName,
           viewerPlayerId: replay.ownerPlayerId ?? null,
           isMine: !!replay.userId && replay.userId === userId,
-          doubleSided: doubleSidedSlugs.has(replay.slug),
+          doubleSided: dsGames.has(replay.gameId),
         }),
         reviewRequestedAt: requestedAt.get(replay.slug)?.toISOString() ?? null,
         reviewRequestedBy: requestedBy.get(replay.slug) ?? null,

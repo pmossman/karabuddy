@@ -1,14 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, replays, replayParticipants, replayAltPayload } from '@/lib/schema';
+import { users, replays, replayParticipants } from '@/lib/schema';
 import { recordedReplaySlugs } from '@/lib/recordedReplays';
 
-// B156 (privacy): "My replays" must include only replays the user actually
-// RECORDED — never an opponent's recording they were merely resolved into as a
-// participant. B166 transitional: during the migration a 2nd recorder may be
-// surfaced via the canonical's alt link OR (post-backfill) via their own sibling
-// row — but NEVER both (no duplicate).
+// B156/B166: "My replays" = the rows I OWN. Never an opponent's recording I was
+// merely resolved into as a participant (B156), and — post-backfill — a
+// co-recorded game surfaces via MY OWN sibling row, never the teammate's
+// canonical (no duplicate).
 
 async function seedUser() {
   const id = randomUUID();
@@ -39,32 +38,15 @@ describe('recordedReplaySlugs', () => {
     expect(slugs).not.toContain(theirs);
   });
 
-  it('PRE-backfill: a co-recorded game surfaces via the canonical alt link (I have no own row yet)', async () => {
-    const me = await seedUser();
-    const teammate = await seedUser();
-    const canonical = await seedReplay(teammate); // teammate's canonical; I was folded in as the alt
-    await getDb().insert(replayAltPayload).values({
-      replaySlug: canonical, altUserId: me, altOwnerPlayerId: 'p2', payload: '{}',
-    });
-
-    const { slugs, altSideBySlug } = await recordedReplaySlugs(me);
-    expect(slugs).toContain(canonical);            // surfaced (as today)
-    expect(altSideBySlug.get(canonical)).toBe('p2');
-  });
-
-  it('POST-backfill: the same game surfaces via MY sibling row ONLY — never duplicated', async () => {
+  it('a co-recorded game surfaces via MY OWN sibling row, not the teammate canonical', async () => {
     const me = await seedUser();
     const teammate = await seedUser();
     const gameId = randomUUID();
-    const canonical = await seedReplay(teammate, gameId);
-    await getDb().insert(replayAltPayload).values({
-      replaySlug: canonical, altUserId: me, altOwnerPlayerId: 'p2', payload: '{}',
-    });
-    // The backfill materialized MY own sibling row for the same game.
-    const mineSibling = await seedReplay(me, gameId);
+    const canonical = await seedReplay(teammate, gameId); // teammate's row
+    const mineSibling = await seedReplay(me, gameId);      // my own sibling row
 
     const { slugs } = await recordedReplaySlugs(me);
-    expect(slugs).toContain(mineSibling);          // my own row
-    expect(slugs).not.toContain(canonical);        // alt link dropped → NOT listed twice
+    expect(slugs).toContain(mineSibling);
+    expect(slugs).not.toContain(canonical);
   });
 });

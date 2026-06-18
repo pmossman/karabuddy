@@ -96,6 +96,29 @@ export async function doubleSidedGameIds(viewerUserId: string | null, gameIds: s
   return out;
 }
 
+// Viewer-INDEPENDENT "a double-sided game exists" signal for list surfaces (the
+// "both POVs" chip on public / review / tournament views): which of these
+// gameIds were recorded by >=2 distinct accounts. (Whether a given viewer may
+// COMPOSE/flip it is entitledSibling's job; this just flags that two POVs exist.)
+export async function gameIdsWithSibling(gameIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (gameIds.length === 0) return out;
+  const db = getDb();
+  const rows = await db
+    .select({ gameId: replays.gameId, userId: replays.userId, ownerToken: replays.ownerToken })
+    .from(replays)
+    .where(inArray(replays.gameId, gameIds));
+  const byGame = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const key = r.userId ?? `tok:${r.ownerToken}`;
+    let s = byGame.get(r.gameId);
+    if (!s) { s = new Set(); byGame.set(r.gameId, s); }
+    s.add(key);
+  }
+  for (const [g, recorders] of byGame) if (recorders.size >= 2) out.add(g);
+  return out;
+}
+
 async function canCompose(
   baseSlug: string,
   baseUserId: string | null,

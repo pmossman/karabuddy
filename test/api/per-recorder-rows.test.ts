@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { POST as upload } from '@/app/api/replays/route';
 import { GET as teamReplays } from '@/app/api/teams/[slug]/replays/route';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, extensionTokens, replays, replayAltPayload } from '@/lib/schema';
+import { users, teams, teamMembers, extensionTokens, replays } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 
 // B166: per-recorder replay rows. Two teammates who both record one karabast
@@ -68,10 +68,6 @@ describe('B166 per-recorder rows: teammates each keep their own row', () => {
     expect(rows.map((r) => r.userId).sort()).toEqual([a.id, b.id].sort());
     expect(rows.find((r) => r.userId === a.id)!.ownerPlayerId).toBe('p1');
     expect(rows.find((r) => r.userId === b.id)!.ownerPlayerId).toBe('p2');
-
-    // No alt payload is folded onto the 1st recorder's row anymore.
-    const alt = await getDb().select().from(replayAltPayload).where(eq(replayAltPayload.replaySlug, first.slug));
-    expect(alt).toHaveLength(0);
   });
 
   it("each recorder's own row still upserts their later snapshots (one row per recorder)", async () => {

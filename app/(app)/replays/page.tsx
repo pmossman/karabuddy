@@ -70,7 +70,7 @@ export default async function ReplaysIndex({ searchParams }: { searchParams: Pro
 // upload) and leaked their name + private team shares into my library (B156).
 async function MyReplays({ userId }: { userId: string }) {
   const db = getDb();
-  const { slugs: mineSlugs, altSideBySlug } = await recordedReplaySlugs(userId);
+  const { slugs: mineSlugs } = await recordedReplaySlugs(userId);
 
   // One ordered+limited fetch over the union (apply the limit ONCE, post-union).
   const rows = mineSlugs.length > 0
@@ -134,10 +134,8 @@ async function MyReplays({ userId }: { userId: string }) {
     <ReplayFilters
       rows={rows.map(({ replay, ownerName }) => serializeReplayRow(replay, {
         ownerName,
-        // Perspective = me: my own rows use their ownerPlayerId; a co-recorded
-        // game still surfaced via the transitional alt link (pre-backfill) uses
-        // my alt POV side. (Simplifies to ownerPlayerId in the contract step.)
-        viewerPlayerId: replay.userId === userId ? replay.ownerPlayerId : (altSideBySlug.get(replay.slug) ?? null),
+        // B166: every row in my library is one I own → my POV is its ownerPlayerId.
+        viewerPlayerId: replay.ownerPlayerId ?? null,
         sharedTeams: sharesBySlug.get(replay.slug) ?? [],
         commentCount: commentCountBySlug.get(replay.slug) ?? 0,
         doubleSided: dsGameIds.has(replay.gameId),

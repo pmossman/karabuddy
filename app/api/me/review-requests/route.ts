@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, replayTeamShares, replayAltPayload, teams, users } from '@/lib/schema';
+import { replays, replayTeamShares, teams, users } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
+import { gameIdsWithSibling } from '@/lib/doubleSided';
 import { reviewCountsByShare } from '@/lib/reviews';
 
 export const runtime = 'nodejs';
@@ -38,12 +39,8 @@ export async function GET() {
     .leftJoin(users, eq(users.id, replays.userId))
     .where(inArray(replays.slug, slugs));
   const replayBySlug = new Map(rows.map((r) => [r.replay.slug, r]));
-  const doubleSidedSlugs = new Set(
-    (await db
-      .select({ slug: replayAltPayload.replaySlug })
-      .from(replayAltPayload)
-      .where(inArray(replayAltPayload.replaySlug, slugs))).map((r) => r.slug),
-  );
+  // B166: "both POVs" = the game has >=2 distinct recorders (a sibling row).
+  const dsGames = await gameIdsWithSibling(rows.map((r) => r.replay.gameId));
   const marksByShare = await reviewCountsByShare(slugs);
 
   // One entry per (replay, team) request — the requester can ask multiple teams.
@@ -57,7 +54,7 @@ export async function GET() {
           ownerName: r.ownerName,
           viewerPlayerId: r.replay.ownerPlayerId ?? null,
           isMine: true,
-          doubleSided: doubleSidedSlugs.has(r.replay.slug),
+          doubleSided: dsGames.has(r.replay.gameId),
         }),
         teamSlug: req.teamSlug,
         teamName: req.teamName ?? req.teamSlug,

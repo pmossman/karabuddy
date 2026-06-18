@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import {
   tournaments, tournamentEntrants, tournamentRounds, tournamentMatches,
-  replays, replayParticipants, replayAltPayload, replayTeamShares,
+  replays, replayParticipants, replayTeamShares,
   type TournamentEntrant, type TournamentRound, type TournamentMatch,
 } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
@@ -175,18 +175,11 @@ async function computeSuggestions(
   if (candidateRows.length === 0) return {};
 
   const slugs = candidateRows.map((r) => r.slug);
-  const [shareRows, altRows] = await Promise.all([
-    db
-      .select({ slug: replayTeamShares.replaySlug })
-      .from(replayTeamShares)
-      .where(and(eq(replayTeamShares.teamSlug, teamSlug), inArray(replayTeamShares.replaySlug, slugs))),
-    db
-      .select({ slug: replayAltPayload.replaySlug, altUserId: replayAltPayload.altUserId, altOwnerPlayerId: replayAltPayload.altOwnerPlayerId })
-      .from(replayAltPayload)
-      .where(inArray(replayAltPayload.replaySlug, slugs)),
-  ]);
+  const shareRows = await db
+    .select({ slug: replayTeamShares.replaySlug })
+    .from(replayTeamShares)
+    .where(and(eq(replayTeamShares.teamSlug, teamSlug), inArray(replayTeamShares.replaySlug, slugs)));
   const shared = new Set(shareRows.map((r) => r.slug));
-  const altBySlug = new Map(altRows.map((r) => [r.slug, r]));
   const participantsBySlug = new Map<string, string[]>();
   for (const r of partRows) {
     const arr = participantsBySlug.get(r.slug);
@@ -200,7 +193,9 @@ async function computeSuggestions(
     uploaderUserId: r.userId,
     participantUserIds: participantsBySlug.get(r.slug) ?? [],
     ownerPlayerId: r.ownerPlayerId,
-    altOwnerPlayerId: altBySlug.get(r.slug)?.altOwnerPlayerId ?? null,
+    // B166: each recorder is now its own candidate row (with its own
+    // ownerPlayerId), so a single row no longer carries the 2nd POV.
+    altOwnerPlayerId: null,
     winners: Array.isArray(r.winners) ? (r.winners as string[]) : null,
     lobbyId: (r.match as any)?.lobbyId && typeof (r.match as any).lobbyId === 'string' ? (r.match as any).lobbyId : null,
     sharedToTeam: shared.has(r.slug),

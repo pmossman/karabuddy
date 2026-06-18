@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { desc, isNotNull, count, inArray } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, replayAltPayload, tags } from '@/lib/schema';
+import { replays, tags } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
+import { gameIdsWithSibling } from '@/lib/doubleSided';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 
@@ -28,14 +29,10 @@ export async function GET() {
     .limit(200);
 
   const slugs = rows.map((r) => r.slug);
-  const doubleSidedSlugs = new Set<string>();
+  // B166: "both POVs" = the game has >=2 distinct recorders (a sibling row).
+  const dsGames = await gameIdsWithSibling(rows.map((r) => r.gameId));
   const commentCountBySlug = new Map<string, number>();
   if (slugs.length > 0) {
-    const altRows = await db
-      .select({ slug: replayAltPayload.replaySlug })
-      .from(replayAltPayload)
-      .where(inArray(replayAltPayload.replaySlug, slugs));
-    for (const a of altRows) doubleSidedSlugs.add(a.slug);
     // Total comments — on a public replay every tag is publicly readable
     // (redacted), so the full count is the honest number.
     const countRows = await db
@@ -54,7 +51,7 @@ export async function GET() {
       ownerName: null,
       viewerPlayerId: replay.ownerPlayerId ?? null,
       commentCount: commentCountBySlug.get(replay.slug) ?? 0,
-      doubleSided: doubleSidedSlugs.has(replay.slug),
+      doubleSided: dsGames.has(replay.gameId),
     }),
   );
   return NextResponse.json({ ok: true, data });
