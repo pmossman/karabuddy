@@ -146,7 +146,7 @@ export function TeamOverview({ slug }: { slug: string }) {
         {recentDiscussion.length > 0 ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
             {recentDiscussion.slice(0, 4).map((d) => (
-              <Link key={d.id} href={`/r/${d.replaySlug}`} style={{ display: 'flex', gap: 8, textDecoration: 'none', alignItems: 'flex-start' }}>
+              <Link key={d.id} href={`/r/${d.replaySlug}`} style={{ display: 'flex', gap: 8, textDecoration: 'none', alignItems: 'flex-start', paddingRight: 10 }}>
                 <Avatar name={d.author} image={d.authorImage} size={24} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
                   <span style={{ fontSize: 12.5, color: '#d6d6d6', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{d.comment || '(no text)'}</span>

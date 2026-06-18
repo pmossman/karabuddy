@@ -39,3 +39,9 @@ html.kb-viewer-mobile {
 html.kb-viewer-mobile header[data-kb-header] {
     display: none !important;
 }
+
+/* Compact replay-matchup rows on phones: drop the leader/base names so the card
+   art + W/L always fit the narrow card (ReplayMatchup keeps both thumbnails). */
+@media (max-width: 480px) {
+    .kb-rm-names { display: none !important; }
+}

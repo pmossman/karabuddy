@@ -49,17 +49,27 @@ export function AppShell({
 
   if (signedIn) {
     return (
-      <div style={{ display: 'flex', alignItems: 'flex-start', minHeight: '100vh' }}>
-        {/* useSearchParams (active-link highlighting) needs a Suspense boundary;
-            the fallback reserves the column width so the layout doesn't jump. */}
-        <Suspense fallback={<div className="kb-sb-reserve" style={{ width: FULL_WIDTH, flexShrink: 0 }} />}>
-          <Sidebar active={active} teams={teams} hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay} />
-        </Suspense>
-        <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <main style={{ flex: '1 1 auto', minWidth: 0 }}>{children}</main>
-          <Footer />
+      <>
+        {/* Desktop: sidebar column beside the content. Below the sidebar's
+            breakpoint the sidebar becomes a full-width top bar + drawer, so the
+            shell must stack as a COLUMN (otherwise the sticky mobile bar becomes
+            a left flex item that squeezes the content). */}
+        <style>{`
+          .kb-app-shell { display: flex; align-items: flex-start; min-height: 100vh; }
+          @media (max-width: 860px) { .kb-app-shell { flex-direction: column; align-items: stretch; } }
+        `}</style>
+        <div className="kb-app-shell">
+          {/* useSearchParams (active-link highlighting) needs a Suspense boundary;
+              the fallback reserves the column width so the layout doesn't jump. */}
+          <Suspense fallback={<div className="kb-sb-reserve" style={{ width: FULL_WIDTH, flexShrink: 0 }} />}>
+            <Sidebar active={active} teams={teams} hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay} />
+          </Suspense>
+          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            <main style={{ flex: '1 1 auto', minWidth: 0 }}>{children}</main>
+            <Footer />
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 

@@ -38,13 +38,15 @@ function Deck({ player, align, thumb, showNames }: { player: any; align: 'left' 
   const baseImg = cardImageUrl(player?.base ?? null, false);
   const h = Math.round(thumb * 0.72);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden', flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
       <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
         <Thumb src={leaderImg} alt={player?.leader?.name} w={thumb} h={h} />
         <Thumb src={baseImg} alt={player?.base?.name} w={thumb} h={h} />
       </span>
       {showNames && (
-        <span style={{ minWidth: 0, textAlign: align === 'right' ? 'right' : 'left' }}>
+        // Names drop on phones (the kb-rm-names media rule) so the art + W/L
+        // always fit; the leader/base art carries the identity there.
+        <span className="kb-rm-names" style={{ flex: '1 1 0', minWidth: 0, overflow: 'hidden', textAlign: align === 'right' ? 'right' : 'left' }}>
           <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#e6e6e6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player?.leader?.name || 'Unknown'}</span>
           <span style={{ display: 'block', fontSize: 10.5, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player?.base?.name || ''}</span>
         </span>
