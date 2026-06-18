@@ -53,3 +53,23 @@ const memoryPut: PutFn = async (pathname, body, options) => {
 const useMemory = process.env.KARABUDDY_BLOB_MODE === 'memory';
 
 export const put: PutFn = useMemory ? memoryPut : vercelPut;
+
+// Read a stored payload back by its blob URL, server-side, in BOTH modes. In
+// memory mode the URL points at our test-only blob route (unreachable from a
+// route handler under test), so read the Map directly by the pathname encoded in
+// the URL; in prod/dev fetch the URL. Returns null on any miss/failure.
+export async function readBlobText(url: string): Promise<string | null> {
+  if (useMemory) {
+    const marker = '/api/test/blob/';
+    const i = url.indexOf(marker);
+    const pathname = i >= 0 ? url.slice(i + marker.length) : url;
+    return memoryStore.get(pathname) ?? null;
+  }
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}

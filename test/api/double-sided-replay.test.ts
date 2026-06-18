@@ -1,14 +1,18 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { POST as upload } from '@/app/api/replays/route';
 import { GET as perspective } from '@/app/api/replays/[slug]/perspective/route';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, extensionTokens, replayAltPayload, replays } from '@/lib/schema';
-import { eq } from 'drizzle-orm';
+import { users, teams, teamMembers, extensionTokens, replays } from '@/lib/schema';
+import { eq, and } from 'drizzle-orm';
 
-// B112: double-sided replays. The 2nd teammate's recording is RETAINED as the
-// alt perspective only when both recorders share a team, and is served only to
-// authorized team members.
+// B166: double-sided replays are a RUNTIME composition of two independent
+// sibling rows (same gameId, different recorders) — not a stored alt payload.
+// The /perspective endpoint serves the SIBLING row's recording, gated by
+// entitledSibling: the two recorders may compose while they CURRENTLY share a
+// team; a third-party teammate may compose only on a shared team containing both
+// recorders. Leaving the team revokes the composed view immediately, while each
+// recorder's own one-sided row is untouched.
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
 const { auth } = await import('@/auth');
@@ -24,11 +28,10 @@ function payload(gameId: string, opts: { localPlayerId?: string; actionCount?: n
     tags: [],
   });
 }
-const doUpload = (token: string, gameId: string, opts: { share?: string[]; localPlayerId?: string; actionCount?: number; clientMeta?: any } = {}) =>
+const doUpload = (token: string, gameId: string, opts: { share?: string[]; localPlayerId?: string; actionCount?: number } = {}) =>
   upload(new Request('http://t/api/replays', { method: 'POST', body: JSON.stringify({
     installToken: token, payload: payload(gameId, opts),
     ...(opts.share ? { shareTeamSlugs: opts.share } : {}),
-    ...(opts.clientMeta ? { clientMeta: opts.clientMeta } : {}),
   }) }));
 
 async function seedUser() {
@@ -44,8 +47,6 @@ async function seedTeam(owner: string, members: string[]) {
   await getDb().insert(teamMembers).values(members.map((u) => ({ teamSlug: slug, userId: u, role: u === owner ? 'owner' : 'member' })));
   return slug;
 }
-const altRow = async (slug: string) =>
-  (await getDb().select().from(replayAltPayload).where(eq(replayAltPayload.replaySlug, slug)))[0];
 
 const getPerspective = (slug: string, viewerId: string | null) => {
   as(viewerId);
@@ -54,177 +55,112 @@ const getPerspective = (slug: string, viewerId: string | null) => {
 
 beforeEach(() => vi.mocked(auth).mockReset());
 
-describe('B112 alt-perspective storage gating', () => {
-  it('stores the alt when two teammates both record (shared team)', async () => {
-    const a = await seedUser();
-    const b = await seedUser();
-    const team = await seedTeam(a.id, [a.id, b.id]);
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-store', { share: [team] })).json();
-    as(b.id); const res = await (await doUpload(b.token, 'g-store', { localPlayerId: 'p2', actionCount: 12 })).json();
-    expect(res.altStored).toBe(true);
-    const row = await altRow(slug);
-    expect(row).toMatchObject({ altUserId: b.id, altOwnerPlayerId: 'p2', altActionCount: 12 });
-    expect(typeof row.payload).toBe('string');
-  });
-
-  it('B114: records each recorder\'s clientMeta — canonical + alt', async () => {
-    const a = await seedUser();
-    const b = await seedUser();
-    const team = await seedTeam(a.id, [a.id, b.id]);
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-cm', { share: [team], clientMeta: { extVersion: '0.5.12', browser: 'chrome' } })).json();
-    as(b.id); await doUpload(b.token, 'g-cm', { localPlayerId: 'p2', actionCount: 12, clientMeta: { extVersion: '0.5.10', browser: 'firefox' } });
-    const { replays } = await import('@/lib/schema');
-    const [rep] = await getDb().select().from(replays).where(eq(replays.slug, slug));
-    expect((rep.clientMeta as any)).toMatchObject({ extVersion: '0.5.12', browser: 'chrome' });
-    expect(((await altRow(slug)).altClientMeta as any)).toMatchObject({ extVersion: '0.5.10', browser: 'firefox' });
-  });
-
-  it('B158: a NON-teammate 2nd recording becomes a SEPARATE private replay (no alt)', async () => {
-    const a = await seedUser();
-    const b = await seedUser(); // not on any shared team — an opponent
-    const team = await seedTeam(a.id, [a.id]);
-    as(a.id); const first = await (await doUpload(a.token, 'g-noteam', { share: [team] })).json();
-    as(b.id); const second = await (await doUpload(b.token, 'g-noteam', { localPlayerId: 'p2' })).json();
-    // B keeps their own row (their POV) instead of being discarded/alt-linked.
-    expect(second.slug).not.toBe(first.slug);
-    expect(second.deduped).toBeUndefined();
-    expect(await altRow(first.slug)).toBeUndefined(); // no double-sided across teams
-    const rows = await getDb().select().from(replays).where(eq(replays.gameId, 'g-noteam'));
-    expect(rows.map((r) => r.ownerToken).sort()).toEqual([a.token, b.token].sort());
-  });
-
-  it('B158: an anonymous NON-teammate 2nd recording is its own row too', async () => {
-    const a = await seedUser();
-    const team = await seedTeam(a.id, [a.id]);
-    as(a.id); const first = await (await doUpload(a.token, 'g-anon', { share: [team] })).json();
-    // 2nd uploader: no session, unlinked token → resolves to no account.
-    as(null); const second = await (await doUpload(`kbx_${randomUUID()}`, 'g-anon')).json();
-    expect(second.slug).not.toBe(first.slug);
-    expect(await altRow(first.slug)).toBeUndefined();
-  });
-
-  it('stale-guards the alt: a lower actionCount snapshot does not overwrite', async () => {
-    const a = await seedUser();
-    const b = await seedUser();
-    const team = await seedTeam(a.id, [a.id, b.id]);
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-stale', { share: [team] })).json();
-    as(b.id);
-    await doUpload(b.token, 'g-stale', { actionCount: 50 });
-    expect((await altRow(slug)).altActionCount).toBe(50);
-    await doUpload(b.token, 'g-stale', { actionCount: 30 }); // stale → ignored
-    expect((await altRow(slug)).altActionCount).toBe(50);
-    await doUpload(b.token, 'g-stale', { actionCount: 60 }); // newer → wins
-    expect((await altRow(slug)).altActionCount).toBe(60);
-  });
-});
-
-describe('B112 perspective endpoint authorization', () => {
-  // Two teammates record + share with the team; a third teammate views.
+describe('B166 double-sided as sibling composition', () => {
+  // Two teammates record one game; A shares with the team. Returns both rows'
+  // slugs (one per recorder) — they are SEPARATE rows now.
   async function setupShared() {
     const a = await seedUser();
     const b = await seedUser();
     const team = await seedTeam(a.id, [a.id, b.id]);
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-' + randomUUID().slice(0, 5), { share: [team] })).json();
-    as(b.id); await doUpload(b.token, await gameIdOf(slug), { localPlayerId: 'p2' });
-    return { a, b, team, slug };
-  }
-  // helper: read the gameId we uploaded under (it's stored on the replay row)
-  async function gameIdOf(slug: string) {
-    const { replays } = await import('@/lib/schema');
-    const [r] = await getDb().select().from(replays).where(eq(replays.slug, slug));
-    return r.gameId;
+    const gameId = 'g-' + randomUUID().slice(0, 6);
+    as(a.id); const aRes = await (await doUpload(a.token, gameId, { share: [team], localPlayerId: 'p1' })).json();
+    as(b.id); const bRes = await (await doUpload(b.token, gameId, { localPlayerId: 'p2', actionCount: 12 })).json();
+    return { a, b, team, gameId, aSlug: aRes.slug, bSlug: bRes.slug };
   }
 
-  it('serves the alt to an eligible team member (both recorders on the shared team)', async () => {
-    const { a, slug } = await setupShared();
-    const res = await getPerspective(slug, a.id);
+  it('two teammates produce two independent rows (no fold)', async () => {
+    const { aSlug, bSlug, gameId } = await setupShared();
+    expect(aSlug).not.toBe(bSlug);
+    const rows = await getDb().select().from(replays).where(eq(replays.gameId, gameId));
+    expect(rows).toHaveLength(2);
+  });
+
+  it('serves the sibling POV to an eligible third-party team member', async () => {
+    const { a, b, team, aSlug } = await setupShared();
+    // a third teammate (not a recorder) on the shared team
+    const c = await seedUser();
+    await getDb().insert(teamMembers).values({ teamSlug: team, userId: c.id, role: 'member' });
+    const res = await getPerspective(aSlug, c.id);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.altOwnerPlayerId).toBe('p2');
+    expect(body.altOwnerPlayerId).toBe('p2'); // the sibling (b) recorded as p2
     expect(typeof body.payload).toBe('string');
+    void a; void b;
   });
 
   it('401s an anonymous viewer', async () => {
-    const { slug } = await setupShared();
-    const res = await getPerspective(slug, null);
-    expect(res.status).toBe(401);
+    const { aSlug } = await setupShared();
+    expect((await getPerspective(aSlug, null)).status).toBe(401);
   });
 
-  it('403s a viewer who is not on a team the replay is shared with', async () => {
-    const { slug } = await setupShared();
+  it('403s a viewer with no relationship to either recorder', async () => {
+    const { aSlug } = await setupShared();
     const outsider = await seedUser();
-    await seedTeam(outsider.id, [outsider.id]); // their own unrelated team
-    const res = await getPerspective(slug, outsider.id);
-    expect(res.status).toBe(403);
+    await seedTeam(outsider.id, [outsider.id]);
+    expect((await getPerspective(aSlug, outsider.id)).status).toBe(403);
   });
 
-  it('403s a non-recorder teammate once a recorder has left the shared team', async () => {
-    const { a, b, team, slug } = await setupShared();
-    // A third teammate (not a recorder) can view while both recorders are on the team...
+  it('403s a third-party teammate once a recorder leaves the shared team', async () => {
+    const { b, team, aSlug } = await setupShared();
     const c = await seedUser();
     await getDb().insert(teamMembers).values({ teamSlug: team, userId: c.id, role: 'member' });
-    expect((await getPerspective(slug, c.id)).status).toBe(200);
-    // ...but loses access once the alt recorder leaves (B112 revoke-on-leave).
-    // The recorders themselves keep access (B137) — that's covered separately.
-    await getDb().delete(teamMembers).where(eq(teamMembers.userId, b.id)); // b (alt recorder) leaves
-    const res = await getPerspective(slug, c.id);
-    expect(res.status).toBe(403);
+    expect((await getPerspective(aSlug, c.id)).status).toBe(200);
+    await getDb().delete(teamMembers).where(eq(teamMembers.userId, b.id)); // sibling recorder leaves
+    expect((await getPerspective(aSlug, c.id)).status).toBe(403);
   });
 
-  it('403s when no alt was stored', async () => {
+  it('403s when the game has only one recorder (no sibling)', async () => {
     const a = await seedUser();
     const team = await seedTeam(a.id, [a.id]);
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-noalt', { share: [team] })).json();
-    const res = await getPerspective(slug, a.id);
-    expect(res.status).toBe(403);
+    as(a.id); const { slug } = await (await doUpload(a.token, 'g-solo', { share: [team] })).json();
+    expect((await getPerspective(slug, a.id)).status).toBe(403);
   });
 
-  // B137: a participant who RECORDED this game may always flip to their own
-  // two-sided view, even when the replay was never shared with a team. The alt
-  // is still retained (the recorders share a team), but with no
-  // replay_team_shares row the old rule locked BOTH players out of their own
-  // game. Setup: two teammates record, no `share` passed.
-  async function setupUnshared() {
+  // The two recorders compose their own game even when it was never shared with
+  // a team — being in the match is implicit consent — as long as they currently
+  // share a team.
+  it('serves to the base recorder even when never shared (recorders share a team)', async () => {
     const a = await seedUser();
     const b = await seedUser();
-    await seedTeam(a.id, [a.id, b.id]); // teammates, but the replay is NOT shared with the team
-    as(a.id); const { slug } = await (await doUpload(a.token, 'g-' + randomUUID().slice(0, 5))).json();
-    as(b.id); await doUpload(b.token, await gameIdOf(slug), { localPlayerId: 'p2' });
-    return { a, b, slug };
-  }
-
-  it('B137: serves the alt to the canonical recorder even when never shared', async () => {
-    const { a, slug } = await setupUnshared();
-    expect(await altRow(slug)).toBeTruthy(); // alt retained (shared team), but no team-share row
-    const res = await getPerspective(slug, a.id);
+    await seedTeam(a.id, [a.id, b.id]);
+    as(a.id); const aRes = await (await doUpload(a.token, 'g-unshared', { localPlayerId: 'p1' })).json();
+    as(b.id); await doUpload(b.token, 'g-unshared', { localPlayerId: 'p2' });
+    const res = await getPerspective(aRes.slug, a.id);
     expect(res.status).toBe(200);
     expect((await res.json()).altOwnerPlayerId).toBe('p2');
   });
 
-  it('B137: serves the alt to the alt recorder even when never shared', async () => {
-    const { b, slug } = await setupUnshared();
-    const res = await getPerspective(slug, b.id);
+  it('serves to the sibling recorder even when never shared (recorders share a team)', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    await seedTeam(a.id, [a.id, b.id]);
+    as(a.id); await doUpload(a.token, 'g-unshared2', { localPlayerId: 'p1' });
+    as(b.id); const bRes = await (await doUpload(b.token, 'g-unshared2', { localPlayerId: 'p2' })).json();
+    // b views THEIR OWN row → the composed sibling is a's recording (p1)
+    const res = await getPerspective(bRes.slug, b.id);
     expect(res.status).toBe(200);
+    expect((await res.json()).altOwnerPlayerId).toBe('p1');
   });
 
-  it('B137: still 403s a non-recorder teammate when the replay is not shared', async () => {
-    const { a, slug } = await setupUnshared();
-    // a third member of a's team who did NOT record this game
-    const c = await seedUser();
-    const { teamMembers } = await import('@/lib/schema');
-    const [mine] = await getDb().select().from(teamMembers).where(eq(teamMembers.userId, a.id));
-    await getDb().insert(teamMembers).values({ teamSlug: mine.teamSlug, userId: c.id, role: 'member' });
-    const res = await getPerspective(slug, c.id);
-    expect(res.status).toBe(403);
+  // B166 behavior change: a RECORDER who leaves the team loses the composed
+  // double-sided view (they keep their own one-sided row — see per-recorder-rows).
+  it('403s a recorder once they leave the shared team', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const team = await seedTeam(a.id, [a.id, b.id]);
+    as(a.id); const aRes = await (await doUpload(a.token, 'g-leave', { localPlayerId: 'p1' })).json();
+    as(b.id); await doUpload(b.token, 'g-leave', { localPlayerId: 'p2' });
+    expect((await getPerspective(aRes.slug, a.id)).status).toBe(200);
+    await getDb().delete(teamMembers).where(and(eq(teamMembers.userId, b.id), eq(teamMembers.teamSlug, team)));
+    expect((await getPerspective(aRes.slug, a.id)).status).toBe(403); // no shared team → no compose
   });
 
   it('refuses a sample replay even for an eligible viewer', async () => {
-    const { a, slug } = await setupShared();
-    process.env.KARABUDDY_SAMPLE_REPLAY_SLUGS = slug;
+    const { a, aSlug } = await setupShared();
+    process.env.KARABUDDY_SAMPLE_REPLAY_SLUGS = aSlug;
     try {
-      const res = await getPerspective(slug, a.id);
-      expect(res.status).toBe(403);
+      expect((await getPerspective(aSlug, a.id)).status).toBe(403);
     } finally {
       delete process.env.KARABUDDY_SAMPLE_REPLAY_SLUGS;
     }

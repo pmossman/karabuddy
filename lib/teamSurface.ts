@@ -15,9 +15,9 @@
 // team the caller is a member of. Single helper means the three
 // surfaces can't drift.
 
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDb } from './db';
-import { replayParticipants, replayTeamShares, tags, tagTeamScope, teamMembers } from './schema';
+import { replays, replayTeamShares, tags, tagTeamScope, teamMembers } from './schema';
 
 // Membership-gate helper. Returns the membership row or null. Callers
 // decide whether null is 401/403/etc — this stays pure DB.
@@ -67,24 +67,32 @@ export async function surfacedReplaySlugs(teamSlugs: string[]): Promise<string[]
 }
 
 // Partition a team's recorded games into INTERNAL (teammate-vs-teammate) and
-// EXTERNAL (a member vs an outsider), by the B84 rule: count the DISTINCT team-
-// member recorders (replay_participants ∩ team_members) per replay. ≥2 members
-// recorded → internal; exactly 1 → external. (Internal detection needs both
-// teammates to have recorded; a one-sided recording reads as external.)
+// EXTERNAL (a member vs an outsider). B166: a game is now up to two INDEPENDENT
+// per-recorder rows, so classify by GAME (group rows by gameId, count the
+// distinct team-member recorders) rather than per row, and return ONE
+// representative slug per game so stats count each match exactly once. ≥2
+// member recorders → internal; exactly 1 → external. (Internal detection needs
+// both teammates to have recorded; a one-sided recording reads as external.)
 // Used by team Stats to default to internal testing results.
 export async function teamGameSlugs(teamSlug: string): Promise<{ internal: string[]; external: string[] }> {
   const db = getDb();
+  // Every row recorded by a member of this team, with its gameId.
   const rows = await db
-    .select({ slug: replayParticipants.replaySlug, n: sql<number>`count(distinct ${replayParticipants.userId})::int` })
-    .from(replayParticipants)
-    .innerJoin(teamMembers, and(eq(teamMembers.userId, replayParticipants.userId), eq(teamMembers.teamSlug, teamSlug)))
-    .groupBy(replayParticipants.replaySlug);
+    .select({ slug: replays.slug, gameId: replays.gameId, userId: replays.userId })
+    .from(replays)
+    .innerJoin(teamMembers, and(eq(teamMembers.userId, replays.userId), eq(teamMembers.teamSlug, teamSlug)));
+  const byGame = new Map<string, { recorders: Set<string>; slug: string }>();
+  for (const r of rows) {
+    if (!r.userId) continue;
+    let g = byGame.get(r.gameId);
+    if (!g) { g = { recorders: new Set(), slug: r.slug }; byGame.set(r.gameId, g); }
+    g.recorders.add(r.userId);
+    if (r.slug < g.slug) g.slug = r.slug; // deterministic representative
+  }
   const internal: string[] = [];
   const external: string[] = [];
-  for (const r of rows) {
-    const n = Number(r.n);
-    if (n >= 2) internal.push(r.slug);
-    else if (n === 1) external.push(r.slug);
+  for (const g of byGame.values()) {
+    (g.recorders.size >= 2 ? internal : external).push(g.slug);
   }
   return { internal, external };
 }

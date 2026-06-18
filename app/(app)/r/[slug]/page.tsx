@@ -1,16 +1,17 @@
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import type { Metadata } from 'next';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, replayAltPayload, tags } from '@/lib/schema';
+import { replays, tags } from '@/lib/schema';
 import { segmentMatches } from '@/lib/seriesGrouping';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { userHasLinkedExtension } from '@/lib/userResolution';
 import { auth } from '@/auth';
-import { canViewAltPerspective, canViewReplayIdentities } from '@/lib/altPerspective';
+import { canViewReplayIdentities } from '@/lib/altPerspective';
+import { hasEntitledSibling } from '@/lib/doubleSided';
 import { verifyMoment } from '@/lib/shareToken';
 import { ReplayViewer } from './ReplayViewer';
 import { sideboardDiff } from '@/lib/sideboardDiff';
@@ -50,15 +51,7 @@ const loadLobbyForSeries = cache(async (lobbyId: string) => {
     .from(replays)
     .where(sql`${replays.match}->>'lobbyId' = ${lobbyId}`)
     .orderBy(asc(replays.createdAt));
-  const slugs = reps.map((r) => r.slug);
-  const alts = slugs.length
-    ? await getDb()
-        .select({ slug: replayAltPayload.replaySlug, altUserId: replayAltPayload.altUserId })
-        .from(replayAltPayload)
-        .where(inArray(replayAltPayload.replaySlug, slugs))
-    : [];
-  const altBySlug = new Map(alts.map((a) => [a.slug, a.altUserId]));
-  return reps.map((r) => ({ ...r, altUserId: altBySlug.get(r.slug) ?? null }));
+  return reps;
 });
 
 type LobbyGame = Awaited<ReturnType<typeof loadLobbyForSeries>>[number];
@@ -69,9 +62,10 @@ function currentMatchGames(all: LobbyGame[], currentSlug: string): LobbyGame[] {
   const current = all.find((g) => g.slug === currentSlug);
   if (!current) return [];
   const idOf = (g: LobbyGame) => g.userId ?? `tok:${g.ownerToken}`;
-  const recorders = new Set<string>([idOf(current)]);
-  if (current.altUserId) recorders.add(current.altUserId);
-  const mine = all.filter((g) => recorders.has(idOf(g)) || (g.altUserId != null && recorders.has(g.altUserId)));
+  // B166: each recorder keeps their OWN row per game, so the current replay's
+  // series is just the rows the current owner recorded in this lobby — one per
+  // game, with no sibling (other-recorder) double-counting.
+  const mine = all.filter((g) => idOf(g) === idOf(current));
   const wonOf = (g: LobbyGame) => {
     const w = Array.isArray(g.winners) ? (g.winners as string[]) : null;
     if (!w || !g.ownerPlayerId) return null;
@@ -203,8 +197,9 @@ export default async function ReplayPage({ params }: PageProps) {
   const viewerUserId = (session?.user as any)?.id ?? null;
   const anonymize = !(await canViewReplayIdentities(row, { sessionUserId: viewerUserId, installToken: null }));
 
-  // B112: Flip control only for a viewer entitled to the 2nd perspective.
-  const canFlip = !anonymize && (await canViewAltPerspective(slug, viewerUserId));
+  // B166: Flip control only for a viewer entitled to compose the 2nd POV from
+  // the sibling row (the other recorder's independent recording of this game).
+  const canFlip = !anonymize && (await hasEntitledSibling(slug, viewerUserId));
 
   // B121-followup: suppress the install banner for a signed-in viewer who already
   // has a linked extension (the viewer has no global header, so it's gated here).

@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { eq, desc, inArray, count, and, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, replayTeamShares, replayAltPayload, teams, tags, replayReviews } from '@/lib/schema';
+import { replays, users, replayTeamShares, teams, tags, replayReviews } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
+import { doubleSidedGameIds } from '@/lib/doubleSided';
 import { recordedReplaySlugs } from '@/lib/recordedReplays';
 import { MineEmpty } from './MineEmpty';
 import { MineAnonymous } from './MineAnonymous';
@@ -86,15 +87,11 @@ async function MyReplays({ userId }: { userId: string }) {
   const sharesBySlug = new Map<string, { slug: string; name: string }[]>();
   const commentCountBySlug = new Map<string, number>();
   const reviewBySlug = new Map<string, { requested: boolean; reviewerCount: number }>();
-  const doubleSidedSlugs = new Set<string>();
+  // B166: "both POVs" = one of my games has a sibling recording owned by a
+  // current teammate (a double-sided view I could compose). Computed by gameId,
+  // not a stored alt payload.
+  const dsGameIds = await doubleSidedGameIds(userId, rows.map((r) => r.replay.gameId));
   if (slugs.length > 0) {
-    // B128: which of these replays have BOTH recordings (alt payload exists) —
-    // drives the "both POVs" badge in the browser.
-    const altPayloadRows = await db
-      .select({ slug: replayAltPayload.replaySlug })
-      .from(replayAltPayload)
-      .where(inArray(replayAltPayload.replaySlug, slugs));
-    for (const a of altPayloadRows) doubleSidedSlugs.add(a.slug);
     const shareRows = await db
       .select({ replaySlug: replayTeamShares.replaySlug, teamSlug: teams.slug, teamName: teams.name })
       .from(replayTeamShares)
@@ -137,12 +134,13 @@ async function MyReplays({ userId }: { userId: string }) {
     <ReplayFilters
       rows={rows.map(({ replay, ownerName }) => serializeReplayRow(replay, {
         ownerName,
-        // Perspective = me: my own uploads use the canonical ownerPlayerId; a
-        // replay I recorded as the alt (2nd player) uses my alt POV side.
+        // Perspective = me: my own rows use their ownerPlayerId; a co-recorded
+        // game still surfaced via the transitional alt link (pre-backfill) uses
+        // my alt POV side. (Simplifies to ownerPlayerId in the contract step.)
         viewerPlayerId: replay.userId === userId ? replay.ownerPlayerId : (altSideBySlug.get(replay.slug) ?? null),
         sharedTeams: sharesBySlug.get(replay.slug) ?? [],
         commentCount: commentCountBySlug.get(replay.slug) ?? 0,
-        doubleSided: doubleSidedSlugs.has(replay.slug),
+        doubleSided: dsGameIds.has(replay.gameId),
         isPublic: !!replay.publicAt,
       })).map((row) => ({ ...row, reviewRequest: reviewBySlug.get(row.slug) ?? null }))}
       canManage

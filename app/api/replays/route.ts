@@ -2,14 +2,13 @@ import { NextResponse } from 'next/server';
 import { put } from '@/lib/blob';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, replayAltPayload, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
-import { sharedTeam } from '@/lib/altPerspective';
+import { replays, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
 import { sanitizeClientMeta } from '@/lib/clientMeta';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { decodeReplay, extractWinners, mergeDecks, reconstructFinalState } from '@/lib/replayDecoder';
+import { decodeReplay, extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayFacts } from '@/lib/statsPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
@@ -178,71 +177,15 @@ export async function POST(req: Request) {
     const [mine] = await db.select().from(replays)
       .where(and(eq(replays.gameId, gameId), ownerCond)).limit(1);
 
-    // B82/B112: I haven't recorded this game myself — did a TEAMMATE? If so,
-    // retain my POV as their double-sided alt (+ enrich decks). A NON-teammate
-    // (opponent) falls through to a NEW row of my own (B158) — each player keeps
-    // their own private recording, no double-sided across teams.
-    let teammateCanonical: typeof replays.$inferSelect | null = null;
-    if (!mine && userId) {
-      const coRecorded = await db.select().from(replays).where(eq(replays.gameId, gameId));
-      for (const r of coRecorded) {
-        if (r.userId && (await sharedTeam(r.userId, userId))) { teammateCanonical = r; break; }
-      }
-    }
-    if (teammateCanonical) {
-      const replay = teammateCanonical;
-        // B82: teammate-vs-teammate — both players recorded the same match.
-        // Don't discard the second upload's deck snapshot; merge it into the
-        // canonical replay so the (otherwise-masked) opponent's FULL list is
-        // known — a complete-information review. Decks are immutable per match,
-        // so this is a safe idempotent enrich. The first uploader's POV/frames
-        // stay canonical (we don't overwrite the recording itself).
-        let enriched = false;
-        if (parsed.decks) {
-          const merged = mergeDecks(replay.decks as any, parsed.decks);
-          if (merged) {
-            await db.update(replays).set({ decks: merged }).where(eq(replays.slug, replay.slug));
-            enriched = true;
-          }
-        }
-        // B112: double-sided replays. Retain the 2nd recording (this player's
-        // POV, with THEIR hand unmasked) as the alt perspective — but ONLY when
-        // both recorders are accounts on the SAME team (the privacy gate: a
-        // stranger who happens to record the same gameId never gets their hand
-        // stored as someone's alt). Stale-guard against the alt recorder's own
-        // periodic snapshots (it uploads periodic + finalize, like the canonical
-        // side). Served only via the auth-gated /perspective endpoint.
-        let altStored = false;
-        if (userId && replay.userId && (await sharedTeam(replay.userId, userId))) {
-          const incomingActionCount = parsed.actionCount || 0;
-          const [existingAlt] = await db
-            .select({ altActionCount: replayAltPayload.altActionCount })
-            .from(replayAltPayload)
-            .where(eq(replayAltPayload.replaySlug, replay.slug))
-            .limit(1);
-          if (!existingAlt || incomingActionCount >= existingAlt.altActionCount) {
-            const altValues = {
-              altUserId: userId,
-              altOwnerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
-              altActionCount: incomingActionCount,
-              payload: payloadText,
-              // B114: the ALT recorder's ext version — so a double-sided replay
-              // records BOTH sides' clients. Only overwrite when present (don't
-              // null out a stored value from a client that didn't send it).
-              ...(clientMeta ? { altClientMeta: clientMeta } : {}),
-            };
-            await db
-              .insert(replayAltPayload)
-              .values({ replaySlug: replay.slug, ...altValues })
-              .onConflictDoUpdate({ target: replayAltPayload.replaySlug, set: altValues });
-            altStored = true;
-          }
-        }
-        // B84: the 2nd teammate is now a recorded participant (account-based
-        // intra-team detection + the match shows in their library too).
-        await recordParticipant(replay.slug, userId);
-        return NextResponse.json({ ok: true, slug: replay.slug, url: `/r/${replay.slug}`, deduped: true, enrichedDecks: enriched, altStored }, { headers });
-    }
+    // B166: I haven't recorded this game myself — fall through to a NEW row of
+    // my own (the new-row insert below), exactly as a non-teammate opponent does
+    // (B158). We no longer fold a teammate's 2nd recording into the 1st
+    // recorder's row as a stored `replay_alt_payload`. Every recorder keeps an
+    // INDEPENDENT row (their own POV) that survives as a one-sided "My Replay"
+    // even after they leave the team. "Double-sided" is now a RUNTIME
+    // composition of the two sibling rows (same gameId, owners who currently
+    // share a team) — see lib/doubleSided.ts + the /perspective endpoint — not
+    // ownership baked into one row.
 
     // My own prior recording of this game → snapshot merge / overwrite.
     if (mine) {

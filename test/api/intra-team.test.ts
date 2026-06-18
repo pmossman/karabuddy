@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { POST as upload } from '@/app/api/replays/route';
 import { GET as teamReplays } from '@/app/api/teams/[slug]/replays/route';
+import { teamGameSlugs } from '@/lib/teamSurface';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, extensionTokens, replayParticipants } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 
-// B84: account-based intra-team detection. A match is "internal" when ≥2 of its
-// RECORDERS (replay_participants, by karabuddy account) are teammates — no
-// karabast usernames involved.
+// B84/B166: account-based intra-team detection. A match is "internal" when ≥2 of
+// its RECORDERS (now independent per-recorder rows, grouped by gameId) are
+// members of this team — no karabast usernames involved.
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
 const { auth } = await import('@/auth');
@@ -62,7 +63,7 @@ describe('account-based intra-team detection', () => {
     const b = await seedUser();
     const team = await seedTeam(a.id, [a.id, b.id]);
     as(a.id); await doUpload(a.token, 'g-int', [team]);       // A records + shares with the team
-    as(b.id); expect((await (await doUpload(b.token, 'g-int')).json()).deduped).toBe(true); // B records same match
+    as(b.id); await doUpload(b.token, 'g-int');               // B records same match (own row, B166)
     as(a.id);
     expect(await listInternal(team, 'g-int')).toBe(true);
   });
@@ -74,5 +75,29 @@ describe('account-based intra-team detection', () => {
     as(a.id); await doUpload(a.token, 'g-solo', [team]);
     as(a.id);
     expect(await listInternal(team, 'g-solo')).toBe(false);
+  });
+
+  // B166: stats partition must count a co-recorded game ONCE (one representative
+  // slug per gameId), not once per recorder row — else internal games both
+  // misclassify and double-count.
+  it('teamGameSlugs: a co-recorded game is internal and counted once', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const team = await seedTeam(a.id, [a.id, b.id]);
+    as(a.id); await doUpload(a.token, 'g-tgs-int', [team]);
+    as(b.id); await doUpload(b.token, 'g-tgs-int');     // own row, not shared
+    const sets = await teamGameSlugs(team);
+    expect(sets.internal).toHaveLength(1);              // counted once, not twice
+    expect(sets.external).toHaveLength(0);
+  });
+
+  it('teamGameSlugs: a solo-recorded game is external', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const team = await seedTeam(a.id, [a.id, b.id]);
+    as(a.id); await doUpload(a.token, 'g-tgs-ext', [team]);
+    const sets = await teamGameSlugs(team);
+    expect(sets.internal).toHaveLength(0);
+    expect(sets.external).toHaveLength(1);
   });
 });
