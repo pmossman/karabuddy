@@ -14,12 +14,15 @@ describe('cardIdFromSetNumber', () => {
 });
 
 describe('swuCardToRow', () => {
-  it('maps a unit: cost parsed, aspects lowercased, arena from Arenas', () => {
-    const r = swuCardToRow({ Set: 'SOR', Number: '059', Name: '2-1B Surgical Droid', Cost: '1', Type: 'Unit', Aspects: ['Vigilance'], Arenas: ['Ground'], Traits: ['Droid'] });
+  it('maps a unit: cost parsed, aspects lowercased, arena from Arenas, subtitle carried', () => {
+    const r = swuCardToRow({ Set: 'SOR', Number: '005', Name: 'Luke Skywalker', Subtitle: 'Jedi Knight', Cost: '7', Type: 'Unit', Aspects: ['Vigilance'], Arenas: ['Ground'], Traits: ['Force', 'Rebel'] });
     expect(r).toEqual({
-      cardId: 'SOR_059', name: '2-1B Surgical Droid', set: 'SOR', number: 59,
-      aspects: ['vigilance'], cost: 1, type: 'unit', arena: 'ground', traits: ['Droid'], hasAbility: null, source: 'seed',
+      cardId: 'SOR_005', name: 'Luke Skywalker', subtitle: 'Jedi Knight', set: 'SOR', number: 5,
+      aspects: ['vigilance'], cost: 7, type: 'unit', arena: 'ground', traits: ['Force', 'Rebel'], hasAbility: null, source: 'seed',
     });
+  });
+  it('subtitle is null when the card has none', () => {
+    expect(swuCardToRow({ Set: 'SOR', Number: '059', Name: '2-1B Surgical Droid', Type: 'Unit' }).subtitle).toBeNull();
   });
   it('flags ability bases (has text) vs vanilla bases (no text); non-bases get null', () => {
     // Vanilla aspect+HP base (no text) → collapses to its aspect.

@@ -34,16 +34,31 @@ describe('validateDeck', () => {
     expect(validateDeck(legalDeck({ base: null })).violations.some((v) => v.code === 'no_base')).toBe(true);
   });
 
-  it('flags >3 copies of a card by NAME across deck + sideboard', () => {
-    // Two printings of "Vader" (different ids) + 2 in the sideboard = 4 total.
+  it('flags >3 copies of a card by TITLE across deck + sideboard (reprints count together)', () => {
+    // Two printings of "Darth Vader, Dark Lord of the Sith" (different ids, SAME
+    // title) + 2 in the sideboard = 4 total.
     const d = legalDeck({
       deck: [...Array.from({ length: 48 }, (_, i) => card(`SET_${200 + i}`, 1)), card('SOR_010', 2)],
       sideboard: [card('SHD_010', 2)],
     });
-    const nameOf = (id: string) => (id === 'SOR_010' || id === 'SHD_010' ? 'Darth Vader' : null);
-    const r = validateDeck(d, { nameOf });
+    const titleOf = (id: string) => (id === 'SOR_010' || id === 'SHD_010' ? 'Darth Vader, Dark Lord of the Sith' : null);
+    const r = validateDeck(d, { titleOf });
     expect(r.legal).toBe(false);
-    expect(r.violations.find((v) => v.code === 'copy_limit')?.message).toContain('Darth Vader ×4');
+    expect(r.violations.find((v) => v.code === 'copy_limit')?.message).toContain('Darth Vader, Dark Lord of the Sith ×4');
+  });
+
+  it('B167: two cards sharing a NAME but a different SUBTITLE are distinct (3 + 1 is legal)', () => {
+    // 3× "Luke Skywalker, Jedi Knight" + 1× "Luke Skywalker, Answering the Call".
+    const d = legalDeck({
+      deck: [...Array.from({ length: 46 }, (_, i) => card(`SET_${300 + i}`, 1)), card('SOR_LUKE', 3), card('TWI_LUKE', 1)],
+    });
+    const titleOf = (id: string) =>
+      id === 'SOR_LUKE' ? 'Luke Skywalker, Jedi Knight'
+      : id === 'TWI_LUKE' ? 'Luke Skywalker, Answering the Call'
+      : null;
+    const r = validateDeck(d, { titleOf });
+    expect(r.legal).toBe(true);
+    expect(r.violations.some((v) => v.code === 'copy_limit')).toBe(false);
   });
 
   it('a null deck is illegal', () => {

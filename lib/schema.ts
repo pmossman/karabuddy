@@ -531,6 +531,10 @@ export type TagTeamScope = typeof tagTeamScope.$inferSelect;
 export const cards = pgTable('cards', {
   cardId: text('card_id').primaryKey(), // 'SOR_001'
   name: text('name'),
+  // SWU card titles are name + subtitle ("Luke Skywalker" / "Jedi Knight"). Two
+  // cards can share a name but differ by subtitle (distinct cards), so the deck
+  // 3-copy limit keys on name+subtitle — reprints of the SAME card share both.
+  subtitle: text('subtitle'),
   set: text('set'),
   number: integer('number'),
   aspects: jsonb('aspects').$type<string[]>(),

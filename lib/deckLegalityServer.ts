@@ -4,7 +4,7 @@
 // single helper for the submission routes.
 import type { TournamentDeck } from './schema';
 import { validateDeck, type DeckViolation } from './deckLegality';
-import { cardNamesByIds } from './cardNames';
+import { cardTitlesByIds } from './cardNames';
 
 export interface DeckLegality { legal: boolean; violations: DeckViolation[] }
 
@@ -13,9 +13,9 @@ const idsOf = (deck: TournamentDeck | null | undefined): string[] =>
 
 // Validate many decks with ONE catalog query (the tournament detail page).
 export async function validateDecks(decks: (TournamentDeck | null | undefined)[]): Promise<DeckLegality[]> {
-  const names = await cardNamesByIds(decks.flatMap(idsOf));
-  const nameOf = (id: string) => names.get(id) ?? null;
-  return decks.map((d) => validateDeck(d, { nameOf }));
+  const titles = await cardTitlesByIds(decks.flatMap(idsOf));
+  const titleOf = (id: string) => titles.get(id) ?? null;
+  return decks.map((d) => validateDeck(d, { titleOf }));
 }
 
 // Validate one deck (submission routes).

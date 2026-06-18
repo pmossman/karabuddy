@@ -9,6 +9,7 @@ export interface SwuCard {
   Set: string;
   Number: string | number;
   Name?: string;
+  Subtitle?: string | null;
   Cost?: string | number | null;
   Type?: string;
   Aspects?: string[];
@@ -21,6 +22,7 @@ export interface SwuCard {
 export interface CatalogRow {
   cardId: string;
   name: string | null;
+  subtitle: string | null;
   set: string | null;
   number: number | null;
   aspects: string[] | null;
@@ -51,6 +53,7 @@ export function swuCardToRow(c: SwuCard): CatalogRow {
   return {
     cardId: cardIdFromSetNumber(c.Set, c.Number),
     name: c.Name ?? null,
+    subtitle: c.Subtitle ?? null,
     set: c.Set ?? null,
     number: Number.isFinite(numInt) ? numInt : null,
     // Lowercase aspects to match the gamestate-derived aspects on match_players.

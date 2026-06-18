@@ -218,6 +218,13 @@
       "when": 1782000000000,
       "tag": "0030_drop_replay_alt_payload",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1782086400000,
+      "tag": "0031_cards_subtitle",
+      "breakpoints": true
     }
   ]
 }
