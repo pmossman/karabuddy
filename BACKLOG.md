@@ -106,6 +106,10 @@ _empty_
 
 ## Done
 
+### [B168] Comment audience reverts to "Just me" on save (optimistic-UI fix)
+_completed: 2026-06-18 by claude_
+A just-saved comment showed "Visible to: Just me" until a refetch even though it was saved team-scoped: the optimistic tag row dropped the server-resolved `body.scope` (the edit/reply paths already carried it; only create didn't). Server scoping was always correct — no data repair needed. Carry `body.scope` + mentions into the optimistic row; e2e regression added (1-team default save shows the team, not "Just me"). unit 430 / api 220 / e2e 156.
+
 ### [B167] Tournament deck legality — 3-copy limit by name + subtitle
 _completed: 2026-06-18 by claude_
 Fixes a false "Over 3 copies" on legal decks: the copy-limit check resolved card NAMES, so two distinct cards sharing a name but differing by subtitle ("Luke Skywalker, Jedi Knight" vs "Answering the Call") merged into one ×4. Now keys on the full TITLE (name + subtitle) — added a nullable `cards.subtitle` column (migration 0031, additive) populated from swu-db, `cardTitlesByIds`, and `validateDeck` groups by title; reprints of the SAME card share a title and still count together. Rollout: deploy (additive column, no pre-reseed regression) → reseed prod catalog (`scripts/seed-cards.ts`, 7729 cards). Verified on real prod data (ecomode's 3× Jedi Knight + 1× Answering the Call → legal; 4× same Luke still blocked). unit 430 / api 220 / e2e 155.
