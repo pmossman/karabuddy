@@ -4,19 +4,21 @@ import { getDb } from '@/lib/db';
 import { users, replays, replayParticipants, replayAltPayload } from '@/lib/schema';
 import { recordedReplaySlugs } from '@/lib/recordedReplays';
 
-// B156 (privacy): "My replays" / "Clips of my replays" must include only replays
-// the user actually RECORDED — never an opponent's recording they were merely
-// resolved into as a participant (which leaked the opponent's name + team shares).
+// B156 (privacy): "My replays" must include only replays the user actually
+// RECORDED — never an opponent's recording they were merely resolved into as a
+// participant. B166 transitional: during the migration a 2nd recorder may be
+// surfaced via the canonical's alt link OR (post-backfill) via their own sibling
+// row — but NEVER both (no duplicate).
 
 async function seedUser() {
   const id = randomUUID();
   await getDb().insert(users).values({ id, name: `u-${id.slice(0, 4)}`, email: `${id}@e.com` });
   return id;
 }
-async function seedReplay(ownerId: string) {
+async function seedReplay(ownerId: string, gameId = randomUUID()) {
   const slug = `r_${randomUUID().slice(0, 8)}`;
   await getDb().insert(replays).values({
-    slug, gameId: randomUUID(), userId: ownerId, ownerToken: `kbx_${randomUUID()}`,
+    slug, gameId, userId: ownerId, ownerToken: `kbx_${randomUUID()}`,
     players: [{ id: 'p1', username: 'A' }, { id: 'p2', username: 'B' }],
     payloadBlobUrl: `https://blob.test/${slug}.json`, ownerPlayerId: 'p1',
   });
@@ -27,30 +29,42 @@ describe('recordedReplaySlugs', () => {
   it('includes my own uploads but NOT an opponent-owned replay I only participated in', async () => {
     const me = await seedUser();
     const opponent = await seedUser();
-
     const mine = await seedReplay(me);
     const theirs = await seedReplay(opponent);
-    // The leak vector: on upload, my handle was resolved to me → I'm a participant
-    // on the OPPONENT's recording.
     await getDb().insert(replayParticipants).values({ replaySlug: theirs, userId: me });
-    // (the owner is always a participant of their own replay, too)
     await getDb().insert(replayParticipants).values({ replaySlug: mine, userId: me });
 
     const { slugs } = await recordedReplaySlugs(me);
     expect(slugs).toContain(mine);
-    expect(slugs).not.toContain(theirs); // <-- the privacy fix
+    expect(slugs).not.toContain(theirs);
   });
 
-  it('includes a double-sided game where I recorded the ALT side', async () => {
+  it('PRE-backfill: a co-recorded game surfaces via the canonical alt link (I have no own row yet)', async () => {
     const me = await seedUser();
     const teammate = await seedUser();
-    const canonical = await seedReplay(teammate); // teammate uploaded the canonical
+    const canonical = await seedReplay(teammate); // teammate's canonical; I was folded in as the alt
     await getDb().insert(replayAltPayload).values({
       replaySlug: canonical, altUserId: me, altOwnerPlayerId: 'p2', payload: '{}',
     });
 
     const { slugs, altSideBySlug } = await recordedReplaySlugs(me);
-    expect(slugs).toContain(canonical);
+    expect(slugs).toContain(canonical);            // surfaced (as today)
     expect(altSideBySlug.get(canonical)).toBe('p2');
+  });
+
+  it('POST-backfill: the same game surfaces via MY sibling row ONLY — never duplicated', async () => {
+    const me = await seedUser();
+    const teammate = await seedUser();
+    const gameId = randomUUID();
+    const canonical = await seedReplay(teammate, gameId);
+    await getDb().insert(replayAltPayload).values({
+      replaySlug: canonical, altUserId: me, altOwnerPlayerId: 'p2', payload: '{}',
+    });
+    // The backfill materialized MY own sibling row for the same game.
+    const mineSibling = await seedReplay(me, gameId);
+
+    const { slugs } = await recordedReplaySlugs(me);
+    expect(slugs).toContain(mineSibling);          // my own row
+    expect(slugs).not.toContain(canonical);        // alt link dropped → NOT listed twice
   });
 });
