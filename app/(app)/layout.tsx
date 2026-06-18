@@ -4,6 +4,7 @@ import { userHasLinkedExtension } from '@/lib/userResolution';
 import { resolveActiveTeam } from '@/lib/activeTeam';
 import { getMyLastReplay } from '@/lib/lastReplay';
 import { AppShell } from '@/app/_components/AppShell';
+import { ActiveTeamProvider } from '@/app/_components/ActiveTeamContext';
 import { AutoClaim } from '@/app/_components/AutoClaim';
 import { ExtensionSigninReturn } from '@/app/_components/ExtensionSigninReturn';
 import { KaraBuddyThemeProvider } from '@/app/_components/KaraBuddyThemeProvider';
@@ -25,9 +26,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <KaraBuddyThemeProvider>
-      <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams} lastReplay={lastReplay}>
-        {children}
-      </AppShell>
+      <ActiveTeamProvider active={active} teams={teams}>
+        <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams} lastReplay={lastReplay}>
+          {children}
+        </AppShell>
+      </ActiveTeamProvider>
       {/* B54: silently link the extension's install token to the account. */}
       <AutoClaim />
       {/* B69: extension "Sign in" return handshake. Suspense for useSearchParams. */}

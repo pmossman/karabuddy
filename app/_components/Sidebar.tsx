@@ -6,6 +6,7 @@ import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
+import { useActiveTeam } from '@/app/_components/ActiveTeamContext';
 import type { TeamRef } from '@/lib/activeTeam';
 import type { LastReplayRef } from '@/lib/lastReplay';
 
@@ -24,14 +25,10 @@ type IconName =
 interface NavItem { href: string; label: string; icon: IconName; active: boolean }
 
 export function Sidebar({
-  active,
-  teams,
   hasLinkedExtension,
   lastReplay,
   variant = 'column',
 }: {
-  active: TeamRef | null;
-  teams: TeamRef[];
   hasLinkedExtension: boolean;
   lastReplay: LastReplayRef | null;
   // 'column' = the normal persistent left column (with a mobile drawer).
@@ -52,22 +49,10 @@ export function Sidebar({
     return () => document.removeEventListener('keydown', onKey);
   }, [drawerOpen]);
 
-  // The sidebar lives in the (app) layout, which does NOT re-render on client-
-  // side navigation — so the server-resolved `active` prop would go stale the
-  // moment you navigate to a different team's page. Track the displayed active
-  // team in state that updates to the URL slug whenever you're on a team page
-  // (and persists across soft-navs, since this component stays mounted). The
-  // middleware keeps the kb_team COOKIE in lockstep for hard reloads + server
-  // reads, so the switcher and the page can never disagree.
-  const [activeTeam, setActiveTeam] = useState<TeamRef | null>(active);
-  useEffect(() => {
-    const m = pathname.match(/^\/teams\/([^/]+)/);
-    const slug = m?.[1];
-    if (slug && slug !== 'join') {
-      const t = teams.find((x) => x.slug === slug);
-      if (t) setActiveTeam(t);
-    }
-  }, [pathname, teams]);
+  // Active team comes from the layout-level provider (see ActiveTeamContext): it
+  // survives the column↔overlay sidebar remount when you enter/leave the viewer,
+  // follows the URL on /teams/<slug>, and is set to the replay's team in /r/.
+  const { active: activeTeam, teams } = useActiveTeam();
 
   const onTeam = activeTeam ? pathname === `/teams/${activeTeam.slug}` : false;
   const tab = sp.get('tab');

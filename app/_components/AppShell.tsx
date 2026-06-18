@@ -40,7 +40,7 @@ export function AppShell({
     return (
       <div style={{ ['--kb-header-h' as string]: `${VIEWER_BAR_H}px`, display: 'flex', flexDirection: 'column', minHeight: '100vh' } as React.CSSProperties}>
         <Suspense fallback={<div style={{ height: VIEWER_BAR_H, flexShrink: 0 }} />}>
-          <Sidebar active={active} teams={teams} hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay} variant="overlay" />
+          <Sidebar hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay} variant="overlay" />
         </Suspense>
         <div style={{ flex: '1 1 auto', minWidth: 0 }}>{children}</div>
       </div>
@@ -62,7 +62,7 @@ export function AppShell({
           {/* useSearchParams (active-link highlighting) needs a Suspense boundary;
               the fallback reserves the column width so the layout doesn't jump. */}
           <Suspense fallback={<div className="kb-sb-reserve" style={{ width: FULL_WIDTH, flexShrink: 0 }} />}>
-            <Sidebar active={active} teams={teams} hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay} />
+            <Sidebar hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay} />
           </Suspense>
           <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
             <main style={{ flex: '1 1 auto', minWidth: 0 }}>{children}</main>
