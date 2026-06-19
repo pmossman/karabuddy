@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { desc, isNotNull, count, inArray } from 'drizzle-orm';
+import { desc, isNotNull, count, inArray, and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
@@ -24,7 +24,9 @@ export async function GET() {
   const rows = await db
     .select()
     .from(replays)
-    .where(isNotNull(replays.publicAt))
+    // B170: encrypted replays are never public (guarded at the setter); exclude
+    // them here too so ciphertext can never surface on the public browser.
+    .where(and(isNotNull(replays.publicAt), eq(replays.encrypted, false)))
     .orderBy(desc(replays.publicAt))
     .limit(200);
 

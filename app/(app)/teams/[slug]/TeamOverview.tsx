@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Panel } from '@/app/_components/Panel';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
-import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
+import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // The team dashboard "hub" for someone actively running a team. When a
@@ -85,7 +85,7 @@ export function TeamOverview({ slug }: { slug: string }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {recentReplays.map((r) => (
                 <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
-                  <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={36} />
+                  <PrivateMatchup row={r} thumb={36} />
                   <span style={metaText}>{r.ownerName ? `${r.ownerName} · ` : ''}{timeAgo(r.createdAt)}</span>
                 </Link>
               ))}
@@ -111,7 +111,7 @@ export function TeamOverview({ slug }: { slug: string }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {awaitingReviews.map((r) => (
                   <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5, borderColor: 'rgba(77,210,255,0.3)', background: 'rgba(77,210,255,0.05)' }}>
-                    <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={28} />
+                    <PrivateMatchup row={r} thumb={28} />
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, color: tokens.led.on, fontWeight: 700 }}>needs review</span>
                       <span style={{ ...metaText, marginLeft: 'auto' }}>{r.requestedByName ? `${r.requestedByName} requested · ` : ''}{timeAgo(r.requestedAt)}</span>
@@ -128,7 +128,7 @@ export function TeamOverview({ slug }: { slug: string }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {recentlyReviewed.map((r) => (
                   <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
-                    <ReplayMatchup players={r.players} ownerPlayerId={r.ownerPlayerId} winners={r.winners} thumb={28} />
+                    <PrivateMatchup row={r} thumb={28} />
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, color: '#6bd968', fontWeight: 700 }}>✓ {r.commentCount} {r.commentCount === 1 ? 'note' : 'notes'}</span>
                       <span style={{ ...metaText, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.reviewerNames ?? []).slice(0, 2).join(', ')} · {timeAgo(r.reviewedAt)}</span>

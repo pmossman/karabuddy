@@ -37,9 +37,14 @@ export async function GET(req: Request) {
 
   const db = getDb();
 
-  // The user's teams.
+  // The user's teams. B170/ADR 0010: include each team's privacy state so the
+  // extension knows which armed teams require encryption (and the non-secret
+  // team_key_id to encrypt under / withhold on). teamKeyId is NOT a secret.
   const myTeams = await db
-    .select({ slug: teams.slug, name: teams.name })
+    // B170/ADR 0010: `role` lets the extension's team-centric key manager scope
+    // key GENERATION to teams the caller owns (only an owner can make a team
+    // private / rotate its key). Additive — other consumers ignore it.
+    .select({ slug: teams.slug, name: teams.name, privateMode: teams.privateMode, teamKeyId: teams.teamKeyId, role: teamMembers.role })
     .from(teamMembers)
     .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
     .where(eq(teamMembers.userId, userId));

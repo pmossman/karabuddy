@@ -28,7 +28,10 @@ export function ShareWithTeam({
 }) {
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error' | 'unauth'>('loading');
   const [shares, setShares] = useState<Set<string>>(new Set());
-  const [teams, setTeams] = useState<{ slug: string; name: string }[]>([]);
+  // B170/ADR 0010: `privateMode` + `shareable` per team so a private team a
+  // plaintext replay can't go to renders disabled-with-reason, not a dead toggle.
+  const [teams, setTeams] = useState<{ slug: string; name: string; privateMode?: boolean; shareable?: boolean }[]>([]);
+  const [encrypted, setEncrypted] = useState(false);
   const [pending, setPending] = useState<Set<string>>(new Set());
   // B135: teams this replay is flagged for review by (subset of shares).
   const [reviewTeams, setReviewTeams] = useState<Set<string>>(new Set());
@@ -66,6 +69,7 @@ export function ShareWithTeam({
         setShares(new Set((body.shares || []).map((s: any) => s.teamSlug)));
         setReviewTeams(new Set((body.shares || []).filter((s: any) => s.reviewRequestedAt).map((s: any) => s.teamSlug)));
         setTeams(body.ownerTeams || []);
+        setEncrypted(!!body.encrypted);
         setScopedCounts(body.scopedTagCounts || {});
         setIsPublic(!!body.isPublic);
         setState(body.ownerTeams && body.ownerTeams.length > 0 ? 'ready' : 'empty');
@@ -243,15 +247,28 @@ export function ShareWithTeam({
         {teams.map((t) => {
           const isShared = shares.has(t.slug);
           const isPending = pending.has(t.slug);
+          // B170/ADR 0010: can't NEWLY share this replay into this team (a
+          // plaintext replay → private team, or an encrypted replay → non-private
+          // team). Already-shared rows stay un-toggleable-off here only if blocked
+          // — but a blocked team is never already shared, so unshare still works.
+          const blocked = t.shareable === false && !isShared;
+          const blockReason = t.privateMode
+            ? '🔒 This replay was uploaded without encryption, so it can’t be added to this private team.'
+            : 'This encrypted replay can only be shared with its private team.';
           return (
             <div key={t.slug} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <LedToggle
                 checked={isShared}
-                onChange={() => requestToggle(t.slug)}
+                onChange={() => { if (!blocked) requestToggle(t.slug); }}
                 label={t.name}
                 statusOn="Sharing"
-                disabled={isPending}
+                disabled={isPending || blocked}
               />
+              {blocked && (
+                <div style={{ marginLeft: 26, fontSize: 11, color: '#8a93a3', fontStyle: 'italic', lineHeight: 1.4 }}>
+                  {blockReason}
+                </div>
+              )}
               {/* B135: once shared, the owner can flag THIS team for review. */}
               {isShared && (
                 <button

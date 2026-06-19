@@ -107,6 +107,13 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });
     }
     const body = await req.json().catch(() => ({}));
+    // B170 / ADR 0010: private (encrypted) replays can't be made public (that
+    // would expose ciphertext + the metadata floor on a stranger-facing surface),
+    // and their displayName/labels live in the ENCRYPTED summary — a plaintext
+    // edit here would leak them. Reject those mutations for encrypted replays.
+    if ((row as any).encrypted && (body.public || body.displayName !== undefined || body.labels !== undefined)) {
+      return NextResponse.json({ ok: false, error: 'not available for private replays' }, { status: 400, headers });
+    }
     const update: Record<string, unknown> = {};
     if (body.displayName !== undefined) {
       // B53: explicit null/empty string clears the override and the

@@ -20,6 +20,7 @@ import { SeriesNav, type SeriesInfo } from './SeriesNav';
 // B71: shared scope-derivation — same module the extension copies, so the
 // web comment form and the in-game bubble narrow audiences identically.
 import { scopeFromMentions, scopeLabel } from '@/lib/commentScope';
+import { encryptForTeam } from '@/lib/companion';
 import { LabelsRow } from './LabelsRow';
 import { Grabber } from './useDragSize';
 import { ReviewStatusHeader } from './ReviewStatusHeader';
@@ -38,6 +39,10 @@ interface ReplayRow {
   displayName?: string | null;
   labels?: string[] | null;
   winners?: string[] | null;
+  // B170 / ADR 0010: private replay → comments are encrypted client-side via the
+  // extension bridge under this team key before they're POSTed.
+  encrypted?: boolean;
+  teamKeyId?: string | null;
 }
 
 interface TagRow {
@@ -399,12 +404,24 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   const resetScope = () => { setScopeOverride(null); setScopeExpanded(false); };
 
+  // B170 / ADR 0010: the comment field for a tag write — ciphertext (encrypted
+  // via the extension bridge under the team key) on a private replay, plaintext
+  // otherwise. The key never reaches the page.
+  const commentField = async (text: string): Promise<Record<string, unknown>> => {
+    if (replay.encrypted && replay.teamKeyId) {
+      const envelope = await encryptForTeam(replay.teamKeyId, text);
+      return { commentEncrypted: JSON.stringify(envelope) };
+    }
+    return { comment: text };
+  };
+
   const submitTag = async () => {
     if (!installToken || !frames || submittingTag) return;
     const hasMentions = draftMentions.userIds.length > 0 || draftMentions.teamSlugs.length > 0;
     setSubmittingTag(true);
     let body: any;
     try {
+      const commentBody = await commentField(draft);
       const res = await fetch(`/api/replays/${replay.slug}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -412,7 +429,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           installToken,
           authorName,
           frameIndex: toOriginalFrame(currentIndex),
-          comment: draft,
+          ...commentBody,
           // B55c: structured mentions selected via autocomplete. Only sent
           // when non-empty so old API consumers stay backward-compatible.
           ...(hasMentions ? { mentions: draftMentions } : {}),
@@ -503,11 +520,12 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     teamSlugs?: string[],
     mentions?: { userIds: string[]; teamSlugs: string[] },
   ) => {
+    const commentBody = await commentField(comment);
     const res = await fetch(`/api/replays/${replay.slug}/tags/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
       body: JSON.stringify({
-        comment,
+        ...commentBody,
         ...(teamSlugs !== undefined ? { teamSlugs } : {}),
         ...(mentions !== undefined ? { mentions } : {}),
       }),
@@ -562,10 +580,11 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     try {
       // The server inherits the parent's frame + scope and auto-@mentions the
       // parent author, so the reply form only needs the text.
+      const commentBody = await commentField(replyDraft.trim());
       const res = await fetch(`/api/replays/${replay.slug}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ installToken, authorName, frameIndex: toOriginalFrame(parentFrame), comment: replyDraft.trim(), parentTagId }),
+        body: JSON.stringify({ installToken, authorName, frameIndex: toOriginalFrame(parentFrame), ...commentBody, parentTagId }),
       });
       body = await res.json();
     } catch {

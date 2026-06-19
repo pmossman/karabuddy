@@ -177,6 +177,20 @@ export const replays = pgTable(
     // comments become visible to non-entitled viewers in REDACTED form
     // (aliased authors, mentions stripped — lib/publicTags.ts).
     publicAt: timestamp('public_at'),
+    // B170 / ADR 0010: client-side E2EE. When `encrypted` is true this replay
+    // belongs to a private team — the payload blob (payloadBlobUrl) holds the
+    // E2EE envelope ciphertext instead of plaintext JSON, and the server NEVER
+    // decoded it (no extract/stats). `encryptedSummary` is the small
+    // {leaders,bases,usernames,winner,displayName,labels} envelope the list/
+    // browse UIs decrypt (via the extension bridge) without pulling the whole
+    // payload. `teamKeyId` records which team key is needed. On encrypted rows
+    // `players` is stored as [] (empty — the column is NOT NULL) and
+    // match/decks/winners/displayName/labels stay NULL, so the server holds no
+    // plaintext identity/deck data. The flag is the seam every disabled/rerouted
+    // feature keys off.
+    encrypted: boolean('encrypted').notNull().default(false),
+    teamKeyId: text('team_key_id'),
+    encryptedSummary: text('encrypted_summary'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -214,6 +228,11 @@ export const tags = pgTable(
     authorToken: text('author_token').notNull(),
     authorName: text('author_name').notNull(),
     comment: text('comment').notNull().default(''),
+    // B170 / ADR 0010: on a PRIVATE-team replay the comment text is encrypted
+    // client-side and stored here as an E2EE envelope; the plaintext `comment`
+    // column stays '' and `mentions` stays null (mentions name people — dropped
+    // for v1). Reuses the replay's data key. Null on all non-encrypted tags.
+    commentEncrypted: text('comment_encrypted'),
     // B55c: structured mention targets parsed out of the comment text at
     // tag-write time. Shape: `{ userIds: string[], teamSlugs: string[] }`.
     // The comment text itself still contains the bare `@handle` for
@@ -265,6 +284,13 @@ export const teams = pgTable('teams', {
   // team channel); if that's also null, no posting for that feature.
   discordReviewChannelId: text('discord_review_channel_id'),
   discordTournamentChannelId: text('discord_tournament_channel_id'),
+  // B170 / ADR 0010: opt-in client-side E2EE. When private_mode is on, members'
+  // replays/comments/leaders are encrypted client-side and the server never sees
+  // plaintext. team_key_id is the active team key's NON-SECRET public id (a
+  // non-invertible HKDF of the key — lib/e2ee.teamKeyId); the key itself is
+  // NEVER stored or received by the server. Null until private mode is enabled.
+  privateMode: boolean('private_mode').notNull().default(false),
+  teamKeyId: text('team_key_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -289,6 +315,21 @@ export const teamMemberPrefs = pgTable(
     pk: primaryKey({ columns: [t.teamSlug, t.userId] }),
   })
 );
+
+// B170 / ADR 0010: per-user extension readiness for the private-team roster.
+// The extension pings /api/me/extension/readiness with its NON-SECRET
+// capabilities + the team_key_ids it has loaded (never the key). The owner's
+// roster maps these → per-member ready / needs-update / needs-key.
+export const extensionReadiness = pgTable('extension_readiness', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  capabilities: jsonb('capabilities').$type<string[]>(),
+  loadedKeyIds: jsonb('loaded_key_ids').$type<string[]>(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type ExtensionReadiness = typeof extensionReadiness.$inferSelect;
 
 export const teamMembers = pgTable(
   'team_members',

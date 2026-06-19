@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { Panel } from '@/app/_components/Panel';
 
 // B160: owner-only "Transfer ownership" control in team Settings. Pick a member,
 // then confirm an explicit warning — the acting owner hands the team over and
@@ -49,8 +50,8 @@ export function TransferOwnership({
   };
 
   return (
-    <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${tokens.color.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#d6d6d6' }}>Transfer ownership</div>
+    <Panel style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#e6e6e6' }}>Transfer ownership</div>
       <p style={{ margin: 0, fontSize: 12, color: '#a0a8b8', lineHeight: 1.5, maxWidth: 540 }}>
         Hand this team to another member. You&apos;ll step down to a regular member and lose
         owner controls (renaming, invites, transferring).
@@ -102,7 +103,7 @@ export function TransferOwnership({
           </div>
         </div>
       )}
-    </div>
+    </Panel>
   );
 }
 

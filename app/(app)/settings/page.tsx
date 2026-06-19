@@ -8,6 +8,7 @@ import { UploadThresholdForm } from './UploadThresholdForm';
 import { NotificationsForm } from './NotificationsForm';
 import { TeamNotificationPrefs } from '../teams/[slug]/TeamNotificationPrefs';
 import { LinkedExtensions } from './LinkedExtensions';
+import { ManageKeysButton } from '@/app/_components/ManageKeysButton';
 import { Panel } from '@/app/_components/Panel';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
 import { tokens } from '@/app/_theme/karabuddyTokens';
@@ -145,6 +146,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                   Replays uploaded from a linked install attribute to your account. Revoke any you don&apos;t recognize.
                 </p>
                 <LinkedExtensions />
+              </Panel>
+              <Panel>
+                <TacticalHeading>Private team keys</TacticalHeading>
+                <p style={desc}>
+                  For teams on <strong>Private (encrypted)</strong> mode, your team key lives only in the
+                  extension on this device — never on karabuddy. Add, name, or remove keys in the extension&apos;s
+                  key manager.
+                </p>
+                <ManageKeysButton />
               </Panel>
             </>
           )}

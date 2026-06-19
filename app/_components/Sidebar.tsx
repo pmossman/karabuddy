@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
-import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
+import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { useActiveTeam } from '@/app/_components/ActiveTeamContext';
 import type { TeamRef } from '@/lib/activeTeam';
 import type { LastReplayRef } from '@/lib/lastReplay';
@@ -335,7 +335,7 @@ function LatestReplayCard({ lastReplay }: { lastReplay: LastReplayRef }) {
           border: `1px solid ${active ? '#4dd2ff44' : '#21262f'}`,
         }}
       >
-        <ReplayMatchup players={lastReplay.players} ownerPlayerId={lastReplay.ownerPlayerId} winners={lastReplay.winners} thumb={26} showNames={false} />
+        <PrivateMatchup row={lastReplay} thumb={26} showNames={false} />
         <span style={{ fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastReplay.label}</span>
       </Link>
     </div>

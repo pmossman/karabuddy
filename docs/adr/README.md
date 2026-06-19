@@ -10,3 +10,6 @@ otherwise get re-litigated. One file per decision, numbered. Terse on purpose.
 - [0005 — Safe deploys: expand/contract, enforced](./0005-safe-deploys-expand-contract.md)
 - [0006 — Design system: tokens + themed MUI, enforced](./0006-design-system.md)
 - [0007 — Stats / Meta: frame-mined matchup + card analytics](./0007-stats-meta.md)
+- [0008 — Replay animation timeline](./0008-replay-animation-timeline.md)
+- [0009 — Team reviews + replay tagging rework](./0009-reviews-and-tagging-rework.md)
+- [0010 — Private teams: client-side end-to-end encryption](./0010-private-teams-e2ee.md)

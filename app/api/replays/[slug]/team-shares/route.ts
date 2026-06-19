@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, replayTeamShares, teamMembers, teams, tags, tagTeamScope } from '@/lib/schema';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
+import { shareAllowed } from '@/lib/privateTeams';
 
 export const runtime = 'nodejs';
 
@@ -39,14 +40,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   // even for teams that haven't been shared to yet). Anonymous owners
   // (no userId) get an empty list — they can still see existing shares
   // but can't add new ones without an account.
-  let ownerTeams: { slug: string; name: string }[] = [];
+  // B170/ADR 0010: also report each team's privacy + whether THIS replay may be
+  // shared to it (shareAllowed — same rule the POST enforces), so the UI can
+  // DISABLE + explain a private team a plaintext replay can't go to, instead of a
+  // checkbox that silently won't tick.
+  let ownerTeams: { slug: string; name: string; privateMode: boolean; shareable: boolean }[] = [];
   if (userId) {
     const rows = await db
-      .select({ slug: teams.slug, name: teams.name })
+      .select({ slug: teams.slug, name: teams.name, privateMode: teams.privateMode, teamKeyId: teams.teamKeyId })
       .from(teamMembers)
       .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
       .where(eq(teamMembers.userId, userId));
-    ownerTeams = rows;
+    ownerTeams = rows.map((t) => ({
+      slug: t.slug,
+      name: t.name,
+      privateMode: t.privateMode,
+      shareable: shareAllowed({
+        encrypted: replay.encrypted,
+        replayTeamKeyId: replay.teamKeyId,
+        team: { privateMode: t.privateMode, teamKeyId: t.teamKeyId },
+      }).ok,
+    }));
   }
 
   // B100: per-team count of this replay's comments scoped to each team, so the
@@ -63,7 +77,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   for (const r of scopeCountRows) scopedTagCounts[r.teamSlug] = Number(r.n);
 
   // B133: the Share popover's Public toggle reads its initial state here.
-  return NextResponse.json({ ok: true, shares, ownerTeams, scopedTagCounts, isPublic: !!replay.publicAt });
+  // `encrypted` lets the UI word the "can't share here" hint precisely.
+  return NextResponse.json({ ok: true, shares, ownerTeams, scopedTagCounts, isPublic: !!replay.publicAt, encrypted: replay.encrypted });
 }
 
 // POST /api/replays/[slug]/team-shares  body: { teamSlug }
@@ -87,14 +102,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   }
 
   // Caller must be in the team they're sharing to. Otherwise anyone with
-  // a team's slug could pollute the team's replay grid.
+  // a team's slug could pollute the team's replay grid. Pull the team's privacy
+  // state in the same query for the B170 share-compatibility check below.
   const [membership] = await db
-    .select()
+    .select({ privateMode: teams.privateMode, teamKeyId: teams.teamKeyId })
     .from(teamMembers)
+    .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
     .where(and(eq(teamMembers.teamSlug, teamSlug), eq(teamMembers.userId, userId)))
     .limit(1);
   if (!membership) {
     return NextResponse.json({ ok: false, error: 'not a member of that team' }, { status: 403 });
+  }
+
+  // B170 / ADR 0010: same enforcement as the upload path. A plaintext replay can
+  // never be shared into a private team (the leak we prevent), and an encrypted
+  // replay can only go to the private team whose key matches.
+  const decision = shareAllowed({
+    encrypted: replay.encrypted,
+    replayTeamKeyId: replay.teamKeyId,
+    team: { privateMode: membership.privateMode, teamKeyId: membership.teamKeyId },
+  });
+  if (!decision.ok) {
+    return NextResponse.json({ ok: false, error: decision.error }, { status: 400 });
   }
 
   // Idempotent insert.

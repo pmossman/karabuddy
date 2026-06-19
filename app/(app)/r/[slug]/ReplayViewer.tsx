@@ -18,6 +18,8 @@ import { revealHiddenHand } from './revealHands';
 import { computeChapters, type Chapter } from '@/lib/replayChapters';
 import { anonymizeFrames, anonByIdFromPlayers, anonByIdFromFrames, anonymizeDecks } from '@/lib/anonymizeReplay';
 import Gameboard from '@/app/_components/Gameboard/Gameboard';
+import { PrivateReplayGate } from '@/app/_components/PrivateReplayGate';
+import { getCompanionInfo, extensionPresent, loadedTeamKeyIds, resolvePrivateReplayAccess, decryptReplayPayload, hydrateEncryptedTags, companionCapabilityState, openKeyManager, type PrivateReplayAccess } from '@/lib/companion';
 import { useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { mapFrameIndex } from '@/lib/replaySignature';
@@ -71,6 +73,11 @@ interface ReplayRow {
   // B59: winning playerIds extracted from the final gamestate at upload.
   // Null on pre-B59 replays + games ended via disconnect / abandon.
   winners?: any;
+  // B170 / ADR 0010: private (E2EE) replays. When `encrypted`, payloadBlobUrl is
+  // ciphertext — decrypted in-browser via the extension bridge under the team key
+  // identified by `teamKeyId` (the server never sees plaintext or the key).
+  encrypted?: boolean;
+  teamKeyId?: string | null;
 }
 
 interface TagRow {
@@ -80,6 +87,9 @@ interface TagRow {
   authorToken: string;
   authorName: string;
   comment: string;
+  // B170: ciphertext comment on a private replay's web-authored tag; decrypted
+  // into `comment` via the bridge before display (hydrateEncryptedTags).
+  commentEncrypted?: string | null;
   createdAt: string;
   scope?: string[];
 }
@@ -125,6 +135,25 @@ export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinke
 
 type StepMode = 'action' | 'frame';
 
+// B170 / ADR 0010: map a private replay's embedded in-game tags (from the
+// decrypted payload) to the viewer's TagRow shape. Frame indices are ORIGINAL
+// space (like web tags) — displayTags remaps them. These are read-only here.
+function payloadTagsToRows(payloadTags: any, replaySlug: string): TagRow[] {
+  if (!Array.isArray(payloadTags)) return [];
+  return payloadTags
+    .filter((t) => t && Number.isFinite(t.frameIndex))
+    .map((t) => ({
+      id: String(t.id ?? `ingame-${t.frameIndex}-${Math.random().toString(36).slice(2, 8)}`),
+      replaySlug,
+      frameIndex: Math.max(0, Math.floor(t.frameIndex)),
+      authorToken: '',
+      authorName: String(t.author || 'anon'),
+      comment: String(t.comment || ''),
+      createdAt: new Date(t.createdAt ?? Date.now()).toISOString(),
+      scope: [],
+    }));
+}
+
 // B100: matchup-info FAB glyph — a simple info circle, distinct from the ☰
 // review toggle so the two mobile buttons read as different actions.
 function InfoIcon() {
@@ -139,6 +168,24 @@ function InfoIcon() {
 
 function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, publicComments }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
+  // B170 / ADR 0010: for an encrypted replay, resolve the access tier (capability
+  // handshake + key-presence) before fetching/decoding. `null` = still resolving;
+  // 'plaintext' for non-encrypted (the path below is untouched). The payload
+  // effect only fetches/decrypts once tier === 'ready'.
+  const [access, setAccess] = useState<PrivateReplayAccess | null>(replay.encrypted ? null : 'plaintext');
+  const resolveAccess = useCallback(async () => {
+    if (!replay.encrypted) { setAccess('plaintext'); return; }
+    // Two signals in parallel: the capability handshake (new builds) + the
+    // universal install-token handshake (every build) — so an OLD extension
+    // reads as 'unsupported' ("update"), not 'absent' ("install"). If not
+    // supported, gate immediately (skip the slower loaded-keys lookup).
+    const [info, present] = await Promise.all([getCompanionInfo(), extensionPresent()]);
+    const cap = companionCapabilityState(info, present);
+    if (cap !== 'supported') { setAccess(cap); return; }
+    const kids = await loadedTeamKeyIds();
+    setAccess(resolvePrivateReplayAccess({ encrypted: true, teamKeyId: replay.teamKeyId ?? null, companion: info, present, loadedKeyIds: kids }));
+  }, [replay.encrypted, replay.teamKeyId]);
+  useEffect(() => { resolveAccess(); }, [resolveAccess]);
   const [decoded, setDecoded] = useState<CollapsedReplay | null>(null);
   // B112: double-sided replay. `decoded` is always the CANONICAL perspective
   // (the public payload). When the viewer flips, we lazily fetch + decode the
@@ -172,6 +219,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   useEffect(() => () => stopPlayback(), [stopPlayback]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tagState, setTagState] = useState<TagRow[]>(initialTags);
+  // B170 / ADR 0010: a private replay's in-game tags ride INSIDE the encrypted
+  // payload (the server can't lift them), so we surface them from the decrypted
+  // payload and merge with the web-authored (API) tags. Read-only here — web
+  // authoring writes to `tagState`. Empty for non-encrypted replays (their
+  // in-game tags were lifted into the tags table server-side and come via the API).
+  const [inGameTags, setInGameTags] = useState<TagRow[]>([]);
   // B104 (prototype): FLIP card-movement animation between frames. Toggle +
   // board container ref for the overlay animator.
   const boardRef = useRef<HTMLDivElement>(null);
@@ -345,7 +398,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         });
         const body = await res.json();
         if (cancelled || !body.ok) return;
-        setTagState((body.data as TagRow[]) ?? []);
+        let data = (body.data as TagRow[]) ?? [];
+        // B170: web-authored tags on a private replay carry ciphertext comments —
+        // decrypt them via the bridge before display.
+        if (replay.encrypted && replay.teamKeyId) data = await hydrateEncryptedTags(data, replay.teamKeyId);
+        if (cancelled) return;
+        setTagState(data);
         setArmedTeams((body.armedTeams as { slug: string; name: string }[]) ?? []);
       } catch {
         /* keep whatever's already in state */
@@ -486,8 +544,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // Tags are stored at original indices; reposition them onto collapsed frames
   // for display (markers, jump targets, "tags at this frame").
   const displayTags = useMemo(
-    () => tagState.map((t) => ({ ...t, frameIndex: origToCollapsed(t.frameIndex) })),
-    [tagState, origToCollapsed],
+    // B170: merge web-authored tags (tagState) with a private replay's in-game
+    // tags (inGameTags, from the decrypted payload); both remap orig→collapsed.
+    () => [...tagState, ...inGameTags].map((t) => ({ ...t, frameIndex: origToCollapsed(t.frameIndex) })),
+    [tagState, inGameTags, origToCollapsed],
   );
 
   // B106: "jump to a moment" chapters — structural beats (rounds, leader flips,
@@ -645,18 +705,30 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
 
   // Fetch + decode the payload from Blob.
   useEffect(() => {
+    // B170: an encrypted replay only loads once the access tier is 'ready' (the
+    // gate handles the other tiers). Non-encrypted replays are 'plaintext' → load
+    // immediately, unchanged.
+    if (replay.encrypted && access !== 'ready') return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(replay.payloadBlobUrl);
-        if (!res.ok) throw new Error(`payload fetch failed: ${res.status}`);
-        const text = await res.text();
-        const parsed = JSON.parse(text);
+        // B170: encrypted → fetch the ciphertext blob + decrypt it via the
+        // extension bridge (the key never reaches the page). Else the plain path.
+        const parsed = replay.encrypted
+          ? await decryptReplayPayload<any>(replay.teamKeyId as string, replay.payloadBlobUrl)
+          : JSON.parse(await (await (async () => {
+              const res = await fetch(replay.payloadBlobUrl);
+              if (!res.ok) throw new Error(`payload fetch failed: ${res.status}`);
+              return res;
+            })()).text());
         // B102: collapse undone + board-static frames so stepping only lands on
         // real, distinct board positions. `decodeReplay` stays raw (extraction
         // path); the viewer renders the collapsed timeline.
         const result = collapseReplay(decodeReplay(parsed));
         if (cancelled) return;
+        // B170: a private replay's in-game tags are embedded (plaintext) in the
+        // now-decrypted payload — surface them (the server never lifted them).
+        if (replay.encrypted) setInGameTags(payloadTagsToRows(parsed.tags, replay.slug));
         // B107: sample replay → rewrite the board labels + game-log player
         // names to "Player N" before the frames ever reach the game context.
         // The id→label map is derived from the FRAMES (the stored players
@@ -684,8 +756,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     // the current frame and re-fired one-shot animations (the double lunge), on
     // top of being very wasteful. `anonymize` + `replay.players` are stable in
     // content for a given payload URL, so reading them via closure is correct.
+    // B170: also re-run when an encrypted replay becomes 'ready' (key loaded +
+    // re-checked), so decryption fires without a full page reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [replay.payloadBlobUrl]);
+  }, [replay.payloadBlobUrl, replay.encrypted, access]);
 
   // B112: board orientation follows the ACTIVE perspective. Prefer the recorder's
   // captured localPlayerId; fall back to the first player key for older replays.
@@ -890,6 +964,17 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     return (
       <div style={{ padding: 32, color: '#ff6b6b', fontFamily: 'var(--font-barlow), sans-serif' }}>
         Failed to load replay: {loadError}
+      </div>
+    );
+  }
+
+  // B170 / ADR 0010: encrypted replay the viewer can't open yet (no extension /
+  // too old / key not loaded). Show the tiered gate instead of the board; the
+  // re-check re-resolves so the user doesn't have to reload after acting.
+  if (replay.encrypted && access && access !== 'ready' && access !== 'plaintext') {
+    return (
+      <div style={{ display: 'flex', height: 'calc(100vh - var(--kb-header-h, 0px))', alignItems: 'center', justifyContent: 'center' }}>
+        <PrivateReplayGate tier={access} onRecheck={resolveAccess} onOpenKeyManager={async () => { await openKeyManager(); }} />
       </div>
     );
   }

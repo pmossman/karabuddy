@@ -63,10 +63,26 @@ export async function PATCH(
     if (!(await canEdit(row, req))) {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });
     }
+    // B170 / ADR 0010: on a private (encrypted) replay the edited comment arrives
+    // as ciphertext (commentEncrypted); store it and keep the plaintext empty.
+    const [replayRow] = await db
+      .select({ encrypted: replays.encrypted })
+      .from(replays)
+      .where(eq(replays.slug, slug))
+      .limit(1);
+    const commentEncrypted =
+      replayRow?.encrypted && typeof body.commentEncrypted === 'string' && body.commentEncrypted
+        ? body.commentEncrypted
+        : null;
+    if (replayRow?.encrypted && !commentEncrypted) {
+      return NextResponse.json({ ok: false, error: 'commentEncrypted required on a private replay' }, { status: 400, headers });
+    }
     // B55c: mentions are optional on PATCH. If absent, leave existing
     // mentions in place (the user may have edited just the text). If
     // present (even empty), accept the client's structure as authoritative.
-    const updates: Record<string, unknown> = { comment };
+    const updates: Record<string, unknown> = commentEncrypted
+      ? { comment: '', commentEncrypted }
+      : { comment };
     if (body.mentions !== undefined) {
       const m = sanitizeIncomingMentions(body.mentions);
       updates.mentions = m.userIds.length || m.teamSlugs.length ? m : null;

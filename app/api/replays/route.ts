@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { put } from '@/lib/blob';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, replayParticipants, replayTeamShares, tags, teamMembers } from '@/lib/schema';
+import { replays, replayParticipants, replayTeamShares, tags, teamMembers, teams } from '@/lib/schema';
+import { shareAllowed } from '@/lib/privateTeams';
 import { sanitizeClientMeta } from '@/lib/clientMeta';
 import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
@@ -29,21 +30,35 @@ export function OPTIONS(req: Request) {
 // uploader must be a member of each) BEFORE lifting tags, so the lifted
 // in-game tags' default scope resolves to the just-created shares. Returns
 // nothing — idempotent, best-effort (a bad slug just doesn't share).
-async function applyUploadShares(slug: string, userId: string | null, shareTeamSlugs: unknown): Promise<void> {
+async function applyUploadShares(
+  slug: string,
+  userId: string | null,
+  shareTeamSlugs: unknown,
+  // B170/ADR 0010: the replay's encryption state. shareAllowed() drops any share
+  // that would put plaintext into a private team or ciphertext into a non-private
+  // team (the server-side backstop — see lib/privateTeams).
+  encrypted: boolean = false,
+  replayTeamKeyId: string | null = null,
+): Promise<void> {
   if (!userId || !Array.isArray(shareTeamSlugs) || shareTeamSlugs.length === 0) return;
   const requested = shareTeamSlugs.filter((s): s is string => typeof s === 'string');
   if (requested.length === 0) return;
   const db = getDb();
   // Only teams the uploader actually belongs to (same guard as the
-  // team-shares endpoint — can't pollute a team you're not in).
+  // team-shares endpoint — can't pollute a team you're not in), with each
+  // team's privacy state so we can enforce share compatibility.
   const memberRows = await db
-    .select({ teamSlug: teamMembers.teamSlug })
+    .select({ teamSlug: teamMembers.teamSlug, privateMode: teams.privateMode, teamKeyId: teams.teamKeyId })
     .from(teamMembers)
+    .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
     .where(and(eq(teamMembers.userId, userId), inArray(teamMembers.teamSlug, requested)));
-  if (memberRows.length === 0) return;
+  const allowed = memberRows.filter((m) =>
+    shareAllowed({ encrypted, replayTeamKeyId, team: { privateMode: m.privateMode, teamKeyId: m.teamKeyId } }).ok,
+  );
+  if (allowed.length === 0) return;
   await db
     .insert(replayTeamShares)
-    .values(memberRows.map((m) => ({ replaySlug: slug, teamSlug: m.teamSlug, sharedBy: userId })))
+    .values(allowed.map((m) => ({ replaySlug: slug, teamSlug: m.teamSlug, sharedBy: userId })))
     .onConflictDoNothing();
 }
 
@@ -95,6 +110,134 @@ async function scopeLiftedTags(
   }
 }
 
+// B170 / ADR 0010 — encrypted (private-team) upload path. The `payload` is an
+// E2EE envelope (opaque ciphertext), NOT a karabast replay, so the server does
+// NO decode / winner-extract / stats / tag-lift — it stores ciphertext + the
+// encrypted summary + the flag + the non-secret team_key_id, and enforces that
+// every shared team is a private team whose key matches (defense-in-depth over
+// the client's withhold). gameId is a content-free opaque dedup id the extension
+// sends in the clear so periodic snapshots overwrite one row (metadata floor).
+async function handleEncryptedUpload(opts: {
+  headers: Record<string, string>;
+  body: any;
+  installToken: string;
+  payloadText: string;
+  clientMeta: ReturnType<typeof sanitizeClientMeta>;
+}): Promise<NextResponse> {
+  const { headers, body, installToken, payloadText, clientMeta } = opts;
+  const db = getDb();
+
+  const teamKeyId = typeof body.teamKeyId === 'string' ? body.teamKeyId : '';
+  const gameId = typeof body.gameId === 'string' ? body.gameId : '';
+  const encryptedSummary = typeof body.encryptedSummary === 'string' ? body.encryptedSummary : '';
+  const requestedSlugs = Array.isArray(body.shareTeamSlugs)
+    ? body.shareTeamSlugs.filter((s: unknown): s is string => typeof s === 'string')
+    : [];
+  if (!teamKeyId || !gameId || !encryptedSummary) {
+    return NextResponse.json({ ok: false, error: 'encrypted upload requires teamKeyId, gameId, encryptedSummary' }, { status: 400, headers });
+  }
+  if (encryptedSummary.length > MAX_PAYLOAD_BYTES) {
+    return NextResponse.json({ ok: false, error: 'encrypted summary too large' }, { status: 413, headers });
+  }
+  if (requestedSlugs.length === 0) {
+    return NextResponse.json({ ok: false, error: 'encrypted upload must target at least one private team' }, { status: 400, headers });
+  }
+
+  const userId = await resolveUserId({ installToken });
+  if (!userId) {
+    // No account → can't be a member of a private team → can't validate the key.
+    return NextResponse.json({ ok: false, error: 'sign in required for private uploads' }, { status: 401, headers });
+  }
+
+  // HARD enforcement: every target must be a team the uploader belongs to, in
+  // private mode, with team_key_id === this replay's key. Reject otherwise — an
+  // encrypted upload aimed at the wrong/non-private team is a client bug, and we
+  // must never store it as a share that can't be decrypted (or shouldn't exist).
+  const memberRows = await db
+    .select({ teamSlug: teamMembers.teamSlug, privateMode: teams.privateMode, teamKeyId: teams.teamKeyId })
+    .from(teamMembers)
+    .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
+    .where(and(eq(teamMembers.userId, userId), inArray(teamMembers.teamSlug, requestedSlugs)));
+  const memberBySlug = new Map(memberRows.map((m) => [m.teamSlug, m]));
+  for (const slugReq of requestedSlugs) {
+    const m = memberBySlug.get(slugReq);
+    if (!m) {
+      return NextResponse.json({ ok: false, error: `not a member of team ${slugReq}` }, { status: 403, headers });
+    }
+    const decision = shareAllowed({ encrypted: true, replayTeamKeyId: teamKeyId, team: { privateMode: m.privateMode, teamKeyId: m.teamKeyId } });
+    if (!decision.ok) {
+      return NextResponse.json({ ok: false, error: `${slugReq}: ${decision.error}` }, { status: 400, headers });
+    }
+  }
+
+  const durationMs = typeof body.durationMs === 'number' ? body.durationMs : 0;
+  const actionCount = typeof body.actionCount === 'number' ? body.actionCount : 0;
+
+  // Per-(gameId, owner) dedup, mirroring the plaintext path (B158). Encrypted
+  // uploads carry the FULL re-encrypted payload each time, so overwrite-latest
+  // (guarded by actionCount) is correct — no slice merge (can't merge ciphertext).
+  const ownerCond = or(eq(replays.ownerToken, installToken), eq(replays.userId, userId));
+  const [mine] = await db
+    .select()
+    .from(replays)
+    .where(and(eq(replays.gameId, gameId), eq(replays.encrypted, true), ownerCond))
+    .limit(1);
+
+  if (mine) {
+    if (actionCount < mine.actionCount) {
+      return NextResponse.json({ ok: true, slug: mine.slug, url: `/r/${mine.slug}`, staleSnapshot: true }, { headers });
+    }
+    await put(`replays/${mine.slug}.json`, payloadText, {
+      access: 'public',
+      contentType: 'application/json',
+      addRandomSuffix: false,
+      cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS,
+    });
+    const updates: Record<string, unknown> = {
+      userId: userId || mine.userId,
+      encryptedSummary,
+      teamKeyId,
+      durationMs,
+      actionCount,
+      payloadSizeBytes: payloadText.length,
+    };
+    if (clientMeta) updates.clientMeta = clientMeta;
+    await db.update(replays).set(updates).where(eq(replays.slug, mine.slug));
+    await applyUploadShares(mine.slug, userId, requestedSlugs, true, teamKeyId);
+    await recordParticipant(mine.slug, userId);
+    return NextResponse.json({ ok: true, slug: mine.slug, url: `/r/${mine.slug}`, snapshot: true, encrypted: true }, { headers });
+  }
+
+  const slug = generateSlug();
+  const blob = await put(`replays/${slug}.json`, payloadText, {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+    cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS,
+  });
+  await db.insert(replays).values({
+    slug,
+    gameId,
+    userId,
+    ownerToken: installToken,
+    // No plaintext identity on an encrypted row: players is [] (NOT NULL) and
+    // match/decks/winners/displayName/labels stay null. The matchup is in the
+    // encrypted summary, decrypted client-side.
+    players: [],
+    durationMs,
+    actionCount,
+    payloadBlobUrl: blob.url,
+    payloadSizeBytes: payloadText.length,
+    encrypted: true,
+    teamKeyId,
+    encryptedSummary,
+    clientMeta,
+  });
+  await applyUploadShares(slug, userId, requestedSlugs, true, teamKeyId);
+  await recordParticipant(slug, userId);
+  return NextResponse.json({ ok: true, slug, url: `/r/${slug}`, encrypted: true }, { headers });
+}
+
 // POST /api/replays — upload a replay payload + create metadata row.
 // Body shape: { installToken, payload: string (JSON of the .karareplay file) }
 // Returns: { slug, url }
@@ -120,6 +263,12 @@ export async function POST(req: Request) {
     }
     if (payloadText.length > MAX_PAYLOAD_BYTES) {
       return NextResponse.json({ ok: false, error: 'payload too large' }, { status: 413, headers });
+    }
+
+    // B170 / ADR 0010: encrypted (private-team) upload. The payload is opaque
+    // ciphertext, so it diverges entirely from the plaintext decode path below.
+    if (body.encrypted === true) {
+      return await handleEncryptedUpload({ headers, body, installToken, payloadText, clientMeta });
     }
 
     // Validate the payload looks like one of our replays — version + events

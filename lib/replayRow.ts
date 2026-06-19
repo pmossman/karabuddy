@@ -53,6 +53,12 @@ export interface SerializedReplayRow {
   // B133: the owner published this replay (public browser + redacted public
   // comment reads). Only present on owner-facing surfaces.
   isPublic?: boolean;
+  // B170 / ADR 0010: private (E2EE) replay. `players`/`winners` are empty/null on
+  // the row (server holds no plaintext); the matchup card decrypts
+  // `encryptedSummary` client-side via the extension bridge under `teamKeyId`.
+  encrypted: boolean;
+  teamKeyId: string | null;
+  encryptedSummary: string | null;
 }
 
 export function serializeReplayRow(
@@ -97,6 +103,9 @@ export function serializeReplayRow(
     ownLeader: own?.leader ?? null,
     oppLeader: opp?.leader ?? null,
     lobbyId: (match && typeof match.lobbyId === 'string' && match.lobbyId) ? match.lobbyId : null,
+    encrypted: !!replay.encrypted,
+    teamKeyId: replay.teamKeyId ?? null,
+    encryptedSummary: replay.encryptedSummary ?? null,
   };
   if (opts.sharedTeams !== undefined) out.sharedTeams = opts.sharedTeams;
   if (opts.commentCount !== undefined) out.commentCount = opts.commentCount;

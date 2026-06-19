@@ -225,6 +225,20 @@
       "when": 1782086400000,
       "tag": "0031_cards_subtitle",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782172800000,
+      "tag": "0032_private_teams",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1782259200000,
+      "tag": "0033_extension_readiness",
+      "breakpoints": true
     }
   ]
 }

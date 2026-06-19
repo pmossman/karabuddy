@@ -46,7 +46,7 @@ render() {
   # GNU `timeout` being installed.
   (
     "$CHROME" \
-      --headless \
+      --headless=new \
       --disable-gpu \
       --hide-scrollbars \
       --user-data-dir="$userdata" \

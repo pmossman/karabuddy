@@ -5,6 +5,11 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
+import { ManageKeysButton } from '@/app/_components/ManageKeysButton';
+import { MyPrivateAccess } from '@/app/_components/MyPrivateAccess';
+import { PrivateModeToggle } from './PrivateModeToggle';
+import { ReadinessRoster } from './ReadinessRoster';
+import { Panel } from '@/app/_components/Panel';
 import { TransferOwnership } from './TransferOwnership';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamOverview } from './TeamOverview';
@@ -139,6 +144,13 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
         {new Date(team.createdAt).toLocaleDateString()}
       </p>
 
+      {/* B170 / ADR 0010: a private team's members get a top-of-page nudge until
+          they're set up (extension + key). Hidden once ready, and never shown for
+          non-private teams. Shows on every tab so it can't be missed. */}
+      {(team as any).privateMode && (
+        <MyPrivateAccess variant="banner" teamName={team.name} teamKeyId={(team as any).teamKeyId ?? null} />
+      )}
+
       {/* Section nav lives in the left sidebar now — no in-page tab bar. */}
       <div style={{ marginTop: isOverview ? 4 : 20 }}>
         {tab === 'overview' && <TeamOverview slug={slug} />}
@@ -148,11 +160,29 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
           <ClipsBrowser rows={teamClipRows} showCreator emptyLabel="No clips on this team’s replays yet." />
         )}
         {tab === 'review' && <ReviewQueue teamSlug={slug} />}
-        {tab === 'stats' && <StatsClient scope="team" teamSlug={slug} teamName={team.name} signedIn embedded />}
+        {tab === 'stats' && (
+          (team as any).privateMode ? (
+            // B170 / ADR 0010: stats are mined from plaintext frames server-side,
+            // which a private team's encrypted replays never expose — so there's
+            // nothing to aggregate. Say so plainly rather than show an empty page.
+            <div style={{ padding: 32, textAlign: 'center', color: '#8a93a3', maxWidth: 460, margin: '0 auto', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 32 }}>🔒</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#e6ebf2', marginTop: 8 }}>Stats are off for private teams</div>
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                This team’s replays are end-to-end encrypted, so the server can’t read the cards or
+                results to build matchup and card stats. Review your games in the viewer instead.
+              </div>
+            </div>
+          ) : (
+            <StatsClient scope="team" teamSlug={slug} teamName={team.name} signedIn embedded />
+          )
+        )}
         {tab === 'tournaments' && <TeamTournaments teamSlug={slug} />}
         {tab === 'members' && <MembersList members={members} viewerUserId={userId} />}
         {tab === 'settings' && (
-          <>
+          // B170: one consistent stack — a bare action row on top, then uniform
+          // Panel sections with even rhythm (each section roots in <Panel>).
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 720 }}>
             <TeamControls
               slug={slug}
               teamName={team.name}
@@ -171,7 +201,52 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                 <TransferOwnership slug={slug} members={members} viewerUserId={userId} />
               </>
             )}
-          </>
+            {/* B170 / ADR 0010: encryption is an advanced/security section near
+                the bottom — deliberately not the headline. With private mode ON
+                several panels pertain to it (toggle, key, readiness, rotation),
+                so they live under one labeled "Privacy & encryption" sub-section
+                divided off from the general settings. Owner sees the management
+                panels; every member of a private team gets the load-your-key
+                affordance (they need the key to view/record). */}
+            {(me.role === 'owner' || (team as any).privateMode) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', color: '#e6ebf2', display: 'flex', alignItems: 'center', gap: 9 }}>
+                    🔒 Privacy &amp; encryption
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: 12.5, color: '#8a93a3', lineHeight: 1.5 }}>
+                    End-to-end encrypt this team&apos;s replays — not even the KaraBuddy team can read them.{' '}
+                    <Link href="/how-privacy-mode-works#for-owners" style={{ color: '#5db4ff', textDecoration: 'none' }}>How it works →</Link>
+                  </p>
+                </div>
+                {me.role === 'owner' && (
+                  <PrivateModeToggle
+                    slug={slug}
+                    initialPrivateMode={!!(team as any).privateMode}
+                    initialTeamKeyId={(team as any).teamKeyId ?? null}
+                  />
+                )}
+                {(team as any).privateMode && (
+                  <Panel>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#e6ebf2', display: 'flex', alignItems: 'center', gap: 8 }}>Your team key</div>
+                    <p style={{ margin: '8px 0 14px', fontSize: 13, color: '#a0a8b8', lineHeight: 1.55 }}>
+                      Load this team&apos;s key in the extension to view and record. It stays on your device and is never
+                      sent to karabuddy.
+                    </p>
+                    {/* B170: the member's personal "am I set up?" checklist. */}
+                    <div style={{ margin: '0 0 14px' }}>
+                      <MyPrivateAccess variant="checklist" teamName={team.name} teamKeyId={(team as any).teamKeyId ?? null} />
+                    </div>
+                    <ManageKeysButton label="Manage this team’s key" />
+                  </Panel>
+                )}
+                {me.role === 'owner' && (team as any).privateMode && <ReadinessRoster slug={slug} />}
+                {/* B170 / ADR 0010: key rotation lives in the extension's key
+                    manager now (open it via "Manage this team's key" above) — the
+                    whole rotation runs there without bouncing back to the webapp. */}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </main>

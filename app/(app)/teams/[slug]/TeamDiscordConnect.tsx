@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { Panel } from '@/app/_components/Panel';
 
 // B81: owner-only "magic" Discord connect for a team. Not connected → one
 // button that opens Discord's bot-invite (server picker) and bounces back here.
@@ -75,13 +76,12 @@ export function TeamDiscordConnect({
     setMsg((await r.json()).ok ? 'Saved.' : 'failed');
   };
 
-  const card: React.CSSProperties = { marginTop: 24, padding: 16, background: 'rgba(17,20,26,0.5)', border: '1px solid #2e333c', borderRadius: 8 };
   const heading = <h3 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600 }}>Team Discord</h3>;
   const discordBtn: React.CSSProperties = { display: 'inline-block', background: '#5865F2', color: '#fff', border: 0, borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'pointer', fontFamily: 'inherit' };
 
   if (!guildId) {
     return (
-      <section style={card}>
+      <Panel>
         {heading}
         <p style={{ margin: '0 0 14px', fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
           Connect a Discord server and KaraBuddy will post this team&apos;s activity (and @-ping mentioned members) in a channel you choose.
@@ -91,12 +91,12 @@ export function TeamDiscordConnect({
         ) : (
           <span style={{ fontSize: 12, color: '#6c7588' }}>Discord isn&apos;t configured on this server yet.</span>
         )}
-      </section>
+      </Panel>
     );
   }
 
   return (
-    <section style={card}>
+    <Panel>
       {heading}
       {justConnected && !channelId && (
         <p style={{ margin: '0 0 10px', fontSize: 12, color: '#6bd968' }}>Bot added ✓ — now pick the channel to post in.</p>
@@ -131,7 +131,7 @@ export function TeamDiscordConnect({
         </div>
       )}
       {msg && <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6bd968' }}>{msg}</p>}
-    </section>
+    </Panel>
   );
 }
 

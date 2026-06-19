@@ -10,6 +10,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
 import { segmentMatches, bestOfLabel } from '@/lib/seriesGrouping';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
+import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
@@ -24,6 +25,12 @@ interface Row {
   gameId: string;
   userId: string | null;
   players: any;
+  // B170 / ADR 0010: private (encrypted) replay — the server holds no plaintext
+  // matchup (players=[]); the cell decrypts the summary client-side, or shows a
+  // clean "🔒 Private" placeholder when the key/extension isn't there.
+  encrypted?: boolean;
+  teamKeyId?: string | null;
+  encryptedSummary?: string | null;
   durationMs: number;
   actionCount: number;
   createdAt: string;
@@ -956,6 +963,16 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
 // "vs", with the matchup text below. Wrapped in <Link> so the whole cell
 // (text + thumbs) navigates to /r/<slug>.
 function ReplayCellLink({ replay, gameNumber }: { replay: Row; gameNumber?: number }) {
+  // B170: an encrypted replay has no server-side matchup — decrypt the summary
+  // client-side (key loaded) or show a clean lock, instead of blank art + "anon".
+  if (replay.encrypted) {
+    return (
+      <Link href={`/r/${replay.slug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+        {gameNumber != null && <GameNumberChip n={gameNumber} />}
+        <PrivateMatchup row={replay as any} thumb={26} />
+      </Link>
+    );
+  }
   // Perspective order: my/the-uploader's side first, opponent second.
   const [p1, p2] = perspectivePlayers(replay);
   return (

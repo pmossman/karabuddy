@@ -7,6 +7,7 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ShareBadge } from './ShareBadge';
 import { RowActions } from './RowActions';
 import { CommentCountButton } from './CommentCountButton';
+import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 
 interface ReplayRow {
   slug: string;
@@ -42,6 +43,13 @@ interface ReplayRow {
   // B149: this is the owner's replay with an open team review request — a badge
   // showing reviewer progress in the "My replays" tab.
   reviewRequest?: { requested: boolean; reviewerCount: number } | null;
+  // B170 / ADR 0010: private (encrypted) replay — the matchup is decrypted
+  // client-side from the summary (PrivateMatchup); players/winners are empty/null
+  // on the row.
+  encrypted?: boolean;
+  teamKeyId?: string | null;
+  encryptedSummary?: string | null;
+  winners?: string[] | null;
 }
 
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
@@ -65,30 +73,39 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
       }}
     >
       <Link href={`/r/${replay.slug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
-          <Matchup player={p1} />
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
-          <Matchup player={p2} />
-        </div>
-        {/* B53: user-set display name takes precedence over the auto
-            deck-text. The auto deck-text moves to a smaller sub-line. */}
-        {replay.displayName ? (
+        {replay.encrypted ? (
+          // B170: private replay — decrypt the matchup client-side (leaders/bases
+          // + result). The deck/name sub-lines come from the same summary, so the
+          // single PrivateMatchup stands in for the whole matchup block.
+          <PrivateMatchup row={replay as any} thumb={44} />
+        ) : (
           <>
-            <div style={{ fontSize: 14, color: '#e6e6e6', lineHeight: 1.3, fontWeight: 700 }}>
-              {replay.displayName}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+              <Matchup player={p1} />
+              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
+              <Matchup player={p2} />
             </div>
+            {/* B53: user-set display name takes precedence over the auto
+                deck-text. The auto deck-text moves to a smaller sub-line. */}
+            {replay.displayName ? (
+              <>
+                <div style={{ fontSize: 14, color: '#e6e6e6', lineHeight: 1.3, fontWeight: 700 }}>
+                  {replay.displayName}
+                </div>
+                <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
+                  {deckText(p1)} vs {deckText(p2)}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.35, fontWeight: 600 }}>
+                {deckText(p1)} vs {deckText(p2)}
+              </div>
+            )}
             <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
-              {deckText(p1)} vs {deckText(p2)}
+              {nameText(p1)} vs {nameText(p2)}
             </div>
           </>
-        ) : (
-          <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.35, fontWeight: 600 }}>
-            {deckText(p1)} vs {deckText(p2)}
-          </div>
         )}
-        <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
-          {nameText(p1)} vs {nameText(p2)}
-        </div>
         {/* B53: user-set labels as small chips below the names. */}
         {Array.isArray(replay.labels) && replay.labels.length > 0 && (
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>

@@ -64,10 +64,40 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
   }
   const body = await req.json().catch(() => ({}));
-  const name: string = String(body.name || '').trim();
-  if (!name) return NextResponse.json({ ok: false, error: 'name required' }, { status: 400 });
-  if (name.length > 80) return NextResponse.json({ ok: false, error: 'name too long' }, { status: 400 });
-  await db.update(teams).set({ name }).where(eq(teams.slug, slug));
+  const update: Record<string, unknown> = {};
+  if (body.name !== undefined) {
+    const name: string = String(body.name || '').trim();
+    if (!name) return NextResponse.json({ ok: false, error: 'name required' }, { status: 400 });
+    if (name.length > 80) return NextResponse.json({ ok: false, error: 'name too long' }, { status: 400 });
+    update.name = name;
+  }
+  // B170 / ADR 0010: toggle private (E2EE) mode. Enabling stores the NON-SECRET
+  // team_key_id the owner generated in the extension (the key never reaches the
+  // server); disabling clears it (future uploads go plaintext — existing
+  // encrypted replays keep their own team_key_id and stay viewable with the key).
+  // The webapp capability-gates the owner's toggle client-side; the server just
+  // records the choice.
+  if (body.privateMode !== undefined) {
+    if (body.privateMode === true) {
+      const teamKeyId = String(body.teamKeyId || '').trim();
+      if (!teamKeyId) {
+        return NextResponse.json({ ok: false, error: 'teamKeyId required to enable private mode' }, { status: 400 });
+      }
+      update.privateMode = true;
+      update.teamKeyId = teamKeyId;
+    } else {
+      update.privateMode = false;
+      update.teamKeyId = null;
+    }
+  }
+  // B170 / ADR 0010: rotation FINALIZE (flip the team to the new key) lives in
+  // POST /api/teams/[slug]/rotation-manifest now — it's owner-gated by session OR
+  // install token so the extension's key manager can run the whole rotation.
+
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400 });
+  }
+  await db.update(teams).set(update).where(eq(teams.slug, slug));
   return NextResponse.json({ ok: true });
 }
 

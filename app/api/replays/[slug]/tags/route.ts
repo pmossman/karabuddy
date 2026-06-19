@@ -156,8 +156,20 @@ export async function POST(
       return NextResponse.json({ ok: false, error: 'frameIndex must be a non-negative number' }, { status: 400, headers });
     }
     const db = getDb();
-    const [exists] = await db.select({ slug: replays.slug }).from(replays).where(eq(replays.slug, slug)).limit(1);
+    const [exists] = await db.select({ slug: replays.slug, encrypted: replays.encrypted }).from(replays).where(eq(replays.slug, slug)).limit(1);
     if (!exists) return NextResponse.json({ ok: false, error: 'replay not found' }, { status: 404, headers });
+    // B170 / ADR 0010: on an encrypted (private-team) replay the comment text is
+    // encrypted client-side (via the extension bridge) and posted as an envelope.
+    // The server stores the ciphertext, keeps the plaintext `comment` empty, and
+    // drops mentions/notifications (mentions name people — dropped for private
+    // v1). Author attribution + frame + team scope stay plaintext (metadata).
+    const commentEncrypted: string | null =
+      exists.encrypted && typeof body.commentEncrypted === 'string' && body.commentEncrypted
+        ? body.commentEncrypted
+        : null;
+    if (exists.encrypted && !commentEncrypted) {
+      return NextResponse.json({ ok: false, error: 'commentEncrypted required on a private replay' }, { status: 400, headers });
+    }
     // Attribute via the same path as uploads: session → linked extension
     // token → karabast username match → null (anonymous, token-locked).
     const session = await auth();
@@ -215,8 +227,14 @@ export async function POST(
       userId,
       authorToken: installToken,
       authorName: session?.user?.name || authorName,
-      comment,
-      mentions: outgoingMentions.userIds.length || outgoingMentions.teamSlugs.length ? outgoingMentions : null,
+      // Encrypted replay → ciphertext comment, empty plaintext, no mentions.
+      comment: commentEncrypted ? '' : comment,
+      commentEncrypted,
+      mentions: commentEncrypted
+        ? null
+        : outgoingMentions.userIds.length || outgoingMentions.teamSlugs.length
+          ? outgoingMentions
+          : null,
       parentTagId,
     });
     const scope = await resolveTagScope({ replaySlug: slug, authorUserId: userId, requested });
@@ -228,10 +246,14 @@ export async function POST(
     // auto-mention of the parent author.) The upload-lift path is deliberately
     // NOT wired yet — periodic re-uploads would re-notify; needs insert-vs-update
     // dedup first.
-    try {
-      await notifyMentions({ mentions: outgoingMentions, replaySlug: slug, frameIndex: effectiveFrameIndex, comment, authorUserId: userId });
-    } catch (e) {
-      console.error('[karabuddy] notifyMentions failed (tag persisted):', e);
+    // Encrypted tags carry no plaintext comment/mentions, so there's nothing to
+    // notify on (mentions are dropped for private v1 — ADR 0010).
+    if (!commentEncrypted) {
+      try {
+        await notifyMentions({ mentions: outgoingMentions, replaySlug: slug, frameIndex: effectiveFrameIndex, comment, authorUserId: userId });
+      } catch (e) {
+        console.error('[karabuddy] notifyMentions failed (tag persisted):', e);
+      }
     }
     return NextResponse.json({ ok: true, id, scope }, { headers });
   } catch (err: any) {
