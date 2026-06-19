@@ -1,5 +1,22 @@
 // Service worker for the KaraBuddy MV3 extension.
 
+// B170 / ADR 0010: private-team E2EE. The SW is the sole keyholder — team keys
+// live in chrome.storage.local and NEVER leave the extension. It imports the
+// trusted crypto module for its side effect (attaches to self.__KaraBuddy.
+// replays.e2ee — it's a classic dual-mode script, no ESM exports) and the pure
+// upload-policy helpers (ESM). The SW encrypts plaintext payloads here, where
+// the key meets the data, so neither the page nor the network ever sees the key.
+import './replays/00-e2ee.js';
+import { decideUploadMode, keyStorageKey, loadedKeyIdsFromStorage, privacyMapFromTeams } from './private-teams.js';
+const e2ee = () => self.__KaraBuddy?.replays?.e2ee;
+
+// B170 / ADR 0010: capabilities this build advertises to the webapp over the
+// karabuddy-origin bridge (getCompanionInfo). The webapp FEATURE-DETECTS off
+// this list — 'privateTeams' is present only because this build implements the
+// encrypt/withhold/decrypt path. Add capability strings as features land; the
+// webapp gates on the string, never on the version number.
+const COMPANION_CAPABILITIES = ['privateTeams'];
+
 // Debug logging — off in shipped builds. Flip on at runtime via
 //   chrome.storage.local.set({karabuddyDebug: true})
 // Reads cached + updates on storage changes so toggling takes effect
@@ -78,22 +95,137 @@ const buildClientMeta = () => {
     }
 };
 
-const uploadReplayToKarabuddy = async (payloadText) => {
+// B170: team key storage (chrome.storage.local, namespaced by the non-secret
+// kid). The key bytes (base64url) never leave the extension.
+const getLoadedKeyIds = async () => {
+    try { return loadedKeyIdsFromStorage(await chrome.storage.local.get(null)); }
+    catch { return []; }
+};
+const getPrivateKey = async (teamKeyId) => {
+    try {
+        const k = keyStorageKey(teamKeyId);
+        const r = await chrome.storage.local.get(k);
+        return r[k] || null;
+    } catch { return null; }
+};
+
+// B170 / ADR 0010: report this install's NON-SECRET readiness (capabilities +
+// which team_key_ids have a key loaded — never the key) so a team owner's
+// private-mode roster can show ready / needs-update / needs-key. Best-effort;
+// fired on startup + whenever a key is loaded/forgotten. 401 (not signed in /
+// unlinked) is a harmless no-op.
+const reportExtensionReadiness = async () => {
+    try {
+        const endpoint = await getKarabuddyEndpoint();
+        const installToken = await getKarabuddyInstallToken();
+        await fetch(`${endpoint}/api/me/extension/readiness`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
+            body: JSON.stringify({ capabilities: COMPANION_CAPABILITIES, loadedTeamKeyIds: await getLoadedKeyIds() }),
+        });
+    } catch {}
+};
+
+// B170: which armed teams are private (+ their non-secret kid). Fetched fresh
+// from teams-mention-data and CACHED, so an offline upload still knows a team is
+// private and withholds rather than leaking plaintext. If never fetched + offline
+// we return {} (plaintext path) — the server's shareAllowed backstop still
+// prevents any plaintext reaching a private team's members.
+const TEAM_PRIVACY_CACHE = 'karabuddyTeamPrivacyCache';
+const getTeamPrivacy = async (endpoint, installToken) => {
+    try {
+        const res = await fetch(`${endpoint}/api/me/teams-mention-data`, {
+            credentials: 'include',
+            headers: { 'X-Install-Token': installToken },
+        });
+        if (res.ok) {
+            const body = await res.json();
+            const map = privacyMapFromTeams(body.teams);
+            try { await chrome.storage.local.set({ [TEAM_PRIVACY_CACHE]: map }); } catch {}
+            return map;
+        }
+    } catch {}
+    try { return (await chrome.storage.local.get(TEAM_PRIVACY_CACHE))[TEAM_PRIVACY_CACHE] || {}; }
+    catch { return {}; }
+};
+
+// Pull the karabast gameId out of a plaintext payload (first gamestate snapshot)
+// so an encrypted upload can carry it in the clear for periodic-snapshot dedup.
+const extractGameId = (parsed) => {
+    try {
+        const fg = (parsed?.events || []).find((e) => e.event === 'gamestate' && e.args?.[0]);
+        const snap = fg?.args?.[0]?.full || (parsed?.version === 1 ? fg?.args?.[0] : null);
+        return snap?.id || null;
+    } catch { return null; }
+};
+
+// Upload a recorded replay. B170: decides plaintext / encrypt / WITHHOLD based on
+// the armed teams' privacy + which keys are loaded. The recorder passes the
+// plaintext payload (+ a pre-built summary); for a private team the SW encrypts
+// BOTH here under the loaded team key and posts ciphertext — the key never
+// crosses the bridge or the network. If a private team is armed without its key,
+// the SW WITHHOLDS (returns {withheld:true}, posts nothing) so no plaintext ever
+// leaves the browser; the recorder keeps the recording local and prompts.
+const uploadReplayToKarabuddy = async (payloadText, summary = null) => {
     const endpoint = await getKarabuddyEndpoint();
     const installToken = await getKarabuddyInstallToken();
-    // B71: send the armed teams WITH the upload. The server applies them as
-    // shares BEFORE lifting the in-game tags, so each tag's default scope
-    // resolves to those teams (rather than personal, which is what would
-    // happen if shares were only applied by the separate call below — it
-    // runs after the upload has already lifted + scoped the tags).
-    const shareTeamSlugs = await getShareTeamSlugs();
+    // B71: armed teams accompany the upload (server applies them as shares before
+    // lifting in-game tags, so tag default scope resolves to those teams).
+    const armed = await getShareTeamSlugs();
+
+    let decision = { mode: 'plaintext', shareTeamSlugs: armed };
+    if (armed.length) {
+        const privacyBySlug = await getTeamPrivacy(endpoint, installToken);
+        const loadedKeyIds = await getLoadedKeyIds();
+        decision = decideUploadMode({ armed, privacyBySlug, loadedKeyIds });
+    }
+
+    // WITHHOLD: a private team is armed but we can't encrypt for it. Upload
+    // nothing — the recorder keeps it local and prompts to load the key.
+    if (decision.mode === 'withhold') {
+        return { withheld: true, reason: decision.reason, teams: decision.teams || [], teamKeyId: decision.teamKeyId || null };
+    }
+
+    if (decision.mode === 'encrypt') {
+        const e = e2ee();
+        const key = await getPrivateKey(decision.teamKeyId);
+        // Fail CLOSED — never fall back to plaintext for a private team.
+        if (!e || !key) return { withheld: true, reason: 'no-key', teamKeyId: decision.teamKeyId, teams: decision.shareTeamSlugs };
+        let parsed = null; try { parsed = JSON.parse(payloadText); } catch {}
+        const payloadEnv = await e.encryptContent(key, payloadText);
+        const summaryEnv = await e.encryptContent(key, JSON.stringify(summary || { v: 1 }));
+        const res = await fetch(`${endpoint}/api/replays`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                installToken,
+                encrypted: true,
+                teamKeyId: decision.teamKeyId,
+                gameId: extractGameId(parsed),
+                payload: JSON.stringify(payloadEnv),
+                encryptedSummary: JSON.stringify(summaryEnv),
+                shareTeamSlugs: decision.shareTeamSlugs,
+                actionCount: parsed?.actionCount || 0,
+                durationMs: parsed?.durationMs || 0,
+                ...(buildClientMeta() ? { clientMeta: buildClientMeta() } : {}),
+            }),
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || `Upload failed: ${res.status}`);
+        }
+        return await res.json();
+    }
+
+    // Plaintext path (unchanged behavior for non-private teams).
     const res = await fetch(`${endpoint}/api/replays`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             installToken,
             payload: payloadText,
-            ...(shareTeamSlugs.length ? { shareTeamSlugs } : {}),
+            ...(decision.shareTeamSlugs && decision.shareTeamSlugs.length ? { shareTeamSlugs: decision.shareTeamSlugs } : {}),
             ...(buildClientMeta() ? { clientMeta: buildClientMeta() } : {}),
         })
     });
@@ -186,7 +318,12 @@ const idbListReplays = async () => {
                 gameId: entry.gameId,
                 savedAt: entry.savedAt,
                 size: entry.payload?.length || 0,
-                matchup: entry.matchup
+                matchup: entry.matchup,
+                // B170: surface upload state + player meta so the bubble can list
+                // local recordings NOT yet uploaded (no karabuddySlug) and offer
+                // to upload them — encrypted, if a private team is armed + keyed.
+                karabuddySlug: entry.karabuddySlug || null,
+                players: entry.players || null,
             }));
             list.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
             resolve(list);
@@ -252,11 +389,180 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (msg.type === 'uploadReplay') {
                 // Best-effort push to karabuddy.app. Failure leaves the replay
                 // local-only; the floating panel still shows the recording.
+                // B170: msg.summary is the plaintext matchup summary the SW
+                // encrypts for a private upload (ignored on the plaintext path).
                 try {
-                    const result = await uploadReplayToKarabuddy(msg.payload);
+                    const result = await uploadReplayToKarabuddy(msg.payload, msg.summary || null);
                     sendResponse({ ok: true, data: result });
                 } catch (err) {
                     console.warn('[karabuddy] upload failed:', err);
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'storePrivateTeamKey') {
+                // B170: store a team key (base64url) under its non-secret kid.
+                // Defense: the key must actually derive to that kid, so a typo
+                // can't silently store under the wrong id (then fail to decrypt).
+                try {
+                    const teamKeyId = String(msg.teamKeyId || '');
+                    const key = String(msg.key || '');
+                    if (!teamKeyId || !key) { sendResponse({ ok: false, error: 'teamKeyId + key required' }); return; }
+                    const e = e2ee();
+                    if (e && (await e.teamKeyId(key)) !== teamKeyId) {
+                        sendResponse({ ok: false, error: 'key does not match teamKeyId' });
+                        return;
+                    }
+                    await chrome.storage.local.set({ [keyStorageKey(teamKeyId)]: key });
+                    reportExtensionReadiness(); // key set → refresh the owner roster
+                    sendResponse({ ok: true });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'listPrivateTeamKeyIds') {
+                try {
+                    sendResponse({ ok: true, data: await getLoadedKeyIds() });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'revealPrivateTeamKey') {
+                // B170 / ADR 0010 — return a STORED key's value so an owner can
+                // (re-)share it with teammates, especially LATE JOINERS (the key
+                // is otherwise only shown at generation). HARD-gated to the
+                // extension's OWN trusted pages (keys.html): a content-script
+                // sender — karabast.net OR karabuddy.app — has an http(s)
+                // sender.url and is REFUSED, so no web page (ours or karabast's,
+                // even via content.js's un-allowlisted relay) can ever pull a key
+                // out. Deliberately NOT on the webapp bridge allowlist either.
+                try {
+                    const fromExtPage = typeof sender?.url === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
+                    if (!fromExtPage) { sendResponse({ ok: false, error: 'forbidden' }); return; }
+                    const key = await getPrivateKey(String(msg.teamKeyId || ''));
+                    if (!key) { sendResponse({ ok: false, error: 'no-key' }); return; }
+                    sendResponse({ ok: true, data: { key } });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'rotationManifest' || msg.type === 'rotationRewrap' || msg.type === 'rotationFinalize') {
+                // B170 / ADR 0010 — key rotation, driven entirely from the
+                // extension's key-manager page. These proxy the owner-gated
+                // rotation endpoints with the install token (so no webapp session
+                // is needed). HARD-gated to the extension's OWN pages (like
+                // reveal): a content-script sender (karabast/karabuddy) is refused,
+                // so no web page can trigger a rotation.
+                try {
+                    const fromExtPage = typeof sender?.url === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
+                    if (!fromExtPage) { sendResponse({ ok: false, error: 'forbidden' }); return; }
+                    const endpoint = await getKarabuddyEndpoint();
+                    const installToken = await getKarabuddyInstallToken();
+                    const hdrs = { 'Content-Type': 'application/json', 'X-Install-Token': installToken };
+                    let res;
+                    if (msg.type === 'rotationManifest') {
+                        res = await fetch(`${endpoint}/api/teams/${encodeURIComponent(msg.teamSlug)}/rotation-manifest`, { credentials: 'include', headers: { 'X-Install-Token': installToken } });
+                    } else if (msg.type === 'rotationRewrap') {
+                        res = await fetch(`${endpoint}/api/replays/${encodeURIComponent(msg.slug)}/rewrap`, {
+                            method: 'POST', credentials: 'include', headers: hdrs,
+                            body: JSON.stringify({ newTeamKeyId: msg.newTeamKeyId, payload: msg.payload, encryptedSummary: msg.encryptedSummary, tags: msg.tags || [] }),
+                        });
+                    } else {
+                        res = await fetch(`${endpoint}/api/teams/${encodeURIComponent(msg.teamSlug)}/rotation-manifest`, {
+                            method: 'POST', credentials: 'include', headers: hdrs,
+                            body: JSON.stringify({ newTeamKeyId: msg.newTeamKeyId }),
+                        });
+                    }
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok && !body.error) body.error = `server error (${res.status})`;
+                    sendResponse({ ok: res.ok && body.ok !== false, data: body, status: res.status });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message, data: { error: err.message } });
+                }
+            } else if (msg.type === 'listPrivateTeamKeys') {
+                // B170: loaded keys WITH their local names (non-secret) so the
+                // webapp's private-mode toggle can show "Worlds Squad" not a raw id.
+                try {
+                    const kids = await getLoadedKeyIds();
+                    const labels = (await chrome.storage.local.get('karabuddyPrivateKeyLabels')).karabuddyPrivateKeyLabels || {};
+                    sendResponse({ ok: true, data: kids.map((kid) => ({ teamKeyId: kid, name: labels[kid] || null })) });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'getCompanionInfo') {
+                // B170: capability handshake for the webapp (via karabuddy-bridge).
+                // Also a natural moment to refresh readiness (the user is on a
+                // karabuddy page, so likely signed in) — fire-and-forget.
+                try {
+                    reportExtensionReadiness();
+                    sendResponse({ ok: true, data: { version: chrome.runtime.getManifest().version, capabilities: COMPANION_CAPABILITIES } });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'decryptForTeam') {
+                // B170: decrypt an envelope under a team key the SW holds. Returns
+                // PLAINTEXT to the page; the key never leaves the extension. 'no-key'
+                // when this device hasn't loaded the team's key.
+                try {
+                    const e = e2ee();
+                    const key = await getPrivateKey(String(msg.teamKeyId || ''));
+                    if (!e || !key) { sendResponse({ ok: false, error: 'no-key' }); return; }
+                    let env = msg.envelope;
+                    if (typeof env === 'string') { try { env = JSON.parse(env); } catch {} }
+                    const plaintext = await e.decryptContent(key, env);
+                    sendResponse({ ok: true, data: { plaintext } });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'encryptForTeam') {
+                // B170: encrypt page-supplied plaintext (e.g. a tag comment) under a
+                // team key, so web authoring keeps the key out of the page too.
+                try {
+                    const e = e2ee();
+                    const key = await getPrivateKey(String(msg.teamKeyId || ''));
+                    if (!e || !key) { sendResponse({ ok: false, error: 'no-key' }); return; }
+                    const envelope = await e.encryptContent(key, String(msg.plaintext ?? ''));
+                    sendResponse({ ok: true, data: { envelope } });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'rewrapForTeam') {
+                // B170 / ADR 0010 — key rotation. Re-wrap an envelope's data key
+                // from the OLD team key to the NEW one (both held here in
+                // storage). The content ciphertext is untouched (rewrapKey), so
+                // this is cheap even for large payloads — only the wrapped DK +
+                // kid change. Returns the re-wrapped envelope; the keys never
+                // leave the extension. 'no-key' if either key isn't loaded.
+                try {
+                    const e = e2ee();
+                    const oldKey = await getPrivateKey(String(msg.oldTeamKeyId || ''));
+                    const newKey = await getPrivateKey(String(msg.newTeamKeyId || ''));
+                    if (!e || !oldKey || !newKey) { sendResponse({ ok: false, error: 'no-key' }); return; }
+                    let env = msg.envelope;
+                    if (typeof env === 'string') { try { env = JSON.parse(env); } catch {} }
+                    const rewrapped = await e.rewrapKey(oldKey, newKey, env);
+                    sendResponse({ ok: true, data: { envelope: rewrapped } });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'openKeyManager') {
+                // B170: open the extension's trusted key-management page in a new
+                // tab (chrome-extension:// origin — not an operator-served page).
+                // Lets the webapp's "load your team key" gate launch it directly
+                // so users don't have to hunt for the toolbar icon. `makePrivate`
+                // (a team slug) deep-links a focused "generate this team's key to
+                // enable private mode" panel — the page re-verifies ownership.
+                try {
+                    let url = chrome.runtime.getURL('keys.html');
+                    if (typeof msg.makePrivate === 'string' && msg.makePrivate) {
+                        url += '?makePrivate=' + encodeURIComponent(msg.makePrivate);
+                    }
+                    await chrome.tabs.create({ url });
+                    sendResponse({ ok: true });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'forgetPrivateTeamKey') {
+                try {
+                    await chrome.storage.local.remove(keyStorageKey(String(msg.teamKeyId || '')));
+                    reportExtensionReadiness(); // key forgotten → refresh the owner roster
+                    sendResponse({ ok: true });
+                } catch (err) {
                     sendResponse({ ok: false, error: err.message });
                 }
             } else if (msg.type === 'saveReplay') {
@@ -314,6 +620,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 try {
                     const result = await applyTeamSharesToReplay({ slug: msg.slug, teamSlugs: msg.teamSlugs });
                     sendResponse({ ok: result.ok, data: result });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message });
+                }
+            } else if (msg.type === 'getPrivacyStatus') {
+                // B170 / ADR 0010: the in-game bubble's at-a-glance lock state.
+                // Runs the SAME decideUploadMode the real upload uses over the
+                // currently-armed teams + loaded keys (single source of truth, so
+                // the chip can't drift), and resolves team names for the tooltip.
+                try {
+                    const armed = await getShareTeamSlugs();
+                    if (!armed.length) { sendResponse({ ok: true, data: { mode: 'plaintext', teamNames: [] } }); return; }
+                    const endpoint = await getKarabuddyEndpoint();
+                    const installToken = await getKarabuddyInstallToken();
+                    let teams = [];
+                    try {
+                        const res = await fetch(`${endpoint}/api/me/teams-mention-data`, { credentials: 'include', headers: { 'X-Install-Token': installToken } });
+                        if (res.ok) { const body = await res.json(); teams = body.teams || []; }
+                    } catch {}
+                    const privacyBySlug = teams.length ? privacyMapFromTeams(teams) : await getTeamPrivacy(endpoint, installToken);
+                    const loadedKeyIds = await getLoadedKeyIds();
+                    const decision = decideUploadMode({ armed, privacyBySlug, loadedKeyIds });
+                    const involved = decision.teams || decision.shareTeamSlugs || [];
+                    const teamNames = involved.map((s) => (teams.find((t) => t.slug === s) || {}).name || s);
+                    sendResponse({ ok: true, data: { mode: decision.mode, reason: decision.reason || null, teamNames } });
                 } catch (err) {
                     sendResponse({ ok: false, error: err.message });
                 }

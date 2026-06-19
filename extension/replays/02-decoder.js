@@ -260,6 +260,52 @@
         };
     };
 
+    // B170 / ADR 0010: the small plaintext "summary" the SW encrypts and uploads
+    // for a PRIVATE replay, so the webapp's list/browse UIs can render a matchup
+    // card (leaders/bases/usernames + W/L) WITHOUT decrypting the whole payload.
+    // For an encrypted replay the server extracts NOTHING (it can't read
+    // ciphertext), so the extension — which has the plaintext — produces this.
+    //
+    // Shape mirrors what the server's upload route derives for a plaintext replay
+    // (players-from-first-gamestate + raw winner signal), so the webapp can run
+    // its EXISTING extractWinners over the decrypted summary to resolve W/L —
+    // no duplicated/divergent winner logic in the extension. Carries ONLY
+    // matchup fields per player (username/leader/base) — never hands/decks/cards.
+    const buildEncryptedSummary = (file, localPlayerId = null) => {
+        const events = Array.isArray(file?.events) ? file.events : [];
+        const firstGamestate = events.find((e) => e.event === 'gamestate' && e.args?.[0]);
+        const arg = firstGamestate?.args?.[0];
+        const firstSnap = arg?.full || (file?.version === 1 ? arg : null);
+        const players = {};
+        const src = firstSnap?.players;
+        if (src && typeof src === 'object') {
+            for (const pid of Object.keys(src)) {
+                const p = src[pid] || {};
+                players[pid] = {
+                    username: p.user?.username || '',
+                    leader: p.leader ? { name: p.leader.name || '', set: p.leader.setId?.set || '', number: p.leader.setId?.number || 0 } : null,
+                    base: p.base ? { name: p.base.name || '', set: p.base.setId?.set || '', number: p.base.setId?.number || 0 } : null,
+                };
+            }
+        }
+        // Final reconstructed state → the raw winner signal (winners/winner/
+        // endGameInfo) the webapp normalizes against `players`. decodeReplay folds
+        // full+patches; normalizeGamestate doesn't strip these fields.
+        let finalState = null;
+        try {
+            const frames = decodeReplay(file).frames;
+            finalState = frames.length ? frames[frames.length - 1].state : null;
+        } catch { finalState = null; }
+        return {
+            v: 1,
+            players,
+            ownerPlayerId: typeof localPlayerId === 'string' ? localPlayerId : null,
+            winners: Array.isArray(finalState?.winners) ? finalState.winners : null,
+            winner: typeof finalState?.winner === 'string' ? finalState.winner : null,
+            endGameInfo: finalState?.endGameInfo ?? finalState?.endResult ?? null,
+        };
+    };
+
     const buildReplayFilename = (whenMs, meta) => {
         const ts = formatFilenameTimestamp(whenMs);
         if (!meta || meta.length < 2) return `${ts}.karareplay`;
@@ -514,6 +560,7 @@
         isAnonymousUsername,
         extractReplayMeta,
         extractMetaFromFile,
+        buildEncryptedSummary,
         buildReplayFilename,
         stripHiddenHandCards,
         injectDefaultPromptState,

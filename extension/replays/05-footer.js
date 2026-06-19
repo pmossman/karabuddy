@@ -25,6 +25,7 @@
     const R = () => NS.Recorder;
     const B = () => NS.bridge;
     const D = () => NS.Decoder;
+    const T = () => NS.toast; // toast accessor (was referenced below but undefined)
 
     // ----- Layout constants -----
     const LAUNCHER_ID = 'karabast-replays-launcher';
@@ -93,6 +94,48 @@
     //                                          used to restore on toggle
     let shareTeamSlugs = [];
     let lastShareTeamSlugs = [];
+    // B170 / ADR 0010: team_key_ids for which a private-team key is loaded in the
+    // extension (chrome.storage.local, SW-held). Refreshed each share-panel
+    // render via the bridge; drives the per-team "key loaded / needs key" chip.
+    // The key bytes themselves NEVER come back across the bridge.
+    let privateKeyIdsLoaded = [];
+    // B170 / ADR 0010: cached privacy decision for the armed teams (from the SW's
+    // decideUploadMode — single source of truth) driving the header share-status
+    // chip. Refreshed on share/key changes + lazily on first paint, NOT per tick.
+    let privacyStatus = null;
+    // B170: slug → team (with privateMode/teamKeyId), cached on each share-panel
+    // load so the toggle can enforce arming coherence without a refetch.
+    let cachedTeamsBySlug = new Map();
+
+    // B170 / ADR 0010 — arming a private team is EXCLUSIVE: a replay is encrypted
+    // under ONE team key, so it can't also go to an open team (which can't
+    // decrypt) or a private team with a different key. Given the just-armed team,
+    // drop every armed slug that's incompatible with it. Pure on the slug list.
+    const coerceArmExclusive = (justArmedSlug, slugs, bySlug) => {
+        const anchor = bySlug.get(justArmedSlug);
+        if (!anchor) return slugs;
+        if (anchor.privateMode) {
+            // keep only same-key private teams (the just-armed one included)
+            return slugs.filter((s) => {
+                const t = bySlug.get(s);
+                return s === justArmedSlug || (t && t.privateMode && t.teamKeyId === anchor.teamKeyId);
+            });
+        }
+        // open team armed → drop any private teams
+        return slugs.filter((s) => {
+            const t = bySlug.get(s);
+            return s === justArmedSlug || !(t && t.privateMode);
+        });
+    };
+
+    // Sanitize a persisted set to that same invariant (anchor on the first armed
+    // private team, if any). Used on load so a legacy incoherent selection can't
+    // linger.
+    const coerceCoherent = (slugs, bySlug) => {
+        const firstPrivate = slugs.find((s) => bySlug.get(s)?.privateMode);
+        return firstPrivate ? coerceArmExclusive(firstPrivate, slugs, bySlug) : slugs;
+    };
+
     const SHARE_STORAGE_KEY = 'karabuddyShareTeamSlugs';
     const SHARE_LAST_STORAGE_KEY = 'karabuddyLastShareTeamSlugs';
     // B80: opt-out for the content-free karabast-drift beacon (default OFF =
@@ -285,31 +328,6 @@
         return el;
     };
 
-    // Click on the collapsed header's share indicator. Pure toggle:
-    //   - currently shared  → go private (saves to lastShareTeamSlugs)
-    //   - currently private + remembered teams → restore them
-    //   - currently private + no memory      → expand the panel so the
-    //     user can pick teams (avoids a silent no-op when they have no
-    //     persistent state yet).
-    const handleShareToggleClick = () => {
-        if (shareTeamSlugs.length > 0) {
-            shareTeamSlugs = [];
-            persistShareState();
-            refreshFooter();
-            T()?.show?.('Replay sharing off', { kind: 'info' });
-            return;
-        }
-        if (lastShareTeamSlugs.length > 0) {
-            shareTeamSlugs = [...lastShareTeamSlugs];
-            persistShareState();
-            refreshFooter();
-            T()?.show?.(`Sharing with ${shareTeamSlugs.length} team${shareTeamSlugs.length === 1 ? '' : 's'}`, { kind: 'success' });
-            return;
-        }
-        // No memory yet — open the panel so the user can pick teams.
-        if (!expanded) expand();
-    };
-
     // Re-render the expanded panel's share section. Called after toggles
     // so the checklist reflects current state without rebuilding the
     // whole panel.
@@ -320,7 +338,16 @@
         if (!list) return;
         list.innerHTML = '';
         const data = await loadMentionData();
+        // B170: refresh which private-team keys are loaded (kids only).
+        try { privateKeyIdsLoaded = (await B().listPrivateTeamKeyIds?.()) || []; }
+        catch { privateKeyIdsLoaded = []; }
         const teams = data?.teams || [];
+        // Cache for the toggle's exclusivity check, and heal any legacy
+        // incoherent selection (e.g. a private + open team both armed before
+        // exclusivity was enforced) so the rows can't show contradictory state.
+        cachedTeamsBySlug = new Map(teams.map((t) => [t.slug, t]));
+        const coherent = coerceCoherent(shareTeamSlugs, cachedTeamsBySlug);
+        if (coherent.length !== shareTeamSlugs.length) { shareTeamSlugs = coherent; persistShareState(); }
         if (teams.length === 0) {
             const empty = document.createElement('div');
             empty.setAttribute('style', 'font-size: 11px; color: #6c7588; font-style: italic; padding: 4px 0;');
@@ -333,42 +360,165 @@
         for (const team of teams) {
             list.appendChild(buildShareRow(team));
         }
+        // B170: an explicit, clearly-a-button entry to the key manager (the row
+        // badges are status only). Shown when the user is on any private team.
+        if (teams.some((t) => t.privateMode)) {
+            const manage = document.createElement('button');
+            manage.type = 'button';
+            manage.textContent = '🔑 Manage private team keys';
+            manage.setAttribute('style', [
+                'margin-top: 4px', 'align-self: flex-start', 'cursor: pointer',
+                'padding: 2px 0', 'background: transparent', 'border: 0',
+                'font: 600 11px -apple-system, BlinkMacSystemFont, sans-serif',
+                'color: #8a93a3', 'text-align: left',
+            ].join(';'));
+            manage.addEventListener('mouseenter', () => { manage.style.color = '#cfe6ff'; });
+            manage.addEventListener('mouseleave', () => { manage.style.color = '#8a93a3'; });
+            manage.addEventListener('mousedown', (e) => e.stopPropagation());
+            manage.addEventListener('click', (e) => { e.stopPropagation(); B().openKeyManager?.(); });
+            list.appendChild(manage);
+        }
+        // B170: arming/disarming a team or loading/forgetting a key changes the
+        // privacy decision — refresh the header chip to match.
+        refreshPrivacyStatus();
     };
+
 
     // Tactical-panel row: status LED + monospace team name + ARMED /
     // STANDBY label. Click anywhere on the row toggles. Replaces the
     // native checkbox so the bubble reads as a cockpit control rather
     // than a settings form.
+    // B170: a small padlock (monochrome inline SVG, so its colour conveys state)
+    // shown to the right of a PRIVATE team's name — the eye-catch for "what's the
+    // encryption status here?". Paired with a short label + an INSTANT custom
+    // tooltip (attachTooltip) for the full explanation.
+    const lockIcon = (color) => {
+        // Built via the DOM (not innerHTML) so there's no dynamic-innerHTML lint
+        // flag — `color` is set as an attribute, never interpolated into markup.
+        const SVGNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(SVGNS, 'svg');
+        svg.setAttribute('width', '13'); svg.setAttribute('height', '13');
+        svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none'); svg.setAttribute('aria-hidden', 'true');
+        const rect = document.createElementNS(SVGNS, 'rect');
+        rect.setAttribute('x', '4.5'); rect.setAttribute('y', '10.5'); rect.setAttribute('width', '15');
+        rect.setAttribute('height', '10'); rect.setAttribute('rx', '2.2'); rect.setAttribute('stroke', color); rect.setAttribute('stroke-width', '2');
+        const path = document.createElementNS(SVGNS, 'path');
+        path.setAttribute('d', 'M8 10.5V8a4 4 0 0 1 8 0v2.5'); path.setAttribute('stroke', color); path.setAttribute('stroke-width', '2');
+        svg.append(rect, path);
+        const span = document.createElement('span');
+        span.setAttribute('style', 'flex: 0 0 auto; display: inline-flex; align-items: center;');
+        span.append(svg);
+        return span;
+    };
+
+    // B170: an INSTANT custom tooltip (the native `title` lags ~1s). One shared
+    // floating element, positioned above the hovered target (flipped below if it
+    // would clip the top). pointer-events:none so it never eats hovers.
+    let tooltipEl = null;
+    const getTooltip = () => {
+        if (tooltipEl && tooltipEl.isConnected) return tooltipEl;
+        tooltipEl = document.createElement('div');
+        tooltipEl.setAttribute('style', [
+            'position: fixed', 'z-index: 2147483647', 'max-width: 240px', 'display: none',
+            'background: #0b0e13', 'border: 1px solid #2e333c', 'border-radius: 6px',
+            'padding: 7px 9px', 'font: 500 11px -apple-system, BlinkMacSystemFont, sans-serif',
+            'color: #d6dbe4', 'line-height: 1.4', 'box-shadow: 0 4px 14px rgba(0,0,0,0.55)',
+            'pointer-events: none',
+        ].join(';'));
+        document.body.appendChild(tooltipEl);
+        return tooltipEl;
+    };
+    const attachTooltip = (el, text) => {
+        el.addEventListener('mouseenter', () => {
+            const tip = getTooltip();
+            tip.textContent = text;
+            tip.style.display = 'block';
+            const r = el.getBoundingClientRect();
+            const tr = tip.getBoundingClientRect();
+            let top = r.top - tr.height - 6;
+            if (top < 4) top = r.bottom + 6; // flip below if no room above
+            let left = Math.max(4, r.right - tr.width);
+            if (left + tr.width > window.innerWidth - 4) left = window.innerWidth - tr.width - 4;
+            tip.style.top = top + 'px';
+            tip.style.left = left + 'px';
+        });
+        el.addEventListener('mouseleave', () => { if (tooltipEl) tooltipEl.style.display = 'none'; });
+    };
+
+    // B170 / ADR 0010: the active arming "mode" derived from the current set —
+    // a private game is encrypted under ONE key, so it can't mix with open teams
+    // or a different-key private team. → { type:'private', kid } | { type:'open' }
+    // | { type:'none' }.
+    const getArmedMode = () => {
+        let kid = null;
+        let hasOpen = false;
+        for (const s of shareTeamSlugs) {
+            const t = cachedTeamsBySlug.get(s);
+            if (!t) continue;
+            if (t.privateMode) { if (!kid) kid = t.teamKeyId || '∅'; }
+            else hasOpen = true;
+        }
+        if (kid) return { type: 'private', kid };
+        if (hasOpen) return { type: 'open' };
+        return { type: 'none' };
+    };
+
     const buildShareRow = (team) => {
         const armed = shareTeamSlugs.includes(team.slug);
-        const accent = armed ? '#4dd2ff' : '#3a4150';
+        const keyLoaded = team.privateMode ? (!!team.teamKeyId && privateKeyIdsLoaded.includes(team.teamKeyId)) : true;
+        // B170: armed private team with NO key → WARNING state. The replay won't
+        // upload (stays local) until the key is loaded, so the whole row goes
+        // amber instead of the healthy cyan "armed" treatment — crystal clear.
+        const needsKey = armed && team.privateMode && !keyLoaded;
+
+        // B170: rows INCOMPATIBLE with what's already armed are disabled (greyed,
+        // not clickable) with a reason — mirroring the replay viewer's share UI.
+        // Arming a private team disables open + different-key private teams (and
+        // vice versa); to switch, un-arm the current pick (armed rows stay live).
+        const mode = getArmedMode();
+        let disabled = false;
+        let disabledTitle = ''; // full sentence shown on hover — no shorthand text
+        if (!armed) {
+            if (mode.type === 'private') {
+                if (!team.privateMode) { disabled = true; disabledTitle = 'A private team is armed — its encrypted replay can’t also go to an open team. Un-arm the private team to share here.'; }
+                else if ((team.teamKeyId || '∅') !== mode.kid) { disabled = true; disabledTitle = 'A different private team is armed — un-arm it to record for this team instead.'; }
+            } else if (mode.type === 'open' && team.privateMode) {
+                disabled = true; disabledTitle = 'An open team is armed — un-arm it to record privately for this team.';
+            }
+        }
+
+        const accent = needsKey ? '#ffb020' : (armed ? '#4dd2ff' : '#3a4150');
+        const armedBg = needsKey ? 'rgba(255, 176, 32, 0.10)' : 'rgba(77, 210, 255, 0.08)';
         const row = document.createElement('div');
         row.setAttribute('role', 'button');
-        row.setAttribute('tabindex', '0');
+        row.setAttribute('tabindex', disabled ? '-1' : '0');
         row.setAttribute('aria-pressed', armed ? 'true' : 'false');
+        if (disabled) row.setAttribute('aria-disabled', 'true');
         row.setAttribute('style', [
             'display: flex',
             'align-items: center',
             'gap: 9px',
             'padding: 6px 9px',
-            'background: ' + (armed ? 'rgba(77, 210, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)'),
+            'background: ' + (armed ? armedBg : 'rgba(255, 255, 255, 0.02)'),
             'border-left: 2px solid ' + accent,
-            'cursor: pointer',
+            'cursor: ' + (disabled ? 'not-allowed' : 'pointer'),
+            'opacity: ' + (disabled ? '0.45' : '1'),
             'transition: background 120ms ease, border-color 120ms ease'
         ].join(';'));
         row.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-        row.addEventListener('mouseenter', () => {
-            if (!shareTeamSlugs.includes(team.slug)) {
-                row.style.background = 'rgba(77, 210, 255, 0.04)';
-            }
-        });
-        row.addEventListener('mouseleave', () => {
-            const stillArmed = shareTeamSlugs.includes(team.slug);
-            row.style.background = stillArmed
-                ? 'rgba(77, 210, 255, 0.08)'
-                : 'rgba(255, 255, 255, 0.02)';
-        });
+        if (!disabled) {
+            row.addEventListener('mouseenter', () => {
+                if (!shareTeamSlugs.includes(team.slug)) {
+                    row.style.background = 'rgba(77, 210, 255, 0.04)';
+                }
+            });
+            row.addEventListener('mouseleave', () => {
+                const stillArmed = shareTeamSlugs.includes(team.slug);
+                row.style.background = stillArmed ? armedBg : 'rgba(255, 255, 255, 0.02)';
+            });
+        }
         const toggle = () => {
+            if (disabled) return;
             if (shareTeamSlugs.includes(team.slug)) {
                 shareTeamSlugs = shareTeamSlugs.filter((s) => s !== team.slug);
             } else {
@@ -390,6 +540,9 @@
         // with a soft glow shadow on the ring to sell the "live signal"
         // read.
         const led = document.createElement('span');
+        const ledGlow = needsKey
+            ? '0 0 6px rgba(255, 176, 32, 0.75), inset 0 0 4px rgba(255, 176, 32, 0.5)'
+            : (armed ? '0 0 6px rgba(77, 210, 255, 0.7), inset 0 0 4px rgba(77, 210, 255, 0.45)' : 'inset 0 0 2px rgba(0,0,0,0.6)');
         led.setAttribute('style', [
             'display: inline-flex',
             'align-items: center',
@@ -399,11 +552,17 @@
             'border-radius: 50%',
             'border: 1.5px solid ' + accent,
             'background: rgba(0, 0, 0, 0.45)',
-            'box-shadow: ' + (armed ? '0 0 6px rgba(77, 210, 255, 0.7), inset 0 0 4px rgba(77, 210, 255, 0.45)' : 'inset 0 0 2px rgba(0,0,0,0.6)'),
+            'box-shadow: ' + ledGlow,
             'flex: 0 0 auto',
             'transition: box-shadow 120ms ease, border-color 120ms ease'
         ].join(';'));
-        if (armed) {
+        if (needsKey) {
+            // Warning bang instead of the healthy dot.
+            const bang = document.createElement('span');
+            bang.setAttribute('style', 'font: 900 9px -apple-system, BlinkMacSystemFont, sans-serif; color: #ffb020; line-height: 1;');
+            bang.textContent = '!';
+            led.appendChild(bang);
+        } else if (armed) {
             const dot = document.createElement('span');
             dot.setAttribute('style', [
                 'display: block',
@@ -425,27 +584,45 @@
             'text-overflow: ellipsis',
             'white-space: nowrap',
             'font: 600 12px "SF Mono", Menlo, Consolas, monospace',
-            'color: ' + (armed ? '#d6f0ff' : '#a8b0bd'),
+            'color: ' + (needsKey ? '#ffd98a' : (armed ? '#d6f0ff' : '#a8b0bd')),
             'letter-spacing: 0.02em'
         ].join(';'));
         name.textContent = team.name;
 
         row.appendChild(led);
         row.appendChild(name);
-        // Status readout, far right. Only appears when sharing is on —
-        // disabled rows just show the LED + name, nothing else.
-        if (armed) {
+
+        // Right side. A PRIVATE team gets a lock icon + a SHORT visible label
+        // (so the state — esp. the missing-key warning — reads at a glance), with
+        // an INSTANT custom tooltip carrying the full explanation. An armed OPEN
+        // team gets a quiet "SHARING". A disabled OPEN team explains on row hover.
+        if (team.privateMode) {
+            const st = disabled
+                ? { color: '#6c7588', word: 'Locked', full: disabledTitle }
+                : keyLoaded
+                    ? { color: '#4dd2ff', word: armed ? 'Encrypted' : 'Key loaded', full: armed ? 'This match will be encrypted for this team before upload — KaraBuddy can’t read it.' : 'Team key loaded on this device — replays for this team open automatically.' }
+                    : { color: '#ffb020', word: 'No key', full: armed ? 'No key on this device — this match stays local and won’t upload until you load the team key.' : 'Private team — its key isn’t loaded on this device. Load it to record or view replays.' };
+            const wrap = document.createElement('span');
+            wrap.setAttribute('style', 'display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;');
+            wrap.appendChild(lockIcon(st.color));
+            const word = document.createElement('span');
+            word.setAttribute('style', `font: 700 9px "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: ${st.color};`);
+            word.textContent = st.word;
+            wrap.appendChild(word);
+            attachTooltip(wrap, st.full);
+            row.appendChild(wrap);
+        } else if (armed) {
             const status = document.createElement('span');
             status.setAttribute('style', [
                 'font: 700 9px "SF Mono", Menlo, Consolas, monospace',
-                'color: #4dd2ff',
-                'letter-spacing: 0.18em',
-                'text-transform: uppercase',
-                'flex: 0 0 auto'
+                'color: #4dd2ff', 'letter-spacing: 0.18em', 'text-transform: uppercase', 'flex: 0 0 auto',
             ].join(';'));
             status.textContent = 'Sharing';
             row.appendChild(status);
+        } else if (disabled) {
+            attachTooltip(row, disabledTitle);
         }
+
         return row;
     };
 
@@ -582,10 +759,14 @@
         // OFF if currently sharing; if currently private, restores the
         // last non-empty selection (or expands the panel to pick teams
         // if there's no prior selection to restore).
+        // B170: unified SHARE-STATUS chip — visible whenever ≥1 team is armed,
+        // collapsed OR expanded (the armed selection is persistent). Shows an icon
+        // for the state + the team count: ● N (sharing/open), 🔒 N (encrypting),
+        // ⚠ N (private team armed but no key → won't upload). Click opens the
+        // panel to manage. Driven by privacyStatus via updateShareStatus().
         const shareWrap = document.createElement('button');
         shareWrap.id = 'karabast-replays-launcher-share';
         shareWrap.type = 'button';
-        shareWrap.title = 'Toggle team sharing';
         shareWrap.setAttribute('style', [
             'display: none',
             'align-items: center',
@@ -601,19 +782,14 @@
             'flex: 0 0 auto',
             'height: 100%'
         ].join(';'));
-        const shareDot = document.createElement('span');
-        shareDot.id = 'karabast-replays-launcher-share-dot';
-        shareDot.setAttribute('style', 'display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6bd968; box-shadow: 0 0 5px #6bd968;');
         const shareLabel = document.createElement('span');
         shareLabel.id = 'karabast-replays-launcher-share-label';
-        shareLabel.setAttribute('style', 'font: 600 9px -apple-system, BlinkMacSystemFont, sans-serif; color: #c8eecf; letter-spacing: 0.04em;');
-        shareLabel.textContent = 'SHARED';
-        shareWrap.appendChild(shareDot);
+        shareLabel.setAttribute('style', 'font: 700 10px -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.04em;');
         shareWrap.appendChild(shareLabel);
         shareWrap.addEventListener('mousedown', (e) => { e.stopPropagation(); });
         shareWrap.addEventListener('click', (e) => {
             e.stopPropagation();
-            handleShareToggleClick();
+            if (!expanded) expand();
         });
 
         // Spacer pushes × to the right when expanded.
@@ -870,10 +1046,123 @@
         els.push(linksWrap);
 
         els.push(buildShareSection());
+        // B170: local recordings not yet uploaded (e.g. a private game withheld
+        // because the key wasn't loaded). Sits BELOW the share section so the
+        // team is armed above before uploading. The payloads never reached the
+        // server, so uploading them encrypted is safe.
+        els.push(buildPendingUploadsSection());
         els.push(buildWhoamiBlock());
         els.push(buildHealthOptOut());
 
         return els;
+    };
+
+    // B170 / ADR 0010 — "Pending uploads": recordings held only in this browser
+    // (no karabuddySlug — withheld private games, or failed/never-sent uploads).
+    // Their plaintext never reached the server, so uploading now is safe: the SW
+    // encrypts if a private team is armed + its key is loaded, else uploads
+    // plaintext to the armed open teams (same path as a fresh recording).
+    const matchupLabel = (players) => {
+        try {
+            const names = (players || []).map((p) => (p.leader && p.leader.name) || p.username || '?');
+            if (names.length >= 2) return `${names[0]} vs ${names[1]}`;
+            if (names.length === 1) return names[0];
+        } catch {}
+        return 'Recorded game';
+    };
+    const agoLabel = (ts) => {
+        const s = Math.max(0, Math.floor((Date.now() - (ts || 0)) / 1000));
+        if (s < 60) return 'just now';
+        const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+        const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+        return `${Math.floor(h / 24)}d ago`;
+    };
+
+    const uploadPending = async (entry, btn) => {
+        btn.disabled = true; btn.textContent = 'Uploading…';
+        try {
+            const r = await B().getReplay(entry.gameId);
+            if (!r || !r.payload) { T()?.show?.('Recording not found on this device', { kind: 'error' }); btn.disabled = false; btn.textContent = 'Upload'; return; }
+            let obj = null; try { obj = JSON.parse(r.payload); } catch {}
+            const summary = obj ? (D()?.buildEncryptedSummary?.(obj, obj.localPlayerId || null) || null) : null;
+            const result = await B().uploadReplay(r.payload, summary);
+            if (result && result.withheld) {
+                // Still can't encrypt — guide the user to arm the team + load the key.
+                const msg = result.reason === 'no-key'
+                    ? 'Load this team’s key (Manage keys), then upload'
+                    : result.reason === 'key-conflict'
+                    ? 'Arm just one private team, then upload'
+                    : 'Arm the private team above and load its key, then upload';
+                T()?.show?.(msg, { kind: 'warning' });
+                btn.disabled = false; btn.textContent = 'Upload';
+                return;
+            }
+            if (!result || !result.slug) { T()?.show?.('Upload failed', { kind: 'error' }); btn.disabled = false; btn.textContent = 'Upload'; return; }
+            // Patch the local entry with the hosted slug so it leaves the list.
+            await B().saveReplay({ ...r, karabuddySlug: result.slug, karabuddyUrl: result.url });
+            // Apply the armed team-share rows (plaintext path; encrypted uploads
+            // already carried their shares server-side).
+            const slugs = getShareTeamSlugs();
+            if (!result.encrypted && slugs.length) B().applyTeamShares?.(result.slug, slugs);
+            T()?.show?.(result.encrypted ? 'Uploaded (encrypted) ✓' : 'Uploaded ✓', { kind: 'success' });
+            refreshPendingUploads();
+        } catch (err) {
+            T()?.show?.('Upload failed', { kind: 'error' });
+            btn.disabled = false; btn.textContent = 'Upload';
+        }
+    };
+
+    const renderPendingInto = (section, pending) => {
+        section.innerHTML = '';
+        if (!pending.length) { section.style.display = 'none'; return; }
+        section.style.display = 'flex';
+        const label = document.createElement('div');
+        label.setAttribute('style', 'font: 600 10px -apple-system, BlinkMacSystemFont, sans-serif; color: #6c7588; letter-spacing: 0.08em; text-transform: uppercase;');
+        label.textContent = 'Not yet uploaded';
+        section.appendChild(label);
+        for (const e of pending.slice(0, 5)) {
+            const row = document.createElement('div');
+            row.setAttribute('style', 'display: flex; align-items: center; gap: 8px; padding: 4px 0;');
+            const txt = document.createElement('div');
+            txt.setAttribute('style', 'flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;');
+            const name = document.createElement('div');
+            name.setAttribute('style', 'font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif; color: #d6e7ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;');
+            name.textContent = matchupLabel(e.players);
+            const sub = document.createElement('div');
+            sub.setAttribute('style', 'font-size: 10px; color: #6c7588;');
+            sub.textContent = agoLabel(e.savedAt);
+            txt.appendChild(name); txt.appendChild(sub);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = 'Upload';
+            btn.setAttribute('style', 'flex: 0 0 auto; background: rgba(77,157,255,0.18); color: #d6e7ff; border: 1px solid #4d9dff; border-radius: 6px; padding: 5px 11px; font: 600 11px -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer;');
+            btn.addEventListener('mousedown', (ev) => ev.stopPropagation());
+            btn.addEventListener('click', (ev) => { ev.stopPropagation(); uploadPending(e, btn); });
+            row.appendChild(txt); row.appendChild(btn);
+            section.appendChild(row);
+        }
+    };
+
+    const refreshPendingUploads = () => {
+        const section = document.getElementById('karabast-replays-panel-pending');
+        if (!section) return;
+        B().listReplays().then((list) => {
+            const pending = (Array.isArray(list) ? list : []).filter((e) => !e.karabuddySlug);
+            renderPendingInto(section, pending);
+        }).catch(() => {});
+    };
+
+    const buildPendingUploadsSection = () => {
+        const section = document.createElement('div');
+        section.id = 'karabast-replays-panel-pending';
+        section.setAttribute('style', 'display: none; flex-direction: column; gap: 4px;');
+        // Populate async via the local ref (the section isn't in the DOM yet, so
+        // a getElementById lookup would miss it). Hidden until there's something.
+        B().listReplays().then((list) => {
+            const pending = (Array.isArray(list) ? list : []).filter((e) => !e.karabuddySlug);
+            renderPendingInto(section, pending);
+        }).catch(() => {});
+        return section;
     };
 
     const buildRecordingBody = () => {
@@ -1614,46 +1903,47 @@
         refreshFooter();
     };
 
-    // B75: team list backing the header share indicator (so it knows whether
-    // the user has teams + how many). null = not yet fetched.
-    let indicatorTeams = null;
-    let indicatorFetchInFlight = false;
-    const ensureIndicatorTeams = () => {
-        if (indicatorTeams !== null || indicatorFetchInFlight) return;
-        indicatorFetchInFlight = true;
-        loadMentionData()
-            .then((data) => { indicatorTeams = data ? data.teams : []; })
-            .catch(() => { indicatorTeams = []; })
-            .finally(() => { indicatorFetchInFlight = false; refreshFooter(); });
-    };
-    const SHARE_DOT_BASE = 'display: inline-block; width: 6px; height: 6px; border-radius: 50%;';
-    const SHARE_DOT_ON = SHARE_DOT_BASE + ' background: #6bd968; box-shadow: 0 0 5px #6bd968;';
-    const SHARE_DOT_OFF = SHARE_DOT_BASE + ' background: #5a6473; box-shadow: none;';
-    // B75: the share indicator is MATCH-ONLY (hidden on karabast home/non-match
-    // screens — nothing to share off-match) and shown only when the user has
-    // teams. Sharing → green "SHARING (X)" (drop the count if they have just one
-    // team); has teams but not sharing → dim gray "NOT SHARING" as a nudge.
-    const updateShareIndicator = (block, active) => {
-        if (!active) { block.style.display = 'none'; return; }
-        ensureIndicatorTeams();
-        const teams = indicatorTeams || [];
-        if (teams.length === 0) { block.style.display = 'none'; return; }
-        block.style.display = 'inline-flex';
-        const dot = document.getElementById('karabast-replays-launcher-share-dot');
+    // B170 / ADR 0010: the unified SHARE-STATUS chip — icon + team count derived
+    // from the actual upload decision (privacyStatus). Visible whenever ≥1 team is
+    // armed, collapsed OR expanded, recording or not (the selection is
+    // persistent). ● N = sharing (open) · 🔒 N = encrypting (private + key) ·
+    // ⚠ N = private team armed without its key (won't upload).
+    const updateShareStatus = () => {
+        const block = document.getElementById('karabast-replays-launcher-share');
+        if (!block) return;
         const label = document.getElementById('karabast-replays-launcher-share-label');
-        const sharedCount = shareTeamSlugs.filter((s) => teams.some((t) => t.slug === s)).length;
-        if (sharedCount > 0) {
-            if (dot) dot.setAttribute('style', SHARE_DOT_ON);
-            if (label) {
-                label.style.color = '#c8eecf';
-                label.textContent = teams.length > 1 ? `SHARING (${sharedCount})` : 'SHARING';
-            }
-            block.title = 'Sharing this match with your team(s) — click to stop';
+        const ps = privacyStatus;
+        const count = ps && Array.isArray(ps.teamNames) ? ps.teamNames.length : 0;
+        if (!ps || count === 0) { block.style.display = 'none'; return; }
+        block.style.display = 'inline-flex';
+        let icon, color, title;
+        if (ps.mode === 'withhold') {
+            icon = '⚠'; color = '#ffb020';
+            title = ps.reason === 'key-conflict'
+                ? 'Two private teams with different keys are armed — arm just one. Won’t upload. Click to manage.'
+                : `${count} private team${count === 1 ? '' : 's'} armed without a key — won’t upload until you load it. Click to manage.`;
+        } else if (ps.mode === 'encrypt') {
+            icon = '🔒'; color = '#9fe6ff';
+            title = `Encrypting for ${count} private team${count === 1 ? '' : 's'} — KaraBuddy can’t read it. Click to manage.`;
         } else {
-            if (dot) dot.setAttribute('style', SHARE_DOT_OFF);
-            if (label) { label.style.color = '#8a93a3'; label.textContent = 'NOT SHARING'; }
-            block.title = 'This match is not being shared — click to share with your team(s)';
+            icon = '●'; color = '#6bd968';
+            title = `Sharing with ${count} team${count === 1 ? '' : 's'}. Click to manage.`;
         }
+        if (label) { label.textContent = `${icon} ${count}`; label.style.color = color; }
+        block.title = title;
+    };
+
+    // Fetch the privacy decision from the SW (decideUploadMode — single source of
+    // truth) and repaint the chip. In-flight guard so a burst of refreshFooter
+    // ticks can't fan out duplicate fetches.
+    let privacyFetchInFlight = false;
+    const refreshPrivacyStatus = async () => {
+        if (privacyFetchInFlight) return;
+        privacyFetchInFlight = true;
+        try { privacyStatus = (await B().getPrivacyStatus?.()) || null; }
+        catch { privacyStatus = null; }
+        finally { privacyFetchInFlight = false; }
+        updateShareStatus();
     };
 
     const refreshFooter = () => {
@@ -1665,9 +1955,11 @@
         const recBlock = document.getElementById('karabast-replays-launcher-rec');
         if (recBlock) recBlock.style.display = active ? 'flex' : 'none';
 
-        // B75: match-only share indicator (sharing / not-sharing states).
-        const shareBlock = document.getElementById('karabast-replays-launcher-share');
-        if (shareBlock) updateShareIndicator(shareBlock, active);
+        // B170: unified share-status chip — armed-gated (NOT recording-gated) so
+        // it shows in the collapsed bubble too. Lazily fetch the decision on first
+        // paint (when null); otherwise paint from cache (cheap, DOM-only).
+        if (privacyStatus === null) refreshPrivacyStatus();
+        updateShareStatus();
 
         // If the recording state flipped while expanded, the body content
         // (idle links vs recording controls) is now stale. Collapse so the

@@ -130,4 +130,54 @@
             }, window.location.origin);
         }
     });
+
+    // B170 / ADR 0010: generic SW relay for the webapp — the capability handshake
+    // and E2EE decrypt/encrypt. The page posts a `karabuddy:companionRequest`; we
+    // forward it to the service worker and post the reply back as
+    // `karabuddy:companionResult`. Plaintext / envelopes / capability info cross
+    // this channel — the team KEY never does.
+    //
+    // ONLY an allowlisted set of request types is relayed. Deliberately EXCLUDES
+    // key management (storePrivateTeamKey / forgetPrivateTeamKey) and uploads, so
+    // a poisoned karabuddy page can't store, overwrite, or wipe keys, or trigger
+    // uploads — those live only in the in-game bubble on karabast.net. (Decrypt
+    // is the one accepted residual: a poisoned page can read plaintext it could
+    // already see — far weaker than extracting the key. See the threat model.)
+    const COMPANION_ALLOWED = new Set([
+        'getCompanionInfo', 'decryptForTeam', 'encryptForTeam', 'listPrivateTeamKeyIds', 'listPrivateTeamKeys',
+        // Opens the extension's own key-management page (a chrome-extension://
+        // tab). The page can't store/forget keys via this channel — those stay
+        // excluded — it just asks the SW to surface the trusted UI.
+        'openKeyManager',
+        // NOTE: key store/forget/REVEAL and ROTATION (manifest/rewrap/finalize)
+        // are deliberately NOT relayable from a webapp page — rotation runs only
+        // in the extension's own key-manager page (gated by sender origin in the
+        // SW). `rewrapForTeam` was dropped here once rotation moved off the webapp.
+    ]);
+    window.addEventListener('message', (e) => {
+        if (e.source !== window) return;
+        const data = e.data;
+        if (!data || data.type !== 'karabuddy:companionRequest') return;
+        const requestId = data.requestId;
+        const request = data.request;
+        const reply = (payload) => window.postMessage(
+            { type: 'karabuddy:companionResult', requestId, ...payload },
+            window.location.origin,
+        );
+        if (!request || typeof request.type !== 'string' || !COMPANION_ALLOWED.has(request.type)) {
+            reply({ ok: false, error: 'unsupported companion request' });
+            return;
+        }
+        try {
+            chrome.runtime.sendMessage(request, (res) => {
+                if (chrome.runtime.lastError) {
+                    reply({ ok: false, error: String(chrome.runtime.lastError.message || chrome.runtime.lastError) });
+                    return;
+                }
+                reply({ ok: !!(res && res.ok), data: res && res.data, error: res && res.error });
+            });
+        } catch (err) {
+            reply({ ok: false, error: String((err && err.message) || err) });
+        }
+    });
 })();

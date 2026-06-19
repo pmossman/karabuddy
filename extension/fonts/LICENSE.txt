@@ -1,0 +1,8 @@
+Bundled web fonts (latin subset, woff2) — used by the extension's key-manager
+page (keys.html) to match karabuddy.app's typography offline.
+
+- Barlow — Copyright (c) The Barlow Project Authors. SIL Open Font License 1.1.
+- Orbitron — Copyright (c) The Orbitron Project Authors. SIL Open Font License 1.1.
+
+Both fonts are licensed under the SIL Open Font License, Version 1.1:
+https://openfontlicense.org/  ·  Source: https://fonts.google.com/

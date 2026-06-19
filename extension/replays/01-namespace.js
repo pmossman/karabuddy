@@ -74,13 +74,26 @@
             }),
         // Push a finalized replay to karabuddy.com. Best-effort; resolves to
         // { slug, url } on success or null on failure (already logged by the
-        // background's catch block).
-        uploadReplay: (payload) =>
-            companionRequest({ type: 'uploadReplay', payload }, 15000)
+        // background's catch block). B170: `summary` is the plaintext matchup
+        // summary the SW encrypts for a private upload (ignored otherwise); the
+        // SW may also resolve { withheld: true } when a private team is armed
+        // without its key (the caller keeps the recording local + prompts).
+        uploadReplay: (payload, summary = null) =>
+            companionRequest({ type: 'uploadReplay', payload, summary }, 15000)
                 .catch((err) => {
                     console.warn('[karabuddy] upload bridge failed:', err);
                     return null;
                 }),
+        // B170: which private-team keys are loaded (non-secret kids only — the key
+        // bytes never come back across the bridge). Drives the per-team key-loaded
+        // status chip. Key ENTRY/forget now lives in the extension's key-manager
+        // page (openKeyManager), not inline in the bubble.
+        listPrivateTeamKeyIds: () =>
+            companionRequest({ type: 'listPrivateTeamKeyIds' }, 5000).catch(() => []),
+        // B170: open the extension's trusted key-manager page (keys.html) — the
+        // bubble links here to add/forget keys instead of handling them inline.
+        openKeyManager: () =>
+            companionRequest({ type: 'openKeyManager' }, 3000).catch(() => null),
         // Open karabuddy's replays browser. `tab` is 'mine' or 'public'.
         // Claim flow lives entirely on karabuddy.app: the /claim page auto-
         // detects the install token via karabuddy-bridge.js's postMessage
@@ -141,6 +154,13 @@
         // build the sign-in popup URL.
         getEndpoint: () =>
             companionRequest({ type: 'getEndpoint' }, 3000)
+                .catch(() => null),
+        // B170 / ADR 0010: the bubble's at-a-glance privacy state. The SW runs
+        // the SAME decideUploadMode the real upload uses over the armed teams +
+        // loaded keys, so the header lock chip can't drift from what will happen.
+        // → { mode: 'plaintext'|'encrypt'|'withhold', reason, teamNames[] } | null.
+        getPrivacyStatus: () =>
+            companionRequest({ type: 'getPrivacyStatus' }, 6000)
                 .catch(() => null)
     };
 })();

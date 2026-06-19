@@ -1,0 +1,101 @@
+<!doctype html>
+<!-- B170 / ADR 0010: the TRUSTED home for private-team keys. Runs at a
+     chrome-extension:// origin — its code is the audited, reproducible extension
+     bundle, NOT a page the karabuddy server delivers — so it's the only safe
+     place to enter/reveal a team key. Branded to match karabuddy (the real
+     extension icon + wordmark + tactical panels) so it reads as legit, not a
+     look-alike. Keys never leave chrome.storage.local. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KaraBuddy — Team keys</title>
+  <style>
+    /* Match the webapp's faces exactly: Barlow (body) + Orbitron (the "buddy"
+       mark), bundled in the extension so they render identically offline — the
+       system-font fallback is what made this page look like a look-alike. */
+    @font-face { font-family: 'Barlow'; font-weight: 400; font-display: swap; src: url('fonts/barlow-400.woff2') format('woff2'); }
+    @font-face { font-family: 'Barlow'; font-weight: 600; font-display: swap; src: url('fonts/barlow-600.woff2') format('woff2'); }
+    @font-face { font-family: 'Barlow'; font-weight: 800; font-display: swap; src: url('fonts/barlow-800.woff2') format('woff2'); }
+    @font-face { font-family: 'Orbitron'; font-weight: 700; font-display: swap; src: url('fonts/orbitron-700.woff2') format('woff2'); }
+    :root {
+      color-scheme: dark;
+      --bg: #0a0c10; --panelBorder: #2b323d; --border: #2e333c;
+      --text: #d6dbe4; --textBright: #e6ebf2; --muted: #7c8696;
+      --cyan: #4dd2ff; --azure: #4d9dff; --accent: #a7d2ff;
+      --panel: linear-gradient(155deg, rgba(42, 54, 74, 0.32) 0%, rgba(17, 20, 26, 0.55) 68%);
+      --font: 'Barlow', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --logo: 'Orbitron', var(--font);
+      --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--text); font: 14px/1.55 var(--font);
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(77, 157, 255, 0.08), transparent 60%),
+        radial-gradient(900px 500px at 90% 110%, rgba(77, 210, 255, 0.06), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 600px; margin: 0 auto; padding: 26px 20px 56px; }
+
+    /* Brand header — the real icon + the KARA buddy wordmark. */
+    .brand { display: flex; align-items: center; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid rgba(77, 210, 255, 0.14); margin-bottom: 22px; }
+    .wordmark { display: flex; align-items: baseline; gap: 7px; line-height: 1; }
+    .wm-kara { font-weight: 400; font-size: 21px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--textBright); }
+    .wm-buddy { font-family: var(--logo); font-weight: 700; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; background: linear-gradient(90deg, #4dd2ff 0%, #4d9dff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .brand .tag { margin-left: auto; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--cyan); border: 1px solid rgba(77,210,255,0.35); border-radius: 999px; padding: 4px 10px; background: rgba(77,210,255,0.06); }
+
+    h1 { font-size: 17px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; color: var(--textBright); }
+    .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 22px; line-height: 1.5; }
+
+    /* Tactical panel — gradient surface, depth shadow, faint top highlight + a
+       cyan corner-bracket pair (the karabuddy "console readout" cue). */
+    .card { position: relative; background: var(--panel); border: 1px solid var(--panelBorder); border-radius: 12px; padding: 18px; margin-bottom: 16px; box-shadow: 0 2px 14px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03); }
+    .card::before, .card::after { content: ""; position: absolute; width: 11px; height: 11px; pointer-events: none; }
+    .card::before { top: 8px; left: 8px; border-top: 1.5px solid rgba(77,210,255,0.4); border-left: 1.5px solid rgba(77,210,255,0.4); }
+    .card::after { bottom: 8px; right: 8px; border-bottom: 1.5px solid rgba(77,210,255,0.4); border-right: 1.5px solid rgba(77,210,255,0.4); }
+
+    .label { font: 700 10px var(--font); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    input { width: 100%; font: 13px var(--mono); padding: 10px 12px; background: #0b0e13; border: 1px solid var(--border); border-radius: 7px; color: #d6f0ff; outline: none; transition: border-color 120ms; }
+    input:focus { border-color: var(--azure); box-shadow: 0 0 0 3px rgba(77,157,255,0.12); }
+
+    button { cursor: pointer; font: 700 12px var(--font); letter-spacing: 0.01em; padding: 9px 15px; border-radius: 7px; transition: filter 120ms, box-shadow 120ms; }
+    /* Primary = the karabuddy dark-gradient + glowing-azure-border action. */
+    button.primary, .inline-add button:not(.ghost):not(.warn) { color: #cfe6ff; border: 1px solid var(--azure); background: linear-gradient(150deg, #243044 0%, #1a1d23 100%); box-shadow: 0 0 12px rgba(77,157,255,0.25), inset 0 1px 0 rgba(255,255,255,0.04); }
+    button:not(.ghost):not(.warn) { color: #cfe6ff; border: 1px solid var(--azure); background: linear-gradient(150deg, #243044 0%, #1a1d23 100%); box-shadow: 0 0 12px rgba(77,157,255,0.22), inset 0 1px 0 rgba(255,255,255,0.04); }
+    button:not(.ghost):not(.warn):hover { filter: brightness(1.15); }
+    button.ghost { border: 1px solid rgba(255,255,255,0.16); background: transparent; color: var(--text); }
+    button.warn { border: 1px solid rgba(255,176,32,0.55); background: rgba(255,176,32,0.08); color: #ffb020; }
+
+    .team-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.05); }
+    .team-row:first-child { border-top: 0; }
+    .tcol { flex: 1; min-width: 0; }
+    .tname { font-weight: 600; color: var(--textBright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tstatus { font-size: 11.5px; margin-top: 3px; }
+    .ok-txt { color: #6fe3a3; } .warn-txt { color: #ffc24d; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .err { color: #ff7a7a; font-size: 11.5px; margin-top: 7px; }
+    .reveal { font: 12px var(--mono); color: #d6f0ff; word-break: break-all; background: #0b0e13; border: 1px dashed var(--border); border-radius: 7px; padding: 10px; margin-top: 10px; }
+    .gap { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+    .inline-add { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; align-items: center; }
+    .inline-add input { flex: 1 1 220px; }
+
+    .foot { margin-top: 24px; text-align: center; font-size: 11px; color: #5b6472; }
+    .foot a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <span class="wordmark"><span class="wm-kara">Kara</span><span class="wm-buddy">buddy</span></span>
+      <span class="tag">🔒 Team keys</span>
+    </div>
+    <p class="sub">Team keys live only on this device — never sent to karabuddy. This page is part of the KaraBuddy extension (not a karabuddy web page), so it’s the safe place to enter them.</p>
+    <div id="content"><p class="muted">Loading…</p></div>
+    <div class="foot">KaraBuddy · <a href="https://karabuddy.app/how-privacy-mode-works" target="_blank" rel="noopener">How private mode works</a> · <a href="https://karabuddy.app/privacy" target="_blank" rel="noopener">privacy</a></div>
+  </div>
+  <script src="replays/00-e2ee.js"></script>
+  <script src="keys.js"></script>
+</body>
+</html>

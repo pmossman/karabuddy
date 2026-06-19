@@ -338,9 +338,11 @@
 
     // Build the upload payload for the current recording state. Same shape
     // for finalize and periodic snapshots; the `reason` field distinguishes.
-    const buildPayloadText = (reason, durationMs, actionCount) => {
+    // B170: split into object + text so we can derive the encrypted summary
+    // (buildSummaryFor) from the same object without re-parsing.
+    const buildPayloadObject = (reason, durationMs, actionCount) => {
         const d = D();
-        return JSON.stringify({
+        return {
             version: 2,
             url: location.href,
             startedAt: new Date(recordingStart).toISOString(),
@@ -360,7 +362,31 @@
             },
             events: recording,
             tags: tags.slice()
-        });
+        };
+    };
+    const buildPayloadText = (reason, durationMs, actionCount) =>
+        JSON.stringify(buildPayloadObject(reason, durationMs, actionCount));
+
+    // B170 / ADR 0010: the small plaintext matchup summary the SW encrypts for a
+    // PRIVATE upload (leaders/bases/usernames + winner). Sent ALONGSIDE the
+    // plaintext payload; the SW ignores it on the plaintext path. Best-effort.
+    const buildSummaryFor = (payloadObject) => {
+        try { return D().buildEncryptedSummary(payloadObject, localPlayerId); }
+        catch { return null; }
+    };
+
+    // B170: the SW withheld the upload — a private team is armed but its key
+    // isn't loaded (or keys conflict). The recording stays local (IDB / in
+    // memory); tell the user how to make it uploadable. No plaintext left the
+    // browser.
+    const onUploadWithheld = (result) => {
+        NS.dlog('[karabuddy] upload withheld (private team):', result?.reason);
+        const msg = result?.reason === 'key-conflict'
+            ? 'Two private teams armed with different keys — arm just one'
+            : result?.reason === 'misconfigured'
+            ? 'That private team has no encryption key set yet'
+            : 'Saved locally — load your team key, then upload it from the bubble (Not yet uploaded)';
+        T()?.show?.(msg, { kind: 'warning' });
     };
 
     // Periodic mid-match upload (B26). Fires every PERIODIC_UPLOAD_INTERVAL_MS
@@ -374,8 +400,9 @@
         const { actionCount, distinctActivePlayers, minPlayerActions } = analyzeRecording();
         if (distinctActivePlayers < 2 || minPlayerActions < minUploadActions) return;
         const durationMs = Date.now() - recordingStart;
-        const payloadText = buildPayloadText('periodic', durationMs, actionCount);
-        B().uploadReplay(payloadText).then((result) => {
+        const payloadObject = buildPayloadObject('periodic', durationMs, actionCount);
+        B().uploadReplay(JSON.stringify(payloadObject), buildSummaryFor(payloadObject)).then((result) => {
+            if (result && result.withheld) { onUploadWithheld(result); return; }
             if (!result || !result.slug) return;
             if (result.staleSnapshot) return;
             // Cache the URL so the floating panel's "Open on karabuddy →"
@@ -443,7 +470,8 @@
             return;
         }
 
-        const payloadText = buildPayloadText(reason, durationMs, actionCount);
+        const payloadObject = buildPayloadObject(reason, durationMs, actionCount);
+        const payloadText = JSON.stringify(payloadObject);
         const filename = d.buildReplayFilename(Date.now(), meta);
 
         // Manual download → trigger a file save so the user can grab the file.
@@ -488,7 +516,8 @@
             // save; failure just leaves the replay local-only. On success
             // we patch the IDB entry with the hosted slug so the replays
             // browser can surface a "View on karabuddy" link.
-            B().uploadReplay(payloadText).then((result) => {
+            B().uploadReplay(payloadText, buildSummaryFor(payloadObject)).then((result) => {
+                if (result && result.withheld) { onUploadWithheld(result); return; }
                 if (!result || !result.slug) {
                     // Suppress the generic toast when the bridge is dead
                     // because the extension was reloaded — 06-bootstrap
@@ -624,7 +653,10 @@
         if (distinctActivePlayers < 2 || minPlayerActions < minUploadActions) return;
         lastCloseFlushAt = now;
         const durationMs = Date.now() - recordingStart;
-        B().uploadReplay(buildPayloadText('socketclose', durationMs, actionCount));
+        const payloadObject = buildPayloadObject('socketclose', durationMs, actionCount);
+        // Fire-and-forget mid-game flush. A withheld (no-key) private upload just
+        // stays local — no toast on a background flush.
+        B().uploadReplay(JSON.stringify(payloadObject), buildSummaryFor(payloadObject));
     };
 
     // ----- attachInterceptor(ws): wire a real WebSocket up to the recorder. -----
@@ -688,10 +720,11 @@
         const { actionCount, distinctActivePlayers, minPlayerActions } = analyzeRecording();
         if (distinctActivePlayers < 2 || minPlayerActions < minUploadActions) return;
         const durationMs = Date.now() - recordingStart;
-        const payloadText = buildPayloadText('pagehide', durationMs, actionCount);
+        const payloadObject = buildPayloadObject('pagehide', durationMs, actionCount);
         // Fire-and-forget — by the time the SW responds the page is gone
-        // and the karabast-companion-result event has nowhere to land.
-        B().uploadReplay(payloadText);
+        // and the karabast-companion-result event has nowhere to land. A
+        // withheld (no-key) private upload simply stays local.
+        B().uploadReplay(JSON.stringify(payloadObject), buildSummaryFor(payloadObject));
     });
 
     NS.Recorder = {

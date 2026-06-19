@@ -49,10 +49,13 @@ function setup({ minUploadActions } = {}) {
   evalFile('00-karabast-shape.js'); // defines validateKarabastGamestate/structuralIssueCodes (drift rule)
   evalFile('02-decoder.js');
   const uploads = [];
+  const summaries = [];
   const beacons = [];
   const NS = window.__KaraBuddy.replays;
   NS.bridge = {
-    uploadReplay: (text) => { uploads.push(JSON.parse(text)); return Promise.resolve({ slug: 's', url: '/r/s' }); },
+    // B170: the recorder now passes (payloadText, summary). The plaintext path
+    // ignores summary; we capture it to assert the recorder builds it correctly.
+    uploadReplay: (text, summary) => { uploads.push(JSON.parse(text)); summaries.push(summary); return Promise.resolve({ slug: 's', url: '/r/s' }); },
     saveReplay: () => Promise.resolve(),
     applyTeamShares: () => Promise.resolve(),
     getUserSettings: () => Promise.resolve(minUploadActions != null ? { ok: true, minUploadActions } : null),
@@ -61,7 +64,7 @@ function setup({ minUploadActions } = {}) {
   NS.Footer = { refreshOverlay() {}, refreshReplayBrowser() {}, getShareTeamSlugs: () => [] };
   NS.toast = { show() {} };
   evalFile('03-recorder.js');
-  return { R: NS.Recorder, uploads, beacons };
+  return { R: NS.Recorder, uploads, summaries, beacons };
 }
 
 // Drive a full game (each player acts well past the default 5-action gate),
@@ -97,6 +100,20 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
     const { uploads } = setup();
     await playFullMatch();
     expect(uploads[0].localPlayerId).toBe('p1'); // p1 had the visible hand
+  });
+
+  it('B170: passes a well-formed encrypted summary alongside the upload (no hand plaintext)', async () => {
+    const { summaries } = setup();
+    await playFullMatch();
+    const s = summaries[0];
+    expect(s).toBeTruthy();
+    expect(s.ownerPlayerId).toBe('p1');
+    // Matchup players present, keyed by playerId.
+    expect(Object.keys(s.players)).toEqual(expect.arrayContaining(['p1', 'p2']));
+    // Raw winner signal carried through for the webapp to normalize.
+    expect(s.winners).toEqual(['Alice']);
+    // The summary is matchup-only — no card piles / hands.
+    expect(JSON.stringify(s)).not.toContain('cardPiles');
   });
 
   it('does NOT upload a sub-threshold match (rage-quit guard)', async () => {

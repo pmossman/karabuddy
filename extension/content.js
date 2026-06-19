@@ -32,6 +32,29 @@ const isContextInvalidatedError = (err) =>
 const toPageDetail = (detail) =>
     (typeof cloneInto !== 'undefined') ? cloneInto(detail, window) : detail;
 
+// B170 / ADR 0010 — ALLOWLIST for the karabast.net → service-worker relay.
+// karabast.net is a third party we don't control, and ANY MAIN-world script on
+// the page (not just our bubble) can dispatch karabast-companion-action events
+// into this isolated-world listener. So we relay ONLY the message types the
+// in-game bubble actually needs, and deliberately EXCLUDE the leak vectors:
+//   - decryptForTeam / encryptForTeam — the bubble never uses them; a page must
+//     never be able to turn the extension into a decryption oracle.
+//   - revealPrivateTeamKey — returns a key's value (also SW origin-gated to the
+//     extension's own pages; this is defense-in-depth).
+//   - getCompanionInfo / openKeyManager — webapp-bridge concerns, not the bubble.
+// Key ENTRY now lives in the extension's own key-manager page, so the bubble only
+// LISTS loaded kids (non-secret) and OPENS the manager — store/forget are no
+// longer relayed from karabast at all. openKeyManager just opens a tab (worst
+// case a hostile page opens it — annoying, not a leak).
+const ALLOWED_SW_ACTIONS = new Set([
+    'saveReplay', 'listReplays', 'getReplay',
+    'uploadReplay', 'applyTeamShares',
+    'listPrivateTeamKeyIds', 'openKeyManager',
+    'getPrivacyStatus',
+    'getWhoami', 'getEndpoint', 'getTeamsMentionData', 'getUserSettings', 'setUserSettings',
+    'openReplaysPage', 'getExtensionStatus', 'reportHealth', 'storageGet', 'storageSet',
+]);
+
 const installCompanionBridge = () => {
     window.addEventListener('karabast-companion-action', (e) => {
         const detail = e.detail || {};
@@ -42,6 +65,11 @@ const installCompanionBridge = () => {
                 detail: toPageDetail({ _id: correlationId, type: detail.type, ok, error, data })
             }));
         };
+        // Drop anything not on the allowlist before it can reach the SW.
+        if (!payload || typeof payload.type !== 'string' || !ALLOWED_SW_ACTIONS.has(payload.type)) {
+            dispatchResult(false, 'unsupported companion request');
+            return;
+        }
         try {
             chrome.runtime.sendMessage(payload, (res) => {
                 // chrome.runtime.lastError can fire even on async path if the
