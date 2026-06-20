@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getCompanionInfo, extensionPresent, companionCapabilityState, loadedTeamKeys, openKeyManager } from '@/lib/companion';
 import { Panel } from '@/app/_components/Panel';
@@ -23,6 +24,7 @@ export function PrivateModeToggle({
   initialPrivateMode: boolean;
   initialTeamKeyId: string | null;
 }) {
+  const router = useRouter();
   const [isPrivate, setIsPrivate] = useState(initialPrivateMode);
   const [teamKeyId, setTeamKeyId] = useState(initialTeamKeyId);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -36,6 +38,27 @@ export function PrivateModeToggle({
     return res.json().catch(() => ({ ok: false }));
   };
 
+  // Load the owner's keys that are SELECTABLE for this team: loaded on this device
+  // AND not already used by another of your teams (B170: keys are one-per-team —
+  // the server rejects reuse too; this just keeps an in-use key out of the picker).
+  const fetchSelectableKeys = async () => {
+    const loaded = await loadedTeamKeys();
+    let inUse = new Set<string>();
+    try {
+      const md = await (await fetch('/api/me/teams-mention-data')).json();
+      if (md?.ok) inUse = new Set((md.teams || []).filter((t: any) => t.slug !== slug && t.teamKeyId).map((t: any) => t.teamKeyId as string));
+    } catch {}
+    // Hide rotation artefacts the extension labels "(old key)" / "(new key)": an
+    // old key is rotated-out (its replays moved to the current key), a new key is a
+    // mid-rotation stage — neither is a valid key to (re)enable a team with, and
+    // showing them next to the real key is just confusing (B170 re-enable).
+    const rotationArtefact = /\((old|new) key\)\s*$/i;
+    const selectable = loaded.filter((k) => !inUse.has(k.teamKeyId) && !rotationArtefact.test(k.name || ''));
+    setKeys(selectable);
+    setPicked((prev) => (selectable.some((k) => k.teamKeyId === prev) ? prev : (selectable[0]?.teamKeyId || '')));
+    return selectable;
+  };
+
   // Start the enable flow: gate on the extension, then load the owner's keys.
   const beginEnable = async () => {
     setError(null);
@@ -43,17 +66,27 @@ export function PrivateModeToggle({
     const [info, present] = await Promise.all([getCompanionInfo(), extensionPresent()]);
     const cap = companionCapabilityState(info, present);
     if (cap !== 'supported') { setExtState(cap === 'unsupported' ? 'unsupported' : 'absent'); setPhase('no-ext'); return; }
-    const loaded = await loadedTeamKeys();
-    setKeys(loaded);
-    setPicked(loaded[0]?.teamKeyId || '');
+    await fetchSelectableKeys();
     setPhase('pick');
   };
+
+  // While picking a key, re-fetch on tab focus so a key just generated in the
+  // key-manager tab appears in the dropdown without a manual page reload.
+  useEffect(() => {
+    if (phase !== 'pick') return;
+    const onFocus = () => { fetchSelectableKeys(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, slug]);
 
   const enable = async () => {
     if (!picked) return;
     setPhase('saving');
     const body = await patch({ privateMode: true, teamKeyId: picked });
-    if (body.ok) { setIsPrivate(true); setTeamKeyId(picked); setPhase('idle'); }
+    // router.refresh() re-renders the server page so the sibling privacy sections
+    // (team key / readiness / rotate / member banner) appear without a manual reload.
+    if (body.ok) { setIsPrivate(true); setTeamKeyId(picked); setPhase('idle'); router.refresh(); }
     else { setError(body.error || 'Could not enable private mode.'); setPhase('pick'); }
   };
 
@@ -61,7 +94,7 @@ export function PrivateModeToggle({
     if (!window.confirm('Turn off private mode? New replays will upload as normal (plaintext). Already-encrypted replays stay encrypted and still need the key to view.')) return;
     setPhase('saving');
     const body = await patch({ privateMode: false });
-    if (body.ok) { setIsPrivate(false); setTeamKeyId(null); setPhase('idle'); }
+    if (body.ok) { setIsPrivate(false); setTeamKeyId(null); setPhase('idle'); router.refresh(); }
     else { setError(body.error || 'Could not disable private mode.'); setPhase('idle'); }
   };
 

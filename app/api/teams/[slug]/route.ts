@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
@@ -82,6 +82,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
       const teamKeyId = String(body.teamKeyId || '').trim();
       if (!teamKeyId) {
         return NextResponse.json({ ok: false, error: 'teamKeyId required to enable private mode' }, { status: 400 });
+      }
+      // B170: keys are ONE-PER-TEAM. Reject a key already in use by another team —
+      // sharing a key would let either team decrypt the other's replays. Each team
+      // gets its own key (generate a fresh one in the extension).
+      const [clash] = await db
+        .select({ slug: teams.slug })
+        .from(teams)
+        .where(and(eq(teams.teamKeyId, teamKeyId), ne(teams.slug, slug)))
+        .limit(1);
+      if (clash) {
+        return NextResponse.json({ ok: false, error: 'That key is already used by another team. Generate a separate key for this team.' }, { status: 409 });
       }
       update.privateMode = true;
       update.teamKeyId = teamKeyId;

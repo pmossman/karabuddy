@@ -61,6 +61,15 @@ kEy2kEy2kEy2kEy2kEy2kEy2kEy2kEy2kEy2kEy2kEy   ← Demo Private Team B
 - [ ] **Run rotation** → progress → completes. The team's active key is now the new one; the old key appears under **Previous keys — inactive · safe to delete** (Show key works, Delete works).
 - [ ] `/r/r_privdemo` still decrypts (re-encrypted under the new key). The old key alone no longer opens it.
 
+### 6a · Member side of rotation — pre-load the new key (zero-downtime, **two profiles**)
+
+The safe order is: owner generates → shares the new key → **member stages it** → owner runs rotation.
+
+- [ ] **Member profile**, key manager → Demo Private Team detail (current key loaded → "✓ Active key loaded"). Under **Upcoming key**, the quiet toggle **"＋ Got a new key from your team owner?"** expands a paste box.
+- [ ] Paste the new key the owner shared → **Add new key**. It flips to **"✓ New key added — it takes over automatically…"** with Show / Remove; the team's master row now reads **"🔄 Rotation in progress"**.
+- [ ] Pasting the team's *current* key here is rejected ("that's …'s current key — you already have it loaded"); a malformed paste is rejected too.
+- [ ] **Owner profile** runs the rotation (step 6). Back on the **member profile**, reopen the key manager → the staged key is now the **active** key ("✓ Active key loaded"), the "Upcoming"/"in progress" markers are gone, and the old key sits under **Previous keys**. `/r/r_privdemo` decrypts the whole time — no lockout window.
+
 ## 7 · Off-for-private + discoverability
 
 - [ ] Team page **Stats** tab for a private team → "Stats are off for private teams".

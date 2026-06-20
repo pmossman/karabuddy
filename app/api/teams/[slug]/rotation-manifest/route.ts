@@ -117,6 +117,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!team?.privateMode) {
     return NextResponse.json({ ok: false, error: 'team is not private' }, { status: 400 });
   }
+  // B170: keys are one-per-team — don't rotate onto a key another team already uses.
+  const [clash] = await db
+    .select({ slug: teams.slug })
+    .from(teams)
+    .where(and(eq(teams.teamKeyId, newKid), ne(teams.slug, slug)))
+    .limit(1);
+  if (clash) {
+    return NextResponse.json({ ok: false, error: 'That key is already used by another team. Generate a separate key to rotate to.' }, { status: 409 });
+  }
   const [straggler] = await db
     .select({ slug: replays.slug })
     .from(replayTeamShares)

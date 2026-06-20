@@ -111,18 +111,18 @@ export default function HowPrivacyModeWorksPage() {
         <Panel>
           <h2 style={h2}>Setup at a glance</h2>
           <p style={p}>
-            Two roles, two places. The <Badge surface="site" /> is where you turn private mode on and watch your replays;
-            the <Badge surface="ext" /> holds your team key and does the encrypting. The key lives <strong style={strong}>only
-            in the extension</strong> — never on the site.
+            Two roles, two places. The <Badge surface="site" /> is where you start private mode and watch your replays;
+            the <Badge surface="ext" /> holds your team key, turns encryption on, and does the encrypting. The key lives
+            <strong style={strong}> only in the extension</strong> — never on the site.
           </p>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 14 }}>
             <div id="for-owners" style={{ flex: '1 1 260px', minWidth: 0, scrollMarginTop: 80 }}>
               <div style={trackTitle}>Team owner</div>
               <div style={trackCol}>
                 <TrackStep n={1} surface="site">Create your team, then open <strong style={strong}>Settings → Privacy &amp; encryption</strong>.</TrackStep>
-                <TrackStep n={2} surface="ext">Click <strong style={strong}>Make this team private</strong> — it opens the extension to <strong style={strong}>generate the team key</strong>.</TrackStep>
-                <TrackStep n={3} surface="ext">Copy the key and send it to teammates out-of-band (Signal, a password manager). You can re-copy it anytime from the key manager.</TrackStep>
-                <TrackStep n={4} surface="site">Back in Settings, pick the key to switch private mode on, then watch the <strong style={strong}>readiness roster</strong> as teammates set up.</TrackStep>
+                <TrackStep n={2} surface="ext">Click <strong style={strong}>Make this team private</strong> — it opens the extension&apos;s key manager for this team.</TrackStep>
+                <TrackStep n={3} surface="ext">Hit <strong style={strong}>Generate key &amp; turn on private mode</strong> — that creates the team key on your device <em>and</em> switches encryption on, in one step.</TrackStep>
+                <TrackStep n={4} surface="ext">Copy the key and send it to teammates out-of-band (Signal, a password manager); you can show it again anytime. Then watch the <strong style={strong}>readiness roster</strong> on the team page as they set up.</TrackStep>
               </div>
             </div>
             <div id="for-members" style={{ flex: '1 1 260px', minWidth: 0, scrollMarginTop: 80 }}>
@@ -149,15 +149,17 @@ export default function HowPrivacyModeWorksPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Step n={1} title="Owner: enable it">
               On your team&apos;s <strong style={strong}>Settings</strong> tab, open <strong style={strong}>Private (encrypted) mode</strong> →
-              <strong style={strong}> Make this team private</strong>, then generate (or pick) the team key in the extension&apos;s key manager.
+              <strong style={strong}> Make this team private</strong>. That opens the extension&apos;s key manager, where
+              <strong style={strong}> Generate key &amp; turn on private mode</strong> creates the key and switches encryption on in one step.
             </Step>
             <Step n={2} title="Share the key with your team">
               Copy the key from the key manager and send it to teammates <strong style={strong}>out-of-band</strong> (not through KaraBuddy).
-              Store it somewhere safe — it can&apos;t be recovered if it&apos;s lost.
+              The key stays in the extension on your device — you can show it again anytime — but back it up somewhere safe, since it
+              can&apos;t be recovered if everyone loses it.
             </Step>
             <Step n={3} title="Members: load the key">
               Each teammate opens the KaraBuddy extension&apos;s key manager (the &ldquo;Open key manager&rdquo; button on any private
-              replay, or the toolbar icon) and pastes the key. It&apos;s stored only on their device.
+              replay, or the toolbar icon), finds the team, and pastes the key. It&apos;s stored only on their device.
             </Step>
             <Step n={4} title="Record &amp; review as normal">
               With the key loaded, recording uploads encrypted, and replays/comments just work. Without it, the extension
@@ -197,7 +199,7 @@ export default function HowPrivacyModeWorksPage() {
         <Panel>
           <h2 style={h2}>Good to know</h2>
           <p style={p}><strong style={strong}>No recovery.</strong> If everyone loses the key, the encrypted replays can&apos;t be read — by anyone, including us. Keep it backed up.</p>
-          <p style={p}><strong style={strong}>Rotation is forward-only.</strong> You can rotate to a new key (e.g. when someone leaves), but anyone who already had the old key kept whatever they could already see. Rotation protects what comes next, not the past.</p>
+          <p style={p}><strong style={strong}>Rotation is forward-only.</strong> You can rotate to a new key (e.g. when someone leaves): your existing replays get re-encrypted under the new key, and you share the new key with current teammates (they add it before you run the rotation, so no one loses access). But anyone who had the old key already saw what they saw — rotation protects what comes next, not the past.</p>
           <p style={{ ...p, marginBottom: 0 }}><strong style={strong}>Viewing needs the extension.</strong> Because the key lives in the extension, private replays open only in a browser with KaraBuddy installed and the key loaded — there&apos;s no plain-web link view.</p>
         </Panel>
       </div>

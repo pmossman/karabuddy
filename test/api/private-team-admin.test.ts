@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { PATCH as patchTeam } from '@/app/api/teams/[slug]/route';
+import { POST as enablePrivate } from '@/app/api/teams/[slug]/private-mode/route';
 import { GET as readinessRoster } from '@/app/api/teams/[slug]/readiness/route';
 import { POST as reportReadiness } from '@/app/api/me/extension/readiness/route';
 import { getDb } from '@/lib/db';
@@ -66,6 +67,19 @@ describe('enable/disable private mode (team PATCH)', () => {
     expect((await patch(slug, { privateMode: true, teamKeyId: 'kid' })).status).toBe(403);
   });
 
+  it('rejects a key already used by another team (keys are one-per-team)', async () => {
+    const o = await seedUser();
+    const teamA = await seedTeam(o.id);
+    const teamB = await seedTeam(o.id);
+    as(o.id);
+    expect((await patch(teamA, { privateMode: true, teamKeyId: 'shared-kid' })).status).toBe(200);
+    // Reusing the same key on another team is refused.
+    expect((await patch(teamB, { privateMode: true, teamKeyId: 'shared-kid' })).status).toBe(409);
+    const [b] = await getDb().select().from(teams).where(eq(teams.slug, teamB));
+    expect(b.privateMode).toBe(false);
+    expect(b.teamKeyId).toBeNull();
+  });
+
   it('name-only update still works (backward compatible)', async () => {
     const o = await seedUser();
     const slug = await seedTeam(o.id);
@@ -73,6 +87,27 @@ describe('enable/disable private mode (team PATCH)', () => {
     expect((await patch(slug, { name: 'Renamed' })).status).toBe(200);
     const [t] = await getDb().select().from(teams).where(eq(teams.slug, slug));
     expect(t.name).toBe('Renamed');
+  });
+});
+
+describe('enable private mode via the extension endpoint (POST /private-mode)', () => {
+  const enable = (slug: string, body: any) => enablePrivate(new Request('http://t', { method: 'POST', body: JSON.stringify(body) }), params(slug));
+  it('owner enables; key reuse rejected; non-owner blocked', async () => {
+    const o = await seedUser();
+    const teamA = await seedTeam(o.id);
+    const teamB = await seedTeam(o.id);
+    as(o.id);
+    expect((await enable(teamA, { teamKeyId: 'kidX' })).status).toBe(200);
+    const [a] = await getDb().select().from(teams).where(eq(teams.slug, teamA));
+    expect(a.privateMode).toBe(true);
+    expect(a.teamKeyId).toBe('kidX');
+    // reuse of the same key on another team → rejected (one-per-team)
+    expect((await enable(teamB, { teamKeyId: 'kidX' })).status).toBe(409);
+    // non-owner can't enable
+    const m = await seedUser();
+    const teamC = await seedTeam(o.id, [o.id, m.id]);
+    as(m.id);
+    expect((await enable(teamC, { teamKeyId: 'kidZ' })).status).toBe(403);
   });
 });
 

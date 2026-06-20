@@ -5,7 +5,6 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users } from '@/lib/schema';
 import { TeamControls } from './TeamControls';
-import { ManageKeysButton } from '@/app/_components/ManageKeysButton';
 import { MyPrivateAccess } from '@/app/_components/MyPrivateAccess';
 import { PrivateModeToggle } from './PrivateModeToggle';
 import { ReadinessRoster } from './ReadinessRoster';
@@ -233,11 +232,10 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                       Load this team&apos;s key in the extension to view and record. It stays on your device and is never
                       sent to karabuddy.
                     </p>
-                    {/* B170: the member's personal "am I set up?" checklist. */}
-                    <div style={{ margin: '0 0 14px' }}>
-                      <MyPrivateAccess variant="checklist" teamName={team.name} teamKeyId={(team as any).teamKeyId ?? null} />
-                    </div>
-                    <ManageKeysButton label="Manage this team’s key" />
+                    {/* B170: the member's personal "am I set up?" checklist —
+                        carries the single contextual key-manager button (Open /
+                        Manage), so no separate ManageKeysButton is needed here. */}
+                    <MyPrivateAccess variant="checklist" teamName={team.name} teamKeyId={(team as any).teamKeyId ?? null} />
                   </Panel>
                 )}
                 {me.role === 'owner' && (team as any).privateMode && <ReadinessRoster slug={slug} />}

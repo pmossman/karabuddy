@@ -29,7 +29,10 @@ export function CreateTeamForm() {
         setError(body.error || 'failed to create team');
         return;
       }
+      // B170: refresh so the server-resolved team list (sidebar switcher) picks up
+      // the new team immediately — the (app) layout doesn't re-render on soft-nav.
       router.push(`/teams/${body.slug}`);
+      router.refresh();
     } catch (err: any) {
       setError(err?.message || 'network error');
     } finally {

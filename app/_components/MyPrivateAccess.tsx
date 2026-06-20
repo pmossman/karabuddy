@@ -53,11 +53,14 @@ export function MyPrivateAccess({
   const extOk = access === 'ready' || access === 'needs-key';
   const keyOk = access === 'ready';
 
-  // The single next action for the first unmet step.
+  // The single key-manager action, contextual to the state. (The banner only
+  // shows the not-ready ones; the checklist also offers "Manage" when ready —
+  // this is the panel's ONE key-manager button, so there's no duplicate.)
   const action =
     access === 'absent' ? { label: 'Install the extension', href: '/install' as const }
     : access === 'unsupported' ? { label: 'How to update', href: '/install' as const }
     : access === 'needs-key' ? { label: 'Open key manager', onClick: () => openKeyManager() }
+    : access === 'ready' ? { label: '🔑 Manage this team’s key', onClick: () => openKeyManager() }
     : null;
 
   // ---- Banner: only when NOT ready (and not still loading / plaintext). ----

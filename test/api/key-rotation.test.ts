@@ -189,6 +189,17 @@ describe('rewrap + finalize — full rotation', () => {
     expect(res.status).toBe(400);
   });
 
+  it('finalize rejects rotating onto a key another team already uses', async () => {
+    const o = await seedUser();
+    const old = await e2ee.generateTeamKey();
+    const neu = await e2ee.generateTeamKey();
+    const teamA = await seedTeam(o.id, [o.id], { private: true, teamKeyId: old.teamKeyId });
+    await seedTeam(o.id, [o.id], { private: true, teamKeyId: neu.teamKeyId }); // another team already uses neu
+    as(o.id);
+    const res = await rotationFinalize(new Request('http://t', { method: 'POST', body: JSON.stringify({ newTeamKeyId: neu.teamKeyId }) }), params(teamA));
+    expect(res.status).toBe(409);
+  });
+
   it('rewrap is owner-only on a team the replay is shared with', async () => {
     const o = await seedUser();
     const stranger = await seedUser();
