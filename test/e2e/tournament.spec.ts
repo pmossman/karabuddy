@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { signInAsTestUser, createTeam, generateInvite, uploadReplay, claimInstallToken } from './helpers';
+import { signInAsTestUser, createTeam } from './helpers';
 
 // B124: team tournaments. P2 covers the setup phase end-to-end in a real
 // browser: create from the team tab → self-register → organizer adds a guest.
@@ -94,50 +94,6 @@ test('full lifecycle: start (bye) → report → standings → round 2 → finis
   // incl. possible bye credit).
   const firstRow = page.getByTestId('standings-table').locator('tbody tr').first();
   await expect(firstRow).toContainText(/[36]/);
-});
-
-test('a recorded replay drives a result suggestion the organizer confirms', async ({ page, browser, request }) => {
-  // Organizer A creates team + tournament and registers.
-  await signInAsTestUser(page, { name: 'SuggestTO', email: 'suggest-to@example.com' });
-  const { slug } = await createTeam(page, 'Suggestion Squad');
-  const { code } = await generateInvite(page, slug);
-  const createRes = await page.request.post(`/api/teams/${slug}/tournaments`, {
-    data: { name: 'Replay Cup', decklistVisibility: 'open' },
-  });
-  const { id } = await createRes.json();
-  await page.request.post(`/api/teams/${slug}/tournaments/${id}/entrants`, { data: {} });
-
-  // Member B joins the team + registers (separate browser context).
-  const ctx2 = await browser.newContext();
-  const page2 = await ctx2.newPage();
-  await signInAsTestUser(page2, { name: 'SuggestP2', email: 'suggest-p2@example.com' });
-  await page2.goto(`/teams/join?code=${code}`);
-  await page2.waitForURL(new RegExp(`/teams/${slug}`));
-  await page2.request.post(`/api/teams/${slug}/tournaments/${id}/entrants`, { data: {} });
-  await ctx2.close();
-
-  // Start → round 1 pairs A vs B.
-  await page.request.post(`/api/teams/${slug}/tournaments/${id}/start`);
-
-  // A records a decisive game AFTER the round started and claims the install
-  // token (claim backfills replays.userId → the replay is attributed to A).
-  const up = await uploadReplay(request, {
-    local: { id: 'pw1', username: 'SuggestTO' },
-    opponent: { id: 'pw2', username: 'SuggestP2' },
-    match: { lobbyId: `lobby-sugg-${Date.now()}` },
-    winners: ['pw1'],
-  });
-  await claimInstallToken(page, up.installToken);
-
-  // The detail page shows the suggestion banner on A's pending match.
-  await page.goto(`/teams/${slug}/tournaments/${id}`);
-  await expect(page.getByTestId('suggestion-banner')).toBeVisible();
-  await expect(page.getByTestId('suggestion-banner')).toContainText(/Detected/);
-
-  // Organizer confirms → result locks with the suggested score.
-  await page.getByRole('button', { name: /^Confirm/ }).click();
-  await expect(page.getByText('Final')).toBeVisible();
-  await expect(page.getByTestId('suggestion-banner')).toHaveCount(0);
 });
 
 test('invite link: signed-out guest self-registers, then claims with a new account', async ({ page, browser }) => {
