@@ -76,16 +76,20 @@ fs.writeFileSync(path, JSON.stringify(m, null, 4) + '\n');
 "
 
 # B103: Firefox manifest transform. Gecko's MV3 uses an event-page background
-# (`background.scripts`) rather than a service worker, doesn't accept
-# `type: "module"`, and AMO requires a stable add-on id. `world: "MAIN"` stays
-# (Firefox 128+), which is why strict_min_version is 128.
+# (`background.scripts`) rather than a service worker, and AMO requires a stable
+# add-on id. `world: "MAIN"` stays (Firefox 128+), which is why
+# strict_min_version is 128+.
+# B174: the background script MUST keep `type: "module"` — background.js uses ES
+# `import`s (B170 E2EE), so a classic-script event page is a parse error and the
+# background never loads (every sendMessage → "Receiving end does not exist").
+# Module event pages are supported well within our strict_min_version (140).
 if [[ "$TARGET" == "firefox" ]]; then
   node -e "
 const fs = require('fs');
 const path = '$STAGE/manifest.json';
 const m = JSON.parse(fs.readFileSync(path, 'utf8'));
 delete m.version_name; // Chrome-only; Firefox warns on it
-m.background = { scripts: ['background.js'] };
+m.background = { scripts: ['background.js'], type: 'module' };
 m.browser_specific_settings = {
   gecko: {
     id: 'karabuddy@karabuddy.app',
