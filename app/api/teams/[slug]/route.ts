@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq, ne } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { teams, teamMembers, users } from '@/lib/schema';
 
 export const runtime = 'nodejs';
@@ -11,20 +11,9 @@ export const runtime = 'nodejs';
 // team membership by slug enumeration).
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
   const db = getDb();
-  const [me] = await db
-    .select()
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, userId)))
-    .limit(1);
-  if (!me) {
-    return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  }
   const [team] = await db.select().from(teams).where(eq(teams.slug, slug)).limit(1);
   if (!team) {
     return NextResponse.json({ ok: false, error: 'team not found' }, { status: 404 });
@@ -42,27 +31,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     .innerJoin(users, eq(users.id, teamMembers.userId))
     .where(eq(teamMembers.teamSlug, slug))
     .orderBy(teamMembers.joinedAt);
-  return NextResponse.json({ ok: true, team, members, viewerRole: me.role });
+  return NextResponse.json({ ok: true, team, members, viewerRole: m.role });
 }
 
 // PATCH /api/teams/[slug]  body: { name }
 // Rename the team. Owner-only.
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
+  const m = await requireTeamMember(slug, { role: 'owner' });
+  if (m instanceof NextResponse) return m;
   const db = getDb();
-  const [me] = await db
-    .select()
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, userId)))
-    .limit(1);
-  if (!me || me.role !== 'owner') {
-    return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
-  }
   const body = await req.json().catch(() => ({}));
   const update: Record<string, unknown> = {};
   if (body.name !== undefined) {
@@ -117,21 +95,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 // (deletion handled separately).
 export async function DELETE(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
+  const m = await requireTeamMember(slug, { notMemberStatus: 404 });
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
   const db = getDb();
-  const [me] = await db
-    .select()
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, userId)))
-    .limit(1);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 404 });
 
   // If owner: ensure another owner exists, else block.
-  if (me.role === 'owner') {
+  if (m.role === 'owner') {
     const otherOwners = await db
       .select({ userId: teamMembers.userId })
       .from(teamMembers)

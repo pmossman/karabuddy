@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { and, eq, isNotNull } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, replayTeamShares } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { markReviewed, unmarkReviewed, viewerCommentedSlugs } from '@/lib/reviews';
 import { notifyReviewMark } from '@/lib/reviewNotify';
+import { requireSession } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
@@ -17,9 +17,9 @@ export const runtime = 'nodejs';
 // that team (requested-only, v1 — keeps the queue/marks coherent).
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
+  const s = await requireSession();
+  if (s instanceof NextResponse) return s;
+  const userId = s.userId;
 
   const body = await req.json().catch(() => ({} as any));
   const teamSlug = String(body?.teamSlug || '').trim();

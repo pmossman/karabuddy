@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teamMembers } from '@/lib/schema';
+import { requireTeamMember } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
@@ -12,19 +12,11 @@ export const runtime = 'nodejs';
 // other owners are unaffected, so the team always keeps at least one owner.
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string; userId: string }> }) {
   const { slug, userId: targetId } = await params;
-  const session = await auth();
-  const meId: string | null = session?.user?.id || null;
-  if (!meId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
+  const m = await requireTeamMember(slug, { role: 'owner' });
+  if (m instanceof NextResponse) return m;
+  const meId = m.userId;
 
   const db = getDb();
-  const [me] = await db
-    .select()
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, meId)))
-    .limit(1);
-  if (!me || me.role !== 'owner') {
-    return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
-  }
 
   const body = await req.json().catch(() => ({}));
   if (body.role !== 'owner') {

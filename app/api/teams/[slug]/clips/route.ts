@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { authContextFromRequest } from '@/lib/replayPermissions';
-import { getTeamMembership } from '@/lib/teamSurface';
 import { teamClips } from '@/lib/clipBrowser';
 
 export const runtime = 'nodejs';
@@ -11,16 +10,9 @@ export const runtime = 'nodejs';
 // /api/teams/[slug]/replays.
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
-  const me = await getTeamMembership(slug, userId);
-  if (!me) {
-    return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  }
-  const ctx = authContextFromRequest(req, userId);
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  const ctx = authContextFromRequest(req, m.userId);
   const data = await teamClips(slug, ctx);
   return NextResponse.json({ ok: true, data });
 }

@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, replayTeamShares, users } from '@/lib/schema';
 import { gameIdsWithSibling } from '@/lib/doubleSided';
-import { getTeamMembership } from '@/lib/teamSurface';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { reviewersForTeam, commentersForTeam, viewerCommentedSlugs } from '@/lib/reviews';
 
@@ -17,15 +16,9 @@ export const runtime = 'nodejs';
 // "Reviewed" and "Awaiting your review" without anything vanishing.
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
-  const me = await getTeamMembership(slug, userId);
-  if (!me) {
-    return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  }
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
 
   const db = getDb();
   const flagged = await db

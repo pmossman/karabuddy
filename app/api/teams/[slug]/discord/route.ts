@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
-import { auth } from '@/auth';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { getDb } from '@/lib/db';
 import { teams } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
 import { listGuildTextChannels } from '@/lib/discord';
 
 export const runtime = 'nodejs';
@@ -13,17 +12,10 @@ export const runtime = 'nodejs';
 //           via the bot when a guild is connected — powers the picker)
 //   PATCH { channelId } | { disconnect: true }
 
-async function ownerOf(slug: string): Promise<string | null> {
-  const session = await auth();
-  const id: string | null = session?.user?.id || null;
-  if (!id) return null;
-  const m = await getTeamMembership(slug, id);
-  return m && m.role === 'owner' ? id : null;
-}
-
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  if (!(await ownerOf(slug))) return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
+  const m = await requireTeamMember(slug, { role: 'owner' });
+  if (m instanceof NextResponse) return m;
   const [team] = await getDb()
     .select({
       guildId: teams.discordGuildId,
@@ -46,7 +38,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  if (!(await ownerOf(slug))) return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
+  const m = await requireTeamMember(slug, { role: 'owner' });
+  if (m instanceof NextResponse) return m;
   const body = await req.json().catch(() => ({}));
   const db = getDb();
   if (body.disconnect === true) {

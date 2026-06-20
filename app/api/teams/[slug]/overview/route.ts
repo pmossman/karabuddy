@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { and, asc, desc, eq, inArray, isNotNull } from 'drizzle-orm';
-import { auth } from '@/auth';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { getDb } from '@/lib/db';
 import { replays, users, teamMembers, replayTeamShares, tournaments, tournamentEntrants, tournamentMatches, tournamentRounds, tags, tagTeamScope } from '@/lib/schema';
-import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
+import { surfacedReplaySlugs } from '@/lib/teamSurface';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { commentersForTeam } from '@/lib/reviews';
 import { computeStandings, type SwissMatch } from '@/lib/swiss';
@@ -24,12 +24,8 @@ const REGISTRANTS_PREVIEW = 16;
 // carry both open requests AND recently-completed reviews.
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  if (!(await getTeamMembership(slug, userId))) {
-    return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  }
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
 
   const db = getDb();
 

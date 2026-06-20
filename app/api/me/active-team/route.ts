@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { getTeamMembership } from '@/lib/teamSurface';
 import { ACTIVE_TEAM_COOKIE } from '@/lib/activeTeam';
+import { requireSession } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
@@ -11,11 +11,9 @@ export const runtime = 'nodejs';
 // at a team they can't see. Writes live here because cookies().set is illegal
 // during RSC render — the resolver (lib/activeTeam) only reads.
 export async function POST(req: Request) {
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
+  const s = await requireSession();
+  if (s instanceof NextResponse) return s;
+  const userId = s.userId;
 
   let slug: unknown;
   try {

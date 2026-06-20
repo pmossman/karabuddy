@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { desc, eq, inArray, count } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { tournaments, tournamentEntrants, tournamentRounds } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { generateSlug } from '@/lib/slug';
 import { notifyTournamentCreated } from '@/lib/tournamentNotify';
 
@@ -15,12 +14,8 @@ const VISIBILITIES = ['open', 'hidden-until-start', 'private'] as const;
 // entrant/round counts for the tab's cards. Member-gated.
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  if (!(await getTeamMembership(slug, userId))) {
-    return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  }
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
 
   const db = getDb();
   const rows = await db
@@ -69,12 +64,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 //   body: { name: string, decklistVisibility?, plannedRounds? }
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  if (!(await getTeamMembership(slug, userId))) {
-    return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  }
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
 
   const body = await req.json().catch(() => ({}));
   const name = String(body.name || '').trim().slice(0, 120);

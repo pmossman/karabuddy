@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teamMemberPrefs } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
+import { requireTeamMember } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
@@ -13,18 +12,11 @@ export const runtime = 'nodejs';
 //   GET   → { ok, dmOnDirectMention, dmOnTeamMention }
 //   PATCH { dmOnDirectMention?, dmOnTeamMention? }  (upsert; omitted = unchanged)
 
-async function memberOf(slug: string): Promise<string | null> {
-  const session = await auth();
-  const id: string | null = session?.user?.id || null;
-  if (!id) return null;
-  const m = await getTeamMembership(slug, id);
-  return m ? id : null;
-}
-
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const userId = await memberOf(slug);
-  if (!userId) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
   const [row] = await getDb()
     .select()
     .from(teamMemberPrefs)
@@ -40,8 +32,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const userId = await memberOf(slug);
-  if (!userId) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
   const body = await req.json().catch(() => ({}));
   const db = getDb();
   const [existing] = await db

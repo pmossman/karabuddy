@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { and, desc, eq, inArray, count } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, users, teamMembers, tags, tagTeamScope } from '@/lib/schema';
-import { getTeamMembership, surfacedReplaySlugs } from '@/lib/teamSurface';
+import { surfacedReplaySlugs } from '@/lib/teamSurface';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { serializeReplayRow } from '@/lib/replayRow';
 
 export const runtime = 'nodejs';
@@ -13,16 +13,9 @@ export const runtime = 'nodejs';
 // the thin shell that joins user names + sorts.
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
-
-  const me = await getTeamMembership(slug, userId);
-  if (!me) {
-    return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  }
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
 
   const surfaceSlugs = await surfacedReplaySlugs([slug]);
   if (surfaceSlugs.length === 0) {

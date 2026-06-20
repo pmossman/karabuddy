@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teams, teamMembers, users, extensionReadiness } from '@/lib/schema';
 import { memberReadinessStatus } from '@/lib/privateTeams';
+import { requireSession } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
@@ -13,9 +13,9 @@ export const runtime = 'nodejs';
 // key ids — never the key). Owner-only; non-private teams return an empty roster.
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
+  const s = await requireSession();
+  if (s instanceof NextResponse) return s;
+  const userId = s.userId;
 
   const db = getDb();
   const [team] = await db.select().from(teams).where(eq(teams.slug, slug)).limit(1);

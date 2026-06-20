@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { teamInvites, teamMembers } from '@/lib/schema';
+import { teamInvites } from '@/lib/schema';
 import { generateInviteCode } from '@/lib/slug';
+import { requireTeamMember } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
@@ -12,20 +11,10 @@ export const runtime = 'nodejs';
 //   { expiresInDays?: number, usesRemaining?: number }
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  }
+  const m = await requireTeamMember(slug, { role: 'owner' });
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
   const db = getDb();
-  const [me] = await db
-    .select()
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, userId)))
-    .limit(1);
-  if (!me || me.role !== 'owner') {
-    return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
-  }
 
   const body = await req.json().catch(() => ({}));
   const expiresAt =

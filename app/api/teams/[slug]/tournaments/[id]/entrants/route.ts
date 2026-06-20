@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { tournamentEntrants, users } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
-import { getTeamMembership } from '@/lib/teamSurface';
+import { requireTeamMember } from '@/lib/apiAuth';
 import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
 import { importDeck } from '@/lib/deckImport';
 import { validateDeckServer } from '@/lib/deckLegalityServer';
@@ -27,11 +26,9 @@ export const runtime = 'nodejs';
 // submitted.)
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  const userId = m.userId;
   const t = await loadTournament(slug, id);
   if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   if (t.status !== 'setup') {
@@ -44,7 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   let entrantUserId: string | null;
   let displayName: string;
   if (isGuestAdd) {
-    if (!isOrganizer(t, userId, me.role)) {
+    if (!isOrganizer(t, userId, m.role)) {
       return NextResponse.json({ ok: false, error: 'organizer only' }, { status: 403 });
     }
     displayName = String(body.displayName || '').trim().slice(0, 80);
