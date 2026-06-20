@@ -5,8 +5,7 @@ import { getDb } from '@/lib/db';
 import {
   tournaments, tournamentEntrants, tournamentRounds, tournamentMatches,
 } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
-import { loadTournament, isOrganizer, canSeeDeck, serializeEntrant, getTournamentAccess } from '@/lib/tournamentAccess';
+import { canSeeDeck, serializeEntrant, getTournamentAccess, requireOrganizer } from '@/lib/tournamentAccess';
 import { validateDecks } from '@/lib/deckLegalityServer';
 import { computeStandings, suggestedRoundCount, type SwissMatch } from '@/lib/swiss';
 
@@ -114,16 +113,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 // PATCH — organizer edits settings: { name?, decklistVisibility?, plannedRounds? }
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  const t = await loadTournament(slug, id);
-  if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
-  if (!isOrganizer(t, userId, me.role)) {
-    return NextResponse.json({ ok: false, error: 'organizer only' }, { status: 403 });
-  }
+  const gate = await requireOrganizer(slug, id);
+  if (gate instanceof NextResponse) return gate;
 
   const body = await req.json().catch(() => ({}));
   const update: Record<string, unknown> = {};
@@ -160,16 +151,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 // record; it can be abandoned (finish early) but never erased.
 export async function DELETE(_req: Request, { params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  const t = await loadTournament(slug, id);
-  if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
-  if (!isOrganizer(t, userId, me.role)) {
-    return NextResponse.json({ ok: false, error: 'organizer only' }, { status: 403 });
-  }
+  const gate = await requireOrganizer(slug, id);
+  if (gate instanceof NextResponse) return gate;
+  const t = gate.access.tournament;
   if (t.status !== 'setup') {
     return NextResponse.json({ ok: false, error: 'only a tournament in setup can be deleted' }, { status: 409 });
   }

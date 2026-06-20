@@ -4,10 +4,12 @@
 // route first gates on team membership (getTeamMembership), then uses these
 // to load the tournament and decide organizer powers.
 
+import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { tournaments, tournamentEntrants, type Tournament, type TournamentEntrant, type TournamentDeck } from '@/lib/schema';
 import { getTeamMembership } from '@/lib/teamSurface';
+import { requireSession } from '@/lib/apiAuth';
 
 export async function loadTournament(teamSlug: string, id: string): Promise<Tournament | null> {
   const [row] = await getDb()
@@ -60,6 +62,28 @@ export async function getTournamentAccess(
     organizer: isMember && isOrganizer(t, userId, membership!.role),
     canView: isMember || !!entrant,
   };
+}
+
+// Route seam for organizer-gated mutations. Composes auth + the canonical
+// access object so the seven mutation routes stop hand-rolling
+// getTeamMembership + loadTournament + isOrganizer. Returns the full access
+// object (so handlers read access.tournament without re-loading) OR a ready
+// NextResponse: 401 signed out, 404 no such tournament, 403 not an organizer.
+// (Unlike the old inline triplet, a non-member probing a non-existent
+// tournament gets 404, not 403 — the organizer gate is the honest error and
+// the tournament id is a random tn_ id, not enumerable.)
+export async function requireOrganizer(
+  teamSlug: string,
+  tournamentId: string,
+): Promise<{ access: TournamentAccess; userId: string } | NextResponse> {
+  const s = await requireSession();
+  if (s instanceof NextResponse) return s;
+  const access = await getTournamentAccess(teamSlug, tournamentId, s.userId);
+  if (!access) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  if (!access.organizer) {
+    return NextResponse.json({ ok: false, error: 'organizer only' }, { status: 403 });
+  }
+  return { access, userId: s.userId };
 }
 
 // Decklist visibility per tournament setting. `roundCount` answers "has the

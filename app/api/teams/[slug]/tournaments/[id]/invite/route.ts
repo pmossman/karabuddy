@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { eq, and, isNull } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { tournaments } from '@/lib/schema';
-import { getTeamMembership } from '@/lib/teamSurface';
-import { loadTournament, isOrganizer } from '@/lib/tournamentAccess';
+import { loadTournament, requireOrganizer } from '@/lib/tournamentAccess';
 import { generateInviteCode } from '@/lib/slug';
 
 export const runtime = 'nodejs';
@@ -15,16 +13,9 @@ export const runtime = 'nodejs';
 // tournament is in setup (B126).
 export async function POST(_req: Request, { params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  const session = await auth();
-  const userId: string | null = session?.user?.id || null;
-  if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const me = await getTeamMembership(slug, userId);
-  if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });
-  const t = await loadTournament(slug, id);
-  if (!t) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
-  if (!isOrganizer(t, userId, me.role)) {
-    return NextResponse.json({ ok: false, error: 'organizer only' }, { status: 403 });
-  }
+  const gate = await requireOrganizer(slug, id);
+  if (gate instanceof NextResponse) return gate;
+  const t = gate.access.tournament;
 
   if (t.inviteCode) return NextResponse.json({ ok: true, code: t.inviteCode });
 
