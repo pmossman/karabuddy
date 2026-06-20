@@ -90,6 +90,21 @@ describe('boardAttacks', () => {
     const prevZones = new Map([['atk', 'groundArena'], ['x', 'groundArena'], ['y', 'groundArena']]);
     expect(boardAttacks(cards, prevZones)).toEqual([]);
   });
+
+  it('B172: fires only on a NEW flag — a never-cleared flag does not re-lunge', () => {
+    // Two leaders trade and both defeat (r_wrbj85): isAttacker/isDefender stick on
+    // the defeated leaders in the `base` zone every later frame. The first frame
+    // the flag appears is the attack; persistence after is not a new attack.
+    const cards = new Map<string, any>([
+      ['atk', fc('base', { isAttacker: true })],
+      ['def', fc('base', { isDefender: true })],
+    ]);
+    const prevZones = new Map([['atk', 'base'], ['def', 'base']]);
+    // flag newly set this frame → lunge once
+    expect(boardAttacks(cards, prevZones, new Set())).toEqual([{ attackerUuid: 'atk', targetUuid: 'def' }]);
+    // flag persisted from last frame → no re-lunge
+    expect(boardAttacks(cards, prevZones, new Set(['atk']))).toEqual([]);
+  });
 });
 
 describe('exhaustBaseAttacks', () => {

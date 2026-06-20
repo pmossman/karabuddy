@@ -88,9 +88,16 @@ const isArenaZone = (z?: string) => z === 'groundArena' || z === 'spaceArena';
 export function boardAttacks(
   cards: Map<string, FrameCard>,
   prevZones: Map<string, string>,
+  // B172: uuids that were ALREADY isAttacker last frame. The flag marks "this
+  // card is attacking NOW"; a single lunge is one attack, so we fire only on the
+  // TRANSITION (flag newly set this frame). Without this, a flag karabast never
+  // clears — e.g. two leaders that trade and BOTH defeat (r_wrbj85 f54+): the
+  // defeated leaders keep isAttacker/isDefender in the `base` zone forever — makes
+  // the lunge re-fire every subsequent frame. Defaults empty (no gating).
+  prevAttackers: Set<string> = new Set(),
 ): AttackEvent[] {
   let hasAttacker = false;
-  for (const c of cards.values()) if (c.isAttacker) { hasAttacker = true; break; }
+  for (const [u, c] of cards) if (c.isAttacker && !prevAttackers.has(u)) { hasAttacker = true; break; }
   if (!hasAttacker) return [];
 
   const defender = [...cards].find(([, c]) => c.isDefender)?.[0];
@@ -103,7 +110,7 @@ export function boardAttacks(
 
   const out: AttackEvent[] = [];
   for (const [uuid, c] of cards) {
-    if (!c.isAttacker) continue;
+    if (!c.isAttacker || prevAttackers.has(uuid)) continue; // newly-flagged attackers only
     const targetUuid = defender ?? (exited.length === 1 ? exited[0] : undefined);
     if (targetUuid && targetUuid !== uuid) out.push({ attackerUuid: uuid, targetUuid });
   }
@@ -200,7 +207,11 @@ export function frameAttacks(prevState: any, curState: any): AttackEvent[] {
   const { cards } = extractFrameCards(curState);
   const log = extractAttacks(curState);
   const logSet = new Set(log.map((a) => a.attackerUuid));
-  const board = boardAttacks(cards, prevState ? zonesOf(prevState) : new Map()).filter((b) => !logSet.has(b.attackerUuid));
+  // B172: the prior frame's isAttacker set — boardAttacks fires only on a fresh
+  // flag, so a never-cleared flag (defeated-leader trade) lunges once, not forever.
+  const prevAttackers = new Set<string>();
+  if (prevState) for (const [u, c] of extractFrameCards(prevState).cards) if (c.isAttacker) prevAttackers.add(u);
+  const board = boardAttacks(cards, prevState ? zonesOf(prevState) : new Map(), prevAttackers).filter((b) => !logSet.has(b.attackerUuid));
   // Already lunging via the log or the isAttacker flag → exclude from the
   // weakest (exhaust) signal so a dropped-flag fallback can't double-fire.
   const already = new Set(logSet);
