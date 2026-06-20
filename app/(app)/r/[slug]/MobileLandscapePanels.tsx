@@ -15,7 +15,8 @@
 //                          Carries matchup thumbs + chips + the View-
 //                          decks button so the tags drawer stays slim.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
 import { DecksModal } from './DecksModal';
@@ -262,13 +263,36 @@ function PauseGlyph() {
 function SpeedMenu({ speed, speeds, onSetSpeed }: { speed: number; speeds: { label: string; value: number }[]; onSetSpeed: (s: number) => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // B173: the dropdown is portalled to <body> because the pill's collapse
+  // animation needs `overflow: hidden` on the controls row — which clipped this
+  // pop-up (it opens ABOVE the bottom-edge pill) into invisibility. Clicking only
+  // flipped the caret; the list never showed, so the speed never changed. Fixed
+  // coords from the button rect let it escape the clip + any stacking context.
+  const [coords, setCoords] = useState<{ left: number; bottom: number } | null>(null);
+  const place = () => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setCoords({ left: r.left + r.width / 2, bottom: window.innerHeight - r.top + 8 });
+  };
+  useLayoutEffect(() => { if (open) place(); }, [open]);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false); };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!wrapRef.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const onReflow = () => place();
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+    window.addEventListener('resize', onReflow);
+    window.addEventListener('scroll', onReflow, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onReflow);
+      window.removeEventListener('scroll', onReflow, true);
+    };
   }, [open]);
   const activeLabel = speeds.find((o) => o.value === speed)?.label ?? '1×';
   return (
@@ -301,16 +325,17 @@ function SpeedMenu({ speed, speeds, onSetSpeed }: { speed: number; speeds: { lab
         {activeLabel}
         <span aria-hidden="true" style={{ fontSize: 8, opacity: 0.7, transform: open ? 'rotate(180deg)' : 'none' }}>▲</span>
       </button>
-      {open && (
+      {open && coords && createPortal(
         <div
+          ref={menuRef}
           role="listbox"
           aria-label="Playback speed"
           style={{
-            position: 'absolute',
-            bottom: 'calc(100% + 8px)',
-            left: '50%',
+            position: 'fixed',
+            bottom: coords.bottom,
+            left: coords.left,
             transform: 'translateX(-50%)',
-            zIndex: 95,
+            zIndex: 1000,
             display: 'flex',
             flexDirection: 'column',
             gap: 1,
@@ -350,7 +375,8 @@ function SpeedMenu({ speed, speeds, onSetSpeed }: { speed: number; speeds: { lab
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

@@ -180,6 +180,34 @@ test('desktop: playback pill is collapsed by default; the cog expands the full c
   await expect(overlay.getByTestId('playback-extra-controls')).toHaveAttribute('data-open', '0');
 });
 
+test('desktop: picking a playback speed updates the value (B173)', async ({ page, request }) => {
+  // Regression: the speed dropdown opens ABOVE the bottom-edge pill, but the
+  // pill's collapse animation clips it with overflow:hidden. It used to vanish —
+  // the caret flipped but no list showed, so the value never changed. The list
+  // is now portalled to <body>, escaping the clip.
+  const r = await loadReplay(page, request);
+  await page.goto(`/r/${r.slug}`);
+  const overlay = page.getByTestId('step-mode-overlay');
+  await overlay.getByTestId('controls-collapse-toggle').click();
+
+  const chip = overlay.getByRole('button', { name: /^Playback speed:/ });
+  const before = await chip.getAttribute('aria-label');
+  await chip.click();
+
+  // Portalled to <body> — query at page scope, NOT within the overlay.
+  const listbox = page.getByRole('listbox', { name: /Playback speed/i });
+  await expect(listbox).toBeVisible();
+  // The real guard: the list must live OUTSIDE the overflow:hidden controls
+  // region (which clipped it before) — i.e. portalled directly under <body>.
+  await expect(overlay.getByTestId('playback-extra-controls').getByRole('listbox')).toHaveCount(0);
+  await expect(page.locator('body > div[role="listbox"][aria-label="Playback speed"]')).toBeVisible();
+  const target = before?.includes('1.5') ? '1×' : '1.5×';
+  await listbox.getByRole('option', { name: target, exact: true }).click();
+
+  await expect(chip).toHaveAttribute('aria-label', `Playback speed: ${target}`);
+  await expect(listbox).toHaveCount(0); // closes on pick
+});
+
 test('desktop: sidebar opens on the RIGHT and can be dismissed via ☰', async ({ page, request }) => {
   const r = await loadReplay(page, request);
   await page.goto(`/r/${r.slug}`);
