@@ -441,6 +441,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 } catch (err) {
                     sendResponse({ ok: false, error: err.message });
                 }
+            } else if (msg.type === 'enablePrivateMode') {
+                // B170 / ADR 0010 — turn private mode on for a team straight from
+                // the key manager (generate key → enable, no bounce to karabuddy).
+                // Owner-gated server-side; HARD-gated here to the extension's own
+                // pages (a content-script sender is refused), like reveal/rotation.
+                try {
+                    const fromExtPage = typeof sender?.url === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
+                    if (!fromExtPage) { sendResponse({ ok: false, error: 'forbidden' }); return; }
+                    const endpoint = await getKarabuddyEndpoint();
+                    const installToken = await getKarabuddyInstallToken();
+                    const res = await fetch(`${endpoint}/api/teams/${encodeURIComponent(msg.teamSlug)}/private-mode`, {
+                        method: 'POST', credentials: 'include',
+                        headers: { 'Content-Type': 'application/json', 'X-Install-Token': installToken },
+                        body: JSON.stringify({ teamKeyId: msg.teamKeyId }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok && !data.error) data.error = `server error (${res.status})`;
+                    sendResponse({ ok: res.ok && data.ok !== false, data, status: res.status });
+                } catch (err) {
+                    sendResponse({ ok: false, error: err.message, data: { error: err.message } });
+                }
             } else if (msg.type === 'rotationManifest' || msg.type === 'rotationRewrap' || msg.type === 'rotationFinalize') {
                 // B170 / ADR 0010 — key rotation, driven entirely from the
                 // extension's key-manager page. These proxy the owner-gated
