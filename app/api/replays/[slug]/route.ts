@@ -22,7 +22,7 @@ export function OPTIONS(req: Request) {
 // caller convenience.
 async function canMutate(row: { userId: string | null; ownerToken: string }, req: Request) {
   const session = await auth();
-  const sessionUserId: string | null = (session?.user as any)?.id || null;
+  const sessionUserId: string | null = session?.user?.id || null;
   return canMutateReplay(row, authContextFromRequest(req, sessionUserId));
 }
 
@@ -55,7 +55,7 @@ export async function GET(
     // decklist; real-but-unauthorized callers get no decks at all.
     const isSample = isSampleReplaySlug(slug);
     const session = await auth();
-    const sessionUserId: string | null = (session?.user as any)?.id || null;
+    const sessionUserId: string | null = session?.user?.id || null;
     const canView = isSample
       ? false
       : await canViewReplayIdentities(row, authContextFromRequest(req, sessionUserId));

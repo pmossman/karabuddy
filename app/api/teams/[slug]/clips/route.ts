@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }

@@ -19,7 +19,7 @@ function isReplayOwner(replay: { userId: string | null; ownerToken: string }, re
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
 
   const db = getDb();
   const [replay] = await db.select().from(replays).where(eq(replays.slug, slug)).limit(1);
@@ -86,7 +86,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required to share with teams' }, { status: 401 });
   }
@@ -140,7 +140,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 export async function DELETE(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
 
   const body = await req.json().catch(() => ({}));
   const teamSlug: string = String(body.teamSlug || '').trim();

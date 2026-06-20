@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }
@@ -50,7 +50,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }
@@ -118,7 +118,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }

@@ -17,7 +17,7 @@ import { KaraBuddyThemeProvider } from '@/app/_components/KaraBuddyThemeProvider
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   const signedIn = !!session?.user;
-  const userId: string | null = (session?.user as any)?.id ?? null;
+  const userId: string | null = session?.user?.id ?? null;
   const [hasLinkedExtension, { active, teams }, lastReplay] = await Promise.all([
     userHasLinkedExtension(userId),
     resolveActiveTeam(userId),

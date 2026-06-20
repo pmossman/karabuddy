@@ -16,7 +16,7 @@ export default async function ClaimPage({ searchParams }: PageProps) {
   const { token: tokenParam } = await searchParams;
   const token = (tokenParam || '').trim();
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
 
   // Not signed in? Send to /signin, come back with the same ?token preserved.
   if (!userId) {

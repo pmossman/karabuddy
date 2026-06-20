@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   try {
     const scope = new URL(req.url).searchParams.get('scope') === 'on-my-replays' ? 'on-my-replays' : 'created';
     const session = await auth();
-    const sessionUserId: string | null = (session?.user as any)?.id || null;
+    const sessionUserId: string | null = session?.user?.id || null;
     const ctx = authContextFromRequest(req, sessionUserId);
     const data = scope === 'on-my-replays' ? await clipsOnMyReplays(ctx) : await myCreatedClips(ctx);
     return NextResponse.json({ ok: true, data }, { headers });

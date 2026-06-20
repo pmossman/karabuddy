@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export default async function TournamentDeckPage({ params }: { params: Promise<{ slug: string; id: string; entrantId: string }> }) {
   const { slug, id, entrantId } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) redirect(`/signin?callbackUrl=/teams/${slug}/tournaments/${id}`);
 
   // B127: member OR linked entrant — a tournament participant sees other

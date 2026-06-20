@@ -7,6 +7,6 @@ export const dynamic = 'force-dynamic';
 
 export default async function StatsPage() {
   const session = await auth();
-  const userId = ((session?.user as any)?.id as string | undefined) || null;
+  const userId = (session?.user?.id as string | undefined) || null;
   return <StatsClient scope="personal" signedIn={!!userId} />;
 }

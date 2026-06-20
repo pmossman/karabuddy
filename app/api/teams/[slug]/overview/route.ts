@@ -25,7 +25,7 @@ const REGISTRANTS_PREVIEW = 16;
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   if (!(await getTeamMembership(slug, userId))) {
     return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });

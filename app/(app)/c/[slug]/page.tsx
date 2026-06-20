@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { clip, replay } = loaded;
 
   const session = await auth();
-  const viewerUserId = (session?.user as any)?.id ?? null;
+  const viewerUserId = session?.user?.id ?? null;
   const anonymize = isSampleReplaySlug(replay.slug)
     || !(await canViewReplayIdentities(replay, { sessionUserId: viewerUserId, installToken: null }));
   const ordered = orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId) as any[];
@@ -57,7 +57,7 @@ export default async function ClipPage({ params }: PageProps) {
   const { clip, replay } = loaded;
 
   const session = await auth();
-  const viewerUserId = (session?.user as any)?.id ?? null;
+  const viewerUserId = session?.user?.id ?? null;
   const ctx = { sessionUserId: viewerUserId, installToken: null };
   const anonymize = isSampleReplaySlug(replay.slug) || !(await canViewReplayIdentities(replay, ctx));
 

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // Account-gated; anonymous viewers see a sign-in prompt.
 export default async function MentionsPage() {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   return (
     <main
       style={{

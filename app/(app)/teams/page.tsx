@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 // account-gated because they involve social trust).
 export default async function TeamsIndex() {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
 
   return (
     <main

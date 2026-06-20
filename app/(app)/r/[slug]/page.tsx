@@ -136,7 +136,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   // else (incl. anonymous link visitors + crawlers) gets the leader matchup. A
   // user-set displayName is always safe to show (it's user-chosen).
   const session = await auth();
-  const viewerUserId = (session?.user as any)?.id ?? null;
+  const viewerUserId = session?.user?.id ?? null;
   // B129: a curated sample (B107) is anonymized for the PUBLIC, not for the
   // uploader/teammates — an entitled viewer keeps identities (and series nav)
   // on their own replay even while it's featured.
@@ -194,7 +194,7 @@ export default async function ReplayPage({ params }: PageProps) {
   // same way — by entitlement — so featuring a replay doesn't blind its own
   // uploader/teammates (the public is unentitled and stays anonymized).
   const session = await auth();
-  const viewerUserId = (session?.user as any)?.id ?? null;
+  const viewerUserId = session?.user?.id ?? null;
   const anonymize = !(await canViewReplayIdentities(row, { sessionUserId: viewerUserId, installToken: null }));
 
   // B166: Flip control only for a viewer entitled to compose the 2nd POV from

@@ -28,7 +28,7 @@ const RECENT_LIMIT = 6;
 // the /claim pitch is gone — linking is fully automated (B54/B69).
 export default async function Home() {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
 
   if (!userId) {
     // B133: lead with recent PUBLIC replays — real games owners chose to

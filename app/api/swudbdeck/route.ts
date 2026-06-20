@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 // handling (incl. the 403 private-deck branch) works unchanged.
 export async function GET(req: Request) {
   const session = await auth();
-  if (!(session?.user as any)?.id) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'sign in required' }, { status: 401 });
   }
   const { searchParams } = new URL(req.url);

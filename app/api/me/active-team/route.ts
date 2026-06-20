@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
 // during RSC render — the resolver (lib/activeTeam) only reads.
 export async function POST(req: Request) {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }

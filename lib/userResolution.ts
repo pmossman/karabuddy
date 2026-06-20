@@ -40,7 +40,7 @@ export async function resolveUserId(opts: {
   installToken?: string | null;
 }): Promise<string | null> {
   const session = await auth();
-  const sessionUserId: string | null = (session?.user as any)?.id || null;
+  const sessionUserId: string | null = session?.user?.id || null;
   if (sessionUserId) return sessionUserId;
   if (opts.installToken) {
     const db = getDb();

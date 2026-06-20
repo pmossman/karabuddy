@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 // circular. Sign in via the web to manage them.
 export async function GET() {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }
@@ -49,7 +49,7 @@ export async function GET() {
 // Owner-only: can only revoke a row whose userId matches the session.
 export async function DELETE(req: Request) {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }

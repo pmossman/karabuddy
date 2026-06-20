@@ -13,7 +13,7 @@ import { resolveTagScope, replaceTagScope } from '@/lib/tagScope';
 // the delete check.
 async function canEdit(row: { userId: string | null; authorToken: string }, req: Request): Promise<boolean> {
   const session = await auth();
-  const sessionUserId: string | null = (session?.user as any)?.id || null;
+  const sessionUserId: string | null = session?.user?.id || null;
   return canEditTag(row, authContextFromRequest(req, sessionUserId));
 }
 
@@ -23,7 +23,7 @@ async function canDelete(
   req: Request,
 ): Promise<boolean> {
   const session = await auth();
-  const sessionUserId: string | null = (session?.user as any)?.id || null;
+  const sessionUserId: string | null = session?.user?.id || null;
   const ctx = authContextFromRequest(req, sessionUserId);
   if (canEditTag(row, ctx)) return true;
   const db = getDb();

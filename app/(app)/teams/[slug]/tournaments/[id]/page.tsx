@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export default async function TournamentPage({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) redirect(`/signin?callbackUrl=/teams/${slug}/tournaments/${id}`);
 
   const access = await getTournamentAccess(slug, id, userId);

@@ -42,7 +42,7 @@ export default async function DeckPage({ params }: PageProps) {
   // them. Curated samples (B107) are anonymized but keep the demo decklist.
   const isSample = isSampleReplaySlug(slug);
   const session = await auth();
-  const viewerUserId = (session?.user as any)?.id ?? null;
+  const viewerUserId = session?.user?.id ?? null;
   const canView = isSample ? false : await canViewReplayIdentities(replay as any, { sessionUserId: viewerUserId, installToken: null });
   if (!isSample && !canView) {
     return (

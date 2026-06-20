@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   if (!teamSlug) return NextResponse.redirect(new URL('/teams', url.origin));
 
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) return back('discord=signin');
 
   const me = await getTeamMembership(teamSlug, userId);

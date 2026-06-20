@@ -370,7 +370,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // MatchupPanel (mobile) can show owner-only affordances from the
   // same source of truth.
   const { data: session } = useSession();
-  const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
+  const sessionUserId: string | null = (session?.user?.id as string | undefined) || null;
   const [installToken, setInstallToken] = useState('');
   useEffect(() => { setInstallToken(getOrCreateInstallToken()); }, []);
 

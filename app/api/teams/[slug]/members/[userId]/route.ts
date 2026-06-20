@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string; userId: string }> }) {
   const { slug, userId: targetId } = await params;
   const session = await auth();
-  const meId: string | null = (session?.user as any)?.id || null;
+  const meId: string | null = session?.user?.id || null;
   if (!meId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
 
   const db = getDb();

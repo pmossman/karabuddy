@@ -44,7 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   try {
     const { slug } = await params;
     const session = await auth();
-    const userId: string | null = (session?.user as any)?.id || null;
+    const userId: string | null = session?.user?.id || null;
     const installToken = (req.headers.get('x-install-token') || '').trim() || null;
     const createdBy = userId ?? installToken;
     if (!createdBy) {

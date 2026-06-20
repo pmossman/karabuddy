@@ -73,7 +73,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
   const tab = parseTab(rawTab);
 
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     redirect(`/signin?callbackUrl=/teams/${slug}`);
   }

@@ -16,7 +16,7 @@ const PAGE_STYLE: React.CSSProperties = { maxWidth: 1100, margin: '0 auto', padd
 export default async function ClipsIndex({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab: tabParam } = await searchParams;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
 
   if (!userId) {
     // No team / "on my replays" scopes without an account — just the descriptor

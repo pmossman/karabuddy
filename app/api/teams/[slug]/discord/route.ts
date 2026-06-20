@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 
 async function ownerOf(slug: string): Promise<string | null> {
   const session = await auth();
-  const id: string | null = (session?.user as any)?.id || null;
+  const id: string | null = session?.user?.id || null;
   if (!id) return null;
   const m = await getTeamMembership(slug, id);
   return m && m.role === 'owner' ? id : null;

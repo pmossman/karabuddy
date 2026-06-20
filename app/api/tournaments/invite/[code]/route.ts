@@ -23,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
   ]);
 
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   const isMember = userId ? !!(await getTeamMembership(t.teamSlug, userId)) : false;
   const myEntrant = userId ? entrants.find((e) => e.userId === userId) ?? null : null;
 

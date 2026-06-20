@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   }
 
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   const body = await req.json().catch(() => ({}));
 
   let displayName: string;

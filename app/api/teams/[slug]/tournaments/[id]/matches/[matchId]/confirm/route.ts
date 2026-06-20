@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 export async function POST(_req: Request, { params }: { params: Promise<{ slug: string; id: string; matchId: string }> }) {
   const { slug, id, matchId } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   const me = await getTeamMembership(slug, userId);
   if (!me) return NextResponse.json({ ok: false, error: 'not a member' }, { status: 403 });

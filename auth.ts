@@ -40,7 +40,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // without re-querying (Auth.js's default omits it). B84: attribution is
       // by account name — no karabast username.
       if (user) {
-        (session.user as any).id = user.id;
+        session.user.id = user.id;
       }
       return session;
     },

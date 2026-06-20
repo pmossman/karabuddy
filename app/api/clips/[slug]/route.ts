@@ -31,7 +31,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     if (!replay) return NextResponse.json({ ok: false, error: 'replay gone' }, { status: 404, headers });
 
     const session = await auth();
-    const sessionUserId: string | null = (session?.user as any)?.id || null;
+    const sessionUserId: string | null = session?.user?.id || null;
     const ctx = authContextFromRequest(req, sessionUserId);
     const anonymize = isSampleReplaySlug(replay.slug) || !(await canViewReplayIdentities(replay, ctx));
     const ordered = orderPlayersOwnerFirst((replay as any).players, (replay as any).ownerPlayerId);
@@ -73,7 +73,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
     const [replay] = await db.select().from(replays).where(eq(replays.slug, clip.replaySlug)).limit(1);
 
     const session = await auth();
-    const sessionUserId: string | null = (session?.user as any)?.id || null;
+    const sessionUserId: string | null = session?.user?.id || null;
     const ctx = authContextFromRequest(req, sessionUserId);
     if (!canMutateClip(clip, (replay as any) ?? { userId: null, ownerToken: '' }, ctx)) {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });

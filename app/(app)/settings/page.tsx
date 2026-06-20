@@ -27,7 +27,7 @@ const desc: React.CSSProperties = { margin: '0 0 16px', fontSize: 13, color: '#a
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ section?: string }> }) {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) redirect('/signin?callbackUrl=/settings');
   const { section: raw } = await searchParams;
   const section: SectionId = SECTIONS.find((s) => s.id === raw)?.id ?? 'account';

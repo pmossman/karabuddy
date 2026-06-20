@@ -225,7 +225,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [resizeHandleHover, setResizeHandleHover] = useState(false);
   const [resizeHandleActive, setResizeHandleActive] = useState(false);
   const dragStateRef = useRef<{ startX: number; startW: number } | null>(null);
-  const sessionUserId: string | null = ((session?.user as any)?.id as string | undefined) || null;
+  const sessionUserId: string | null = (session?.user?.id as string | undefined) || null;
 
   // B149: stamp this visit + capture the PREVIOUS visit time (for the "new"
   // markers). Below sessionUserId so it can gate on a signed-in viewer.
@@ -255,7 +255,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // "Tagging as X" label + persisted authorName both reflect the user's
   // account identity. B84: account name (no karabast username).
   useEffect(() => {
-    const su = session?.user as any;
+    const su = session?.user;
     if (su?.name) setAuthorName(su.name);
   }, [session]);
 

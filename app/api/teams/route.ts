@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 // Creates a new team. Caller becomes its first owner. Returns { slug }.
 export async function POST(req: Request) {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 // GET /api/teams — list teams the signed-in user belongs to.
 export async function GET() {
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   }

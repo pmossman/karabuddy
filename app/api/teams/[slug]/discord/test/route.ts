@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 export async function POST(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
   const m = userId ? await getTeamMembership(slug, userId) : null;
   if (!m || m.role !== 'owner') return NextResponse.json({ ok: false, error: 'owner only' }, { status: 403 });
 

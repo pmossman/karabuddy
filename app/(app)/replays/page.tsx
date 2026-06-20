@@ -22,7 +22,7 @@ const PAGE_STYLE: React.CSSProperties = { maxWidth: 1100, margin: '0 auto', padd
 export default async function ReplaysIndex({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab: tabParam } = await searchParams;
   const session = await auth();
-  const userId: string | null = (session?.user as any)?.id || null;
+  const userId: string | null = session?.user?.id || null;
 
   if (!userId) {
     // B54: anonymous viewers still see THEIR OWN replays via the extension's

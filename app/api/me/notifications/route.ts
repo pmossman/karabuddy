@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 
 async function userId(): Promise<string | null> {
   const session = await auth();
-  return (session?.user as any)?.id || null;
+  return session?.user?.id || null;
 }
 
 export async function GET() {
