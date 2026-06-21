@@ -67,32 +67,43 @@ export async function surfacedReplaySlugs(teamSlugs: string[]): Promise<string[]
 }
 
 // Partition a team's recorded games into INTERNAL (teammate-vs-teammate) and
-// EXTERNAL (a member vs an outsider). B166: a game is now up to two INDEPENDENT
-// per-recorder rows, so classify by GAME (group rows by gameId, count the
-// distinct team-member recorders) rather than per row, and return ONE
-// representative slug per game so stats count each match exactly once. ≥2
-// member recorders → internal; exactly 1 → external. (Internal detection needs
-// both teammates to have recorded; a one-sided recording reads as external.)
-// Used by team Stats to default to internal testing results.
-export async function teamGameSlugs(teamSlug: string): Promise<{ internal: string[]; external: string[] }> {
+// EXTERNAL (a member vs an outsider), returning GAMEIDS. B166: a game is now up
+// to two INDEPENDENT per-recorder rows, so classify by GAME (group rows by
+// gameId, count the distinct team-member recorders): ≥2 member recorders →
+// internal; exactly 1 → external. (Internal detection needs both teammates to
+// have recorded; a one-sided recording reads as external.)
+//
+// Returns gameIds — NOT a representative slug. The earlier version returned the
+// lexical-min sibling slug, but stats filter on `matches.replaySlug` which is
+// the LAST-persisted sibling (statsPersist last-writer-wins); those two
+// one-slug-per-game reductions disagreed ~50% of the time and silently dropped
+// co-recorded games from the team matrix. A gameId set has no such ambiguity.
+//
+// Requires ≥1 sibling shared with the team (team stats stay "shared games only";
+// ANY sibling's share counts, so a co-recorded game isn't dropped just because
+// the teammate who armed the share isn't the last-persisted one).
+export async function teamGameIds(teamSlug: string): Promise<{ internal: string[]; external: string[] }> {
   const db = getDb();
-  // Every row recorded by a member of this team, with its gameId.
+  // Every replay recorded by a member, with whether THAT replay is shared with
+  // this team (leftJoin → sharedSlug null when unshared).
   const rows = await db
-    .select({ slug: replays.slug, gameId: replays.gameId, userId: replays.userId })
+    .select({ gameId: replays.gameId, userId: replays.userId, sharedSlug: replayTeamShares.replaySlug })
     .from(replays)
-    .innerJoin(teamMembers, and(eq(teamMembers.userId, replays.userId), eq(teamMembers.teamSlug, teamSlug)));
-  const byGame = new Map<string, { recorders: Set<string>; slug: string }>();
+    .innerJoin(teamMembers, and(eq(teamMembers.userId, replays.userId), eq(teamMembers.teamSlug, teamSlug)))
+    .leftJoin(replayTeamShares, and(eq(replayTeamShares.replaySlug, replays.slug), eq(replayTeamShares.teamSlug, teamSlug)));
+  const byGame = new Map<string, { recorders: Set<string>; shared: boolean }>();
   for (const r of rows) {
-    if (!r.userId) continue;
+    if (!r.userId || !r.gameId) continue;
     let g = byGame.get(r.gameId);
-    if (!g) { g = { recorders: new Set(), slug: r.slug }; byGame.set(r.gameId, g); }
+    if (!g) { g = { recorders: new Set(), shared: false }; byGame.set(r.gameId, g); }
     g.recorders.add(r.userId);
-    if (r.slug < g.slug) g.slug = r.slug; // deterministic representative
+    if (r.sharedSlug) g.shared = true; // ANY sibling shared with the team
   }
   const internal: string[] = [];
   const external: string[] = [];
-  for (const g of byGame.values()) {
-    (g.recorders.size >= 2 ? internal : external).push(g.slug);
+  for (const [gameId, g] of byGame) {
+    if (!g.shared) continue; // team stats = games shared with the team
+    (g.recorders.size >= 2 ? internal : external).push(gameId);
   }
   return { internal, external };
 }

@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, teams, replays, matches, matchPlayers, replayTeamShares, cardEvents, cards } from '@/lib/schema';
+import { users, teams, teamMembers, replays, matches, matchPlayers, replayTeamShares, cardEvents, cards } from '@/lib/schema';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames } from '@/lib/statsQuery';
+import { teamGameIds } from '@/lib/teamSurface';
 
 // B101/P1: the scoping + aggregation layer. These tests double as the privacy
 // QA — they pin that personal/team/global never leak into each other, that an
@@ -63,6 +64,7 @@ beforeEach(async () => {
   userA = await seedUser(false);
   userB = await seedUser(true); // opted OUT of global
   await db.insert(teams).values({ slug: 'tT', name: 'Team T', createdBy: userA });
+  await db.insert(teamMembers).values({ teamSlug: 'tT', userId: userA, role: 'owner' });
 
   // Base catalog: one ability base (its own deck) + one vanilla aspect base.
   await db.insert(cards).values([
@@ -93,22 +95,55 @@ beforeEach(async () => {
 const byLeader = (rows: { leader: string }[]) => Object.fromEntries(rows.map((r) => [r.leader, r])) as Record<string, any>;
 
 describe('getLeaderStats — scope isolation', () => {
-  it('personal = only my replays', async () => {
+  it('personal = only MY side of my replays (not my opponents’ leaders)', async () => {
     const m = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: userA } }));
-    expect(m.L1.games).toBe(2);
+    expect(m.L1.games).toBe(2); // userA played L1 in both games (isRecorder side)
     expect(m.L1.wins).toBe(1);
     expect(m.L1.winRate).toBeCloseTo(0.5);
-    expect(m.L2.games).toBe(2);
-    expect(m.L3).toBeUndefined(); // L3 only appears in userB/anon games
+    // Bug-1 guard: L2 was the OPPONENT's leader — it must NOT be counted as one
+    // of userA's own leader stats. (Personal scope = the recorder's row only.)
+    expect(m.L2).toBeUndefined();
+    expect(m.L3).toBeUndefined();
   });
 
   // Global/community scope was removed — karabuddy is team-internal only, with
   // no userbase-wide aggregate (see lib/statsQuery). Personal + team only.
 
-  it('team = only replays shared with that team', async () => {
-    const m = byLeader(await getLeaderStats({ scope: { kind: 'team', teamSlug: 'tT' } }));
+  it('team = only games shared with that team (both members’ rows)', async () => {
+    const sets = await teamGameIds('tT');
+    const restrictGameIds = [...sets.internal, ...sets.external];
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'team', teamSlug: 'tT', restrictGameIds } }));
     expect(m.L1.games).toBe(1); // only game1 was shared
-    expect(m.L2.games).toBe(1);
+    expect(m.L2.games).toBe(1); // team scope keeps BOTH players' rows (matrix wants both sides)
+  });
+
+  // Bug-2 guard: a co-recorded internal game must count in the team matrix even
+  // when the persisted matches.replaySlug is NOT the lexical-min sibling and is
+  // itself unshared — as long as ANY sibling is shared. The old slug-based
+  // restrict dropped ~half of these (lexical-min vs last-writer-wins disagreed).
+  it('counts a co-recorded internal game regardless of which sibling was persisted', async () => {
+    const db = getDb();
+    const userC = await seedUser(false);
+    await db.insert(teamMembers).values({ teamSlug: 'tT', userId: userC, role: 'member' });
+    const gid = 'co-' + id().slice(0, 6);
+    const slugMin = 'r_aaa' + id().slice(0, 5); // userA's sibling — lexical-min, SHARED
+    const slugHi = 'r_zzz' + id().slice(0, 5);  // userC's sibling — lexical-high, NOT shared, persisted LAST
+    await db.insert(replays).values([
+      { slug: slugMin, gameId: gid, userId: userA, ownerToken: 'kbx_' + id(), players: [], payloadBlobUrl: 'memory://x', durationMs: 1 },
+      { slug: slugHi, gameId: gid, userId: userC, ownerToken: 'kbx_' + id(), players: [], payloadBlobUrl: 'memory://x', durationMs: 1 },
+    ]);
+    await db.insert(replayTeamShares).values({ replaySlug: slugMin, teamSlug: 'tT', sharedBy: userA });
+    // matches.replaySlug points at the UNSHARED, non-min sibling (last-writer-wins).
+    await db.insert(matches).values({ gameId: gid, replaySlug: slugHi, format: 'premier', result: 'decisive' });
+    await db.insert(matchPlayers).values([
+      { gameId: gid, playerId: 'p1', leader: 'LX', opponentLeader: 'LY', won: true, isRecorder: true, format: 'premier' },
+      { gameId: gid, playerId: 'p2', leader: 'LY', opponentLeader: 'LX', won: false, isRecorder: false, format: 'premier' },
+    ]);
+    const sets = await teamGameIds('tT');
+    expect(sets.internal).toContain(gid); // 2 member recorders + a shared sibling
+    const rows = await getLeaderMatchups({ scope: { kind: 'team', teamSlug: 'tT', restrictGameIds: sets.internal } });
+    expect(rows.find((r) => r.leader === 'LX' && r.opponentLeader === 'LY')).toMatchObject({ games: 1, wins: 1 });
+    expect(rows.find((r) => r.leader === 'LY' && r.opponentLeader === 'LX')).toMatchObject({ games: 1, wins: 0 });
   });
 });
 
