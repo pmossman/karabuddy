@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, desc, eq, inArray, count } from 'drizzle-orm';
+import { and, desc, eq, inArray, count, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, users, teamMembers, tags, tagTeamScope } from '@/lib/schema';
 import { surfacedReplaySlugs } from '@/lib/teamSurface';
@@ -29,13 +29,33 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     .where(eq(teamMembers.teamSlug, slug))).map((r) => r.id);
   const memberSet = new Set(memberIds);
 
-  const rows = await db
+  // B187: window by distinct GAME, not raw row. The old `.limit(200)` capped the
+  // 200 most-recent surfaced ROWS, so once a team passed ~100 games its older
+  // shared replays silently fell off the grid (a team with 1014 shared games saw
+  // only ~the last two days), and B166 co-recording halved the window (two rows
+  // per game). Take the most-recent N distinct games, then fetch their rows. A
+  // high bound (not true pagination — that's the scale follow-up); env-tunable so
+  // tests can exercise the windowing without seeding hundreds of games.
+  const maxGames = Number(process.env.KB_TEAM_REPLAYS_MAX_GAMES) || 2000;
+  const gameWindow = await db
+    .select({ gameId: replays.gameId, recent: sql<string>`max(${replays.createdAt})` })
+    .from(replays)
+    .where(inArray(replays.slug, surfaceSlugs))
+    .groupBy(replays.gameId)
+    .orderBy(desc(sql`max(${replays.createdAt})`))
+    .limit(maxGames);
+  if (gameWindow.length >= maxGames) {
+    console.warn(`[team-replays] ${slug}: surfaced games reached cap ${maxGames}; oldest games are not shown`);
+  }
+  const windowGameIds = gameWindow.map((g) => g.gameId).filter((g): g is string => !!g);
+
+  type ReplayRow = { replay: typeof replays.$inferSelect; ownerName: string | null };
+  const rows: ReplayRow[] = windowGameIds.length === 0 ? [] : await db
     .select({ replay: replays, ownerName: users.name })
     .from(replays)
     .leftJoin(users, eq(users.id, replays.userId))
-    .where(inArray(replays.slug, surfaceSlugs))
-    .orderBy(desc(replays.createdAt))
-    .limit(200);
+    .where(and(inArray(replays.slug, surfaceSlugs), inArray(replays.gameId, windowGameIds)))
+    .orderBy(desc(replays.createdAt));
 
   // B166: a game is now ONE physical match recorded as up to two independent
   // rows (one per recorder). "Internal" (teammate-vs-teammate) is detected by

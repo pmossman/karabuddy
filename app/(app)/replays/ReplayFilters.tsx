@@ -111,6 +111,7 @@ export function ReplayFilters({
   emptyState,
   showShareTabs = false,
   showUploaderFilter = false,
+  pageSize,
 }: {
   rows: Row[];
   canManage: boolean;
@@ -123,6 +124,11 @@ export function ReplayFilters({
   // B116: the "Uploaded by" (which team member) filter only makes sense on the
   // team grid; on the personal library every row is yours.
   showUploaderFilter?: boolean;
+  // B187: when set, render incrementally (N at a time) with a "Show more" button
+  // instead of painting every card at once. The team grid surfaces a team's
+  // entire shared history (hundreds–thousands of games), so it opts in. Off
+  // (undefined) on the personal library → byte-identical behavior there.
+  pageSize?: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -245,6 +251,12 @@ export function ReplayFilters({
     });
   }, [rows, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result]);
 
+  // B187: incremental render (opt-in via pageSize). Reset to the first page
+  // whenever the filtered set changes so a new filter starts from the top.
+  const [visibleCount, setVisibleCount] = useState(pageSize ?? Infinity);
+  useEffect(() => { setVisibleCount(pageSize ?? Infinity); }, [filtered, pageSize]);
+  const display = pageSize ? filtered.slice(0, visibleCount) : filtered;
+
   const clearAll = () => {
     setMyLeader(''); setVsLeader(''); setUploadedBy(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
   };
@@ -312,17 +324,29 @@ export function ReplayFilters({
           {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
         </div>
       ) : view === 'by-leader' ? (
-        <ByLeaderGroups rows={filtered} canManage={canManage} />
+        <ByLeaderGroups rows={display} canManage={canManage} />
       ) : view === 'by-member' ? (
-        <ByMemberGroups rows={filtered} canManage={canManage} />
+        <ByMemberGroups rows={display} canManage={canManage} />
       ) : view === 'timeline' ? (
-        <TimelineGroups rows={filtered} canManage={canManage} />
+        <TimelineGroups rows={display} canManage={canManage} />
       ) : (
         // 'replays' — the dense sortable table on desktop, cards on phones (the
         // table can't fit a narrow viewport without horizontal scroll).
         isNarrow
-          ? <CardGrid rows={filtered} canManage={canManage} group />
-          : <TableView rows={filtered} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
+          ? <CardGrid rows={display} canManage={canManage} group />
+          : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
+      )}
+
+      {pageSize && filtered.length > display.length && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={() => setVisibleCount((v) => v + pageSize)}
+            style={{ background: 'transparent', color: '#a0a8b8', border: '1px solid #2a3142', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Show more ({filtered.length - display.length} more)
+          </button>
+        </div>
       )}
     </>
   );

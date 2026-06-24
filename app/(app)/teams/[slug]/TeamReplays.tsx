@@ -80,6 +80,7 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
         rows={shown}
         canManage={false}
         showUploaderFilter
+        pageSize={60}
         emptyState={
           <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
             {internalOnly

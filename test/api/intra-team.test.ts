@@ -4,7 +4,7 @@ import { POST as upload } from '@/app/api/replays/route';
 import { GET as teamReplays } from '@/app/api/teams/[slug]/replays/route';
 import { teamGameIds } from '@/lib/teamSurface';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, extensionTokens, replayParticipants } from '@/lib/schema';
+import { users, teams, teamMembers, extensionTokens, replayParticipants, replays } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 
 // B84/B166: account-based intra-team detection. A match is "internal" when ≥2 of
@@ -99,5 +99,38 @@ describe('account-based intra-team detection', () => {
     const sets = await teamGameIds(team);
     expect(sets.internal).toHaveLength(0);
     expect(sets.external).toHaveLength(1);
+  });
+});
+
+// B187: the team replays grid must window by distinct GAME, not raw row. The old
+// `.limit(200)` capped the 200 most-recent surfaced ROWS, so once a team passed
+// ~100 games its older shared replays silently fell off (and B166 co-recording —
+// two rows per game — halved the window). A real CCC team hit this at 1014 shared
+// games → only ~the last two days showed despite the shares still existing.
+describe('team replays grid windows by game (B187)', () => {
+  it('caps by distinct GAME (newest kept, co-records collapse to one slot, not row-limited)', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const team = await seedTeam(a.id, [a.id, b.id]);
+    // four games, oldest→newest, all explicitly shared with the team
+    for (const g of ['wg1', 'wg2', 'wg3', 'wg4']) { as(a.id); await doUpload(a.token, g, [team]); }
+    // wg4 is CO-RECORDED: b also records + shares it (two rows, same gameId)
+    as(b.id); await doUpload(b.token, 'wg4', [team]);
+    // deterministic recency: wg1 oldest … wg4 newest (both wg4 rows get the newest stamp)
+    const baseT = Date.parse('2026-02-01T00:00:00Z');
+    let i = 0;
+    for (const g of ['wg1', 'wg2', 'wg3', 'wg4']) {
+      await getDb().update(replays).set({ createdAt: new Date(baseT + (i++) * 3_600_000) }).where(eq(replays.gameId, g));
+    }
+    // window to TWO games
+    process.env.KB_TEAM_REPLAYS_MAX_GAMES = '2';
+    as(a.id);
+    const data = (await (await teamReplays(new Request('http://t'), teamParams(team))).json()).data as any[];
+    delete process.env.KB_TEAM_REPLAYS_MAX_GAMES;
+
+    // The two NEWEST games, each as ONE card. A row-based cap of 2 would have
+    // returned only wg4 (its two co-recorder rows fill both row slots) — proving
+    // the window now counts games, so an older game (wg3) survives.
+    expect(data.map((r) => r.gameId)).toEqual(['wg4', 'wg3']);
   });
 });
