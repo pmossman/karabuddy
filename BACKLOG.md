@@ -13,6 +13,13 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B188] Proper team-replays pagination (follow-up to B187)
+
+- **Why:** B187 fixed the team replays grid silently hiding older shared replays — it capped at the 200 most-recent surfaced ROWS, so a team past ~100 games lost its older shares (a real CCC team with 1014 shared games saw only ~the last two days, despite the shares still existing). The B187 short-term fix windows by distinct GAME with a high bound (2000) + an opt-in incremental client render, and still re-fetches the full surfaced set on every tab load — a ceiling, and wasteful at scale.
+- **The real fix, and the catch:** server-side pagination. `ReplayFilters` filters ENTIRELY client-side (leader / vs / uploaded-by / since-date / format / result / label), so a naive cursor/offset would only filter the LOADED pages — "find our March Cad Bane game" would miss unpaged history. Doing it right means pushing those filters into the route (filter + paginate server-side), then a "Load more" / infinite-scroll client that accumulates pages. Bigger than B187 (a real feature, not a query swap).
+- **Acceptance:** the team replays grid loads a bounded first page and pages through the FULL shared history; every current filter works server-side over the full set; no full-set fetch per load; co-recorded games still collapse to one card per game across page boundaries; the personal `/replays` grid uses the same path or is explicitly scoped out. Remove/raise the B187 2000-game bound + its `console.warn` once paginated.
+- **Refs:** B187 (window-by-game short-term fix, on main); `app/api/teams/[slug]/replays/route.ts`; `app/(app)/replays/ReplayFilters.tsx` (the client-side filter logic to move server-side); `lib/teamSurface.surfacedReplaySlugs`.
+
 ### [B101] Stats / Meta — frame-mined matchup + card analytics (epic)
 
 - **Why:** every replay is a full frame-by-frame gamestate + already-persisted per-match columns (leaders/bases, winner, format, decks). Turn that into analytics: leader-vs-leader matchups, archetype win rates, and card-level signal ("wins more when drawn", "loses when played", by aspect/cost/turn). Serves **three audiences from one dataset** — personal (your replays), team (scouting), global (anonymized community meta + SEO growth). See **[ADR 0007](docs/adr/0007-stats-meta.md)** for the full architecture + the decisions below.
