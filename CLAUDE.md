@@ -141,7 +141,7 @@ karabast can change its gamestate format without notice and silently break recor
 
 ## Backlog
 
-[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B147**; the next new task is **B148**. The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
+[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B189**; the next new task is **B190**. The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
 
 ## Related repos
 
