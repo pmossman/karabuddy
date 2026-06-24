@@ -256,6 +256,14 @@ export function ReplayFilters({
   const [visibleCount, setVisibleCount] = useState(pageSize ?? Infinity);
   useEffect(() => { setVisibleCount(pageSize ?? Infinity); }, [filtered, pageSize]);
   const display = pageSize ? filtered.slice(0, visibleCount) : filtered;
+  // B187 follow-up: the grouped views (by-leader / by-member / timeline) are
+  // single-open, collapsed accordions — they paint only group headers until one
+  // is expanded — so they render the FULL filtered set, NOT the `display` page.
+  // Slicing them to the flat-grid's page made each group's count reflect only the
+  // member's share of the recent N games (a member read "4" under All but "19"
+  // under Internal) and hid older groups entirely. Only the flat grid/table — the
+  // views that paint every card up front — need the incremental slice.
+  const grouped = view === 'by-leader' || view === 'by-member' || view === 'timeline';
 
   const clearAll = () => {
     setMyLeader(''); setVsLeader(''); setUploadedBy(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
@@ -324,11 +332,11 @@ export function ReplayFilters({
           {activeChips.length > 0 ? <NoMatchesEmpty /> : tab !== 'all' ? <TabEmpty tab={tab} /> : emptyState}
         </div>
       ) : view === 'by-leader' ? (
-        <ByLeaderGroups rows={display} canManage={canManage} />
+        <ByLeaderGroups rows={filtered} canManage={canManage} />
       ) : view === 'by-member' ? (
-        <ByMemberGroups rows={display} canManage={canManage} />
+        <ByMemberGroups rows={filtered} canManage={canManage} />
       ) : view === 'timeline' ? (
-        <TimelineGroups rows={display} canManage={canManage} />
+        <TimelineGroups rows={filtered} canManage={canManage} />
       ) : (
         // 'replays' — the dense sortable table on desktop, cards on phones (the
         // table can't fit a narrow viewport without horizontal scroll).
@@ -337,7 +345,7 @@ export function ReplayFilters({
           : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
       )}
 
-      {pageSize && filtered.length > display.length && (
+      {pageSize && !grouped && filtered.length > display.length && (
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
           <button
             type="button"
