@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
+import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/statsView';
 
 // B101/Phase2 (reframed): the Stats/Meta client, centered on the team/personal
 // contexts teams actually want — "our leader matchups" and "card stats for the
@@ -20,8 +21,6 @@ const pct = (wins: number, decisive: number) => (decisive > 0 ? Math.round((wins
 const fmtPct = (p: number | null) => (p == null ? '—' : `${p}%`);
 const parseId = (id: string) => { const i = id.indexOf('_'); return { set: id.slice(0, i), number: Number(id.slice(i + 1)) }; };
 
-const ASPECT_COLOR: Record<string, string> = { vigilance: '#2f74c0', command: '#2f9e44', aggression: '#c0392b', cunning: '#d4a017', heroism: '#cfd2d6', villainy: '#7b3fb5' };
-const aspectAbbr = (a: string) => a.slice(0, 3).toUpperCase();
 // A deck row carries baseId (ability base) XOR baseAspect (vanilla). Build a
 // stable key + a short base label from that pair, sharing the matrix axes.
 const baseKeyOf = (baseId: string | null, baseAspect: string | null) =>
@@ -56,12 +55,19 @@ export function StatsClient({
   const [matchupLens, setMatchupLens] = useState<'leaders' | 'bases'>('leaders'); // leader-vs-leader or deck-vs-deck
   const [data, setData] = useState<any[] | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [subs, setSubs] = useState<Record<string, string>>({}); // leader/card subtitles — disambiguate same-named leaders (e.g. the two Thrawns)
+  const [filtersOpen, setFiltersOpen] = useState(false); // mobile-first: secondary controls collapse behind a Filters toggle
   const [leaderOptions, setLeaderOptions] = useState<string[]>([]); // leader cardIds in scope (for the deck picker)
   const [deckBases, setDeckBases] = useState<{ baseId: string | null; baseAspect: string | null; games: number }[]>([]); // bases played with the picked leader
   const [loading, setLoading] = useState(false);
   // Team stats default to internal (teammate-vs-teammate); a member's games vs
   // outsiders are a separate view. Personal scope ignores this.
   const [teamGames, setTeamGames] = useState<'internal' | 'external' | 'all'>('internal');
+  // Shared min-occurrences threshold + the Leaders-list sort & grouping controls.
+  const [minGames, setMinGames] = useState(1);
+  const [leaderSort, setLeaderSort] = useState<SortKey>('games');
+  const [leaderDir, setLeaderDir] = useState<SortDir>('desc');
+  const [leaderGroup, setLeaderGroup] = useState<'leader' | 'deck'>('leader'); // by leader, or leader + base
 
   const scopeQs = useMemo(() => {
     const p = new URLSearchParams({ scope });
@@ -76,7 +82,10 @@ export function StatsClient({
     try {
       const c = await fetch(`/api/cards?ids=${[...ids].join(',')}`);
       const cb = await c.json();
-      if (cb.ok) setNames((prev) => ({ ...prev, ...Object.fromEntries(Object.entries(cb.cards).map(([id, v]: any) => [id, v.name || id])) }));
+      if (cb.ok) {
+        setNames((prev) => ({ ...prev, ...Object.fromEntries(Object.entries(cb.cards).map(([id, v]: any) => [id, v.name || id])) }));
+        setSubs((prev) => ({ ...prev, ...Object.fromEntries(Object.entries(cb.cards).filter(([, v]: any) => v.subtitle).map(([id, v]: any) => [id, v.subtitle as string])) }));
+      }
     } catch {}
   };
 
@@ -123,7 +132,8 @@ export function StatsClient({
     setLoading(true);
     setData(null); // drop stale rows so a view switch never renders the old shape (e.g. leaders rows under the Cards table)
     const p = new URLSearchParams(scopeQs);
-    p.set('type', view);
+    // Leaders "by leader + base" reuses the decks producer (leader+base win rates).
+    p.set('type', view === 'leaders' && leaderGroup === 'deck' ? 'decks' : view);
     if (view === 'cards') {
       p.set('event', event);
       if (leaderCtx) p.set('leader', leaderCtx);
@@ -144,7 +154,7 @@ export function StatsClient({
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [scopeQs, view, event, leaderCtx, baseSel, matchupLens]);
+  }, [scopeQs, view, event, leaderCtx, baseSel, matchupLens, leaderGroup]);
 
   const nm = (id: string) => names[id] || id;
 
@@ -154,16 +164,30 @@ export function StatsClient({
   const cardRows = useMemo(() => {
     if (view !== 'cards' || !data) return [];
     const q = cardSearch.trim().toLowerCase();
-    const rows = data
-      .map((r) => ({ ...r, name: nm(r.cardId), win: pct(r.wins, r.decisive) }))
-      .filter((r) => !q || r.name.toLowerCase().includes(q));
+    const rows = filterMinGames(
+      data
+        .map((r) => ({ ...r, name: nm(r.cardId), win: pct(r.wins, r.decisive) }))
+        .filter((r) => !q || r.name.toLowerCase().includes(q)),
+      minGames, (r) => r.observations,
+    );
     rows.sort((a, b) =>
       cardSort === 'winrate'
         ? (b.win ?? -1) - (a.win ?? -1) || b.observations - a.observations
         : b.observations - a.observations || (b.win ?? -1) - (a.win ?? -1),
     );
     return rows;
-  }, [view, data, cardSearch, cardSort, names]);
+  }, [view, data, cardSearch, cardSort, minGames, names]);
+
+  // Leaders view: client-side min-games filter + sort over the fetched rows
+  // (leader rows, or leader+base "deck" rows when grouping by base).
+  const leaderRows = useMemo(() => {
+    if (view !== 'leaders' || !data) return [];
+    return sortStatRows(filterMinGames(data, minGames, (r) => r.games), leaderSort, leaderDir, {
+      count: (r) => r.games,
+      winPct: (r) => pct(r.wins, r.decisive),
+      name: (r) => (leaderGroup === 'deck' ? `${nm(r.leader)} ${r.baseId ? nm(r.baseId) : r.baseAspect ?? ''}` : nm(r.leader)),
+    });
+  }, [view, data, minGames, leaderSort, leaderDir, leaderGroup, names]);
 
   // Matchups view: pivot the flat directed rows into a square matrix. In the
   // "Leaders" lens an axis is a leader; in "Leaders & Bases" it's a DECK
@@ -188,9 +212,32 @@ export function StatsClient({
       totals.set(self.key, t);
       if (!totals.has(opp.key)) totals.set(opp.key, { games: 0, wins: 0, decisive: 0 });
     }
-    const ordered = [...axes.values()].sort((a, b) => (totals.get(b.key)!.games) - (totals.get(a.key)!.games));
+    const ordered = [...axes.values()]
+      .filter((a) => (totals.get(a.key)?.games ?? 0) >= minGames)
+      .sort((a, b) => (totals.get(b.key)!.games) - (totals.get(a.key)!.games));
     return { axes: ordered, cell, totals };
-  }, [view, data, matchupLens]);
+  }, [view, data, matchupLens, minGames]);
+
+  // Sort handler for the Leaders table headers: re-tapping the active column flips
+  // direction; a new column starts desc (asc for the name column).
+  const onLeaderSort = (k: SortKey) => {
+    if (k === leaderSort) setLeaderDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    else { setLeaderSort(k); setLeaderDir(k === 'name' ? 'asc' : 'desc'); }
+  };
+
+  // Active non-default filters → removable chips, shown next to the collapsed Filters
+  // toggle so the current state stays visible on mobile without opening the panel.
+  const activeChips = useMemo(() => {
+    const c: { key: string; label: string; onClear: () => void }[] = [];
+    if (scope === 'team' && teamGames !== 'internal') c.push({ key: 'g', label: teamGames === 'external' ? 'vs Outsiders' : 'All games', onClear: () => setTeamGames('internal') });
+    if (format) c.push({ key: 'f', label: FORMATS.find((f) => f[0] === format)?.[1] || format, onClear: () => setFormat('') });
+    if (view === 'leaders' && leaderGroup === 'deck') c.push({ key: 'grp', label: 'By leader + base', onClear: () => setLeaderGroup('leader') });
+    if (view === 'cards' && leaderCtx) c.push({ key: 'deck', label: nm(leaderCtx), onClear: () => setLeaderCtx('') });
+    if (view === 'cards' && event !== 'played') c.push({ key: 'ev', label: EVENTS.find((e) => e[0] === event)?.[1] || event, onClear: () => setEvent('played') });
+    if (view === 'cards' && cardSearch.trim()) c.push({ key: 'q', label: `“${cardSearch.trim()}”`, onClear: () => setCardSearch('') });
+    if (minGames > 1) c.push({ key: 'min', label: `Min ${minGames} games`, onClear: () => setMinGames(1) });
+    return c;
+  }, [scope, teamGames, format, view, leaderGroup, leaderCtx, event, cardSearch, minGames, names]);
 
   return (
     <div style={embedded
@@ -210,61 +257,62 @@ export function StatsClient({
       {!signedIn ? (
         <div style={dim}>Sign in to see your personal stats.</div>
       ) : (<>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
-        {scope === 'team' && (
-          <Segmented
-            options={[['internal', 'Internal'], ['external', 'vs Outsiders'], ['all', 'All']]}
-            value={teamGames}
-            onChange={(v) => setTeamGames(v as 'internal' | 'external' | 'all')}
-          />
-        )}
-        <Select value={format} onChange={setFormat} options={FORMATS as any} />
+      {/* Primary nav — the view switcher is always visible (scrolls horizontally on narrow screens). */}
+      <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
+        <Segmented options={[['leaders', 'Leaders'], ['matchups', 'Matchups'], ['cards', 'Cards'], ['resourcing', 'Resourcing']]} value={view} onChange={(v) => setView(v as View)} />
       </div>
 
-      <Segmented options={[['leaders', 'Leaders'], ['matchups', 'Matchups'], ['cards', 'Cards'], ['resourcing', 'Resourcing']]} value={view} onChange={(v) => setView(v as View)} />
+      {/* Mobile-first: every secondary control collapses behind ONE Filters toggle; active
+          non-default choices stay visible as removable chips. Sort lives on the table headers. */}
+      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <FiltersToggle open={filtersOpen} count={activeChips.length} onClick={() => setFiltersOpen((v) => !v)} />
+        {activeChips.map((c) => <Chip key={c.key} label={c.label} onClear={c.onClear} />)}
+      </div>
 
-      {view === 'cards' && (
-        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deck:</span>
-          <Select value={leaderCtx} onChange={setLeaderCtx} options={[['', 'All decks'], ...leaderOptions.map((id) => [id, nm(id)] as [string, string])]} />
-          {leaderCtx && (
-            <Select value={baseSel} onChange={setBaseSel} options={[
-              ['', 'Any base'],
-              ...deckBases.map((b) => [
-                baseKeyOf(b.baseId, b.baseAspect),
-                b.baseId ? `${nm(b.baseId)} (${b.games})` : `${b.baseAspect ? b.baseAspect[0].toUpperCase() + b.baseAspect.slice(1) : 'Unknown'} — no ability (${b.games})`,
-              ] as [string, string]),
-            ]} />
+      {filtersOpen && (
+        <div style={filtersPanel}>
+          {scope === 'team' && (
+            <Field label="Games"><Segmented options={[['internal', 'Internal'], ['external', 'vs Outsiders'], ['all', 'All']]} value={teamGames} onChange={(v) => setTeamGames(v as 'internal' | 'external' | 'all')} /></Field>
           )}
-          <Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} />
-          {/* Drawn/resourced live in a hidden zone only the recorder can see, so
-              that data covers your side only. Played/discarded are public — no
-              caveat (and never a userbase-wide "meta" figure; this is your own /
-              your team's recorded games). */}
-          {RECORDER_SIDE[event] && (
-            <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>
-              your side only
-            </span>
+          <Field label="Format"><Select value={format} onChange={setFormat} options={FORMATS as any} /></Field>
+
+          {view === 'leaders' && (
+            <Field label="Group"><Segmented options={[['leader', 'By leader'], ['deck', 'By leader + base']]} value={leaderGroup} onChange={(v) => setLeaderGroup(v as 'leader' | 'deck')} /></Field>
           )}
-          <div style={{ flexBasis: '100%', height: 0 }} />
-          <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort:</span>
-          <Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} />
-          <input value={cardSearch} onChange={(e) => setCardSearch(e.target.value)} placeholder="Search cards…" type="search"
-            style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', minWidth: 160 }} />
+
+          {view === 'cards' && (<>
+            <Field label="Deck"><Select value={leaderCtx} onChange={setLeaderCtx} options={[['', 'All decks'], ...leaderOptions.map((id) => [id, nm(id)] as [string, string])]} /></Field>
+            {leaderCtx && (
+              <Field label="Base"><Select value={baseSel} onChange={setBaseSel} options={[
+                ['', 'Any base'],
+                ...deckBases.map((b) => [
+                  baseKeyOf(b.baseId, b.baseAspect),
+                  b.baseId ? `${nm(b.baseId)} (${b.games})` : `${b.baseAspect ? b.baseAspect[0].toUpperCase() + b.baseAspect.slice(1) : 'Unknown'} — no ability (${b.games})`,
+                ] as [string, string]),
+              ]} /></Field>
+            )}
+            <Field label="Win rate when"><Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} /></Field>
+            {RECORDER_SIDE[event] && (
+              <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>your side only</span>
+            )}
+            <Field label="Sort"><Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} /></Field>
+            <Field label="Search"><input value={cardSearch} onChange={(e) => setCardSearch(e.target.value)} placeholder="Search cards…" type="search" style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', minWidth: 140 }} /></Field>
+          </>)}
+
+          {view === 'matchups' && (<>
+            <Field label="Axis"><Segmented options={[['leaders', 'Leaders'], ['bases', 'Leaders & Bases']]} value={matchupLens} onChange={(v) => setMatchupLens(v as any)} /></Field>
+            <Field label="Cells"><Segmented options={[['pct', 'Win %'], ['wl', 'W–L']]} value={matchupMode} onChange={(v) => setMatchupMode(v as any)} /></Field>
+          </>)}
+
+          <Field label="Min games"><MinGamesInput value={minGames} onChange={setMinGames} /></Field>
         </div>
       )}
 
       {view === 'matchups' && (
-        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Axis:</span>
-          <Segmented options={[['leaders', 'Leaders'], ['bases', 'Leaders & Bases']]} value={matchupLens} onChange={(v) => setMatchupLens(v as any)} />
-          <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cells:</span>
-          <Segmented options={[['pct', 'Win %'], ['wl', 'W–L']]} value={matchupMode} onChange={(v) => setMatchupMode(v as any)} />
-          <span style={{ fontSize: 11, color: '#6c7588', flexBasis: '100%' }}>
-            Row {matchupLens === 'bases' ? 'deck' : 'leader'} vs. column {matchupLens === 'bases' ? 'deck' : 'leader'}. Color = win rate, faded when the sample is small.
-            {matchupLens === 'bases' && ' Ability bases (Tarkintown, splash bases…) are their own decks; vanilla bases collapse to their aspect.'}
-          </span>
-        </div>
+        <p style={{ fontSize: 11, color: '#6c7588', margin: '10px 0 0' }}>
+          Row {matchupLens === 'bases' ? 'deck' : 'leader'} vs. column. Color = win rate, faded when the sample is small.
+          {matchupLens === 'bases' && ' Ability bases are their own decks; vanilla bases collapse to aspect.'}
+        </p>
       )}
 
       {view === 'resourcing' && (
@@ -279,14 +327,20 @@ export function StatsClient({
         ) : !data || data.length === 0 ? (
           <div style={dim}>{view === 'resourcing' ? 'No rated games yet — upload some games to see your resourcing trend.' : 'No data yet for this view — upload some games.'}</div>
         ) : view === 'resourcing' ? (
-          <ResourcingPanel games={data} nm={nm} />
+          <ResourcingPanel games={data} nm={nm} minGames={minGames} />
         ) : view === 'cards' ? (
           <CardGrid cards={cardRows} event={event} nm={nm} />
         ) : view === 'matchups' ? (
           <MatchupMatrix matrix={matrix!} mode={matchupMode} byBase={matchupLens === 'bases'} nm={nm} />
         ) : (
-          <Table head={['Leader', 'Win %', 'Games']}
-            rows={data.map((r) => [cardCell(nm(r.leader), r.leader, true), <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>, <Muted key="g">{r.games}</Muted>])} />
+          <Table
+            cols={[{ label: leaderGroup === 'deck' ? 'Deck' : 'Leader', sortKey: 'name' }, { label: 'Win %', sortKey: 'winrate' }, { label: 'Games', sortKey: 'games' }]}
+            sort={leaderSort} dir={leaderDir} onSort={onLeaderSort}
+            rows={leaderRows.map((r) => [
+              leaderGroup === 'deck' ? deckCell(r, nm, subs) : leaderCell(r.leader, nm(r.leader), subs[r.leader]),
+              <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>,
+              <Muted key="g">{r.games}</Muted>,
+            ])} />
         )}
       </div>
       </>)}
@@ -295,6 +349,72 @@ export function StatsClient({
 }
 
 const dim: React.CSSProperties = { color: '#6c7588', fontStyle: 'italic', padding: '32px 0', textAlign: 'center' };
+const lbl: React.CSSProperties = { fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' };
+const filtersPanel: React.CSSProperties = { marginTop: 10, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid #1c2128', borderRadius: 10, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' };
+
+// The single Filters disclosure that holds every secondary control (mobile-first).
+function FiltersToggle({ open, count, onClick }: { open: boolean; count: number; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} aria-expanded={open}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: open ? 'rgba(77,157,255,0.15)' : '#11141a', color: '#cdd3df', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+      Filters{count > 0 ? ` (${count})` : ''} <span style={{ fontSize: 9, color: '#6c7588' }}>{open ? '▲' : '▼'}</span>
+    </button>
+  );
+}
+
+// An active-filter chip — tap to reset that control to its default.
+function Chip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <button type="button" onClick={onClear} title="Clear"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(77,157,255,0.12)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 14, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+      {label} <span style={{ color: '#6c7588' }}>✕</span>
+    </button>
+  );
+}
+
+// A labelled control inside the Filters panel.
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={lbl}>{label}:</span>{children}</span>;
+}
+
+// Minimum-occurrences: a number input flanked by −/+ steppers — type any value or
+// nudge it. Hides tiny-sample rows (1-game 100%/0% noise) across leaders/cards/matrix.
+const stepBtn: React.CSSProperties = { background: 'transparent', color: '#a0a8b8', border: 0, width: 30, padding: '6px 0', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1 };
+function MinGamesInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const set = (n: number) => onChange(Math.max(1, Math.floor(n) || 1));
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #2e333c', borderRadius: 6, overflow: 'hidden', background: '#11141a' }}>
+      <button type="button" onClick={() => set(value - 1)} aria-label="Fewer minimum games" style={stepBtn}>−</button>
+      <input type="number" min={1} value={value} onChange={(e) => set(Number(e.target.value))} aria-label="Minimum games"
+        style={{ width: 46, textAlign: 'center', background: 'transparent', color: '#e6e6e6', border: 0, borderLeft: '1px solid #2e333c', borderRight: '1px solid #2e333c', padding: '6px 4px', fontSize: 12, fontFamily: 'inherit' }} />
+      <button type="button" onClick={() => set(value + 1)} aria-label="More minimum games" style={stepBtn}>+</button>
+    </span>
+  );
+}
+
+// Leader cell: art + name, with the SUBTITLE beneath — every SWU leader has one, and
+// it disambiguates same-named leaders (the two Grand Admiral Thrawns are distinct cards).
+const leaderCell = (cardId: string, name: string, subtitle?: string) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+    <CardThumb cardId={cardId} isLeader />
+    <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+      {subtitle && <span style={{ fontSize: 10, color: '#6c7588', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</span>}
+    </span>
+  </span>
+);
+
+// Leader + base "deck" cell (Leaders list grouped by leader+base), subtitle included.
+const deckCell = (r: any, nm: (id: string) => string, subs: Record<string, string>) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+    <CardThumb cardId={r.leader} isLeader />
+    <BaseChip baseId={r.baseId ?? null} baseAspect={r.baseAspect ?? null} />
+    <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{nm(r.leader)}{r.baseId ? ` · ${nm(r.baseId)}` : r.baseAspect ? ` · ${r.baseAspect[0].toUpperCase() + r.baseAspect.slice(1)}` : ''}</span>
+      {subs[r.leader] && <span style={{ fontSize: 10, color: '#6c7588', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subs[r.leader]}</span>}
+    </span>
+  </span>
+);
 
 function CardThumb({ cardId, isLeader, h = 40 }: { cardId: string; isLeader?: boolean; h?: number }) {
   if (!cardId || !cardId.includes('_')) return null;
@@ -303,9 +423,6 @@ function CardThumb({ cardId, isLeader, h = 40 }: { cardId: string; isLeader?: bo
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt="" loading="lazy" style={{ height: h, width: 'auto', borderRadius: 3, background: '#0a0c10', flex: '0 0 auto' }} />;
 }
-const cardCell = (name: string, cardId: string, isLeader: boolean) => (
-  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}><CardThumb cardId={cardId} isLeader={isLeader} /><span>{name}</span></span>
-);
 const Win = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#4dd2ff', fontWeight: 700 }}>{children}</span>;
 const Muted = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#a0a8b8' }}>{children}</span>;
 
@@ -339,8 +456,10 @@ function heatColor(p: number | null, decisive: number): string {
 function BaseChip({ baseId, baseAspect }: { baseId: string | null; baseAspect: string | null }) {
   if (baseId) return <CardThumb cardId={baseId} h={18} />;
   if (baseAspect) {
-    const c = ASPECT_COLOR[baseAspect] || '#6c7588';
-    return <span title={baseAspect} style={{ fontSize: 8, fontWeight: 800, color: '#0a0c10', background: c, borderRadius: 3, padding: '1px 3px', lineHeight: 1.2, letterSpacing: '0.03em' }}>{aspectAbbr(baseAspect)}</span>;
+    // Real SWU aspect icon (public/aspect-icons, lifted from karabast) — instantly
+    // readable to players, vs the old "VIN"/"CUN" text badges.
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={`/aspect-icons/aspect-${baseAspect}.webp`} alt={baseAspect} title={baseAspect} style={{ height: 18, width: 18, flex: '0 0 auto' }} />;
   }
   return <span style={{ fontSize: 8, color: '#6c7588' }}>?</span>;
 }
@@ -444,7 +563,7 @@ function Sparkline({ points }: { points: number[] }) {
 // the dominant leak, dead cards/game, a by-deck breakdown, and recent games that
 // link into the in-viewer report. Aggregates the raw components (Σwasted/Σavail),
 // so it's a true blended rate, not an average of per-game percentages.
-function ResourcingPanel({ games, nm }: { games: any[]; nm: (id: string) => string }) {
+function ResourcingPanel({ games, nm, minGames }: { games: any[]; nm: (id: string) => string; minGames: number }) {
   const sum = (k: string) => games.reduce((s, g) => s + (g[k] || 0), 0);
   const avail = sum('available'), wasted = sum('wasted'), forced = sum('forced'), underspend = sum('underspend');
   const blended = avail > 0 ? Math.round((1 - wasted / avail) * 100) : null;
@@ -453,7 +572,8 @@ function ResourcingPanel({ games, nm }: { games: any[]; nm: (id: string) => stri
   // Chronological efficiency points (rows arrive newest-first).
   const points = [...games].reverse().filter((g) => g.available > 0).map((g) => 1 - g.wasted / g.available);
 
-  // By deck (leader + base-identity), blended efficiency, games desc.
+  // By deck (leader + base-identity), blended efficiency, games desc. Min-games
+  // hides decks you've played too few times to read (same noise cut as the lists).
   const deckMap = new Map<string, { leader: string; baseId: string | null; baseAspect: string | null; games: number; avail: number; wasted: number }>();
   for (const g of games) {
     if (!g.leader) continue;
@@ -462,7 +582,7 @@ function ResourcingPanel({ games, nm }: { games: any[]; nm: (id: string) => stri
     d.games += 1; d.avail += g.available || 0; d.wasted += g.wasted || 0;
     deckMap.set(key, d);
   }
-  const byDeck = [...deckMap.values()].map((d) => ({ ...d, eff: d.avail > 0 ? Math.round((1 - d.wasted / d.avail) * 100) : null })).sort((a, b) => b.games - a.games);
+  const byDeck = [...deckMap.values()].map((d) => ({ ...d, eff: d.avail > 0 ? Math.round((1 - d.wasted / d.avail) * 100) : null })).filter((d) => d.games >= minGames).sort((a, b) => b.games - a.games);
   const recent = games.slice(0, 14);
   const fmtDate = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()}`; };
 
@@ -583,11 +703,23 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
     </select>
   );
 }
-function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
+// Sort lives on the headers (the native data-table pattern, and the cleanest on
+// mobile): a sortable column shows ↕; the active one shows ▲/▼ and tapping it flips.
+type Col = { label: string; sortKey?: SortKey };
+function Table({ cols, rows, sort, dir, onSort }: { cols: Col[]; rows: React.ReactNode[][]; sort?: SortKey; dir?: SortDir; onSort?: (k: SortKey) => void }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
-        <tr>{head.map((h, i) => <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '8px 10px', borderBottom: '1px solid #2e333c', color: '#6c7588', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>)}</tr>
+        <tr>{cols.map((c, i) => {
+          const sortable = !!(c.sortKey && onSort);
+          const active = !!(c.sortKey && c.sortKey === sort);
+          return (
+            <th key={i} onClick={sortable ? () => onSort!(c.sortKey!) : undefined} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}
+              style={{ textAlign: i === 0 ? 'left' : 'right', padding: '8px 10px', borderBottom: '1px solid #2e333c', color: active ? '#4dd2ff' : '#6c7588', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: sortable ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}>
+              {c.label}{active ? (dir === 'asc' ? ' ▲' : ' ▼') : sortable ? ' ↕' : ''}
+            </th>
+          );
+        })}</tr>
       </thead>
       <tbody>
         {rows.map((r, ri) => <tr key={ri}>{r.map((c, ci) => <td key={ci} style={{ textAlign: ci === 0 ? 'left' : 'right', padding: '6px 10px', borderBottom: '1px solid #1c2128' }}>{c}</td>)}</tr>)}

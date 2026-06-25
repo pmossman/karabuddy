@@ -21,9 +21,22 @@ test('signed in, My Stats shows the personal surface + view tabs (no global)', a
   for (const tab of ['Leaders', 'Matchups', 'Cards', 'Resourcing']) {
     await expect(page.getByRole('button', { name: tab })).toBeVisible();
   }
-  // Matchups view exposes the heatmap lens (leader-vs-leader / deck-vs-deck).
+  // Matchups view's lens (leader-vs-leader / deck-vs-deck) now lives behind the Filters panel.
   await page.getByRole('button', { name: 'Matchups' }).click();
+  await page.getByRole('button', { name: /^Filters/ }).click();
   await expect(page.getByRole('button', { name: 'Leaders & Bases' })).toBeVisible();
+});
+
+test('signed in, secondary controls collapse behind one Filters toggle (mobile-first)', async ({ page }) => {
+  await signInAsTestUser(page, { name: 'Controls Tester' });
+  await page.goto('/stats');
+  await expect(page.getByRole('heading', { name: /My\s*Stats/i })).toBeVisible({ timeout: 15000 });
+  // Leaders view: the secondary controls are hidden until you open Filters.
+  await expect(page.getByRole('button', { name: 'By leader + base' })).toHaveCount(0);
+  await page.getByRole('button', { name: /^Filters/ }).click();
+  // Opened → the group toggle + the min-games + stepper appear.
+  await expect(page.getByRole('button', { name: 'By leader + base' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'More minimum games' })).toBeVisible();
 });
 
 test('Stats appears in the header nav', async ({ page }) => {
