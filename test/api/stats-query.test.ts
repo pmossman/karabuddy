@@ -109,12 +109,15 @@ describe('getLeaderStats — scope isolation', () => {
   // Global/community scope was removed — karabuddy is team-internal only, with
   // no userbase-wide aggregate (see lib/statsQuery). Personal + team only.
 
-  it('team = only games shared with that team (both members’ rows)', async () => {
+  it('team EXTERNAL game = the member’s leader only, never the outsider’s', async () => {
+    // game1 (userA vs an outsider, single recorder) is EXTERNAL. Team stats must
+    // count userA's leader, NOT the opponent's — the reported conflation: the team
+    // didn't play the outsider's leader.
     const sets = await teamGameIds('tT');
     const restrictGameIds = [...sets.internal, ...sets.external];
-    const m = byLeader(await getLeaderStats({ scope: { kind: 'team', teamSlug: 'tT', restrictGameIds } }));
-    expect(m.L1.games).toBe(1); // only game1 was shared
-    expect(m.L2.games).toBe(1); // team scope keeps BOTH players' rows (matrix wants both sides)
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'team', teamSlug: 'tT', restrictGameIds, internalGameIds: sets.internal } }));
+    expect(m.L1.games).toBe(1); // userA's leader on the one shared game
+    expect(m.L2).toBeUndefined(); // the OUTSIDER's leader is excluded
   });
 
   // Bug-2 guard: a co-recorded internal game must count in the team matrix even
@@ -141,9 +144,15 @@ describe('getLeaderStats — scope isolation', () => {
     ]);
     const sets = await teamGameIds('tT');
     expect(sets.internal).toContain(gid); // 2 member recorders + a shared sibling
-    const rows = await getLeaderMatchups({ scope: { kind: 'team', teamSlug: 'tT', restrictGameIds: sets.internal } });
+    const scope = { kind: 'team' as const, teamSlug: 'tT', restrictGameIds: sets.internal, internalGameIds: sets.internal };
+    const rows = await getLeaderMatchups({ scope });
     expect(rows.find((r) => r.leader === 'LX' && r.opponentLeader === 'LY')).toMatchObject({ games: 1, wins: 1 });
     expect(rows.find((r) => r.leader === 'LY' && r.opponentLeader === 'LX')).toMatchObject({ games: 1, wins: 0 });
+    // INTERNAL game: BOTH teammates' leaders count (it's a team aggregate, and both
+    // players are members) — so the opponent-exclusion above is external-only.
+    const m = byLeader(await getLeaderStats({ scope }));
+    expect(m.LX?.games).toBe(1);
+    expect(m.LY?.games).toBe(1);
   });
 });
 

@@ -11,7 +11,7 @@
 // audiences can never leak into each other. Aggregation is plain SQL via the
 // drizzle query builder (portable across neon / pg / pglite).
 
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
 import { matchPlayers, matches, replays, cardEvents, cards } from './schema';
@@ -23,7 +23,10 @@ export type StatsScope =
   // external / all by the caller via teamGameIds. Filtering by gameId — not a
   // representative replay slug — is what makes co-recorded games count
   // regardless of which sibling was persisted last. Empty = "no matching games".
-  | { kind: 'team'; teamSlug: string; restrictGameIds: string[] };
+  // internalGameIds: the subset that is teammate-vs-teammate (≥2 member recorders).
+  // The opponent's match_players row counts ONLY for these — for an EXTERNAL game
+  // the "opponent" is an outsider and must not enter the team's stats.
+  | { kind: 'team'; teamSlug: string; restrictGameIds: string[]; internalGameIds: string[] };
 
 export interface StatsQueryOpts {
   scope: StatsScope;
@@ -97,12 +100,20 @@ function scopePredicate(scope: StatsScope) {
   return inArray(matches.gameId, scope.restrictGameIds);
 }
 
-// Personal stats are YOUR games from YOUR side: restrict the match_players
-// aggregations to the recorder row (in personal scope the persisted replay is
-// yours, so isRecorder = your side). Without this a game you recorded counted
-// BOTH your leader AND your opponent's leader as yours. Team scope deliberately
-// keeps both members' rows — the matrix wants both sides of an internal game.
-const recorderCond = (scope: StatsScope) => (scope.kind === 'personal' ? eq(matchPlayers.isRecorder, true) : undefined);
+// Which match_players rows count, by audience. Personal = YOUR side only (the
+// recorder row), so a game you recorded counts your leader, not your opponent's.
+//
+// Team = a team MEMBER's plays, never an outsider's. The recorder row is always a
+// member (the uploader); the opponent row counts ONLY for INTERNAL games, where
+// that "opponent" is another teammate — so the matrix still shows both sides of an
+// internal game. For an EXTERNAL game the opponent is an outsider and is dropped —
+// this is the fix for team stats counting the opponent's leader as one you played.
+const perspectiveCond = (scope: StatsScope) =>
+  scope.kind === 'personal'
+    ? eq(matchPlayers.isRecorder, true)
+    : scope.internalGameIds.length
+      ? or(eq(matchPlayers.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))
+      : eq(matchPlayers.isRecorder, true);
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
 
@@ -121,7 +132,7 @@ export async function getLeaderStats(opts: StatsQueryOpts): Promise<LeaderStat[]
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), recorderCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -150,7 +161,7 @@ export async function getLeaderMatchups(opts: StatsQueryOpts): Promise<LeaderMat
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), recorderCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, matchPlayers.opponentLeader)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -330,7 +341,7 @@ export async function getDecks(opts: StatsQueryOpts & { leader?: string | null }
     .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
     .$dynamic();
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), opts.leader ? eq(matchPlayers.leader, opts.leader) : undefined, recorderCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), opts.leader ? eq(matchPlayers.leader, opts.leader) : undefined, perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, idCols.baseId, idCols.baseAspect)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -370,7 +381,7 @@ export async function getDeckMatchups(opts: StatsQueryOpts): Promise<DeckMatchup
     .leftJoin(obc, eq(obc.cardId, matchPlayers.opponentBase))
     .$dynamic();
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), recorderCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, self.baseId, self.baseAspect, matchPlayers.opponentLeader, opp.baseId, opp.baseAspect)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);

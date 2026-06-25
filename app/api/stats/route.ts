@@ -50,7 +50,7 @@ export async function GET(req: Request) {
       games === 'external' ? sets.external
       : games === 'all' ? [...sets.internal, ...sets.external]
       : sets.internal;
-    scope = { kind: 'team', teamSlug, restrictGameIds };
+    scope = { kind: 'team', teamSlug, restrictGameIds, internalGameIds: sets.internal };
   } else {
     // Global/community stats are intentionally not exposed — personal + team only.
     return NextResponse.json({ ok: false, error: 'global stats are disabled; use scope=personal or scope=team' }, { status: 400 });
