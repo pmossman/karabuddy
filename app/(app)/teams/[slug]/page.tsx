@@ -10,6 +10,7 @@ import { PrivateModeToggle } from './PrivateModeToggle';
 import { ReadinessRoster } from './ReadinessRoster';
 import { Panel } from '@/app/_components/Panel';
 import { TransferOwnership } from './TransferOwnership';
+import { DeleteTeam } from './DeleteTeam';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { TeamOverview } from './TeamOverview';
 import { TeamReplays } from './TeamReplays';
@@ -198,6 +199,8 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                 />
                 {/* B160: hand the team to another member (you step down). */}
                 <TransferOwnership slug={slug} members={members} viewerUserId={userId} />
+                {/* B192: permanently delete the team (owner only, typed-name confirm). */}
+                <DeleteTeam slug={slug} teamName={team.name} />
               </>
             )}
             {/* B170 / ADR 0010: encryption is an advanced/security section near
