@@ -5,6 +5,7 @@ import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
 import { teamGameIds } from '@/lib/teamSurface';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
+import { cachedRead } from '@/lib/cached';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
 // `type`, over a resolved + authorized `scope`:
@@ -13,9 +14,53 @@ import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatch
 //
 // Scope auth: personal needs a session; team needs membership (else 403).
 // Global/community stats are intentionally NOT exposed — the feature is scoped
-// to the individual + their teams. Queries run live against the fact tables.
+// to the individual + their teams.
+//
+// Perf (Neon compute): these are heavy GROUP BY aggregations over the fact tables
+// and were run live on every request. The RESULT is fully determined by the query
+// params + scope identity, so we cache it for 60s keyed by a compact descriptor
+// (per-user for personal; shared per team+games for team). Auth/membership stays
+// per-request; only the data read (incl. the teamGameIds resolution) is cached.
 
 const CARD_EVENTS = ['drawn', 'resourced', 'played', 'discarded'];
+const TYPES = new Set(['leaders', 'matchups', 'decks', 'resourcing', 'cards']);
+
+interface StatsKey {
+  type: string;
+  scopeKind: 'personal' | 'team';
+  userId: string | null;
+  teamSlug: string | null;
+  games: string;
+  format: string | null;
+  byBase: boolean;
+  event: CardEventKind;
+  leader: string | null;
+  baseId: string | null;
+  baseAspect: string | null;
+}
+
+const computeStats = cachedRead(
+  async (k: StatsKey) => {
+    let scope: StatsScope;
+    if (k.scopeKind === 'personal') {
+      scope = { kind: 'personal', userId: k.userId! };
+    } else {
+      const sets = await teamGameIds(k.teamSlug!);
+      const restrictGameIds = k.games === 'external' ? sets.external : k.games === 'all' ? [...sets.internal, ...sets.external] : sets.internal;
+      scope = { kind: 'team', teamSlug: k.teamSlug!, restrictGameIds, internalGameIds: sets.internal };
+    }
+    const opts = { scope, format: k.format, minGames: 1 };
+    switch (k.type) {
+      case 'matchups': return k.byBase ? getDeckMatchups(opts) : getLeaderMatchups(opts);
+      case 'decks': return getDecks({ ...opts, leader: k.leader });
+      case 'resourcing': return getResourcingGames(opts);
+      case 'cards': return getCardStats({ ...opts, event: k.event, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect });
+      default: return getLeaderStats(opts);
+    }
+  },
+  ['stats-data-v1'],
+  { revalidate: 60, tags: ['stats'] },
+);
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -23,17 +68,22 @@ export async function GET(req: Request) {
   const scopeKind = url.searchParams.get('scope') || 'personal';
   const format = url.searchParams.get('format') || null;
 
-  // Resolve + authorize the scope. Global/community stats are not exposed.
-  let scope: StatsScope;
-  const minGames = 1;
+  if (scopeKind !== 'personal' && scopeKind !== 'team') {
+    return NextResponse.json({ ok: false, error: 'global stats are disabled; use scope=personal or scope=team' }, { status: 400 });
+  }
+  if (!TYPES.has(type)) return NextResponse.json({ ok: false, error: 'bad type' }, { status: 400 });
+  const event = (url.searchParams.get('event') || 'played') as CardEventKind;
+  if (type === 'cards' && !CARD_EVENTS.includes(event)) return NextResponse.json({ ok: false, error: 'bad event' }, { status: 400 });
+
+  // Resolve + authorize the scope.
+  const userId = await resolveUserIdFromRequest(req);
+  let teamSlug: string | null = null;
+  let games = 'internal';
   if (scopeKind === 'personal') {
-    const userId = await resolveUserIdFromRequest(req);
     if (!userId) return NextResponse.json({ ok: false, error: 'not signed in' }, { status: 401 });
-    scope = { kind: 'personal', userId };
-  } else if (scopeKind === 'team') {
-    const teamSlug = url.searchParams.get('team');
+  } else {
+    teamSlug = url.searchParams.get('team');
     if (!teamSlug) return NextResponse.json({ ok: false, error: 'team slug required' }, { status: 400 });
-    const userId = await resolveUserIdFromRequest(req);
     if (!userId) return NextResponse.json({ ok: false, error: 'not signed in' }, { status: 401 });
     const [member] = await getDb()
       .select({ role: teamMembers.role })
@@ -41,47 +91,19 @@ export async function GET(req: Request) {
       .where(and(eq(teamMembers.userId, userId), eq(teamMembers.teamSlug, teamSlug)))
       .limit(1);
     if (!member) return NextResponse.json({ ok: false, error: 'not a team member' }, { status: 403 });
-    // Team stats default to INTERNAL games (teammate-vs-teammate) — the team is
-    // here to test against each other. `games=external` = a member vs an
-    // outsider; `games=all` = both. (Dashboard card sends no param → internal.)
-    const games = url.searchParams.get('games') || 'internal';
-    const sets = await teamGameIds(teamSlug);
-    const restrictGameIds =
-      games === 'external' ? sets.external
-      : games === 'all' ? [...sets.internal, ...sets.external]
-      : sets.internal;
-    scope = { kind: 'team', teamSlug, restrictGameIds, internalGameIds: sets.internal };
-  } else {
-    // Global/community stats are intentionally not exposed — personal + team only.
-    return NextResponse.json({ ok: false, error: 'global stats are disabled; use scope=personal or scope=team' }, { status: 400 });
+    // Team stats default to INTERNAL games (teammate-vs-teammate). `games=external`
+    // = a member vs an outsider; `games=all` = both. (Dashboard sends none → internal.)
+    games = url.searchParams.get('games') || 'internal';
   }
 
-  const opts = { scope, format, minGames };
-  let data;
-  if (type === 'matchups') {
-    // byBase = the deck-vs-deck "Leaders & Bases" matrix; default is leader-only.
-    data = url.searchParams.get('byBase') === '1' ? await getDeckMatchups(opts) : await getLeaderMatchups(opts);
-  } else if (type === 'decks') {
-    // Decks (leader + base-identity) played in scope — populates the deck picker.
-    data = await getDecks({ ...opts, leader: url.searchParams.get('leader') || null });
-  } else if (type === 'resourcing') {
-    // First-person coaching stat — personal/team scopes only (as is everything).
-    data = await getResourcingGames(opts);
-  } else if (type === 'cards') {
-    const event = (url.searchParams.get('event') || 'played') as CardEventKind;
-    if (!CARD_EVENTS.includes(event)) return NextResponse.json({ ok: false, error: 'bad event' }, { status: 400 });
-    // Deck context: card stats for games where the player was on this leader and
-    // (optionally) this exact base — an ability base (`base`=cardId) or a vanilla
-    // aspect (`baseAspect`). This is the team/personal "in MY deck" use case.
-    const leader = url.searchParams.get('leader') || null;
-    const baseId = url.searchParams.get('base') || null;
-    const baseAspect = url.searchParams.get('baseAspect') || null;
-    data = await getCardStats({ ...opts, event, leader, baseId, baseAspect });
-  } else if (type === 'leaders') {
-    data = await getLeaderStats(opts);
-  } else {
-    return NextResponse.json({ ok: false, error: 'bad type' }, { status: 400 });
-  }
+  const data = await computeStats({
+    type, scopeKind, userId: userId ?? null, teamSlug, games, format,
+    byBase: url.searchParams.get('byBase') === '1',
+    event,
+    leader: url.searchParams.get('leader') || null,
+    baseId: url.searchParams.get('base') || null,
+    baseAspect: url.searchParams.get('baseAspect') || null,
+  });
 
-  return NextResponse.json({ ok: true, scope: scopeKind, type, format, minGames, data });
+  return NextResponse.json({ ok: true, scope: scopeKind, type, format, minGames: 1, data });
 }

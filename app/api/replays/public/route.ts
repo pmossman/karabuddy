@@ -6,6 +6,7 @@ import { serializeReplayRow } from '@/lib/replayRow';
 import { gameIdsWithSibling } from '@/lib/doubleSided';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { orderPlayersOwnerFirst } from '@/lib/players';
+import { cachedRead } from '@/lib/cached';
 
 export const runtime = 'nodejs';
 
@@ -19,7 +20,10 @@ export const runtime = 'nodejs';
 // uploader's account name is never sent. (A user-set displayName shows; it's
 // user-chosen.) Perspective = the uploader's side, so result/leader filters
 // read consistently.
-export async function GET() {
+// Perf: global, no-auth, no-params list → cache the whole anonymized payload.
+// Only changes when someone publishes/unpublishes, so a short TTL is plenty.
+const getPublic = cachedRead(
+  async () => {
   const db = getDb();
   const rows = await db
     .select()
@@ -56,5 +60,12 @@ export async function GET() {
       doubleSided: dsGames.has(replay.gameId),
     }),
   );
-  return NextResponse.json({ ok: true, data });
+  return data;
+  },
+  ['public-replays-v1'],
+  { revalidate: 120, tags: ['public-replays'] },
+);
+
+export async function GET() {
+  return NextResponse.json({ ok: true, data: await getPublic() });
 }

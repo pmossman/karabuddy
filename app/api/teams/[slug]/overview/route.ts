@@ -8,6 +8,7 @@ import { serializeReplayRow } from '@/lib/replayRow';
 import { commentersForTeam } from '@/lib/reviews';
 import { computeStandings, type SwissMatch } from '@/lib/swiss';
 import { orderPlayersOwnerFirst } from '@/lib/players';
+import { cachedRead } from '@/lib/cached';
 
 export const runtime = 'nodejs';
 
@@ -22,11 +23,12 @@ const REGISTRANTS_PREVIEW = 16;
 // recent activity across every feature, built by reusing the tabs' queries/
 // helpers so it can't drift. Active tournaments carry live standings; reviews
 // carry both open requests AND recently-completed reviews.
-export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-  const m = await requireTeamMember(slug);
-  if (m instanceof NextResponse) return m;
-
+// Perf: this default-landing bundle was ~15 live queries per dashboard visit,
+// uncached. It's entirely TEAM-shared data (no per-user fields — every row uses
+// viewerPlayerId: null), so cache the whole payload by team slug with a short
+// TTL. Membership auth stays per-request (below); only the data read is cached.
+const getOverview = cachedRead(
+  async (slug: string) => {
   const db = getDb();
 
   // Member count (the roster card was dropped; the team header still shows it).
@@ -208,7 +210,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     });
   }
 
-  return NextResponse.json({
+  return {
     ok: true,
     counts: {
       tournaments: tRows.length,
@@ -222,5 +224,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     recentlyReviewed,
     recentDiscussion,
     recentReplays,
-  });
+  };
+  },
+  ['team-overview-v1'],
+  { revalidate: 45, tags: ['team-overview'] },
+);
+
+export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const m = await requireTeamMember(slug);
+  if (m instanceof NextResponse) return m;
+  return NextResponse.json(await getOverview(slug));
 }
