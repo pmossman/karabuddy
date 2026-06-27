@@ -8,6 +8,7 @@ import { ShareBadge } from './ShareBadge';
 import { RowActions } from './RowActions';
 import { CommentCountButton } from './CommentCountButton';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
+import { useReplaySelection, SelectBox } from './selection';
 
 interface ReplayRow {
   slug: string;
@@ -58,20 +59,40 @@ interface ReplayRow {
 export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRow; canManage: boolean; gameNumber?: number }) {
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
+  const sel = useReplaySelection();
+  const canSelect = !!sel?.selectMode && sel.selectable(replay);
+  const isSel = !!sel?.selected.has(replay.slug);
 
   return (
     <div
       style={{
+        position: 'relative',
         background: tokens.surface.panel,
-        border: `1px solid ${tokens.surface.panelBorder}`,
+        border: `1px solid ${isSel ? 'rgba(77,210,255,0.7)' : tokens.surface.panelBorder}`,
         borderRadius: tokens.radius.lg,
-        boxShadow: tokens.surface.panelShadow,
+        boxShadow: isSel ? '0 0 0 1px rgba(77,210,255,0.55), 0 0 12px rgba(77,210,255,0.18)' : tokens.surface.panelShadow,
         padding: 14,
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
       }}
     >
+      {/* Select mode: a full-card overlay makes the whole card a toggle (mobile-
+          friendly), with the LED checkbox showing the state in the corner. */}
+      {canSelect && (
+        <>
+          <button
+            type="button"
+            aria-label={isSel ? 'Deselect replay' : 'Select replay'}
+            aria-pressed={isSel}
+            onClick={() => sel!.toggle(replay.slug)}
+            style={{ position: 'absolute', inset: 0, zIndex: 3, background: isSel ? 'rgba(77,210,255,0.06)' : 'transparent', border: 0, cursor: 'pointer', borderRadius: tokens.radius.lg, padding: 0 }}
+          />
+          <span style={{ position: 'absolute', top: 10, left: 10, zIndex: 4 }}>
+            <SelectBox checked={isSel} onToggle={() => sel!.toggle(replay.slug)} label={isSel ? 'Deselect replay' : 'Select replay'} />
+          </span>
+        </>
+      )}
       <Link href={`/r/${replay.slug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {replay.encrypted ? (
           // B170: private replay — decrypt the matchup client-side (leaders/bases

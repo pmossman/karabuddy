@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ReplayFilters } from '@/app/(app)/replays/ReplayFilters';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
@@ -15,28 +15,21 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
   // B82: filter to teammate-vs-teammate ("internal") matches.
   const [internalOnly, setInternalOnly] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/teams/${teamSlug}/replays`);
-        const body = await res.json();
-        if (cancelled) return;
-        if (!body.ok) {
-          setError(body.error || 'failed to load');
-          setState('error');
-          return;
-        }
-        setRows(body.data || []);
-        setState('ready');
-      } catch (err: any) {
-        if (cancelled) return;
-        setError(err?.message || 'network error');
-        setState('error');
-      }
-    })();
-    return () => { cancelled = true; };
+  // Extracted so a bulk op (e.g. unshare) can refetch the grid afterward.
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/teams/${teamSlug}/replays`);
+      const body = await res.json();
+      if (!body.ok) { setError(body.error || 'failed to load'); setState('error'); return; }
+      setRows(body.data || []);
+      setState('ready');
+    } catch (err: any) {
+      setError(err?.message || 'network error');
+      setState('error');
+    }
   }, [teamSlug]);
+
+  useEffect(() => { void load(); }, [load]);
 
   if (state === 'loading') {
     return (
@@ -81,6 +74,8 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
         canManage={false}
         showUploaderFilter
         pageSize={60}
+        teamSlug={teamSlug}
+        onMutated={load}
         emptyState={
           <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
             {internalOnly

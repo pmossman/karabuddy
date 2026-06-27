@@ -20,6 +20,7 @@ export function LedToggle({
   disabled = false,
   shape = 'checkbox',
   variant = 'row',
+  indeterminate = false,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -31,11 +32,17 @@ export function LedToggle({
   shape?: 'checkbox' | 'radio';
   // "row" = full cockpit control; "inline" = subtle LED + sans label.
   variant?: 'row' | 'inline';
+  // Mixed state for a multi-select that's applied to SOME but not all of a group
+  // (checkbox only). Renders a dash + amber tint + aria-checked="mixed". `checked`
+  // wins if both are set. Toggling from mixed reports `true` (the apply-to-all
+  // affordance). Default off → every existing call site is unchanged.
+  indeterminate?: boolean;
 }) {
   const [hover, setHover] = useState(false);
+  const isMixed = indeterminate && !checked && shape === 'checkbox';
   const ledRadius = shape === 'radio' ? '50%' : 3;
   const role = shape === 'radio' ? 'radio' : 'checkbox';
-  const accent = checked ? tokens.led.on : tokens.led.off;
+  const accent = checked ? tokens.led.on : isMixed ? tokens.led.mixed : tokens.led.off;
   const isRow = variant === 'row';
   // The full glow is a "live signal" in the dense row; soften it in the calm
   // inline (settings) context so it doesn't bloom.
@@ -64,21 +71,24 @@ export function LedToggle({
         transition: 'box-shadow 120ms ease, border-color 120ms ease',
       }}
     >
-      {checked && (shape === 'radio' ? (
+      {checked ? (shape === 'radio' ? (
         // Radio: filled center dot (dot-in-circle = "selected").
         <span style={{ display: 'block', width: 5, height: 5, borderRadius: '50%', background: tokens.led.on, boxShadow: dotGlowOn }} />
       ) : (
-        // Checkbox: a checkmark = "on" (a square-in-square reads as indeterminate).
+        // Checkbox: a checkmark = "on".
         <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden="true">
           <path d="M2.4 6.4 L4.8 8.8 L9.6 3.2" stroke={tokens.led.on} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-      ))}
+      )) : isMixed ? (
+        // Mixed: a dash = "applied to some" (the standard indeterminate glyph).
+        <span style={{ display: 'block', width: 7, height: 2, borderRadius: 1, background: tokens.led.mixed }} />
+      ) : null}
     </span>
   );
 
   const interactive = {
     role,
-    'aria-checked': checked,
+    'aria-checked': checked ? true : isMixed ? 'mixed' : false,
     'aria-label': label,
     'aria-disabled': disabled || undefined,
     tabIndex: disabled ? -1 : 0,

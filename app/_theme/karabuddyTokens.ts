@@ -51,6 +51,7 @@ export const tokens = {
   led: {
     on: '#4dd2ff', // active ring/dot/status — cyan "live signal"
     off: '#3a4150', // inert ring + accent bar
+    mixed: '#e0c64a', // indeterminate multi-select (applied to some, not all)
     textOn: '#d6f0ff',
     textOff: '#a8b0bd',
     ringGlow: '0 0 6px rgba(77, 210, 255, 0.7), inset 0 0 4px rgba(77, 210, 255, 0.45)',

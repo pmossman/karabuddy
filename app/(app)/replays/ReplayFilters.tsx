@@ -1,10 +1,13 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
 import { RowActions } from './RowActions';
+import { ReplaySelectionProvider, SelectBox, useReplaySelection, type ReplaySelectionApi } from './selection';
+import { LedToggle } from '@/app/_components/LedToggle';
 import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
@@ -91,6 +94,12 @@ type ViewMode = 'replays' | 'by-leader' | 'by-member' | 'timeline';
 const VIEW_MODES: readonly ViewMode[] = ['replays', 'by-leader', 'by-member', 'timeline'] as const;
 const DEFAULT_VIEW: ViewMode = 'replays';
 
+// Past-tense verbs for the bulk-op result line ("12 shared · 1 skipped").
+const OP_VERB: Record<string, string> = {
+  delete: 'deleted', publish: 'made public', unpublish: 'made unlisted', share: 'shared', unshare: 'unshared',
+  'label-add': 'labeled', 'label-remove': 'unlabeled', 'review-request': 'review requested', 'review-cancel': 'review cancelled',
+};
+
 const SINCE_OPTIONS = [
   { value: '', label: 'All time' },
   { value: '7d', label: 'Past 7 days' },
@@ -112,10 +121,20 @@ export function ReplayFilters({
   showShareTabs = false,
   showUploaderFilter = false,
   pageSize,
+  myTeams = [],
+  teamSlug,
+  onMutated,
 }: {
   rows: Row[];
   canManage: boolean;
   emptyState: React.ReactNode;
+  // Bulk multi-select. `myTeams` populates the "share with" picker (the teams
+  // the viewer can share into); `teamSlug` is the team whose grid this is (team
+  // tab) — the default unshare target. `onMutated` lets a client-fetched parent
+  // (team/public grids) refetch after a bulk op; otherwise we router.refresh().
+  myTeams?: { slug: string; name: string }[];
+  teamSlug?: string;
+  onMutated?: () => void;
   // B89: Shared/Unlisted tabs + per-card share badges only make sense on the
   // personal library (where a replay may or may not be team-shared). Off on
   // the team grid (everything there is shared with that team) and the
@@ -162,6 +181,21 @@ export function ReplayFilters({
   const [filtersOpen, setFiltersOpen] = useState(() =>
     ['mine', 'vs', 'by', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
   );
+
+  // Bulk multi-select state. `removed` is the optimistic post-op hide (deleted
+  // rows, or rows unshared from THIS team's grid) so the list reacts instantly
+  // before the server refetch lands.
+  const [selectMode, setSelectMode] = useState(false);
+  // The toolbar button + action bar flip on `selectMode` (cheap → instant). The
+  // EXPENSIVE part — swapping ~100 cards for ~100 checklist rows + per-row
+  // checkboxes — reads this deferred value, so it renders without blocking the
+  // click's repaint (React keeps the button responsive and fills the list in).
+  const deferredSelectMode = useDeferredValue(selectMode);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [opMsg, setOpMsg] = useState<string | null>(null);
+  const selectable = useCallback((r: { isMine?: boolean }) => canManage || !!r.isMine, [canManage]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -222,6 +256,7 @@ export function ReplayFilters({
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
+      if (removed.has(r.slug)) return false; // optimistic post-bulk-op hide
       if (tab === 'shared' && !isShared(r)) return false;
       if (tab === 'unlisted' && isShared(r)) return false;
       if (myLeader && r.ownLeader?.name !== myLeader) return false;
@@ -249,7 +284,7 @@ export function ReplayFilters({
       }
       return true;
     });
-  }, [rows, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result]);
+  }, [rows, removed, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result]);
 
   // B187: incremental render (opt-in via pageSize). Reset to the first page
   // whenever the filtered set changes so a new filter starts from the top.
@@ -264,6 +299,80 @@ export function ReplayFilters({
   // under Internal) and hid older groups entirely. Only the flat grid/table — the
   // views that paint every card up front — need the incremental slice.
   const grouped = view === 'by-leader' || view === 'by-member' || view === 'timeline';
+
+  // ---- Bulk multi-select: derived state + actions ----
+  // "Select all matching" picks every ELIGIBLE row in the current filter set
+  // (`filtered`), not just the loaded page — the whole point of the feature.
+  const eligibleSlugs = useMemo(() => filtered.filter(selectable).map((r) => r.slug), [filtered, selectable]);
+  const anySelectable = eligibleSlugs.length > 0;
+  const toggleSel = useCallback((slug: string) => {
+    setSelected((prev) => { const n = new Set(prev); if (n.has(slug)) n.delete(slug); else n.add(slug); return n; });
+  }, []);
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); setOpMsg(null); };
+  const selectionApi: ReplaySelectionApi = useMemo(
+    () => ({ selectMode: deferredSelectMode, selected, toggle: toggleSel, selectable }),
+    [deferredSelectMode, selected, toggleSel, selectable],
+  );
+
+  // Aggregate sharing/visibility state across the SELECTED replays so the bulk
+  // share control (mirroring the single-replay popover) can show each toggle's
+  // combined state — all / some / none.
+  const selectedRows = useMemo(() => filtered.filter((r) => selected.has(r.slug)), [filtered, selected]);
+  const shareCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of selectedRows) for (const t of r.sharedTeams ?? []) m[t.slug] = (m[t.slug] || 0) + 1;
+    return m;
+  }, [selectedRows]);
+  const publicCount = useMemo(() => selectedRows.filter((r) => r.isPublic).length, [selectedRows]);
+  // Teams to offer: the owner's teams, plus any team the selection is already
+  // shared with (covers the team grid, where myTeams is empty but rows are shared).
+  const shareTeams = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of myTeams) m.set(t.slug, t.name);
+    for (const r of selectedRows) for (const t of r.sharedTeams ?? []) if (!m.has(t.slug)) m.set(t.slug, t.name);
+    if (teamSlug && !m.has(teamSlug)) m.set(teamSlug, teamSlug);
+    return Array.from(m, ([slug, name]) => ({ slug, name }));
+  }, [myTeams, selectedRows, teamSlug]);
+
+  const refresh = () => (onMutated ? onMutated() : router.refresh());
+  // Stage-and-apply: the Manage sheet stages a draft and commits the whole list
+  // of changes here, in order, in one go. Bulk writes are 100× the blast radius
+  // of a single replay, so nothing mutates until the user hits Apply — and until
+  // then they can Close to abandon (which preserves any pre-existing mixed state).
+  const runBulkBatch = async (ops: { op: string; teamSlug?: string }[]) => {
+    const slugs = [...selected];
+    if (!slugs.length || !ops.length || busy) return;
+    setBusy(true); setOpMsg(null);
+    try {
+      const leaving = new Set<string>();
+      const bits: string[] = [];
+      let skipped = 0, forbidden = 0, failed = false;
+      for (const { op, teamSlug: ts } of ops) {
+        const res = await fetch('/api/replays/bulk', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ op, slugs, teamSlug: ts }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.ok) { failed = true; continue; }
+        const r = body.results as { ok: string[]; skipped: string[]; forbidden: string[]; notFound: string[] };
+        if (body.applied > 0) bits.push(`${body.applied} ${OP_VERB[op] ?? 'updated'}`);
+        skipped += r.skipped.length; forbidden += r.forbidden.length;
+        // Rows that leave THIS surface drop out of the selection: deletes
+        // (everywhere) + an unshare from the team whose grid we're viewing.
+        if (op === 'delete' || (op === 'unshare' && !!teamSlug && ts === teamSlug)) r.ok.forEach((s) => leaving.add(s));
+      }
+      if (leaving.size) {
+        setRemoved((prev) => new Set([...prev, ...leaving]));
+        setSelected((prev) => { const n = new Set(prev); for (const s of leaving) n.delete(s); return n; });
+      }
+      if (skipped) bits.push(`${skipped} skipped`);
+      if (forbidden) bits.push(`${forbidden} not yours`);
+      if (failed && !bits.length) bits.push('Something went wrong');
+      setOpMsg(bits.join(' · ') || 'No changes');
+      refresh();
+    } catch { setOpMsg('Something went wrong'); }
+    finally { setBusy(false); }
+  };
 
   const clearAll = () => {
     setMyLeader(''); setVsLeader(''); setUploadedBy(''); setSince(''); setFormat(''); setMode(''); setLabel(''); setResult('');
@@ -280,7 +389,7 @@ export function ReplayFilters({
   if (result) activeChips.push({ key: 'result', label: result === 'wins' ? 'Wins' : 'Losses', onClear: () => setResult('') });
 
   return (
-    <>
+    <ReplaySelectionProvider value={selectionApi}>
       {showShareTabs && <ShareTabs tab={tab} setTab={setTab} counts={tabCounts} />}
 
       {/* Toolbar: collapsible Filters toggle + active-filter chips on the left,
@@ -289,6 +398,16 @@ export function ReplayFilters({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <FiltersToggle open={filtersOpen} count={activeChips.length} onClick={() => setFiltersOpen((v) => !v)} />
+          {anySelectable && (
+            <button
+              type="button"
+              onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+              aria-pressed={selectMode}
+              style={selectButtonStyle(selectMode)}
+            >
+              {selectMode ? 'Done' : 'Select'}
+            </button>
+          )}
           {activeChips.map((c) => (
             <button key={c.key} type="button" onClick={c.onClear} style={chipButtonStyle}>
               {c.label} <span style={{ color: '#6c7588', marginLeft: 4 }}>×</span>
@@ -304,13 +423,39 @@ export function ReplayFilters({
             </button>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span style={{ fontSize: 11, color: '#6c7588', whiteSpace: 'nowrap' }}>
-            Showing {filtered.length} of {rows.length}
-          </span>
-          <ViewSwitcher view={view} setView={setView} showMember={showUploaderFilter} />
-        </div>
+        {/* In select mode the view switcher + count step aside so the action bar
+            sits directly under Filters · Done — selecting is a focused mode. */}
+        {!selectMode && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', maxWidth: '100%', minWidth: 0 }}>
+            <span style={{ fontSize: 11, color: '#6c7588', whiteSpace: 'nowrap' }}>
+              Showing {filtered.length} of {rows.length}
+            </span>
+            {/* The segmented view switcher can be wider than a phone — let it scroll
+                inside its own track instead of pushing the row off-screen. */}
+            <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+              <ViewSwitcher view={view} setView={setView} showMember={showUploaderFilter} />
+            </div>
+          </div>
+        )}
       </div>
+
+      {selectMode && (
+        <SelectionBar
+          count={selected.size}
+          eligible={eligibleSlugs.length}
+          busy={busy}
+          msg={opMsg}
+          isNarrow={isNarrow}
+          canDelete={canManage}
+          teams={shareTeams}
+          shareCounts={shareCounts}
+          publicCount={publicCount}
+          onSelectAll={() => setSelected(new Set(eligibleSlugs))}
+          onClear={() => setSelected(new Set())}
+          onApply={runBulkBatch}
+          onDelete={() => { if (confirm(`Delete ${selected.size} replay${selected.size === 1 ? '' : 's'}? This can't be undone.`)) runBulkBatch([{ op: 'delete' }]); }}
+        />
+      )}
 
       {filtersOpen && (
         <FilterControls
@@ -339,9 +484,12 @@ export function ReplayFilters({
         <TimelineGroups rows={filtered} canManage={canManage} />
       ) : (
         // 'replays' — the dense sortable table on desktop, cards on phones (the
-        // table can't fit a narrow viewport without horizontal scroll).
+        // table can't fit a narrow viewport without horizontal scroll). On a phone
+        // IN SELECT MODE, swap the cards for a dense checklist that's built for
+        // ticking many rows quickly. Desktop keeps the table (it has its own
+        // checkbox column).
         isNarrow
-          ? <CardGrid rows={display} canManage={canManage} group />
+          ? (deferredSelectMode ? <CompactSelectList rows={display} /> : <CardGrid rows={display} canManage={canManage} group />)
           : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
       )}
 
@@ -356,7 +504,265 @@ export function ReplayFilters({
           </button>
         </div>
       )}
+    </ReplaySelectionProvider>
+  );
+}
+
+// Selection bar: count + select-all/clear + a "Manage" button that opens the
+// SAME share/visibility control we use on a single replay (per-team toggles +
+// review star + Public toggle + Delete) — applied to the whole selection, so
+// bulk editing is consistent with single-replay editing instead of a new idiom.
+function SelectionBar({
+  count, eligible, busy, msg, isNarrow, canDelete, teams, shareCounts, publicCount,
+  onSelectAll, onClear, onApply, onDelete,
+}: {
+  count: number; eligible: number; busy: boolean; msg: string | null; isNarrow: boolean; canDelete: boolean;
+  teams: { slug: string; name: string }[]; shareCounts: Record<string, number>; publicCount: number;
+  onSelectAll: () => void; onClear: () => void;
+  onApply: (ops: { op: string; teamSlug?: string }[]) => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const none = count === 0;
+  return (
+    <div style={selBarStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
+        <strong style={{ fontSize: 13, color: '#e6e6e6', whiteSpace: 'nowrap' }}>{count} selected</strong>
+        <button type="button" onClick={onSelectAll} disabled={count >= eligible} style={dim(selLinkStyle, count >= eligible)}>Select all {eligible}</button>
+        <button type="button" onClick={onClear} disabled={none} style={dim(selLinkStyle, none)}>Clear</button>
+        {msg && <span style={{ fontSize: 12, color: '#a7d2ff', whiteSpace: 'nowrap' }}>{msg}</span>}
+      </div>
+      <div style={{ position: 'relative', flex: '0 0 auto' }}>
+        <button type="button" onClick={() => setOpen((v) => !v)} disabled={none || busy} aria-expanded={open} style={dim(selActionStyle, none || busy)}>Manage ▾</button>
+        {open && (
+          <ActionSheet variant={isNarrow ? 'sheet' : 'popover'} title={`Manage ${count} replay${count === 1 ? '' : 's'}`} onClose={() => setOpen(false)}>
+            <BulkShareControls
+              key={`${count}-${Object.values(shareCounts).join('.')}-${publicCount}`}
+              count={count} busy={busy} canDelete={canDelete} teams={teams} shareCounts={shareCounts} publicCount={publicCount}
+              onApply={(ops) => { onApply(ops); setOpen(false); }}
+              onDelete={() => { onDelete(); setOpen(false); }}
+            />
+          </ActionSheet>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The group share/visibility control — a near-copy of the single-replay
+// ShareWithTeam popover (LedToggle per team + review star + Public toggle +
+// Delete), but each toggle reflects the SELECTION's combined state (all / some /
+// none) and acts on the whole group. Optimistic local state mirrors the single
+// control, so you can flip several toggles in a row.
+function BulkShareControls({
+  count, busy, canDelete, teams, shareCounts, publicCount, onApply, onDelete,
+}: {
+  count: number; busy: boolean; canDelete: boolean;
+  teams: { slug: string; name: string }[]; shareCounts: Record<string, number>; publicCount: number;
+  onApply: (ops: { op: string; teamSlug?: string }[]) => void;
+  onDelete: () => void;
+}) {
+  // Tri-state per toggle, from the SELECTION's combined state:
+  //   on    = applied to every selected replay   → ✓
+  //   mixed = applied to some, not all           → – (indeterminate)
+  //   off   = applied to none                     → empty
+  // Stage-and-apply: toggles only edit a local DRAFT (`shareDraft`/`pubDraft`/
+  // `reviewDraft`) — nothing is committed until Apply, so Close abandons cleanly
+  // and an untouched `mixed` team keeps its dash (no destructive round-trip).
+  type Tri = 'on' | 'mixed' | 'off';
+  const snapShare = (slug: string): Tri => {
+    const c = shareCounts[slug] || 0;
+    return c === 0 ? 'off' : c >= count ? 'on' : 'mixed';
+  };
+  const pubSnap: Tri = publicCount === 0 ? 'off' : publicCount >= count ? 'on' : 'mixed';
+  const [shareDraft, setShareDraft] = useState<Record<string, 'on' | 'off'>>({});
+  const [pubDraft, setPubDraft] = useState<'on' | 'off' | null>(null);
+  const [reviewDraft, setReviewDraft] = useState<Record<string, boolean>>({}); // staged review-request per team
+
+  // Effective (displayed) state = the draft if touched, else the snapshot.
+  const shareState = (slug: string): Tri => shareDraft[slug] ?? snapShare(slug);
+  const pubState: Tri = pubDraft ?? pubSnap;
+  // Toggling a tri-state goes →on unless it's already fully on (then →off).
+  const toggleShare = (slug: string) => setShareDraft((p) => ({ ...p, [slug]: shareState(slug) === 'on' ? 'off' : 'on' }));
+  const togglePublic = () => setPubDraft(pubState === 'on' ? 'off' : 'on');
+  const toggleReview = (slug: string) => setReviewDraft((p) => ({ ...p, [slug]: !p[slug] }));
+
+  // The diff to commit: only teams/flags whose DRAFT differs from the current
+  // all/none state. Each op carries `n` = how many replays it will actually
+  // CHANGE (e.g. unshare only touches the ones currently shared), so the Apply
+  // affordance can say "Unshare 2 from CCC" rather than the selection size. (The
+  // post-apply message reconciles any server-side skips — private/encrypted.)
+  const reps = (n: number) => `${n} replay${n === 1 ? '' : 's'}`;
+  const ops: { op: string; teamSlug?: string; n: number; verb: string }[] = [];
+  for (const t of teams) {
+    const d = shareDraft[t.slug];
+    const onCount = shareCounts[t.slug] || 0;
+    if (d === 'on' && snapShare(t.slug) !== 'on') ops.push({ op: 'share', teamSlug: t.slug, n: count - onCount, verb: `Share ${reps(count - onCount)} with ${t.name}` });
+    else if (d === 'off' && snapShare(t.slug) !== 'off') ops.push({ op: 'unshare', teamSlug: t.slug, n: onCount, verb: `Unshare ${reps(onCount)} from ${t.name}` });
+  }
+  for (const t of teams) {
+    if (reviewDraft[t.slug] !== undefined && shareState(t.slug) === 'on') {
+      ops.push(reviewDraft[t.slug]
+        ? { op: 'review-request', teamSlug: t.slug, n: count, verb: `Request ${t.name} review for ${reps(count)}` }
+        : { op: 'review-cancel', teamSlug: t.slug, n: count, verb: `Cancel ${t.name} review for ${reps(count)}` });
+    }
+  }
+  if (pubDraft === 'on' && pubSnap !== 'on') ops.push({ op: 'publish', n: count - publicCount, verb: `Make ${reps(count - publicCount)} public` });
+  else if (pubDraft === 'off' && pubSnap !== 'off') ops.push({ op: 'unpublish', n: publicCount, verb: `Make ${reps(publicCount)} unlisted` });
+
+  const sectionLabel: React.CSSProperties = { fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' };
+  const hint: React.CSSProperties = { fontSize: 11, color: '#6c7588', fontStyle: 'italic', lineHeight: 1.4 };
+  const mixedNote: React.CSSProperties = { marginLeft: 26, fontSize: 11, color: '#e0c64a' };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '1 1 auto' }}>
+      {/* Scrollable body: the team list (which can be long) + Public scroll here,
+          so the commit footer below stays pinned and reachable. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 10px 8px', overflowY: 'auto', minHeight: 0, flex: '1 1 auto' }}>
+      {teams.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={sectionLabel}>Share with team</div>
+          {teams.map((t) => {
+            const st = shareState(t.slug);
+            const onCount = shareCounts[t.slug] || 0;
+            return (
+              <div key={t.slug} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <LedToggle checked={st === 'on'} indeterminate={st === 'mixed'} onChange={() => toggleShare(t.slug)} label={t.name} statusOn="Sharing" disabled={busy} />
+                {st === 'mixed' && <div style={mixedNote}>On {onCount} of {count} — toggle to share all</div>}
+                {st === 'on' && (
+                  <button type="button" onClick={() => toggleReview(t.slug)} disabled={busy}
+                    style={{ alignSelf: 'flex-start', marginLeft: 26, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 0, padding: '1px 0', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, color: reviewDraft[t.slug] ? '#ffc357' : '#6c7588' }}>
+                    <span aria-hidden style={{ fontSize: 12 }}>{reviewDraft[t.slug] ? '★' : '☆'}</span>
+                    {reviewDraft[t.slug] ? 'Will request team review — click to undo' : 'Request team review'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <div style={hint}>Surfaces in the selected teams’ replay grid. Plaintext replays can’t enter a private team and are skipped.</div>
+        </div>
+      )}
+
+      <div style={{ borderTop: teams.length > 0 ? '1px solid #2e333c' : undefined, paddingTop: teams.length > 0 ? 10 : 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={sectionLabel}>Public</div>
+        <LedToggle checked={pubState === 'on'} indeterminate={pubState === 'mixed'} onChange={togglePublic} label="Public replay" statusOn="Public" disabled={busy} />
+        {pubState === 'mixed' && <div style={mixedNote}>{publicCount} of {count} public — toggle to publish all</div>}
+        <div style={hint}>Off: only people with the link (and your shared teams) can see these; outside viewers never see their comments. Encrypted replays are skipped.</div>
+      </div>
+      </div>
+
+      {/* Pinned commit footer: stays visible no matter how long the team list is.
+          Nothing commits until Apply; Close discards. The diff bullets (capped +
+          scrollable) name each staged change; the button names the single change. */}
+      <div style={{ flexShrink: 0, borderTop: '1px solid #2e333c', background: '#0f1318', padding: '10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {ops.length > 1 && (
+          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11.5, color: '#a7d2ff', lineHeight: 1.5, maxHeight: 84, overflowY: 'auto' }}>
+            {ops.map((o) => <li key={o.verb}>{o.verb}</li>)}
+          </ul>
+        )}
+        <button type="button" disabled={busy || ops.length === 0} onClick={() => onApply(ops.map(({ op, teamSlug }) => ({ op, teamSlug })))}
+          style={{ ...dim(selActionStyle, busy || ops.length === 0), padding: '9px 14px', fontSize: 13, textAlign: 'center', width: '100%', boxSizing: 'border-box', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.3 }}>
+          {ops.length === 0 ? 'No changes' : ops.length === 1 ? ops[0].verb : `Apply ${ops.length} changes`}
+        </button>
+        {canDelete && (
+          <button type="button" onClick={onDelete} disabled={busy}
+            style={{ width: '100%', textAlign: 'center', background: 'transparent', border: 0, padding: '4px 2px 2px', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', color: '#ff6b6b' }}>
+            Delete {count} replay{count === 1 ? '' : 's'}…
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One menu, two shells (responsive disclosure): on a phone it's an iOS-style
+// bottom sheet pinned to the thumb-reachable bottom edge with a dim backdrop; on
+// desktop it's a compact dropdown popover anchored under the Actions button with
+// a transparent click-away. Same content + drill-in either way.
+function ActionSheet({ variant, title, onClose, onBack, children }: { variant: 'sheet' | 'popover'; title: string; onClose: () => void; onBack?: () => void; children: React.ReactNode }) {
+  const isSheet = variant === 'sheet';
+  const content = (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 50, background: isSheet ? 'rgba(0,0,0,0.55)' : 'transparent' }} />
+      <div role="dialog" aria-label={title} style={isSheet ? sheetPanelStyle : popoverPanelStyle}>
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: isSheet ? '8px 8px 10px' : '4px 6px 8px' }}>
+          <span style={{ width: 52 }}>{onBack && <button type="button" onClick={onBack} style={sheetNavStyle}>‹ Back</button>}</span>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#9aa3b2', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
+          <span style={{ width: 52, textAlign: 'right' }}><button type="button" onClick={onClose} style={sheetNavStyle}>Close</button></span>
+        </div>
+        {/* Header is fixed; children own their own scroll/pinned-footer split so a
+            long team list never pushes the commit actions below the fold. */}
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '1 1 auto' }}>{children}</div>
+      </div>
     </>
+  );
+  // The mobile bottom sheet is position:fixed and MUST anchor to the viewport.
+  // Some pages (e.g. the team tab, via the sidebar's slide-in transform) put a
+  // transformed/contained ancestor above the list, which becomes the containing
+  // block for fixed descendants and clips the sheet (cut off bottom + right).
+  // Portal it to <body> so it always escapes to the viewport. The desktop popover
+  // is intentionally anchored to the Manage button, so it stays inline.
+  if (isSheet && typeof document !== 'undefined') return createPortal(content, document.body);
+  return content;
+}
+const sheetPanelStyle: React.CSSProperties = {
+  position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 51, maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+  background: '#0f1318', borderTop: '1px solid #2e333c', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+  paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -10px 40px rgba(0,0,0,0.55)',
+};
+const popoverPanelStyle: React.CSSProperties = {
+  position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 51, width: 300, maxHeight: 'min(70vh, 560px)', display: 'flex', flexDirection: 'column',
+  background: '#0f1318', border: '1px solid #2e333c', borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+};
+const dim = (base: React.CSSProperties, disabled: boolean): React.CSSProperties =>
+  disabled ? { ...base, opacity: 0.45, cursor: 'default' } : base;
+const selBarStyle: React.CSSProperties = {
+  position: 'sticky', top: 0, zIndex: 5, marginTop: 12,
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+  padding: '10px 12px', borderRadius: 10,
+  background: 'rgba(13,16,22,0.96)', border: '1px solid rgba(77,210,255,0.35)', boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+};
+const selLinkStyle: React.CSSProperties = { background: 'transparent', color: '#a7d2ff', border: 0, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', padding: 0, whiteSpace: 'nowrap' };
+const selActionStyle: React.CSSProperties = { background: 'rgba(77,157,255,0.16)', color: '#cfe4ff', border: '1px solid rgba(77,157,255,0.4)', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const sheetNavStyle: React.CSSProperties = { background: 'transparent', color: '#4dd2ff', border: 0, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
+const selectButtonStyle = (active: boolean): React.CSSProperties => ({ background: active ? 'rgba(77,210,255,0.2)' : '#11141a', color: active ? '#cfe4ff' : '#a0a8b8', border: `1px solid ${active ? 'rgba(77,210,255,0.5)' : '#2e333c'}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' });
+
+// Mobile select mode: a dense, tappable checklist — far more scannable for
+// multi-select than the full cards (~10 rows/screen vs ~1.5). The desktop table
+// already has a checkbox column; this is the phone equivalent (the full table is
+// too wide for a phone, which is why it degrades to cards when just browsing).
+function CompactSelectList({ rows }: { rows: Row[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 14 }}>
+      {rows.map((r) => <CompactSelectRow key={r.slug} r={r} />)}
+    </div>
+  );
+}
+function CompactSelectRow({ r }: { r: Row }) {
+  const sel = useReplaySelection();
+  const canSel = !!sel?.selectable(r);
+  const isSel = !!sel?.selected.has(r.slug);
+  const meta = `${formatDateShort(r.createdAt)} · ${r.displayName || matchupText(r)}`;
+  return (
+    <div
+      role={canSel ? 'button' : undefined}
+      aria-pressed={canSel ? isSel : undefined}
+      onClick={() => canSel && sel!.toggle(r.slug)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
+        border: `1px solid ${isSel ? 'rgba(77,210,255,0.6)' : '#2e333c'}`,
+        background: isSel ? 'rgba(77,210,255,0.08)' : 'rgba(255,255,255,0.015)',
+        cursor: canSel ? 'pointer' : 'default', opacity: canSel ? 1 : 0.5,
+      }}
+    >
+      {canSel
+        ? <SelectBox checked={isSel} onToggle={() => sel!.toggle(r.slug)} label={`Select ${matchupText(r)}`} size={20} />
+        : <span style={{ width: 20, flex: '0 0 auto' }} aria-hidden />}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <PrivateMatchup row={r as any} thumb={22} showNames={false} />
+        <span style={{ fontSize: 11, color: '#6c7588', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</span>
+      </div>
+    </div>
   );
 }
 
@@ -864,6 +1270,8 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
   // Default: newest first (matches the grid's pre-existing order).
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const sel = useReplaySelection();
+  const showSel = !!sel?.selectMode;
 
   // B116: group into Bo3 series (by lobbyId), then sort the GROUPS by the chosen
   // key (using each group's most-recent game as its representative) so a series'
@@ -899,7 +1307,7 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
   const showComments = rows.some((r) => r.commentCount !== undefined);
   // Columns: Date, Replay, [Shared], Member, Format, Labels, Length, [Comments],
   // actions = 7 fixed + the two optional ones. Used for the series header colSpan.
-  const colCount = 7 + (showShared ? 1 : 0) + (showComments ? 1 : 0);
+  const colCount = 7 + (showShared ? 1 : 0) + (showComments ? 1 : 0) + (showSel ? 1 : 0);
 
   const onHeaderClick = (k: SortKey) => {
     if (sortKey === k) {
@@ -916,6 +1324,7 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: '#d6d6d6' }}>
         <thead>
           <tr style={{ background: 'rgba(17,20,26,0.6)' }}>
+            {showSel && <PlainHeader>{''}</PlainHeader>}
             <SortHeader k="date" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Date</SortHeader>
             <SortHeader k="replay" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Replay</SortHeader>
             {showShared && <SortHeader k="shared" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Shared with</SortHeader>}
@@ -932,15 +1341,31 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
             // B158: series rows read as one contained block — a continuous left
             // rail (shared with the SERIES header), a faint tint, an indented
             // first cell, and a closing edge under the last game.
-            const gameRow = (r: Row, inSeries: boolean, gameNumber?: number, isLast = false) => (
-              <tr key={r.slug} style={{
+            const gameRow = (r: Row, inSeries: boolean, gameNumber?: number, isLast = false) => {
+              // In select mode a selectable row IS a checkbox: capture the click
+              // before it reaches the inner replay link so tapping the row toggles
+              // selection instead of navigating to the replay.
+              const rowSelectable = showSel && !!sel?.selectable(r);
+              const rowSelected = !!sel?.selected.has(r.slug);
+              return (
+              <tr key={r.slug}
+                onClickCapture={rowSelectable ? (e) => { e.preventDefault(); e.stopPropagation(); sel!.toggle(r.slug); } : undefined}
+                style={{
                 borderTop: '1px solid #2e333c',
-                ...(inSeries ? {
+                ...(rowSelectable ? { cursor: 'pointer' } : {}),
+                ...(rowSelected ? { background: 'rgba(77,210,255,0.10)' } : inSeries ? {
                   boxShadow: SERIES_RAIL,
                   background: 'rgba(77,157,255,0.045)',
                   ...(isLast ? { borderBottom: '2px solid rgba(77,157,255,0.4)' } : {}),
                 } : {}),
               }}>
+                {showSel && (
+                  <td style={cellStyle}>
+                    {sel!.selectable(r) && (
+                      <SelectBox checked={rowSelected} onToggle={() => sel!.toggle(r.slug)} label={`Select ${matchupText(r)}`} />
+                    )}
+                  </td>
+                )}
                 <td style={inSeries ? { ...cellStyle, paddingLeft: 30 } : cellStyle}>{formatDateShort(r.createdAt)}</td>
                 <td style={cellStyle} data-testid="replay-cell">
                   <ReplayCellLink replay={r} gameNumber={gameNumber} />
@@ -971,7 +1396,8 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
                   <RowActions replay={r} canManage={canManage} />
                 </td>
               </tr>
-            );
+              );
+            };
             if (!g.isSeries) return gameRow(g.rows[0], false);
             return (
               <Fragment key={g.key}>

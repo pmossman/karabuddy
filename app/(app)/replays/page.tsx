@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { eq, desc, inArray, count, and, isNotNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { replays, users, replayTeamShares, teams, tags, replayReviews } from '@/lib/schema';
+import { replays, users, replayTeamShares, teams, teamMembers, tags, replayReviews } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
 import { doubleSidedGameIds } from '@/lib/doubleSided';
 import { recordedReplaySlugs } from '@/lib/recordedReplays';
@@ -130,6 +130,13 @@ async function MyReplays({ userId }: { userId: string }) {
     for (const r of reqRows) reviewBySlug.set(r.slug, { requested: true, reviewerCount: markCountBySlug.get(r.slug) ?? 0 });
   }
 
+  // Teams the viewer belongs to — populates the bulk "share with" picker.
+  const myTeams = await db
+    .select({ slug: teams.slug, name: teams.name })
+    .from(teamMembers)
+    .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
+    .where(eq(teamMembers.userId, userId));
+
   return (
     <ReplayFilters
       rows={rows.map(({ replay, ownerName }) => serializeReplayRow(replay, {
@@ -143,6 +150,7 @@ async function MyReplays({ userId }: { userId: string }) {
       })).map((row) => ({ ...row, reviewRequest: reviewBySlug.get(row.slug) ?? null }))}
       canManage
       showShareTabs
+      myTeams={myTeams}
       emptyState={<MineEmpty />}
     />
   );
