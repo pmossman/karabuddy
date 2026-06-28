@@ -48,7 +48,7 @@ async function seedRequestedReview(page: Page, browser: import('@playwright/test
   return { teamSlug, slug, page2, ctx2 };
 }
 
-test('teammate finishes a review from the viewer Review panel', async ({ page, browser, request }) => {
+test('teammate finishes then updates a review from the viewer Review panel', async ({ page, browser, request }) => {
   const { teamSlug, slug, page2, ctx2 } = await seedRequestedReview(page, browser, request);
 
   await page2.goto(`/r/${slug}`);
@@ -64,8 +64,18 @@ test('teammate finishes a review from the viewer Review panel', async ({ page, b
   await expect(modal).toContainText('overextended into the sweep');
   await modal.getByRole('button', { name: 'Submit review' }).click();
 
+  // B195: no "undo" — the button now offers an UPDATE (re-opens the summary +
+  // re-notifies the requester).
   await expect(modal).toBeHidden();
-  await expect(finishBtn).toContainText('You reviewed');
+  await expect(finishBtn).toContainText('Update review');
+
+  // Re-open in update mode and re-submit.
+  await finishBtn.click();
+  const updateModal = page2.getByRole('dialog', { name: /Update review for Finish Squad/ });
+  await expect(updateModal).toBeVisible();
+  await updateModal.getByRole('button', { name: 'Update review' }).click();
+  await expect(updateModal).toBeHidden();
+  await expect(finishBtn).toContainText('Update review');
 
   await ctx2.close();
 });
@@ -86,7 +96,7 @@ test('Reviews-tab "Finish review →" deep-links into the viewer and auto-opens 
   await modal.getByRole('button', { name: 'Submit review' }).click();
 
   await expect(modal).toBeHidden();
-  await expect(page2.getByTestId(`viewer-finish-review-${teamSlug}`)).toContainText('You reviewed');
+  await expect(page2.getByTestId(`viewer-finish-review-${teamSlug}`)).toContainText('Update review');
 
   await ctx2.close();
 });

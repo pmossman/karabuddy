@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatReviewMessage, formatReviewedByMessage } from '@/lib/reviewNotify';
+import { formatReviewMessage, formatReviewedByMessage, formatReviewFinishedDM } from '@/lib/reviewNotify';
 import {
   formatTournamentCreatedMessage,
   formatRegistrationMessage,
@@ -23,6 +23,20 @@ describe('formatReviewedByMessage', () => {
     const msg = formatReviewedByMessage({ matchup: 'Boba Fett vs Cad Bane', teamName: 'Squad', actorName: 'Ann', url: 'https://k/r/r1' });
     expect(msg).toContain('✅');
     expect(msg).toContain('**Ann** reviewed **Boba Fett vs Cad Bane** in **Squad**');
+  });
+});
+
+describe('formatReviewFinishedDM', () => {
+  const base = { matchup: 'Boba Fett vs Cad Bane', teamName: 'Squad', reviewerName: 'Ann', url: 'https://k/r/r1' };
+  it('B194: first finish reads "finished reviewing"', () => {
+    const msg = formatReviewFinishedDM(base);
+    expect(msg).toContain('🔎');
+    expect(msg).toContain('**Ann** finished reviewing your replay **Boba Fett vs Cad Bane** (Squad)');
+  });
+  it('B195: a re-submit reads "updated their review" (no undo)', () => {
+    const msg = formatReviewFinishedDM({ ...base, updated: true });
+    expect(msg).toContain('📝');
+    expect(msg).toContain('**Ann** updated their review of your replay **Boba Fett vs Cad Bane** (Squad)');
   });
 });
 

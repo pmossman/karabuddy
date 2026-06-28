@@ -72,6 +72,15 @@ describe('notifyReviewFinished — gating', () => {
     await notifyReviewFinished({ replaySlug: slug, teamSlug: team, reviewerUserId: reviewer });
     expect(sendDM).not.toHaveBeenCalled();
   });
+
+  it('B195: updated=true DMs the requester an "updated their review" message', async () => {
+    const requester = await seedUser({ reviewDm: true, discordId: 'disc_123' });
+    const reviewer = await seedUser();
+    const slug = await seedReplayShare({ ownerId: requester, teamSlug: team, requestedBy: requester });
+    await notifyReviewFinished({ replaySlug: slug, teamSlug: team, reviewerUserId: reviewer, updated: true });
+    expect(sendDM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendDM).mock.calls[0][1]).toContain('updated their review');
+  });
 });
 
 describe('markReviewed idempotency', () => {

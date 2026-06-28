@@ -102,14 +102,19 @@ export async function notifyReviewMark(opts: {
 // Discord account; no-ops on: no open request, requester == reviewer, pref off,
 // or no Discord id. Best-effort, never throws. The channel post (notifyReviewMark)
 // still fires separately as the team-visible baseline.
-export function formatReviewFinishedDM(opts: { matchup: string; teamName: string; reviewerName: string; url: string }): string {
-  return `🔎 **${opts.reviewerName}** finished reviewing your replay **${opts.matchup}** (${opts.teamName}) — ${opts.url}`;
+export function formatReviewFinishedDM(opts: { matchup: string; teamName: string; reviewerName: string; url: string; updated?: boolean }): string {
+  return opts.updated
+    ? `📝 **${opts.reviewerName}** updated their review of your replay **${opts.matchup}** (${opts.teamName}) — ${opts.url}`
+    : `🔎 **${opts.reviewerName}** finished reviewing your replay **${opts.matchup}** (${opts.teamName}) — ${opts.url}`;
 }
 
 export async function notifyReviewFinished(opts: {
   replaySlug: string;
   teamSlug: string;
   reviewerUserId: string;
+  // B195: a re-submit after adding to / editing an already-finished review —
+  // fires a fresh "updated" DM (same gating) so there's no misleading "undo".
+  updated?: boolean;
 }): Promise<void> {
   try {
     const db = getDb();
@@ -141,6 +146,7 @@ export async function notifyReviewFinished(opts: {
       teamName: team?.name ?? opts.teamSlug,
       reviewerName: reviewer ?? 'A teammate',
       url: `${publicUrl()}/r/${opts.replaySlug}`,
+      updated: opts.updated,
     }));
   } catch (err) {
     console.error('[karabuddy] review-finished DM failed:', err);

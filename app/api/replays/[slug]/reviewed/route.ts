@@ -57,12 +57,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     await unmarkReviewed(slug, teamSlug, userId);
   }
 
-  // Best-effort Discord on a genuinely NEW mark (never blocks the write): the
-  // team-channel post (existing baseline) + a targeted DM to the requester (B194).
-  if (reviewed && newMark) {
-    try { await notifyReviewMark({ replaySlug: slug, teamSlug, actingUserId: userId }); }
-    catch (e) { console.error('[karabuddy] notifyReviewMark failed (mark persisted):', e); }
-    try { await notifyReviewFinished({ replaySlug: slug, teamSlug, reviewerUserId: userId }); }
+  // Best-effort Discord (never blocks the write). B195: there's no "undo" — a
+  // sent review can't be unsent — but you can add to / edit a finished review and
+  // re-submit. First finish (newMark) → the team-channel post + a DM to the
+  // requester. A re-submit (update) → just a fresh "updated" DM to the requester,
+  // no channel re-spam.
+  if (reviewed) {
+    if (newMark) {
+      try { await notifyReviewMark({ replaySlug: slug, teamSlug, actingUserId: userId }); }
+      catch (e) { console.error('[karabuddy] notifyReviewMark failed (mark persisted):', e); }
+    }
+    try { await notifyReviewFinished({ replaySlug: slug, teamSlug, reviewerUserId: userId, updated: !newMark }); }
     catch (e) { console.error('[karabuddy] notifyReviewFinished failed (mark persisted):', e); }
   }
 

@@ -176,7 +176,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const [authorName, setAuthorName] = useState('');
   // B194: "Finish review" summary modal (the team being finished) + a bump that
   // re-fetches the review-status header after a submit (tags.length won't change).
-  const [finishTeam, setFinishTeam] = useState<{ teamSlug: string; teamName: string } | null>(null);
+  const [finishTeam, setFinishTeam] = useState<{ teamSlug: string; teamName: string; alreadyReviewed: boolean } | null>(null);
   const [reviewBump, setReviewBump] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
   // B76: immediate submitting feedback so the Save button shows progress the
@@ -1040,6 +1040,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {finishTeam && (
         <FinishReviewModal
           teamName={finishTeam.teamName}
+          alreadyReviewed={finishTeam.alreadyReviewed}
           comments={tags
             .filter((t) => isMineTag(t) && !t.parentTagId && (t.scope ?? []).includes(finishTeam.teamSlug))
             .sort((a, b) => a.frameIndex - b.frameIndex)

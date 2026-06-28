@@ -68,7 +68,8 @@ test('request → comment-gated review → durable (does not vanish)', async ({ 
   await expect(page2.getByTestId('review-queue-item')).toHaveCount(0);
   await page2.getByTestId('review-filter-reviewed').click();
   await expect(page2.getByTestId('review-queue-item')).toHaveCount(1);
-  await expect(page2.getByTestId(`mark-reviewed-${slug}`)).toContainText(/You reviewed/);
+  // B195: no "undo" — a finished review now offers an UPDATE (re-notifies).
+  await expect(page2.getByTestId(`mark-reviewed-${slug}`)).toContainText(/Update review/);
 
   await ctx2.close();
 });

@@ -28,7 +28,6 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('awaiting');
-  const [marking, setMarking] = useState<Set<string>>(new Set());
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -45,25 +44,6 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
   }, [teamSlug]);
 
   useEffect(() => { load(); }, [load]);
-
-  // Per-user mark — the card STAYS; it just flips your status + the count.
-  const toggleReviewed = async (slug: string, current: boolean) => {
-    if (marking.has(slug)) return;
-    setMarking((p) => new Set(p).add(slug));
-    try {
-      const res = await fetch(`/api/replays/${slug}/reviewed`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamSlug, reviewed: !current }),
-      });
-      const body = await res.json();
-      if (body.ok) await load(); // refresh marks (names/count) from the server
-    } catch {
-      /* leave it; the user can retry */
-    } finally {
-      setMarking((p) => { const n = new Set(p); n.delete(slug); return n; });
-    }
-  };
 
   const counts = useMemo(() => ({
     awaiting: rows.filter((r) => !r.viewerReviewed).length,
@@ -137,24 +117,18 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
               </div>
 
               {(() => {
-                // A review means you left feedback — the mark is gated on a
-                // team-scoped comment (you can always undo your own mark).
+                // A review means you left feedback — gated on a team-scoped
+                // comment. B194/B195: completing OR updating a review always goes
+                // through the viewer's summary modal, so the button deep-links into
+                // the replay (where your comments live) and auto-opens it. There's
+                // no "undo" — a sent review can't be unsent.
                 const canMark = r.viewerReviewed || r.viewerCommented;
-                const busy = marking.has(r.slug);
-                // B194: completing a review always goes through the viewer's
-                // summary modal, so "Finish review →" deep-links into the replay
-                // (where your comments live) and auto-opens it. Undo stays a
-                // direct one-click toggle; the un-commented gate is unchanged.
-                const onClick = () => {
-                  if (busy || !canMark) return;
-                  if (r.viewerReviewed) { toggleReviewed(r.slug, true); return; }
-                  router.push(`/r/${r.slug}?finishReview=${teamSlug}`);
-                };
+                const onClick = () => { if (canMark) router.push(`/r/${r.slug}?finishReview=${teamSlug}`); };
                 return (
                   <button
                     type="button"
                     onClick={onClick}
-                    disabled={busy || !canMark}
+                    disabled={!canMark}
                     data-testid={`mark-reviewed-${r.slug}`}
                     title={canMark ? undefined : 'Leave a comment on the replay before reviewing it'}
                     style={{
@@ -163,15 +137,11 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
                       border: `1px solid ${!canMark ? 'rgba(160,168,184,0.22)' : `rgba(107, 217, 104, ${r.viewerReviewed ? 0.55 : 0.32})`}`,
                       color: !canMark ? '#6c7588' : '#7fd97f', borderRadius: tokens.radius.md, padding: '6px 12px',
                       fontSize: 12.5, fontWeight: 700,
-                      cursor: busy ? 'default' : canMark ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                      cursor: canMark ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
                     }}
                   >
-                    {busy ? '…' : (
-                      <>
-                        <span aria-hidden>{r.viewerReviewed ? '✓' : canMark ? '🔎' : '💬'}</span>
-                        <span>{r.viewerReviewed ? 'You reviewed — undo' : canMark ? 'Finish review →' : 'Comment to review'}</span>
-                      </>
-                    )}
+                    <span aria-hidden>{r.viewerReviewed ? '📝' : canMark ? '🔎' : '💬'}</span>
+                    <span>{r.viewerReviewed ? 'Update review →' : canMark ? 'Finish review →' : 'Comment to review'}</span>
                   </button>
                 );
               })()}

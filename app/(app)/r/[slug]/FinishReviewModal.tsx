@@ -11,10 +11,13 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 export interface ReviewComment { id: string; frameIndex: number; comment: string }
 
 export function FinishReviewModal({
-  teamName, comments, onEdit, onDelete, onJump, onSubmit, onClose,
+  teamName, comments, alreadyReviewed = false, onEdit, onDelete, onJump, onSubmit, onClose,
 }: {
   teamName: string;
   comments: ReviewComment[];
+  // B195: re-opened on an already-finished review (add to / edit, then re-notify).
+  // No "undo" — a sent review can't be unsent.
+  alreadyReviewed?: boolean;
   onEdit: (id: string, text: string) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
   onJump: (frameIndex: number) => void;
@@ -45,13 +48,16 @@ export function FinishReviewModal({
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div role="dialog" aria-modal="true" aria-label={`Finish review for ${teamName}`} onClick={(e) => e.stopPropagation()}
+      <div role="dialog" aria-modal="true" aria-label={`${alreadyReviewed ? 'Update' : 'Finish'} review for ${teamName}`} onClick={(e) => e.stopPropagation()}
         style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: '#0f1318', border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.lg, color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif', boxShadow: '0 16px 50px rgba(0,0,0,0.6)' }}>
         {/* Header */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '14px 16px', borderBottom: '1px solid #1c2128' }}>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Finish review · {teamName}</span>
-            <span style={{ fontSize: 12, color: '#8a93a6' }}>{comments.length} comment{comments.length === 1 ? '' : 's'} — edit or remove, then submit.</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{alreadyReviewed ? 'Update' : 'Finish'} review · {teamName}</span>
+            <span style={{ fontSize: 12, color: '#8a93a6' }}>
+              {comments.length} comment{comments.length === 1 ? '' : 's'}
+              {alreadyReviewed ? ' — edit or add notes, then re-notify the requester.' : ' — edit or remove, then submit.'}
+            </span>
           </div>
           <button type="button" onClick={onClose} style={{ background: 'transparent', border: 0, color: '#4dd2ff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
         </div>
@@ -93,9 +99,11 @@ export function FinishReviewModal({
           {error && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{error}</span>}
           <button type="button" onClick={submit} disabled={submitting || comments.length === 0}
             style={{ ...primaryBtn, width: '100%', padding: '10px', opacity: submitting || comments.length === 0 ? 0.5 : 1 }}>
-            {submitting ? 'Submitting…' : 'Submit review'}
+            {submitting ? 'Submitting…' : alreadyReviewed ? 'Update review' : 'Submit review'}
           </button>
-          <span style={{ fontSize: 11, color: '#6c7588', textAlign: 'center' }}>Marks the review done and notifies the requester.</span>
+          <span style={{ fontSize: 11, color: '#6c7588', textAlign: 'center' }}>
+            {alreadyReviewed ? 'Notifies the requester that you updated your review.' : 'Marks the review done and notifies the requester.'}
+          </span>
         </div>
       </div>
     </div>
