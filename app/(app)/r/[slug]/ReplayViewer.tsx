@@ -1321,6 +1321,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           decks={decksForView}
           localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
           frames={frames}
+          currentIndex={currentIndex}
+          toOriginalFrame={collapsedToOriginal}
           installToken={installToken}
           isOwner={isOwner}
           anonymize={anonymize}
@@ -1328,6 +1330,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           clips={clips}
           onOpenResourcing={() => setResourcingOpen(true)}
           onOpenSideboard={sideboard ? () => setSideboardOpen(true) : undefined}
+          onArmedTeamsChange={setArmedTeams}
         />
       )}
       </div>

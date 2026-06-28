@@ -17,14 +17,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { cardImageUrl } from '@/lib/cardImage';
-import { matchChips } from '@/lib/matchMetadata';
 import { DecksModal } from './DecksModal';
-import { EditableTitle } from './EditableTitle';
-import { SeriesNav, type SeriesInfo } from './SeriesNav';
-import { LabelsRow } from './LabelsRow';
+import { type SeriesInfo } from './SeriesNav';
 import { SharePopover } from './SharePopover';
-import { ResultBadge } from './ResultBadge';
+import { MatchupInfo, useShareMoment } from './MatchupInfo';
 import { useDragSize, Grabber } from './useDragSize';
 import { ClipsList, type ClipSummary } from './ClipsList';
 import type { DecksByUserId, MatchMeta, Frame } from '@/lib/replayDecoder';
@@ -613,6 +609,8 @@ export function MatchupPanel({
   decks,
   localPlayerId,
   frames,
+  currentIndex,
+  toOriginalFrame,
   installToken,
   isOwner,
   anonymize,
@@ -620,6 +618,7 @@ export function MatchupPanel({
   clips,
   onOpenResourcing,
   onOpenSideboard,
+  onArmedTeamsChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -631,6 +630,10 @@ export function MatchupPanel({
   decks: DecksByUserId | null;
   localPlayerId: string | null;
   frames: Frame[] | null;
+  // B196: live frame position + collapsed→original mapper, so the panel's
+  // SharePopover can offer "share this moment" (mobile parity with desktop).
+  currentIndex: number;
+  toOriginalFrame: (i: number) => number;
   // B66e: title + labels edit affordances are now mirrored from the
   // desktop sidebar so mobile users can rename + re-tag without
   // bouncing out of the panel. Owner-gated client-side; server enforces.
@@ -646,11 +649,11 @@ export function MatchupPanel({
   onOpenResourcing?: () => void;
   // B150: open the sideboard-changes splash (swaps vs the previous game).
   onOpenSideboard?: () => void;
+  // B196: keep armed-team scoping in sync when share teams change here too.
+  onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
-  const players = (replay.players as any[]) || [];
-  const [p1, p2] = players;
-  const chips = matchChips(matchMeta);
+  const moment = useShareMoment(replay.slug, currentIndex, toOriginalFrame);
 
   // B100: draggable size, matching the review sheet. TOP (portrait) → height,
   // grabber on the BOTTOM edge (drag down grows → grow +1). LEFT (landscape)
@@ -723,8 +726,16 @@ export function MatchupPanel({
           <a href="/" style={{ color: '#a0a8b8', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>← karabuddy</a>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {/* B194: the SAME SharePopover the desktop sidebar uses, as a bottom
-                sheet here — so share lives in one component across both. */}
-            <SharePopover replaySlug={replay.slug} installToken={installToken} isOwner={isOwner} asSheet />
+                sheet here. B196: now with "share this moment" + armed-team sync,
+                so mobile share has full desktop parity. */}
+            <SharePopover
+              replaySlug={replay.slug}
+              installToken={installToken}
+              isOwner={isOwner}
+              asSheet
+              onArmedTeamsChange={onArmedTeamsChange}
+              shareMoment={{ copied: moment.copied, onClick: moment.share }}
+            />
             <button
               type="button"
               onClick={onClose}
@@ -736,40 +747,17 @@ export function MatchupPanel({
           </div>
         </div>
 
-        {chips.length > 0 && (
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {chips.map((c) => (
-              <span key={c} style={chipStyle}>{c}</span>
-            ))}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <EditableTitle
-            replaySlug={replay.slug}
-            installToken={installToken}
-            initialDisplayName={replay.displayName ?? null}
-            defaultText={defaultTitleFor(replay, anonymize) + (series ? ` — Game ${series.current}` : '')}
-            canEdit={isOwner}
-          />
-        </div>
-        {/* B129: hop between the games of the same Bo3. */}
-        {series && <SeriesNav series={series} />}
-
-        {(isOwner || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
-          <LabelsRow
-            replaySlug={replay.slug}
-            installToken={installToken}
-            initialLabels={Array.isArray(replay.labels) ? replay.labels : []}
-            canEdit={isOwner}
-          />
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <MatchupPlayer player={p1} winners={replay.winners} />
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', paddingTop: 11 }}>VS</span>
-          <MatchupPlayer player={p2} winners={replay.winners} />
-        </div>
+        {/* B196: the shared matchup-identity block — same <MatchupInfo> the
+            desktop sidebar renders, in panel variant. */}
+        <MatchupInfo
+          replay={replay}
+          matchMeta={matchMeta}
+          installToken={installToken}
+          isOwner={isOwner}
+          anonymize={anonymize}
+          series={series}
+          variant="panel"
+        />
 
 
         {onOpenSideboard && (
@@ -867,70 +855,6 @@ export function MatchupPanel({
   );
 }
 
-function MatchupPlayer({ player, winners }: { player: any; winners?: string[] | null }) {
-  if (!player) return <div style={{ flex: 1 }} />;
-  const leaderImg = cardImageUrl(player.leader, true);
-  const baseImg = cardImageUrl(player.base, false);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0, alignItems: 'center' }}>
-      <div style={{ display: 'flex', gap: 2 }}>
-        <Thumb src={leaderImg} alt={player.leader?.name} />
-        <Thumb src={baseImg} alt={player.base?.name} />
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
-        <ResultBadge playerId={player.id} winners={winners} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: '#d6d6d6', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {playerUsername(player)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Thumb({ src, alt }: { src: string | null; alt?: string }) {
-  if (!src) return <div style={thumbBoxStyle} title={alt || ''} />;
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={thumbImgStyle} />;
-}
-
-function playerUsername(p: any): string {
-  const u: string | undefined = p?.username;
-  if (!u || /^anonymous\s/i.test(u)) return 'anon';
-  return u;
-}
-
-// Mirrors TagSidebar's defaultTitleFor — the same string the replay
-// browser uses when no display name has been set.
-function defaultTitleFor(replay: ReplayShape, anonymize?: boolean): string {
-  const players = Array.isArray(replay.players) ? replay.players : [];
-  const [p1, p2] = players;
-  if (!p1 && !p2) return 'Replay';
-  // B122: anonymized viewers identify the replay by leader matchup, not handles.
-  if (anonymize) {
-    const lead = (p: any) => p?.leader?.name || 'Unknown';
-    return `${lead(p1)} vs ${lead(p2)}`;
-  }
-  return `${playerUsername(p1)} vs ${playerUsername(p2)}`;
-}
-
-const thumbImgStyle: React.CSSProperties = {
-  width: 44,
-  height: 30,
-  objectFit: 'contain',
-  borderRadius: 3,
-  background: '#0a0c10',
-  display: 'block',
-};
-const thumbBoxStyle: React.CSSProperties = { ...thumbImgStyle, border: '1px solid #2e333c' };
-
-const chipStyle: React.CSSProperties = {
-  background: 'rgba(77, 157, 255, 0.12)',
-  border: '1px solid rgba(77, 157, 255, 0.3)',
-  color: '#a7d2ff',
-  borderRadius: 999,
-  padding: '1px 8px',
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: '0.04em',
-  textTransform: 'uppercase',
-};
+// B196: MatchupPlayer / Thumb / playerUsername / defaultTitleFor + the chip/thumb
+// styles moved into the shared ./MatchupInfo, which both this panel and the
+// desktop sidebar now render.

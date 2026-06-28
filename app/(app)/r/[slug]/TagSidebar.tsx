@@ -5,23 +5,19 @@ import { LedToggle } from '@/app/_components/LedToggle';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { useSession } from 'next-auth/react';
 import type { Frame, MatchMeta, DecksByUserId } from '@/lib/replayDecoder';
-import { cardImageUrl } from '@/lib/cardImage';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
-import { matchChips } from '@/lib/matchMetadata';
 import { canDeleteTag, canEditTag, canMutateReplay, type AuthContext } from '@/lib/replayPermissions';
-import { ResultBadge } from './ResultBadge';
 import { Popover } from '@/app/_components/Popover';
 import { DecksModal } from './DecksModal';
 import { ClipsList, type ClipSummary } from './ClipsList';
 import { SharePopover } from './SharePopover';
+import { MatchupInfo, useShareMoment, copyToClipboard } from './MatchupInfo';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
-import { EditableTitle } from './EditableTitle';
-import { SeriesNav, type SeriesInfo } from './SeriesNav';
+import { type SeriesInfo } from './SeriesNav';
 // B71: shared scope-derivation — same module the extension copies, so the
 // web comment form and the in-game bubble narrow audiences identically.
 import { scopeFromMentions, scopeLabel } from '@/lib/commentScope';
 import { encryptForTeam } from '@/lib/companion';
-import { LabelsRow } from './LabelsRow';
 import { Grabber } from './useDragSize';
 import { ReviewStatusHeader } from './ReviewStatusHeader';
 import { FinishReviewModal } from './FinishReviewModal';
@@ -317,29 +313,9 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     authCtx,
   );
 
-  const copyToClipboard = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      // Fallback for older browsers / non-secure contexts.
-      const ta = document.createElement('textarea');
-      ta.value = url;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch {}
-      document.body.removeChild(ta);
-    }
-  };
-
-  // B113: share the CURRENT frame so the link unfurls into that board state.
-  const [momentCopied, setMomentCopied] = useState(false);
-  const shareMoment = async () => {
-    const f = toOriginalFrame(currentIndex) + 1; // 1-based original frame
-    const url = `${window.location.origin}/r/${replay.slug}${f > 1 ? `?f=${f}` : ''}`;
-    await copyToClipboard(url);
-    setMomentCopied(true);
-    window.setTimeout(() => setMomentCopied(false), 2000);
-  };
+  // B113/B196: copy a link to the CURRENT frame so it unfurls into that board
+  // state. The hook is shared so the mobile matchup panel offers it too.
+  const { copied: momentCopied, share: shareMoment } = useShareMoment(replay.slug, currentIndex, toOriginalFrame);
 
   // B113: share a TAGGED moment — mint a signed token (server re-checks the
   // caller can see this tag) so the unfurl may surface the tag text. Returns
@@ -363,8 +339,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
     }
   };
 
-  const playersArr = (replay.players as any[]) || [];
-  const [p1, p2] = playersArr;
 
   const tagsByFrame = useMemo(() => {
     const m = new Map<number, TagRow[]>();
@@ -864,75 +838,28 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           over this content. */}
       {!isMobile && (
       <header style={{ padding: '10px 14px 10px 16px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-        {matchChips(matchMeta).length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {matchChips(matchMeta).map((label) => (
-              <span
-                key={`m-${label}`}
-                style={{
-                  background: 'rgba(77, 157, 255, 0.12)',
-                  border: '1px solid rgba(77, 157, 255, 0.3)',
-                  color: '#a7d2ff',
-                  borderRadius: 999,
-                  padding: '1px 8px',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {label}
-              </span>
-            ))}
-          </div>
-        )}
-        {/* B66b/B66c: replay title — inline-editable. Falls back to the
-            same "username vs username" string the browser uses if no
-            display name has been set. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <EditableTitle
-            replaySlug={replay.slug}
-            installToken={installToken}
-            initialDisplayName={replay.displayName ?? null}
-            defaultText={defaultTitleFor(replay) + (series ? ` — Game ${series.current}` : '')}
-            canEdit={isOwner}
-          />
-        </div>
-        {/* B129: hop between the games of the same Bo3. */}
-        {series && <SeriesNav series={series} />}
-        {/* B66c: labels as their own pill row + plus button, separate
-            from the title affordance. Always render the row so the +
-            button is discoverable even with zero labels. */}
-        {(isOwner || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
-          <LabelsRow
-            replaySlug={replay.slug}
-            installToken={installToken}
-            initialLabels={Array.isArray(replay.labels) ? replay.labels : []}
-            canEdit={isOwner}
-          />
-        )}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        {/* B66b: × close button removed — the floating ☰ toggle outside
-            the sidebar handles both open + close so the affordance stays
-            in one place. */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1, minWidth: 0 }}>
-          <MatchupRow player={p1} winners={replay.winners} />
-          {/* Sits vertically aligned with the 32px-tall thumb row above the
-              username — pad-top half the thumb height minus half text. */}
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto', paddingTop: 11 }}>VS</span>
-          <MatchupRow player={p2} winners={replay.winners} />
-        </div>
-        {/* B194: the ONE share menu (SharePopover) — same component the mobile
-            matchup panel uses, just asSheet={false} here for the desktop popover. */}
-        <SharePopover
-          replaySlug={replay.slug}
+        {/* B196: the shared matchup-identity block (chips/title/series/labels/
+            players) — same component the mobile panel renders. Share stays
+            inline beside the players here via the `share` slot. */}
+        <MatchupInfo
+          replay={replay}
+          matchMeta={matchMeta}
           installToken={installToken}
           isOwner={isOwner}
-          asSheet={false}
-          onArmedTeamsChange={onArmedTeamsChange}
-          shareMoment={{ copied: momentCopied, onClick: shareMoment }}
+          anonymize={anonymize}
+          series={series}
+          variant="sidebar"
+          share={
+            <SharePopover
+              replaySlug={replay.slug}
+              installToken={installToken}
+              isOwner={isOwner}
+              asSheet={false}
+              onArmedTeamsChange={onArmedTeamsChange}
+              shareMoment={{ copied: momentCopied, onClick: shareMoment }}
+            />
+          }
         />
-        </div>
       </header>
       )}
 
@@ -1459,87 +1386,6 @@ function renderMessage(msg: any, playerColor: Map<string, string>): React.ReactN
     }
     return <React.Fragment key={i}>{name}</React.Fragment>;
   });
-}
-
-// B66c: default replay title — mirrors what the replay browser shows
-// ("<username> vs <username>") so the title row never reads as blank
-// when no custom displayName is set.
-function defaultTitleFor(replay: { players: any }, anonymize?: boolean): string {
-  const players = Array.isArray(replay.players) ? replay.players : [];
-  const [p1, p2] = players;
-  if (!p1 && !p2) return 'Replay';
-  // B122: anonymized viewers never see a karabast handle in the title — identify
-  // the replay by the leader matchup instead.
-  if (anonymize) {
-    const lead = (p: any) => p?.leader?.name || 'Unknown';
-    return `${lead(p1)} vs ${lead(p2)}`;
-  }
-  const name = (p: any) => {
-    const u: string | undefined = p?.username;
-    if (!u || /^anonymous\s/i.test(u)) return 'anon';
-    return u;
-  };
-  return `${name(p1)} vs ${name(p2)}`;
-}
-
-// B10: compact variant — leader and base side-by-side at a smaller thumb
-// size. B12: username moved onto its own line below the thumbs, centered,
-// so longer handles (e.g. `anonymous 95d0c6`) render in full at the default
-// 360px sidebar width without ellipsis. Replaces the old two-row stacked
-// Matchup which dominated the sidebar header.
-function MatchupRow({ player, winners }: { player: any; winners?: string[] | null }) {
-  if (!player) return <div style={{ flex: 1, minWidth: 0 }} />;
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 3,
-        flex: 1,
-        minWidth: 0,
-      }}
-      title={`${player.leader?.name || '?'} / ${player.base?.name || '?'} — ${player.username || 'anon'}`}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <CardImg src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
-        <CardImg src={cardImageUrl(player.base, false)} alt={player.base?.name} />
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
-        <ResultBadge playerId={player.id} winners={winners} />
-        <span
-          style={{
-            fontSize: 11,
-            color: '#a0a8b8',
-            textAlign: 'center',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {player.username || 'anon'}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function CardImg({ src, alt }: { src: string | null; alt?: string }) {
-  if (!src) {
-    return (
-      <div style={{ width: 32, height: 32, borderRadius: 3, background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c7588', fontSize: 8, textAlign: 'center', padding: 2, boxSizing: 'border-box', flex: '0 0 auto' }}>
-        {(alt || '—').slice(0, 4)}
-      </div>
-    );
-  }
-  return (
-    <img
-      src={src}
-      alt={alt || ''}
-      loading="lazy"
-      style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 3, background: '#0a0c10', flex: '0 0 auto' }}
-    />
-  );
 }
 
 function IconBtn({
