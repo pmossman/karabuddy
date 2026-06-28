@@ -23,7 +23,7 @@ import { DecksModal } from './DecksModal';
 import { EditableTitle } from './EditableTitle';
 import { SeriesNav, type SeriesInfo } from './SeriesNav';
 import { LabelsRow } from './LabelsRow';
-import { ShareWithTeam } from './ShareWithTeam';
+import { SharePopover } from './SharePopover';
 import { ResultBadge } from './ResultBadge';
 import { useDragSize, Grabber } from './useDragSize';
 import { ClipsList, type ClipSummary } from './ClipsList';
@@ -648,17 +648,9 @@ export function MatchupPanel({
   onOpenSideboard?: () => void;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
   const chips = matchChips(matchMeta);
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/r/${replay.slug}`);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard blocked — no-op */ }
-  };
 
   // B100: draggable size, matching the review sheet. TOP (portrait) → height,
   // grabber on the BOTTOM edge (drag down grows → grow +1). LEFT (landscape)
@@ -727,16 +719,21 @@ export function MatchupPanel({
         }}
       >
         <div style={{ flex: '1 1 auto', minWidth: 0, minHeight: 0, overflow: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <a href="/" style={{ color: '#a0a8b8', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>← karabuddy</a>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close matchup panel"
-            style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0, width: 24, height: 24 }}
-          >
-            ×
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* B194: the SAME SharePopover the desktop sidebar uses, as a bottom
+                sheet here — so share lives in one component across both. */}
+            <SharePopover replaySlug={replay.slug} installToken={installToken} isOwner={isOwner} asSheet />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close matchup panel"
+              style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0, width: 24, height: 24 }}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {chips.length > 0 && (
@@ -774,18 +771,6 @@ export function MatchupPanel({
           <MatchupPlayer player={p2} winners={replay.winners} />
         </div>
 
-        {/* B194-fix: Share lives in the desktop sidebar header, which is hidden on
-            mobile — so the viewer had no way to share a replay on a phone. Surface
-            it here (the mobile matchup home): Copy link for anyone, team sharing +
-            public + review-request for the owner (the same ShareWithTeam control). */}
-        <div style={{ borderTop: '1px solid #2e333c', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700 }}>Share</span>
-          <button type="button" onClick={copyLink}
-            style={{ background: 'transparent', border: '1px solid #2e333c', borderRadius: 4, padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#a7d2ff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-            {copied ? '✓ Link copied' : '🔗 Copy link'}
-          </button>
-          {isOwner && <ShareWithTeam replaySlug={replay.slug} installToken={installToken} />}
-        </div>
 
         {onOpenSideboard && (
           <button

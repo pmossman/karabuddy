@@ -13,7 +13,7 @@ import { ResultBadge } from './ResultBadge';
 import { Popover } from '@/app/_components/Popover';
 import { DecksModal } from './DecksModal';
 import { ClipsList, type ClipSummary } from './ClipsList';
-import { ShareWithTeam } from './ShareWithTeam';
+import { SharePopover } from './SharePopover';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
 import { EditableTitle } from './EditableTitle';
 import { SeriesNav, type SeriesInfo } from './SeriesNav';
@@ -221,7 +221,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   // each submit. `scopeExpanded` toggles the chip's checkbox panel.
   const [scopeOverride, setScopeOverride] = useState<string[] | null>(null);
   const [scopeExpanded, setScopeExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
   // B12: sidebar width starts at the default during SSR/first paint, then
   // hydrates from localStorage in an effect to avoid hydration mismatch.
   // B66b: sidebarWidth state moved up to ReplayViewer; props are passed
@@ -330,12 +329,6 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       try { document.execCommand('copy'); } catch {}
       document.body.removeChild(ta);
     }
-  };
-
-  const copyLink = async () => {
-    await copyToClipboard(`${window.location.origin}/r/${replay.slug}`);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
   };
 
   // B113: share the CURRENT frame so the link unfurls into that board state.
@@ -929,38 +922,16 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto', paddingTop: 11 }}>VS</span>
           <MatchupRow player={p2} winners={replay.winners} />
         </div>
-        <Popover
-          align="right"
-          label="Share replay"
-          trigger={(open, toggle) => (
-            <IconBtn onClick={toggle} title="Share" active={open}>
-              <ShareIcon />
-            </IconBtn>
-          )}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 220 }}>
-            <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Share</div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <FooterBtn onClick={copyLink}>
-                {copied ? 'Copied!' : 'Copy link'}
-              </FooterBtn>
-              {/* B113: copies a link to the CURRENT frame; the unfurl shows that board. */}
-              <FooterBtn onClick={shareMoment}>
-                {momentCopied ? 'Copied!' : 'Share this moment'}
-              </FooterBtn>
-            </div>
-            <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-              Anyone with the link can view. “Share this moment” links to the current frame — it unfurls into the board. Share with a team below to surface it in their replays.
-            </div>
-            {isOwner && (
-              <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #2e333c' }}>
-                <ShareWithTeam replaySlug={replay.slug} installToken={installToken} onArmedTeamsChange={onArmedTeamsChange} />
-              </div>
-            )}
-            {/* B66b: EditReplayMeta moved out of this popover into the
-                sidebar title row above for first-class discoverability. */}
-          </div>
-        </Popover>
+        {/* B194: the ONE share menu (SharePopover) — same component the mobile
+            matchup panel uses, just asSheet={false} here for the desktop popover. */}
+        <SharePopover
+          replaySlug={replay.slug}
+          installToken={installToken}
+          isOwner={isOwner}
+          asSheet={false}
+          onArmedTeamsChange={onArmedTeamsChange}
+          shareMoment={{ copied: momentCopied, onClick: shareMoment }}
+        />
         </div>
       </header>
       )}
@@ -1608,17 +1579,6 @@ function IconBtn({
   );
 }
 
-function ShareIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-    </svg>
-  );
-}
 
 function GearIcon() {
   return (

@@ -35,7 +35,7 @@ test('scope chip reflects shares un-toggled in the same session', async ({ page 
   await expect(page.getByTestId('scope-chip')).toBeVisible();
 
   // Un-share both teams via the Share popover, with the tag form still open.
-  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  await page.getByRole('button', { name: 'Share replay' }).click();
   await page.getByRole('checkbox', { name: 'Team Alpha' }).uncheck();
   await page.getByRole('checkbox', { name: 'Team Bravo' }).uncheck();
 
