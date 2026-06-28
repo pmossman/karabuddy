@@ -13,6 +13,26 @@ export function discordBotEnabled(): boolean {
   return !!botToken();
 }
 
+// B190: outbound sends are gated to a REAL production deploy. `.env.local` is
+// the prod snapshot source (`vercel env pull`), so locally it carries the live
+// bot token AND the snapshot has real channel/guild IDs — without this gate any
+// dev/preview/CI action (e.g. requesting or finishing a review) would post to
+// the actual Discord server. VERCEL_ENV is 'production' only on the prod
+// deployment (unset locally, 'preview' on previews, unset in CI) — the same
+// signal scripts/maybe-migrate.js trusts. Set KARABUDDY_DISCORD_ALLOW=1 to
+// deliberately opt a non-prod environment in (e.g. a throwaway test server).
+function sendsAllowed(): boolean {
+  if (process.env.KARABUDDY_DISCORD_ALLOW === '1') return true;
+  return process.env.VERCEL_ENV === 'production';
+}
+function blockedHere(): SendResult {
+  console.log(
+    '[karabuddy] Discord send skipped — not a production deploy ' +
+      `(VERCEL_ENV=${process.env.VERCEL_ENV || '(unset)'}; set KARABUDDY_DISCORD_ALLOW=1 to override)`,
+  );
+  return { ok: false, skipped: true };
+}
+
 export interface SendResult {
   ok: boolean;
   skipped?: boolean;
@@ -32,6 +52,7 @@ async function botPost(path: string, body: unknown): Promise<Response> {
 // them (Discord platform rule) — i.e. they've joined the KaraBuddy server.
 export async function sendDM(discordUserId: string, content: string): Promise<SendResult> {
   if (!botToken()) return { ok: false, skipped: true };
+  if (!sendsAllowed()) return blockedHere();
   if (!discordUserId) return { ok: false, error: 'no discord user id' };
   try {
     const chanRes = await botPost('/users/@me/channels', { recipient_id: discordUserId });
@@ -48,6 +69,7 @@ export async function sendDM(discordUserId: string, content: string): Promise<Se
 // the bot is invited and a channel is chosen).
 export async function postToChannel(channelId: string, content: string): Promise<SendResult> {
   if (!botToken()) return { ok: false, skipped: true };
+  if (!sendsAllowed()) return blockedHere();
   if (!channelId) return { ok: false, error: 'no channel id' };
   try {
     const res = await botPost(`/channels/${channelId}/messages`, { content });
@@ -79,6 +101,7 @@ export async function listGuildTextChannels(guildId: string): Promise<{ id: stri
 // pings to the KaraBuddy server (webhook URL in env/secrets).
 export async function postWebhook(url: string | undefined, content: string): Promise<SendResult> {
   if (!url) return { ok: false, skipped: true };
+  if (!sendsAllowed()) return blockedHere();
   try {
     const res = await fetch(url, {
       method: 'POST',

@@ -126,6 +126,10 @@ _claimed: 2026-06-15 by claude (worktree core-b150-private-teams)_
 
 ## Done
 
+### [B190] Gate outbound Discord to real production (localhost can't ping the live server)
+_completed: 2026-06-28 by claude_
+`.env.local` is the prod snapshot source (`vercel env pull`), so locally it carries the live `DISCORD_BOT_TOKEN` and the snapshot has real channel/guild IDs — meaning a dev/preview/CI action (e.g. requesting or finishing a review) would post to the **actual** Discord server. The bot's only prior safety net was "no token = no send," which fails when the prod token is present. Added a `sendsAllowed()` gate in `lib/discord.ts` to all three send primitives (`sendDM`/`postToChannel`/`postWebhook`): sends fire only when `VERCEL_ENV === 'production'` (unset locally, `'preview'` on previews, unset in CI — same signal `maybe-migrate.js` trusts) or the explicit `KARABUDDY_DISCORD_ALLOW=1` opt-in (for a throwaway test server). Blocked sends return `{ skipped: true }` + log the reason. No prod behavior change. Locked with `test/unit/discord-sends-gated.test.ts` (4 cases: localhost/preview skip, prod/override send). unit 512 / api 282.
+
 ### [B169] CI: cache Playwright browsers + retry the install (apt-mirror stall hardening)
 _completed: 2026-06-18 by claude_
 A deploy's `npx playwright install --with-deps chromium` hung 30+ min on a transient apt-mirror stall. Cache the browser binaries (`~/.cache/ms-playwright`, keyed on package-lock) and wrap the install in a 3× retry with a 6-min per-attempt `timeout`, so a mirror stall is killed + retried instead of hanging. Applied to all three install steps (deploy.yml test + smoke; test.yml PR). YAML validated.
