@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B149 / ADR 0009: the review-status strip at the top of the viewer's Review
@@ -30,6 +30,28 @@ export function ReviewStatusHeader({ replaySlug, refreshKey, onFinish }: { repla
   }, [replaySlug]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
+
+  // B194: deep-link auto-open. The team Reviews tab routes "Finish review →" here
+  // as /r/<slug>?finishReview=<teamSlug>; once the status loads, open the summary
+  // modal for that team (only if you've commented but not yet reviewed it) and
+  // strip the param so a refetch / closing the modal doesn't reopen it.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current || !rows) return;
+    let target: string | null = null;
+    try { target = new URLSearchParams(window.location.search).get('finishReview'); } catch {}
+    if (!target) return;
+    const row = rows.find((t) => t.teamSlug === target);
+    if (row && !row.viewerReviewed && row.viewerCommented) {
+      autoOpenedRef.current = true;
+      onFinish({ teamSlug: row.teamSlug, teamName: row.teamName });
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('finishReview');
+        window.history.replaceState(null, '', url.toString());
+      } catch { /* param stays; harmless */ }
+    }
+  }, [rows, onFinish]);
 
   if (!rows || rows.length === 0) return null;
 

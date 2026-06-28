@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
@@ -28,6 +29,7 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('awaiting');
   const [marking, setMarking] = useState<Set<string>>(new Set());
+  const router = useRouter();
 
   const load = useCallback(async () => {
     try {
@@ -139,13 +141,22 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
                 // team-scoped comment (you can always undo your own mark).
                 const canMark = r.viewerReviewed || r.viewerCommented;
                 const busy = marking.has(r.slug);
+                // B194: completing a review always goes through the viewer's
+                // summary modal, so "Finish review →" deep-links into the replay
+                // (where your comments live) and auto-opens it. Undo stays a
+                // direct one-click toggle; the un-commented gate is unchanged.
+                const onClick = () => {
+                  if (busy || !canMark) return;
+                  if (r.viewerReviewed) { toggleReviewed(r.slug, true); return; }
+                  router.push(`/r/${r.slug}?finishReview=${teamSlug}`);
+                };
                 return (
                   <button
                     type="button"
-                    onClick={() => canMark && toggleReviewed(r.slug, r.viewerReviewed)}
+                    onClick={onClick}
                     disabled={busy || !canMark}
                     data-testid={`mark-reviewed-${r.slug}`}
-                    title={canMark ? undefined : 'Leave a comment on the replay before marking it reviewed'}
+                    title={canMark ? undefined : 'Leave a comment on the replay before reviewing it'}
                     style={{
                       alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 7,
                       background: !canMark ? 'transparent' : r.viewerReviewed ? 'rgba(107, 217, 104, 0.18)' : 'rgba(107, 217, 104, 0.08)',
@@ -157,8 +168,8 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
                   >
                     {busy ? '…' : (
                       <>
-                        <span aria-hidden>{r.viewerReviewed ? '✓' : canMark ? '✓' : '💬'}</span>
-                        <span>{r.viewerReviewed ? 'You reviewed — undo' : canMark ? 'I reviewed' : 'Comment to review'}</span>
+                        <span aria-hidden>{r.viewerReviewed ? '✓' : canMark ? '🔎' : '💬'}</span>
+                        <span>{r.viewerReviewed ? 'You reviewed — undo' : canMark ? 'Finish review →' : 'Comment to review'}</span>
                       </>
                     )}
                   </button>

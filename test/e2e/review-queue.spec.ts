@@ -51,15 +51,20 @@ test('request → comment-gated review → durable (does not vanish)', async ({ 
   });
   expect(tagRes.ok()).toBeTruthy();
 
-  // Now the gate opens — the teammate marks it reviewed.
+  // Now the gate opens — the action flips from the disabled "Comment to review"
+  // to an enabled "Finish review →" (B194: it deep-links into the viewer's
+  // summary modal; that nav + submit is covered in finish-review.spec). Here we
+  // complete it directly to assert the QUEUE's durability + filter behavior.
   await page2.reload();
   const markBtn2 = page2.getByTestId(`mark-reviewed-${slug}`);
-  await expect(markBtn2).toContainText(/I reviewed/);
+  await expect(markBtn2).toContainText(/Finish review/);
   await expect(markBtn2).toBeEnabled();
-  await markBtn2.click();
+  const done = await page2.request.post(`/api/replays/${slug}/reviewed`, { data: { teamSlug, reviewed: true } });
+  expect(done.ok(), `mark reviewed failed: ${done.status()}`).toBe(true);
 
   // It LEAVES "Awaiting your review" (you've reviewed it) but does NOT vanish —
   // it's still there under "Reviewed", marked as reviewed by you.
+  await page2.reload();
   await expect(page2.getByTestId('review-queue-item')).toHaveCount(0);
   await page2.getByTestId('review-filter-reviewed').click();
   await expect(page2.getByTestId('review-queue-item')).toHaveCount(1);
