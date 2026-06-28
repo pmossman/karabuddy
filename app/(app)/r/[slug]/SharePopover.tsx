@@ -38,15 +38,19 @@ export function SharePopover({
       align="right"
       panelWidth={264}
       trigger={(open, toggle) => (
+        // B197: a labeled "Share" button (icon + text) rather than a bare icon —
+        // far easier to find. Compact enough for both the desktop sidebar header
+        // slot and the mobile panel header.
         <button type="button" onClick={toggle} aria-label="Share replay" aria-expanded={open} title="Share"
           style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32,
-            borderRadius: 7, cursor: 'pointer', flex: '0 0 auto',
-            background: open ? 'rgba(77, 157, 255, 0.22)' : 'transparent',
-            border: `1px solid ${open ? 'rgba(77,157,255,0.6)' : '#2e333c'}`,
-            color: open ? '#a7d2ff' : '#a0a8b8',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            height: 32, padding: '0 12px', borderRadius: 7, cursor: 'pointer', flex: '0 0 auto',
+            fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit', whiteSpace: 'nowrap',
+            background: open ? 'rgba(77, 157, 255, 0.22)' : 'rgba(77, 157, 255, 0.1)',
+            border: `1px solid ${open ? 'rgba(77,157,255,0.6)' : 'rgba(77,157,255,0.35)'}`,
+            color: open ? '#a7d2ff' : '#cfe4ff',
           }}>
-          <ShareIcon />
+          <ShareIcon /> Share
         </button>
       )}
     >
@@ -57,7 +61,7 @@ export function SharePopover({
           {shareMoment && <ShareBtn onClick={shareMoment.onClick}>{shareMoment.copied ? '✓ Copied' : 'Share this moment'}</ShareBtn>}
         </div>
         <div style={hintStyle}>
-          Anyone with the link can view.{shareMoment ? ' “Share this moment” links to the current frame — it unfurls into the board.' : ''} Share with a team below to surface it in their replays.
+          Anyone with the link can view.{shareMoment ? ' “Share this moment” links to the current frame — it unfurls into the board.' : ''}{isOwner ? ' Share with a team below to surface it in their replays.' : ''}
         </div>
         {isOwner && (
           <div style={{ borderTop: '1px solid #2e333c', paddingTop: 8 }}>

@@ -233,7 +233,7 @@ test('web comment form: scope chip narrows a comment to one team', async ({ page
   }
 
   await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /^Review/ }).click(); // B149: untagged → opens on Game log
+  await page.getByRole('button', { name: /^Tags/ }).click(); // B149: untagged → opens on Game log
   await page.getByRole('button', { name: '+ Tag this frame' }).click();
 
   // Chip appears (2 teams armed) and defaults to "All 2 teams".
@@ -272,7 +272,7 @@ test('web comment form: a saved comment immediately shows its team audience (not
   });
 
   await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /^Review/ }).click();
+  await page.getByRole('button', { name: /^Tags/ }).click();
   await page.getByRole('button', { name: '+ Tag this frame' }).click();
 
   // Leave the scope at its default (the shared team), then save.

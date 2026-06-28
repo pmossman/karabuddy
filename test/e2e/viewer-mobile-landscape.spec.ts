@@ -93,7 +93,7 @@ test('mobile: ☰ opens the review sheet; it holds what-happened + tag form, nev
   await expect(drawer.getByText(/What happened/i)).toBeVisible();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toHaveCount(0);
   // Switch to the Review tab → the tag form appears, the log goes away.
-  await drawer.getByRole('button', { name: /^Review/ }).click();
+  await drawer.getByRole('button', { name: /^Tags/ }).click();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toBeVisible();
   await expect(drawer.getByText(/What happened/i)).toHaveCount(0);
   // The matchup + decks live on the separate matchup sheet.
@@ -275,7 +275,7 @@ test('mobile portrait: matchup slides from the TOP, review from the BOTTOM (spli
   await expect(drawer).toBeVisible();
   // B149: Game-log tab by default (no tags on this replay); Review tab holds the form.
   await expect(drawer.getByText(/What happened/i)).toBeVisible();
-  await drawer.getByRole('button', { name: /^Review/ }).click();
+  await drawer.getByRole('button', { name: /^Tags/ }).click();
   await expect(drawer.getByRole('button', { name: /Tag this frame/i })).toBeVisible();
   await expect(drawer.getByRole('button', { name: /View decks/i })).toHaveCount(0);
 });

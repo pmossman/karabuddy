@@ -52,7 +52,7 @@ test('teammate finishes then updates a review from the viewer Review panel', asy
   const { teamSlug, slug, page2, ctx2 } = await seedRequestedReview(page, browser, request);
 
   await page2.goto(`/r/${slug}`);
-  await page2.getByRole('button', { name: /^Review/ }).click();
+  await page2.getByRole('button', { name: /^Tags/ }).click();
   const finishBtn = page2.getByTestId(`viewer-finish-review-${teamSlug}`);
   await expect(finishBtn).toContainText('Finish review');
   await expect(finishBtn).toBeEnabled();

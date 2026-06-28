@@ -893,7 +893,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           the game log secondary. (Was mobile-only; desktop used to stack both.) */}
       <section style={{ padding: '8px 14px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', gap: 6 }}>
         <DrawerTab active={panelTab === 'tags'} onClick={() => { userPickedTabRef.current = true; setPanelTab('tags'); }}>
-          Review{topLevelTagCount > 0 ? ` (${topLevelTagCount})` : ''}
+          Tags{topLevelTagCount > 0 ? ` (${topLevelTagCount})` : ''}
         </DrawerTab>
         <DrawerTab active={panelTab === 'log'} onClick={() => { userPickedTabRef.current = true; setPanelTab('log'); }}>Game log</DrawerTab>
       </section>
