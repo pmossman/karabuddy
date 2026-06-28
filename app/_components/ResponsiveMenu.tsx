@@ -13,12 +13,16 @@ import { createPortal } from 'react-dom';
 // so a transformed/contained ancestor can't clip it (the bug that forced separate
 // mobile UIs before). Closes on backdrop tap / Escape / Close.
 export function ResponsiveMenu({
-  asSheet, title, align = 'right', panelWidth = 300, trigger, children,
+  asSheet, title, align = 'right', panelWidth = 300, bodyScroll = true, trigger, children,
 }: {
   asSheet: boolean;
   title?: string;
   align?: 'left' | 'right';
   panelWidth?: number;
+  // When false, the body is a plain flex column and the CHILDREN own scrolling +
+  // any pinned footer (e.g. bulk Manage's staged-apply footer). Default true: the
+  // menu scrolls the body itself — right for short content like the Share menu.
+  bodyScroll?: boolean;
   trigger: (open: boolean, toggle: () => void) => React.ReactNode;
   // A render-prop gets `close` so an action inside can dismiss the menu.
   children: React.ReactNode | ((close: () => void) => React.ReactNode);
@@ -55,7 +59,9 @@ export function ResponsiveMenu({
                 <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: '#9aa3b2', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
                 <button type="button" onClick={close} style={navBtnStyle}>Close</button>
               </div>
-              <div style={{ overflowY: 'auto', minHeight: 0, flex: '1 1 auto', padding: '12px 14px max(14px, env(safe-area-inset-bottom))' }}>{body}</div>
+              <div style={bodyScroll
+                ? { overflowY: 'auto', minHeight: 0, flex: '1 1 auto', padding: '12px 14px max(14px, env(safe-area-inset-bottom))' }
+                : { display: 'flex', flexDirection: 'column', minHeight: 0, flex: '1 1 auto' }}>{body}</div>
             </div>
           </>,
           document.body,
@@ -69,7 +75,7 @@ export function ResponsiveMenu({
       {trigger(open, toggle)}
       {open && (
         <div role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}
-          style={{ ...popoverPanelStyle, [align]: 0, width: panelWidth }}>
+          style={{ ...(bodyScroll ? popoverPanelStyle : popoverPanelStyleFlex), [align]: 0, width: panelWidth }}>
           {body}
         </div>
       )}
@@ -86,5 +92,13 @@ const popoverPanelStyle: React.CSSProperties = {
   position: 'absolute', top: 'calc(100% + 6px)', zIndex: 50, maxHeight: 'min(70vh, 560px)', overflowY: 'auto',
   background: '#1a1d24', border: '1px solid #2e333c', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
   padding: 10, color: '#e6e6e6', font: '12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
+};
+// bodyScroll=false variant: a flex column (no self-scroll, no padding) so the
+// children manage their own scroll region + pinned footer.
+const popoverPanelStyleFlex: React.CSSProperties = {
+  position: 'absolute', top: 'calc(100% + 6px)', zIndex: 50, maxHeight: 'min(70vh, 560px)',
+  display: 'flex', flexDirection: 'column',
+  background: '#1a1d24', border: '1px solid #2e333c', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+  color: '#e6e6e6', font: '12px var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
 };
 const navBtnStyle: React.CSSProperties = { background: 'transparent', color: '#4dd2ff', border: 0, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };

@@ -1,13 +1,13 @@
 'use client';
 
 import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
 import { RowActions } from './RowActions';
 import { ReplaySelectionProvider, SelectBox, useReplaySelection, type ReplaySelectionApi } from './selection';
 import { LedToggle } from '@/app/_components/LedToggle';
+import { ResponsiveMenu } from '@/app/_components/ResponsiveMenu';
 import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
@@ -522,7 +522,6 @@ function SelectionBar({
   onApply: (ops: { op: string; teamSlug?: string }[]) => void;
   onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const none = count === 0;
   return (
     <div style={selBarStyle}>
@@ -532,18 +531,28 @@ function SelectionBar({
         <button type="button" onClick={onClear} disabled={none} style={dim(selLinkStyle, none)}>Clear</button>
         {msg && <span style={{ fontSize: 12, color: '#a7d2ff', whiteSpace: 'nowrap' }}>{msg}</span>}
       </div>
-      <div style={{ position: 'relative', flex: '0 0 auto' }}>
-        <button type="button" onClick={() => setOpen((v) => !v)} disabled={none || busy} aria-expanded={open} style={dim(selActionStyle, none || busy)}>Manage ▾</button>
-        {open && (
-          <ActionSheet variant={isNarrow ? 'sheet' : 'popover'} title={`Manage ${count} replay${count === 1 ? '' : 's'}`} onClose={() => setOpen(false)}>
+      <div style={{ flex: '0 0 auto' }}>
+        {/* B201: the bulk Manage menu now rides the SHARED ResponsiveMenu (popover
+            on desktop / bottom sheet on mobile) — same primitive as the viewer
+            Share, so there's one disclosure pattern everywhere. bodyScroll=false
+            keeps BulkShareControls' own scroll region + pinned Apply footer. */}
+        <ResponsiveMenu
+          asSheet={isNarrow}
+          title={`Manage ${count} replay${count === 1 ? '' : 's'}`}
+          bodyScroll={false}
+          trigger={(open, toggle) => (
+            <button type="button" onClick={() => { if (!(none || busy)) toggle(); }} disabled={none || busy} aria-expanded={open} style={dim(selActionStyle, none || busy)}>Manage ▾</button>
+          )}
+        >
+          {(close) => (
             <BulkShareControls
               key={`${count}-${Object.values(shareCounts).join('.')}-${publicCount}`}
               count={count} busy={busy} canDelete={canDelete} teams={teams} shareCounts={shareCounts} publicCount={publicCount}
-              onApply={(ops) => { onApply(ops); setOpen(false); }}
-              onDelete={() => { onDelete(); setOpen(false); }}
+              onApply={(ops) => { onApply(ops); close(); }}
+              onDelete={() => { onDelete(); close(); }}
             />
-          </ActionSheet>
-        )}
+          )}
+        </ResponsiveMenu>
       </div>
     </div>
   );
@@ -675,45 +684,6 @@ function BulkShareControls({
   );
 }
 
-// One menu, two shells (responsive disclosure): on a phone it's an iOS-style
-// bottom sheet pinned to the thumb-reachable bottom edge with a dim backdrop; on
-// desktop it's a compact dropdown popover anchored under the Actions button with
-// a transparent click-away. Same content + drill-in either way.
-function ActionSheet({ variant, title, onClose, onBack, children }: { variant: 'sheet' | 'popover'; title: string; onClose: () => void; onBack?: () => void; children: React.ReactNode }) {
-  const isSheet = variant === 'sheet';
-  const content = (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 50, background: isSheet ? 'rgba(0,0,0,0.55)' : 'transparent' }} />
-      <div role="dialog" aria-label={title} style={isSheet ? sheetPanelStyle : popoverPanelStyle}>
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: isSheet ? '8px 8px 10px' : '4px 6px 8px' }}>
-          <span style={{ width: 52 }}>{onBack && <button type="button" onClick={onBack} style={sheetNavStyle}>‹ Back</button>}</span>
-          <span style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#9aa3b2', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
-          <span style={{ width: 52, textAlign: 'right' }}><button type="button" onClick={onClose} style={sheetNavStyle}>Close</button></span>
-        </div>
-        {/* Header is fixed; children own their own scroll/pinned-footer split so a
-            long team list never pushes the commit actions below the fold. */}
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '1 1 auto' }}>{children}</div>
-      </div>
-    </>
-  );
-  // The mobile bottom sheet is position:fixed and MUST anchor to the viewport.
-  // Some pages (e.g. the team tab, via the sidebar's slide-in transform) put a
-  // transformed/contained ancestor above the list, which becomes the containing
-  // block for fixed descendants and clips the sheet (cut off bottom + right).
-  // Portal it to <body> so it always escapes to the viewport. The desktop popover
-  // is intentionally anchored to the Manage button, so it stays inline.
-  if (isSheet && typeof document !== 'undefined') return createPortal(content, document.body);
-  return content;
-}
-const sheetPanelStyle: React.CSSProperties = {
-  position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 51, maxHeight: '85vh', display: 'flex', flexDirection: 'column',
-  background: '#0f1318', borderTop: '1px solid #2e333c', borderTopLeftRadius: 16, borderTopRightRadius: 16,
-  paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -10px 40px rgba(0,0,0,0.55)',
-};
-const popoverPanelStyle: React.CSSProperties = {
-  position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 51, width: 300, maxHeight: 'min(70vh, 560px)', display: 'flex', flexDirection: 'column',
-  background: '#0f1318', border: '1px solid #2e333c', borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
-};
 const dim = (base: React.CSSProperties, disabled: boolean): React.CSSProperties =>
   disabled ? { ...base, opacity: 0.45, cursor: 'default' } : base;
 const selBarStyle: React.CSSProperties = {
@@ -724,7 +694,6 @@ const selBarStyle: React.CSSProperties = {
 };
 const selLinkStyle: React.CSSProperties = { background: 'transparent', color: '#a7d2ff', border: 0, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', padding: 0, whiteSpace: 'nowrap' };
 const selActionStyle: React.CSSProperties = { background: 'rgba(77,157,255,0.16)', color: '#cfe4ff', border: '1px solid rgba(77,157,255,0.4)', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-const sheetNavStyle: React.CSSProperties = { background: 'transparent', color: '#4dd2ff', border: 0, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const selectButtonStyle = (active: boolean): React.CSSProperties => ({ background: active ? 'rgba(77,210,255,0.2)' : '#11141a', color: active ? '#cfe4ff' : '#a0a8b8', border: `1px solid ${active ? 'rgba(77,210,255,0.5)' : '#2e333c'}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' });
 
 // Mobile select mode: a dense, tappable checklist — far more scannable for

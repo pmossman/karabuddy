@@ -126,6 +126,10 @@ _claimed: 2026-06-15 by claude (worktree core-b150-private-teams)_
 
 ## Done
 
+### [B201] Viewer-unify stage 3 — bulk Manage menu rides the shared ResponsiveMenu
+_completed: 2026-06-28 by claude_
+The bulk multi-select "Manage" menu (`ReplayFilters` SelectionBar) had its own bespoke `ActionSheet` (popover/sheet) — the last duplicate of the disclosure pattern. Retrofitted it onto the shared `ResponsiveMenu` (same primitive as the viewer Share), so there's now ONE popover-on-desktop / bottom-sheet-on-mobile primitive across the app. Added a `bodyScroll` opt-out to `ResponsiveMenu` (default true preserves SharePopover) so `BulkShareControls` keeps its own scroll region + pinned staged-Apply footer instead of the menu scrolling everything. Removed the `ActionSheet` component + `sheetPanelStyle`/`popoverPanelStyle`/`sheetNavStyle` + the now-dead `createPortal` import. Added the FIRST e2e for the bulk Manage flow (it shipped untested): select all → open Manage → stage a team share → the footer names it → Apply closes the menu. tsc clean; 161 e2e green. Completes the viewer-unify project ([[project_viewer_share_unify]]) — only presentational eyeball remains.
+
 ### [B200] Declutter the share menu — rename "Share this frame", hints behind an ⓘ
 _completed: 2026-06-28 by claude_
 The share popover was wall-to-wall italic help text. Renamed "Share this moment" → **"Share this frame"**; removed the paragraph under the Copy/Share buttons, the team-share "Surfaces in the selected teams' grid…" line, and the Public on/off explanation. Kept the two FUNCTIONAL conditional notes (empty-state "/teams" pointer; the 🔒 "uploaded without encryption — can't add to this private team" disabled-state reason). The Public privacy explanation (public = anyone can read comments, names anonymized/mentions redacted) now lives behind a small `InfoDot` (ⓘ) next to the "Public" label — tap to reveal inline, default hidden. Reusable pattern for tucking optional help away.
