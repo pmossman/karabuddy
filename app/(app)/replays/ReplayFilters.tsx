@@ -6,8 +6,8 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
 import { RowActions } from './RowActions';
 import { ReplaySelectionProvider, SelectBox, useReplaySelection, type ReplaySelectionApi } from './selection';
-import { LedToggle } from '@/app/_components/LedToggle';
 import { ResponsiveMenu } from '@/app/_components/ResponsiveMenu';
+import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, shareSectionLabel } from '@/app/_components/shareControls';
 import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
@@ -619,44 +619,51 @@ function BulkShareControls({
   if (pubDraft === 'on' && pubSnap !== 'on') ops.push({ op: 'publish', n: count - publicCount, verb: `Make ${reps(count - publicCount)} public` });
   else if (pubDraft === 'off' && pubSnap !== 'off') ops.push({ op: 'unpublish', n: publicCount, verb: `Make ${reps(publicCount)} unlisted` });
 
-  const sectionLabel: React.CSSProperties = { fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' };
-  const hint: React.CSSProperties = { fontSize: 11, color: '#6c7588', fontStyle: 'italic', lineHeight: 1.4 };
-  const mixedNote: React.CSSProperties = { marginLeft: 26, fontSize: 11, color: '#e0c64a' };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '1 1 auto' }}>
       {/* Scrollable body: the team list (which can be long) + Public scroll here,
-          so the commit footer below stays pinned and reachable. */}
+          so the commit footer below stays pinned and reachable. B202: rows + the
+          Public section come from the SHARED shareControls (same as the single
+          replay's ShareWithTeam) — no more drift. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 10px 8px', overflowY: 'auto', minHeight: 0, flex: '1 1 auto' }}>
       {teams.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={sectionLabel}>Share with team</div>
+          <div style={shareSectionLabel}>Share with team</div>
           {teams.map((t) => {
             const st = shareState(t.slug);
             const onCount = shareCounts[t.slug] || 0;
             return (
-              <div key={t.slug} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <LedToggle checked={st === 'on'} indeterminate={st === 'mixed'} onChange={() => toggleShare(t.slug)} label={t.name} statusOn="Sharing" disabled={busy} />
-                {st === 'mixed' && <div style={mixedNote}>On {onCount} of {count} — toggle to share all</div>}
-                {st === 'on' && (
-                  <button type="button" onClick={() => toggleReview(t.slug)} disabled={busy}
-                    style={{ alignSelf: 'flex-start', marginLeft: 26, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 0, padding: '1px 0', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, color: reviewDraft[t.slug] ? '#ffc357' : '#6c7588' }}>
-                    <span aria-hidden style={{ fontSize: 12 }}>{reviewDraft[t.slug] ? '★' : '☆'}</span>
-                    {reviewDraft[t.slug] ? 'Will request team review — click to undo' : 'Request team review'}
-                  </button>
-                )}
-              </div>
+              <TeamShareRow
+                key={t.slug}
+                label={t.name}
+                checked={st === 'on'}
+                indeterminate={st === 'mixed'}
+                disabled={busy}
+                onToggle={() => toggleShare(t.slug)}
+                note={st === 'mixed' ? <ToggleNote color="#e0c64a">On {onCount} of {count} — toggle to share all</ToggleNote> : null}
+                review={st === 'on' ? (
+                  <ReviewStar
+                    on={!!reviewDraft[t.slug]}
+                    onToggle={() => toggleReview(t.slug)}
+                    disabled={busy}
+                    labelOn="Will request team review — click to undo"
+                    labelOff="Request team review"
+                  />
+                ) : null}
+              />
             );
           })}
-          <div style={hint}>Surfaces in the selected teams’ replay grid. Plaintext replays can’t enter a private team and are skipped.</div>
         </div>
       )}
 
-      <div style={{ borderTop: teams.length > 0 ? '1px solid #2e333c' : undefined, paddingTop: teams.length > 0 ? 10 : 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={sectionLabel}>Public</div>
-        <LedToggle checked={pubState === 'on'} indeterminate={pubState === 'mixed'} onChange={togglePublic} label="Public replay" statusOn="Public" disabled={busy} />
-        {pubState === 'mixed' && <div style={mixedNote}>{publicCount} of {count} public — toggle to publish all</div>}
-        <div style={hint}>Off: only people with the link (and your shared teams) can see these; outside viewers never see their comments. Encrypted replays are skipped.</div>
+      <div style={{ borderTop: teams.length > 0 ? '1px solid #2e333c' : undefined, paddingTop: teams.length > 0 ? 10 : 0 }}>
+        <PublicShareSection
+          checked={pubState === 'on'}
+          indeterminate={pubState === 'mixed'}
+          disabled={busy}
+          onChange={togglePublic}
+          note={pubState === 'mixed' ? <ToggleNote color="#e0c64a">{publicCount} of {count} public — toggle to publish all</ToggleNote> : null}
+        />
       </div>
       </div>
 

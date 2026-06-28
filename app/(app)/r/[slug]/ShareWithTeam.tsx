@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LedToggle } from '@/app/_components/LedToggle';
+import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, shareSectionLabel } from '@/app/_components/shareControls';
 
 // B55b: replay-owner UI for sharing a replay explicitly with one or more
 // of their teams. Lives inside the existing Share popover in TagSidebar.
@@ -40,9 +40,6 @@ export function ShareWithTeam({
   // public browser) sees the game AND its comments, anonymized + redacted.
   const [isPublic, setIsPublic] = useState(false);
   const [publicPending, setPublicPending] = useState(false);
-  // B200: the public-replay privacy explanation lives behind an ⓘ (tap to reveal)
-  // instead of an always-on hint, to keep the share menu uncluttered.
-  const [publicInfo, setPublicInfo] = useState(false);
   // B100: tags on this replay scoped to each team — drives the "un-sharing
   // also removes N comments" confirmation.
   const [scopedCounts, setScopedCounts] = useState<Record<string, number>>({});
@@ -211,26 +208,7 @@ export function ShareWithTeam({
   // B133: the Public section renders for owners with zero teams too — public
   // sharing doesn't require team membership.
   const publicSection = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Public</span>
-        <InfoDot open={publicInfo} onClick={() => setPublicInfo((v) => !v)} label="About public replays" />
-      </div>
-      <LedToggle
-        checked={isPublic}
-        onChange={togglePublic}
-        label="Public replay"
-        statusOn="Public"
-        disabled={publicPending}
-      />
-      {publicInfo && (
-        <div style={{ fontSize: 11, color: '#8a93a3', fontStyle: 'italic', lineHeight: 1.4 }}>
-          Public replays are listed in the public browser — anyone can watch and read the comments
-          (author names anonymized, @mentions redacted). Off: only people with the link or your
-          shared teams can see it.
-        </div>
-      )}
-    </div>
+    <PublicShareSection checked={isPublic} onChange={togglePublic} disabled={publicPending} />
   );
 
   if (state === 'empty') {
@@ -246,55 +224,37 @@ export function ShareWithTeam({
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        Share with team
-      </div>
+      <div style={shareSectionLabel}>Share with team</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {teams.map((t) => {
           const isShared = shares.has(t.slug);
           const isPending = pending.has(t.slug);
-          // B170/ADR 0010: can't NEWLY share this replay into this team (a
-          // plaintext replay → private team, or an encrypted replay → non-private
-          // team). Already-shared rows stay un-toggleable-off here only if blocked
-          // — but a blocked team is never already shared, so unshare still works.
+          // B170/ADR 0010: can't NEWLY share into this team (plaintext → private, or
+          // encrypted → non-private). A blocked team is never already shared, so
+          // unshare still works.
           const blocked = t.shareable === false && !isShared;
           const blockReason = t.privateMode
             ? '🔒 This replay was uploaded without encryption, so it can’t be added to this private team.'
             : 'This encrypted replay can only be shared with its private team.';
           return (
-            <div key={t.slug} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <LedToggle
-                checked={isShared}
-                onChange={() => { if (!blocked) requestToggle(t.slug); }}
-                label={t.name}
-                statusOn="Sharing"
-                disabled={isPending || blocked}
-              />
-              {blocked && (
-                <div style={{ marginLeft: 26, fontSize: 11, color: '#8a93a3', fontStyle: 'italic', lineHeight: 1.4 }}>
-                  {blockReason}
-                </div>
-              )}
-              {/* B135: once shared, the owner can flag THIS team for review. */}
-              {isShared && (
-                <button
-                  type="button"
-                  onClick={() => toggleReview(t.slug)}
+            <TeamShareRow
+              key={t.slug}
+              label={t.name}
+              checked={isShared}
+              disabled={isPending || blocked}
+              onToggle={() => { if (!blocked) requestToggle(t.slug); }}
+              note={blocked ? <ToggleNote>{blockReason}</ToggleNote> : null}
+              review={isShared ? (
+                <ReviewStar
+                  on={reviewTeams.has(t.slug)}
+                  onToggle={() => toggleReview(t.slug)}
                   disabled={reviewPending.has(t.slug)}
-                  data-testid={`request-review-${t.slug}`}
-                  style={{
-                    alignSelf: 'flex-start', marginLeft: 26,
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    background: 'transparent', border: 0, padding: '1px 0', cursor: reviewPending.has(t.slug) ? 'default' : 'pointer',
-                    fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
-                    color: reviewTeams.has(t.slug) ? '#ffc357' : '#6c7588',
-                  }}
-                >
-                  <span aria-hidden style={{ fontSize: 12 }}>{reviewTeams.has(t.slug) ? '★' : '☆'}</span>
-                  {reviewTeams.has(t.slug) ? 'In review queue — click to remove' : 'Request team review'}
-                </button>
-              )}
-            </div>
+                  labelOn="In review queue — click to remove"
+                  labelOff="Request team review"
+                  testId={`request-review-${t.slug}`}
+                />
+              ) : null}
+            />
           );
         })}
       </div>
@@ -310,29 +270,6 @@ export function ShareWithTeam({
         />
       )}
     </div>
-  );
-}
-
-// B200: tiny ⓘ that reveals an explanation inline on tap — keeps optional help
-// text out of the way until asked for.
-function InfoDot({ open, onClick, label }: { open: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      aria-expanded={open}
-      title={label}
-      style={{
-        width: 16, height: 16, flex: '0 0 auto', borderRadius: '50%', padding: 0, cursor: 'pointer',
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 10, fontWeight: 700, lineHeight: 1, fontFamily: 'Georgia, serif', fontStyle: 'italic',
-        background: open ? 'rgba(77,157,255,0.25)' : 'transparent',
-        border: '1px solid rgba(77,157,255,0.45)', color: '#8fd0ff',
-      }}
-    >
-      i
-    </button>
   );
 }
 
