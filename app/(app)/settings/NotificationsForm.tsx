@@ -3,41 +3,40 @@
 import { useState } from 'react';
 import { LedToggle } from '@/app/_components/LedToggle';
 
-// B81/B99: global Discord-notifications switch — the strictly-opt-in master.
-// Defaults OFF (no DMs until enabled); gates both direct + team mentions.
-// PATCHes /api/me/notifications.
-// notifyMentions skips a user entirely when this is on (overrides per-team prefs).
-export function NotificationsForm({ initialDisabled }: { initialDisabled: boolean }) {
-  const [enabled, setEnabled] = useState(!initialDisabled);
-  const [status, setStatus] = useState<{ kind: 'idle' | 'saving' | 'error'; text?: string }>({ kind: 'idle' });
+// B81/B99: global Discord-notifications switch (strictly-opt-in master, gates
+// mention DMs) + B194: a dedicated "review I requested was finished" DM toggle.
+// Each PATCHes its own field on /api/me/notifications; both only fire DMs when a
+// Discord account is connected.
+export function NotificationsForm({ initialDisabled, initialReviewDm }: { initialDisabled: boolean; initialReviewDm: boolean }) {
+  const [mentions, setMentions] = useState(!initialDisabled);
+  const [reviewDm, setReviewDm] = useState(initialReviewDm);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggle = async () => {
-    const next = !enabled;
-    setEnabled(next); // optimistic
-    setStatus({ kind: 'saving' });
+  const patch = async (field: 'notificationsDisabled' | 'reviewDmEnabled', value: boolean, revert: () => void) => {
+    setError(null);
     const res = await fetch('/api/me/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notificationsDisabled: !next }),
+      body: JSON.stringify({ [field]: value }),
     });
     const body = await res.json().catch(() => ({}));
-    if (!body.ok) {
-      setEnabled(!next); // revert
-      setStatus({ kind: 'error', text: body.error || 'failed' });
-      return;
-    }
-    setStatus({ kind: 'idle' });
+    if (!body.ok) { revert(); setError(body.error || 'failed'); }
+  };
+
+  const toggleMentions = () => {
+    const next = !mentions; setMentions(next);
+    patch('notificationsDisabled', !next, () => setMentions(!next));
+  };
+  const toggleReviewDm = () => {
+    const next = !reviewDm; setReviewDm(next);
+    patch('reviewDmEnabled', next, () => setReviewDm(!next));
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <LedToggle
-        variant="inline"
-        checked={enabled}
-        onChange={() => toggle()}
-        label="Send me Discord notifications when I’m @-mentioned"
-      />
-      {status.kind === 'error' && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{status.text}</span>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <LedToggle variant="inline" checked={mentions} onChange={toggleMentions} label="Send me Discord notifications when I’m @-mentioned" />
+      <LedToggle variant="inline" checked={reviewDm} onChange={toggleReviewDm} label="DM me when a teammate finishes a review I requested" />
+      {error && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{error}</span>}
     </div>
   );
 }

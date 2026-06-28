@@ -12,12 +12,16 @@ export interface CommenterSummary { names: string[]; count: number }
 
 // Upsert the acting user's review mark for (replay, team). Idempotent — the
 // unique (replay, team, reviewer) index makes a repeat a no-op.
-export async function markReviewed(replaySlug: string, teamSlug: string, reviewerUserId: string): Promise<void> {
+// Returns true only when a NEW mark was inserted (idempotent: a re-mark is a
+// no-op and returns false) — so callers can fire a one-time notification.
+export async function markReviewed(replaySlug: string, teamSlug: string, reviewerUserId: string): Promise<boolean> {
   const db = getDb();
-  await db
+  const inserted = await db
     .insert(replayReviews)
     .values({ id: crypto.randomUUID(), replaySlug, teamSlug, reviewerUserId })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: replayReviews.id });
+  return inserted.length > 0;
 }
 
 // Remove the acting user's review mark (un-review).

@@ -3,10 +3,10 @@
 // review route with the same posture as notifyMentions / tournamentNotify.
 // No-ops when the team has no review channel (override ?? main) or the bot token
 // is unset. Channel posts are broadcasts — no per-user DM opt-in applies.
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb } from './db';
-import { replays, teams, users } from './schema';
-import { postToChannel } from './discord';
+import { accounts, replays, replayTeamShares, teams, users } from './schema';
+import { postToChannel, sendDM } from './discord';
 import { teamChannelFor } from './teamDiscordChannel';
 import { serializeReplayRow } from './replayRow';
 
@@ -93,5 +93,56 @@ export async function notifyReviewMark(opts: {
     }));
   } catch (err) {
     console.error('[karabuddy] review-mark notify failed:', err);
+  }
+}
+
+// B194: DM the original REQUESTER when their requested review is finished.
+// Distinct from the channel posts above: this is a targeted, opt-in DM to the
+// one person who asked. Gated by users.reviewDmEnabled (default on) + a connected
+// Discord account; no-ops on: no open request, requester == reviewer, pref off,
+// or no Discord id. Best-effort, never throws. The channel post (notifyReviewMark)
+// still fires separately as the team-visible baseline.
+export function formatReviewFinishedDM(opts: { matchup: string; teamName: string; reviewerName: string; url: string }): string {
+  return `🔎 **${opts.reviewerName}** finished reviewing your replay **${opts.matchup}** (${opts.teamName}) — ${opts.url}`;
+}
+
+export async function notifyReviewFinished(opts: {
+  replaySlug: string;
+  teamSlug: string;
+  reviewerUserId: string;
+}): Promise<void> {
+  try {
+    const db = getDb();
+    const [share] = await db
+      .select({ requestedBy: replayTeamShares.reviewRequestedBy })
+      .from(replayTeamShares)
+      .where(and(eq(replayTeamShares.replaySlug, opts.replaySlug), eq(replayTeamShares.teamSlug, opts.teamSlug)))
+      .limit(1);
+    const requesterId = share?.requestedBy;
+    if (!requesterId || requesterId === opts.reviewerUserId) return; // no request, or reviewing your own request
+
+    const [requester] = await db.select({ reviewDm: users.reviewDmEnabled }).from(users).where(eq(users.id, requesterId)).limit(1);
+    if (!requester?.reviewDm) return; // opted out
+
+    const [acct] = await db
+      .select({ discordId: accounts.providerAccountId })
+      .from(accounts)
+      .where(and(eq(accounts.provider, 'discord'), eq(accounts.userId, requesterId)))
+      .limit(1);
+    if (!acct?.discordId) return; // no Discord to DM
+
+    const [replay] = await db.select().from(replays).where(eq(replays.slug, opts.replaySlug)).limit(1);
+    if (!replay) return;
+    const [team] = await db.select({ name: teams.name }).from(teams).where(eq(teams.slug, opts.teamSlug)).limit(1);
+    const reviewer = (await db.select({ name: users.name }).from(users).where(eq(users.id, opts.reviewerUserId)).limit(1))[0]?.name;
+
+    await sendDM(acct.discordId, formatReviewFinishedDM({
+      matchup: matchupOf(replay),
+      teamName: team?.name ?? opts.teamSlug,
+      reviewerName: reviewer ?? 'A teammate',
+      url: `${publicUrl()}/r/${opts.replaySlug}`,
+    }));
+  } catch (err) {
+    console.error('[karabuddy] review-finished DM failed:', err);
   }
 }

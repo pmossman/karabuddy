@@ -17,7 +17,7 @@ interface TeamStatus {
   viewerCommented: boolean;
 }
 
-export function ReviewStatusHeader({ replaySlug, refreshKey }: { replaySlug: string; refreshKey: number }) {
+export function ReviewStatusHeader({ replaySlug, refreshKey, onFinish }: { replaySlug: string; refreshKey: number; onFinish: (team: { teamSlug: string; teamName: string }) => void }) {
   const [rows, setRows] = useState<TeamStatus[] | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
 
@@ -68,12 +68,15 @@ export function ReviewStatusHeader({ replaySlug, refreshKey }: { replaySlug: str
             {t.reviewerCount > 0 && (
               <div style={{ fontSize: 11, color: '#8a93a6' }}>{t.reviewers.map((r) => r.name || 'someone').join(', ')}</div>
             )}
+            {/* Not yet reviewed + you've commented → "Finish review" opens the
+                summary modal (Submit there marks it done). Already reviewed →
+                keep the quick undo. Haven't commented → disabled hint. */}
             <button
               type="button"
-              onClick={() => canMark && toggle(t)}
+              onClick={() => { if (t.viewerReviewed) toggle(t); else if (canMark) onFinish({ teamSlug: t.teamSlug, teamName: t.teamName }); }}
               disabled={busy || !canMark}
-              data-testid={`viewer-mark-reviewed-${t.teamSlug}`}
-              title={canMark ? undefined : 'Leave a comment below before marking it reviewed'}
+              data-testid={`viewer-finish-review-${t.teamSlug}`}
+              title={canMark ? undefined : 'Leave a comment below before finishing your review'}
               style={{
                 alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 7,
                 background: !canMark ? 'transparent' : t.viewerReviewed ? 'rgba(107, 217, 104, 0.18)' : 'rgba(107, 217, 104, 0.08)',
@@ -84,8 +87,8 @@ export function ReviewStatusHeader({ replaySlug, refreshKey }: { replaySlug: str
             >
               {busy ? '…' : (
                 <>
-                  <span aria-hidden>{t.viewerReviewed ? '✓' : canMark ? '✓' : '💬'}</span>
-                  <span>{t.viewerReviewed ? 'You reviewed — undo' : canMark ? 'Mark reviewed' : 'Comment to review'}</span>
+                  <span aria-hidden>{t.viewerReviewed ? '✓' : canMark ? '🔎' : '💬'}</span>
+                  <span>{t.viewerReviewed ? 'You reviewed — undo' : canMark ? 'Finish review →' : 'Comment to review'}</span>
                 </>
               )}
             </button>

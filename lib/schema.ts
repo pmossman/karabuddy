@@ -43,6 +43,10 @@ export const users = pgTable('users', {
   // no one is DM'd until they explicitly enable "Send me Discord notifications".
   // It's the master gate over both direct + team mentions in notifyMentions.
   notificationsDisabled: boolean('notifications_disabled').notNull().default(true),
+  // B194: DM me when a teammate finishes a review I requested. Distinct from the
+  // @-mention switch above; defaults ON (it's the completion of something I asked
+  // for, not unsolicited) — but still only fires if Discord is connected.
+  reviewDmEnabled: boolean('review_dm_enabled').notNull().default(true),
   // B101: opt OUT of the GLOBAL stats corpus (ADR 0007). Default included
   // (opt-out model); the global aggregates are anonymized + min-N gated, and
   // personal/team scopes ignore this flag entirely. Toggle on /settings.

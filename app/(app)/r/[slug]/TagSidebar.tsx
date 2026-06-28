@@ -24,6 +24,7 @@ import { encryptForTeam } from '@/lib/companion';
 import { LabelsRow } from './LabelsRow';
 import { Grabber } from './useDragSize';
 import { ReviewStatusHeader } from './ReviewStatusHeader';
+import { FinishReviewModal } from './FinishReviewModal';
 
 interface ReplayRow {
   slug: string;
@@ -173,6 +174,10 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   const { data: session } = useSession();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
+  // B194: "Finish review" summary modal (the team being finished) + a bump that
+  // re-fetches the review-status header after a submit (tags.length won't change).
+  const [finishTeam, setFinishTeam] = useState<{ teamSlug: string; teamName: string } | null>(null);
+  const [reviewBump, setReviewBump] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
   // B76: immediate submitting feedback so the Save button shows progress the
   // moment it's clicked (the POST can take a beat).
@@ -1031,7 +1036,31 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
       {/* B149: review-status strip — reviewer marks + in-place "Mark reviewed"
           for the viewer's teams with an open request (refetches when a comment
           is added, so the comment-gate flips live). */}
-      <ReviewStatusHeader replaySlug={replay.slug} refreshKey={tags.length} />
+      <ReviewStatusHeader replaySlug={replay.slug} refreshKey={tags.length + reviewBump} onFinish={setFinishTeam} />
+      {finishTeam && (
+        <FinishReviewModal
+          teamName={finishTeam.teamName}
+          comments={tags
+            .filter((t) => isMineTag(t) && !t.parentTagId && (t.scope ?? []).includes(finishTeam.teamSlug))
+            .sort((a, b) => a.frameIndex - b.frameIndex)
+            .map((t) => ({ id: t.id, frameIndex: t.frameIndex, comment: t.comment }))}
+          onEdit={(id, text) => updateComment(id, text)}
+          onDelete={(id) => deleteTag(id)}
+          onJump={(f) => { onJump(f); setFinishTeam(null); }}
+          onSubmit={async () => {
+            try {
+              const res = await fetch(`/api/replays/${replay.slug}/reviewed`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ teamSlug: finishTeam.teamSlug, reviewed: true }),
+              });
+              const body = await res.json().catch(() => ({}));
+              if (body.ok) { setReviewBump((n) => n + 1); return { ok: true }; }
+              return { ok: false, error: body.error || 'Could not submit' };
+            } catch { return { ok: false, error: 'Network error' }; }
+          }}
+          onClose={() => setFinishTeam(null)}
+        />
+      )}
       <section style={{ padding: '14px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {/* B34: "+ Tag this frame" gets its own line (full-width button) so
             it's the primary action above the tag list. Prev/Next tag nav

@@ -102,7 +102,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 This master switch overrides per-team settings (under <Link href="/settings?section=teams" style={{ color: '#5db4ff' }}>Teams</Link>);
                 the <Link href="/mentions" style={{ color: '#5db4ff' }}>Mentions inbox</Link> always works regardless.
               </p>
-              <NotificationsForm initialDisabled={!!user?.notificationsDisabled} />
+              <NotificationsForm initialDisabled={!!user?.notificationsDisabled} initialReviewDm={user?.reviewDmEnabled ?? true} />
             </Panel>
           )}
 

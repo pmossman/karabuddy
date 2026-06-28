@@ -21,17 +21,25 @@ async function userId(): Promise<string | null> {
 export async function GET() {
   const id = await userId();
   if (!id) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
-  const [row] = await getDb().select({ off: users.notificationsDisabled }).from(users).where(eq(users.id, id)).limit(1);
-  return NextResponse.json({ ok: true, notificationsDisabled: !!row?.off });
+  const [row] = await getDb().select({ off: users.notificationsDisabled, reviewDm: users.reviewDmEnabled }).from(users).where(eq(users.id, id)).limit(1);
+  return NextResponse.json({ ok: true, notificationsDisabled: !!row?.off, reviewDmEnabled: row?.reviewDm ?? true });
 }
 
 export async function PATCH(req: Request) {
   const id = await userId();
   if (!id) return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
   const body = await req.json().catch(() => ({}));
-  if (typeof body.notificationsDisabled !== 'boolean') {
-    return NextResponse.json({ ok: false, error: 'notificationsDisabled must be a boolean' }, { status: 400 });
+  // Either flag may be present; both are independent booleans.
+  const set: Record<string, boolean> = {};
+  if (body.notificationsDisabled !== undefined) {
+    if (typeof body.notificationsDisabled !== 'boolean') return NextResponse.json({ ok: false, error: 'notificationsDisabled must be a boolean' }, { status: 400 });
+    set.notificationsDisabled = body.notificationsDisabled;
   }
-  await getDb().update(users).set({ notificationsDisabled: body.notificationsDisabled }).where(eq(users.id, id));
-  return NextResponse.json({ ok: true, notificationsDisabled: body.notificationsDisabled });
+  if (body.reviewDmEnabled !== undefined) {
+    if (typeof body.reviewDmEnabled !== 'boolean') return NextResponse.json({ ok: false, error: 'reviewDmEnabled must be a boolean' }, { status: 400 });
+    set.reviewDmEnabled = body.reviewDmEnabled;
+  }
+  if (Object.keys(set).length === 0) return NextResponse.json({ ok: false, error: 'no recognized fields' }, { status: 400 });
+  await getDb().update(users).set(set).where(eq(users.id, id));
+  return NextResponse.json({ ok: true, ...set });
 }

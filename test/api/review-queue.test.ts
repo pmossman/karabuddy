@@ -14,7 +14,7 @@ import { users, teams, teamMembers, replays, replayTeamShares, tags, tagTeamScop
 // never wipes the request — so multiple eyes accumulate and nothing vanishes.
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
-vi.mock('@/lib/reviewNotify', () => ({ notifyTeamReview: vi.fn(), notifyReviewMark: vi.fn() }));
+vi.mock('@/lib/reviewNotify', () => ({ notifyTeamReview: vi.fn(), notifyReviewMark: vi.fn(), notifyReviewFinished: vi.fn() }));
 const { auth } = await import('@/auth');
 const as = (userId: string | null) => vi.mocked(auth).mockResolvedValue(userId ? ({ user: { id: userId } } as any) : (null as any));
 
