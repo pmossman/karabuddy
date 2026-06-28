@@ -23,6 +23,7 @@ import { DecksModal } from './DecksModal';
 import { EditableTitle } from './EditableTitle';
 import { SeriesNav, type SeriesInfo } from './SeriesNav';
 import { LabelsRow } from './LabelsRow';
+import { ShareWithTeam } from './ShareWithTeam';
 import { ResultBadge } from './ResultBadge';
 import { useDragSize, Grabber } from './useDragSize';
 import { ClipsList, type ClipSummary } from './ClipsList';
@@ -647,9 +648,17 @@ export function MatchupPanel({
   onOpenSideboard?: () => void;
 }) {
   const [decksOpen, setDecksOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
   const chips = matchChips(matchMeta);
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/r/${replay.slug}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked — no-op */ }
+  };
 
   // B100: draggable size, matching the review sheet. TOP (portrait) → height,
   // grabber on the BOTTOM edge (drag down grows → grow +1). LEFT (landscape)
@@ -667,7 +676,13 @@ export function MatchupPanel({
     max: top ? Math.max(200, vh - 240) : Math.max(260, vw - 340),
     storageKey: top ? 'karabuddy:matchupSheetH' : 'karabuddy:matchupSheetW',
   });
-  const transition = drag.dragging ? 'none' : 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)';
+  // Slide on transform; when CLOSED also flip visibility:hidden so the panel — and
+  // its bottom-edge resize grabber — fully disappears rather than peeking above the
+  // board (the closed transform alone left the grabber visible below the top offset).
+  // Delay the hide until the slide-out finishes (220ms) so the animation still shows.
+  const transition = drag.dragging
+    ? 'none'
+    : `transform 220ms cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear ${open ? '0s' : '220ms'}`;
 
   const anchorStyle: React.CSSProperties = top
     ? {
@@ -698,6 +713,8 @@ export function MatchupPanel({
           maxHeight: 'calc(100vh - var(--kb-header-h, 0px) - 16px)',
           zIndex: 80,
           transition,
+          visibility: open ? 'visible' : 'hidden',
+          pointerEvents: open ? 'auto' : 'none',
           boxShadow: open ? '0 8px 24px rgba(0,0,0,0.45)' : 'none',
           background: 'rgba(17, 20, 26, 0.97)',
           border: '1px solid #2e333c',
@@ -755,6 +772,19 @@ export function MatchupPanel({
           <MatchupPlayer player={p1} winners={replay.winners} />
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', paddingTop: 11 }}>VS</span>
           <MatchupPlayer player={p2} winners={replay.winners} />
+        </div>
+
+        {/* B194-fix: Share lives in the desktop sidebar header, which is hidden on
+            mobile — so the viewer had no way to share a replay on a phone. Surface
+            it here (the mobile matchup home): Copy link for anyone, team sharing +
+            public + review-request for the owner (the same ShareWithTeam control). */}
+        <div style={{ borderTop: '1px solid #2e333c', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700 }}>Share</span>
+          <button type="button" onClick={copyLink}
+            style={{ background: 'transparent', border: '1px solid #2e333c', borderRadius: 4, padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#a7d2ff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+            {copied ? '✓ Link copied' : '🔗 Copy link'}
+          </button>
+          {isOwner && <ShareWithTeam replaySlug={replay.slug} installToken={installToken} />}
         </div>
 
         {onOpenSideboard && (
