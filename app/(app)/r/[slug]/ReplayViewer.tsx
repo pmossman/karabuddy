@@ -366,6 +366,18 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     storageKey: mobilePortrait ? 'karabuddy:reviewSheetH' : 'karabuddy:reviewSheetW',
   });
 
+  // B198: the matchup panel's drag size ALSO lives here (mirrors reviewDrag) so
+  // the frame-nav chevrons can drop below the (top) panel's bottom edge in
+  // portrait and ride it as it's dragged. Same config the panel used internally.
+  const matchupDrag = useDragSize({
+    axis: mobilePortrait ? 'y' : 'x',
+    grow: 1,
+    initial: mobilePortrait ? Math.round(vh * 0.42) : Math.min(300, Math.round(vw * 0.6)),
+    min: mobilePortrait ? 140 : 200,
+    max: mobilePortrait ? Math.max(200, vh - 240) : Math.max(260, vw - 340),
+    storageKey: mobilePortrait ? 'karabuddy:matchupSheetH' : 'karabuddy:matchupSheetW',
+  });
+
   // B66e: ownership resolved here so both TagSidebar (desktop) AND
   // MatchupPanel (mobile) can show owner-only affordances from the
   // same source of truth.
@@ -1127,14 +1139,27 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         const chevRight = rightSheetOpen ? `calc(${rightSheetW} + 8px)` : 'max(8px, env(safe-area-inset-left, 8px))';
         const portraitLift = mobilePortrait && drawerOpen;
         const fabRight = mobileLandscape && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeR;
-        const navVerticalCenter = portraitLift ? `calc((100vh - ${reviewDrag.size}px) / 2)` : '50%';
+        // B198: in portrait, when the matchup panel is open the chevrons HUG just
+        // below its bottom edge (12px gap + 42px = half the 84px chevron → 54px to
+        // its centre) and ride it as it's dragged — clamp()'d so they never rise
+        // above the viewport centre (short panel) nor drop so low they collide with
+        // the bottom control bubbles (192px reserve) or the review sheet if that's
+        // open too. Review-sheet-only keeps the prior behaviour (centre the band
+        // above the sheet).
+        const portraitMatchupOpen = mobilePortrait && matchupOpen;
+        const navFloor = portraitLift ? `100vh - ${reviewDrag.size}px - 54px` : '100vh - 192px';
+        const navVerticalCenter = portraitMatchupOpen
+          ? `clamp(50vh, var(--kb-header-h, 0px) + 8px + ${matchupDrag.size}px + 54px, ${navFloor})`
+          : portraitLift
+            ? `calc((100vh - ${reviewDrag.size}px) / 2)`
+            : '50%';
         return (
           <>
             <FrameNavOverlay
               leftOffset="max(8px, env(safe-area-inset-left, 8px))"
               rightOffset={chevRight}
               verticalCenter={navVerticalCenter}
-              dragging={reviewDrag.dragging}
+              dragging={reviewDrag.dragging || matchupDrag.dragging}
               onStep={step}
               canPrev={currentIndex > 0}
               canNext={!!frames && currentIndex < frames.length - 1}
@@ -1252,17 +1277,18 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                   />
                   {/* B136: Clip FAB. Desktop → a labeled "Clip" pill at the
                       board's top-right (below the header; bottom-right was
-                      crowded). Mobile → a compact scissors bubble stacked one
-                      FAB-height under the ⓘ matchup button, mirroring its edge
-                      (top-right portrait / top-left landscape) to save space. */}
+                      crowded). Mobile → a compact scissors bubble on the SAME row
+                      as the ⓘ matchup button, one FAB-width toward the interior
+                      (B199: left of ⓘ in portrait / right of it in landscape,
+                      where ⓘ hugs the left edge) rather than stacked below it. */}
                   {isMobile ? (
                     <ClipBubble
                       onClick={() => setClipOpen(true)}
                       compact
-                      top="calc(max(10px, env(safe-area-inset-top, 10px)) + 46px)"
+                      top="max(10px, env(safe-area-inset-top, 10px))"
                       {...(mobileLandscape
-                        ? { left: 'max(10px, env(safe-area-inset-left, 10px))' }
-                        : { right: 'max(10px, env(safe-area-inset-right, 10px))' })}
+                        ? { left: 'calc(max(10px, env(safe-area-inset-left, 10px)) + 46px)' }
+                        : { right: 'calc(max(10px, env(safe-area-inset-right, 10px)) + 46px)' })}
                     />
                   ) : (
                     <ClipBubble
@@ -1316,6 +1342,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           open={matchupOpen}
           onClose={() => setMatchupOpen(false)}
           anchor={isLandscape ? 'left' : 'top'}
+          dragSize={matchupDrag.size}
+          dragging={matchupDrag.dragging}
+          dragHandleProps={matchupDrag.handleProps}
           replay={replay}
           matchMeta={replay.match ?? activeDecoded?.meta.match ?? null}
           decks={decksForView}

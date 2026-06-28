@@ -21,7 +21,7 @@ import { DecksModal } from './DecksModal';
 import { type SeriesInfo } from './SeriesNav';
 import { SharePopover } from './SharePopover';
 import { MatchupInfo, useShareMoment } from './MatchupInfo';
-import { useDragSize, Grabber } from './useDragSize';
+import { Grabber } from './useDragSize';
 import { ClipsList, type ClipSummary } from './ClipsList';
 import type { DecksByUserId, MatchMeta, Frame } from '@/lib/replayDecoder';
 
@@ -604,6 +604,9 @@ export function MatchupPanel({
   open,
   onClose,
   anchor,
+  dragSize,
+  dragging,
+  dragHandleProps,
   replay,
   matchMeta,
   decks,
@@ -625,6 +628,12 @@ export function MatchupPanel({
   // 'left' = landscape (slides from left edge, narrow column).
   // 'top'  = portrait  (slides from top edge, full width minus margins).
   anchor: 'left' | 'top';
+  // B198: drag size lifted to ReplayViewer (so the frame-nav chevrons can drop
+  // below the panel's bottom edge in portrait + ride it); this is now a
+  // controlled sheet.
+  dragSize: number;
+  dragging: boolean;
+  dragHandleProps: React.HTMLAttributes<HTMLDivElement>;
   replay: ReplayShape;
   matchMeta: MatchMeta | null;
   decks: DecksByUserId | null;
@@ -659,23 +668,11 @@ export function MatchupPanel({
   // grabber on the BOTTOM edge (drag down grows → grow +1). LEFT (landscape)
   // → width, grabber on the RIGHT edge (drag right grows → grow +1).
   const top = anchor === 'top';
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
-  const drag = useDragSize({
-    axis: top ? 'y' : 'x',
-    grow: 1,
-    initial: top ? Math.round(vh * 0.42) : Math.min(300, Math.round(vw * 0.6)),
-    min: top ? 140 : 200,
-    // Reserve a fixed minimum board size (240px tall / 340px wide) so dragging
-    // the matchup sheet open can't squish the board to a sliver.
-    max: top ? Math.max(200, vh - 240) : Math.max(260, vw - 340),
-    storageKey: top ? 'karabuddy:matchupSheetH' : 'karabuddy:matchupSheetW',
-  });
   // Slide on transform; when CLOSED also flip visibility:hidden so the panel — and
   // its bottom-edge resize grabber — fully disappears rather than peeking above the
   // board (the closed transform alone left the grabber visible below the top offset).
   // Delay the hide until the slide-out finishes (220ms) so the animation still shows.
-  const transition = drag.dragging
+  const transition = dragging
     ? 'none'
     : `transform 220ms cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear ${open ? '0s' : '220ms'}`;
 
@@ -683,13 +680,13 @@ export function MatchupPanel({
     ? {
         left: 'max(8px, env(safe-area-inset-left, 8px))',
         right: 'max(8px, env(safe-area-inset-right, 8px))',
-        height: drag.size,
+        height: dragSize,
         flexDirection: 'column',
         transform: open ? 'translateY(0)' : 'translateY(calc(-100% - 16px))',
       }
     : {
         left: 'max(8px, env(safe-area-inset-left, 8px))',
-        width: drag.size,
+        width: dragSize,
         flexDirection: 'row',
         transform: open ? 'translateX(0)' : 'translateX(calc(-100% - 16px))',
       };
@@ -834,9 +831,9 @@ export function MatchupPanel({
             / right (left sheet). */}
         <Grabber
           orientation={top ? 'horizontal' : 'vertical'}
-          dragging={drag.dragging}
+          dragging={dragging}
           label="Drag to resize matchup panel"
-          handleProps={drag.handleProps}
+          handleProps={dragHandleProps}
         />
       </aside>
 

@@ -40,6 +40,9 @@ export function ShareWithTeam({
   // public browser) sees the game AND its comments, anonymized + redacted.
   const [isPublic, setIsPublic] = useState(false);
   const [publicPending, setPublicPending] = useState(false);
+  // B200: the public-replay privacy explanation lives behind an ⓘ (tap to reveal)
+  // instead of an always-on hint, to keep the share menu uncluttered.
+  const [publicInfo, setPublicInfo] = useState(false);
   // B100: tags on this replay scoped to each team — drives the "un-sharing
   // also removes N comments" confirmation.
   const [scopedCounts, setScopedCounts] = useState<Record<string, number>>({});
@@ -209,8 +212,9 @@ export function ShareWithTeam({
   // sharing doesn't require team membership.
   const publicSection = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        Public
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Public</span>
+        <InfoDot open={publicInfo} onClick={() => setPublicInfo((v) => !v)} label="About public replays" />
       </div>
       <LedToggle
         checked={isPublic}
@@ -219,11 +223,13 @@ export function ShareWithTeam({
         statusOn="Public"
         disabled={publicPending}
       />
-      <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-        {isPublic
-          ? 'Listed in the public browser. Anyone can watch AND read this replay’s comments — author names are anonymized and @mentions redacted for outside viewers.'
-          : 'Off: only people with the link (and your shared teams) can see this replay; outside viewers never see its comments.'}
-      </div>
+      {publicInfo && (
+        <div style={{ fontSize: 11, color: '#8a93a3', fontStyle: 'italic', lineHeight: 1.4 }}>
+          Public replays are listed in the public browser — anyone can watch and read the comments
+          (author names anonymized, @mentions redacted). Off: only people with the link or your
+          shared teams can see it.
+        </div>
+      )}
     </div>
   );
 
@@ -292,11 +298,6 @@ export function ShareWithTeam({
           );
         })}
       </div>
-      {shares.size > 0 && (
-        <div style={{ fontSize: 11, color: '#6c7588', fontStyle: 'italic' }}>
-          Surfaces in the selected teams&apos; replay grid. Request review to add it to a team&apos;s review queue.
-        </div>
-      )}
       <div style={{ borderTop: '1px solid #2e333c', paddingTop: 8, marginTop: 2 }}>
         {publicSection}
       </div>
@@ -309,6 +310,29 @@ export function ShareWithTeam({
         />
       )}
     </div>
+  );
+}
+
+// B200: tiny ⓘ that reveals an explanation inline on tap — keeps optional help
+// text out of the way until asked for.
+function InfoDot({ open, onClick, label }: { open: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-expanded={open}
+      title={label}
+      style={{
+        width: 16, height: 16, flex: '0 0 auto', borderRadius: '50%', padding: 0, cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 10, fontWeight: 700, lineHeight: 1, fontFamily: 'Georgia, serif', fontStyle: 'italic',
+        background: open ? 'rgba(77,157,255,0.25)' : 'transparent',
+        border: '1px solid rgba(77,157,255,0.45)', color: '#8fd0ff',
+      }}
+    >
+      i
+    </button>
   );
 }
 

@@ -126,6 +126,18 @@ _claimed: 2026-06-15 by claude (worktree core-b150-private-teams)_
 
 ## Done
 
+### [B200] Declutter the share menu — rename "Share this frame", hints behind an ⓘ
+_completed: 2026-06-28 by claude_
+The share popover was wall-to-wall italic help text. Renamed "Share this moment" → **"Share this frame"**; removed the paragraph under the Copy/Share buttons, the team-share "Surfaces in the selected teams' grid…" line, and the Public on/off explanation. Kept the two FUNCTIONAL conditional notes (empty-state "/teams" pointer; the 🔒 "uploaded without encryption — can't add to this private team" disabled-state reason). The Public privacy explanation (public = anyone can read comments, names anonymized/mentions redacted) now lives behind a small `InfoDot` (ⓘ) next to the "Public" label — tap to reveal inline, default hidden. Reusable pattern for tucking optional help away.
+
+### [B199] Move the mobile Clip (✂) bubble beside the ⓘ info FAB, not below it
+_completed: 2026-06-28 by claude_
+The compact Clip scissors FAB was stacked one FAB-height *under* the ⓘ matchup button; now it sits on the SAME row, one FAB-width toward the interior (left of ⓘ in portrait, right of it in landscape where ⓘ hugs the left edge). Same `top` as the ⓘ.
+
+### [B198] Mobile portrait: frame-nav chevrons track the matchup panel's bottom edge
+_completed: 2026-06-28 by claude_
+When the (top-anchored) matchup panel is open in portrait, the ‹ › frame-nav chevrons used to sit at viewport-center, buried under it. Lifted the matchup panel's drag size out of MobileLandscapePanels up into ReplayViewer (mirrors reviewDrag; the panel is now a controlled sheet taking `dragSize`/`dragging`/`dragHandleProps`), so the chevrons can position relative to its live edge. They now HUG just below the panel's bottom edge (12px gap) and ride it as it's dragged, `clamp()`'d so they never rise above viewport-centre (short panel) nor drop into the bottom control bubbles (192px reserve) or the review sheet if it's also open. Review-sheet-only behaviour unchanged.
+
 ### [B197] Viewer share/tab polish — labeled "Share" button, honest team-share hint, "Review"→"Tags"
 _completed: 2026-06-28 by claude_
 Three small viewer-chrome fixes on the shared components. (1) The share trigger was a bare icon → now a labeled "⤴ Share" button (icon + text), far easier to find; fits both the desktop sidebar header slot and the mobile panel header. (2) The share sheet's hint always read "Share with a team below to surface it in their replays," but the team-share control is owner-only (`ShareWithTeam` gated on `isOwner`) — so on a replay you don't own there was nothing below, just a lying sentence. Gated that clause on `isOwner`. (3) Renamed the viewer's panel tab "Review" → "Tags" (it lists tags/comments; `panelTab==='tags'` already); updated the 8 e2e `/^Review/` tab selectors across 5 specs to `/^Tags/`. tsc clean; affected e2e green.

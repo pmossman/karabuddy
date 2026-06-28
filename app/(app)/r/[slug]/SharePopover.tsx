@@ -58,10 +58,7 @@ export function SharePopover({
         {!asSheet && <div style={sectionLabel}>Share</div>}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <ShareBtn onClick={copyLink}>{copied ? '✓ Copied' : 'Copy link'}</ShareBtn>
-          {shareMoment && <ShareBtn onClick={shareMoment.onClick}>{shareMoment.copied ? '✓ Copied' : 'Share this moment'}</ShareBtn>}
-        </div>
-        <div style={hintStyle}>
-          Anyone with the link can view.{shareMoment ? ' “Share this moment” links to the current frame — it unfurls into the board.' : ''}{isOwner ? ' Share with a team below to surface it in their replays.' : ''}
+          {shareMoment && <ShareBtn onClick={shareMoment.onClick}>{shareMoment.copied ? '✓ Copied' : 'Share this frame'}</ShareBtn>}
         </div>
         {isOwner && (
           <div style={{ borderTop: '1px solid #2e333c', paddingTop: 8 }}>
@@ -83,7 +80,6 @@ function ShareBtn({ children, onClick }: { children: React.ReactNode; onClick: (
 }
 
 const sectionLabel: React.CSSProperties = { fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em' };
-const hintStyle: React.CSSProperties = { fontSize: 11, color: '#6c7588', fontStyle: 'italic', lineHeight: 1.4 };
 
 function ShareIcon() {
   return (
