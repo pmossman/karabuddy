@@ -5,7 +5,7 @@ import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
 import { teamGameIds } from '@/lib/teamSurface';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
-import { cachedRead } from '@/lib/cached';
+import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
 // `type`, over a resolved + authorized `scope`:
@@ -59,7 +59,7 @@ const computeStats = cachedRead(
     }
   },
   ['stats-data-v1'],
-  { revalidate: 60, tags: ['stats'] },
+  { revalidate: 60, tags: [CACHE_TAGS.stats] },
 );
 
 export async function GET(req: Request) {

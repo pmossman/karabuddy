@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { cards } from '@/lib/schema';
-import { cachedRead } from '@/lib/cached';
+import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 
 // B101/Phase1: card-catalog lookup for the viewer's resourcing analysis (which
 // runs client-side on the already-decoded frames and only needs costs/names) and
@@ -28,7 +28,7 @@ const getCatalog = cachedRead(
     return map;
   },
   ['cards-catalog-v1'],
-  { revalidate: 3600, tags: ['cards-catalog'] },
+  { revalidate: 3600, tags: [CACHE_TAGS.cardsCatalog] },
 );
 
 export async function GET(req: Request) {

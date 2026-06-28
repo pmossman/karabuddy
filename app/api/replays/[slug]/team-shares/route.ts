@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { replays, replayTeamShares, teamMembers, teams, tags, tagTeamScope } from '@/lib/schema';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 import { shareAllowed } from '@/lib/privateTeams';
+import { revalidateForOps } from '@/lib/cached';
 
 export const runtime = 'nodejs';
 
@@ -132,6 +133,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     .values({ replaySlug: slug, teamSlug, sharedBy: userId })
     .onConflictDoNothing();
 
+  revalidateForOps(['share']); // refresh the team dashboard + team stats caches
   return NextResponse.json({ ok: true });
 }
 
@@ -168,5 +170,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
       .where(and(eq(tagTeamScope.teamSlug, teamSlug), inArray(tagTeamScope.tagId, tagIds)));
   }
 
+  revalidateForOps(['unshare']); // refresh the team dashboard + team stats caches
   return NextResponse.json({ ok: true });
 }

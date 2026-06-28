@@ -6,7 +6,7 @@ import { serializeReplayRow } from '@/lib/replayRow';
 import { gameIdsWithSibling } from '@/lib/doubleSided';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { orderPlayersOwnerFirst } from '@/lib/players';
-import { cachedRead } from '@/lib/cached';
+import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 
 export const runtime = 'nodejs';
 
@@ -63,7 +63,7 @@ const getPublic = cachedRead(
   return data;
   },
   ['public-replays-v1'],
-  { revalidate: 120, tags: ['public-replays'] },
+  { revalidate: 120, tags: [CACHE_TAGS.publicReplays] },
 );
 
 export async function GET() {

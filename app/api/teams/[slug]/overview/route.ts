@@ -8,7 +8,7 @@ import { serializeReplayRow } from '@/lib/replayRow';
 import { commentersForTeam } from '@/lib/reviews';
 import { computeStandings, type SwissMatch } from '@/lib/swiss';
 import { orderPlayersOwnerFirst } from '@/lib/players';
-import { cachedRead } from '@/lib/cached';
+import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 
 export const runtime = 'nodejs';
 
@@ -227,7 +227,7 @@ const getOverview = cachedRead(
   };
   },
   ['team-overview-v1'],
-  { revalidate: 45, tags: ['team-overview'] },
+  { revalidate: 45, tags: [CACHE_TAGS.teamOverview] },
 );
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {

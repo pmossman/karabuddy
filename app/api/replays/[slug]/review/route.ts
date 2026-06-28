@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { replays, replayTeamShares } from '@/lib/schema';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 import { notifyTeamReview } from '@/lib/reviewNotify';
+import { revalidateForOps } from '@/lib/cached';
 
 export const runtime = 'nodejs';
 
@@ -55,6 +56,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       reviewRequestedBy: requested ? userId : null,
     })
     .where(and(eq(replayTeamShares.replaySlug, slug), eq(replayTeamShares.teamSlug, teamSlug)));
+
+  revalidateForOps([requested ? 'review-request' : 'review-cancel']); // refresh the team dashboard cache
 
   // B144: best-effort Discord post (review added/cleared) — never blocks the write.
   try {

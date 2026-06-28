@@ -5,6 +5,7 @@ import { replays, tags } from '@/lib/schema';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { auth } from '@/auth';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
+import { revalidateForOps } from '@/lib/cached';
 import { canViewReplayIdentities } from '@/lib/altPerspective';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
@@ -148,6 +149,8 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400, headers });
     }
     await db.update(replays).set(update).where(eq(replays.slug, slug));
+    // A public toggle changes the public browser; title/labels live on uncached grids.
+    if (body.public !== undefined) revalidateForOps([body.public ? 'publish' : 'unpublish']);
     return NextResponse.json({ ok: true }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] PATCH /api/replays/:slug failed:', err);
@@ -171,6 +174,7 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers });
     }
     await db.delete(replays).where(eq(replays.slug, slug));
+    revalidateForOps(['delete']); // could have surfaced to a team / been public / fed stats
     return NextResponse.json({ ok: true }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] DELETE /api/replays/:slug failed:', err);

@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { replays, replayTeamShares, teamMembers, teams, tags, tagTeamScope } from '@/lib/schema';
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 import { shareAllowed } from '@/lib/privateTeams';
+import { revalidateForOps } from '@/lib/cached';
 
 export const runtime = 'nodejs';
 
@@ -157,6 +158,9 @@ export async function POST(req: Request) {
         .where(and(inArray(replayTeamShares.replaySlug, apply), eq(replayTeamShares.teamSlug, teamSlug)));
     }
     results.ok.push(...apply);
+    // Bust the caches this op can stale (team dashboard / public browser / stats)
+    // so the change shows immediately instead of after the read TTL.
+    revalidateForOps([op]);
   }
 
   return NextResponse.json({ ok: true, op, applied: results.ok.length, results });
