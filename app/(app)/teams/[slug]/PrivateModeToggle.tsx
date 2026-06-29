@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getCompanionInfo, extensionPresent, companionCapabilityState, loadedTeamKeys, openKeyManager } from '@/lib/companion';
 import { Panel } from '@/app/_components/Panel';
+import { Select } from '@/app/_components/Select';
 import { ErrorNote } from '@/app/_components/StatusUi';
 import { useConfirm } from '@/app/_components/Confirm';
 
@@ -165,9 +166,13 @@ export function PrivateModeToggle({
             <>
               <p style={desc}>Encrypt this team with which key? (Generate or add one in the key manager if it&apos;s not here.)</p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                <select value={picked} onChange={(e) => setPicked(e.target.value)} style={{ padding: '8px 10px', borderRadius: 6, background: '#0b0e13', border: '1px solid #2e333c', color: '#d6f0ff', fontFamily: 'inherit', fontSize: 13 }}>
-                  {keys.map((k) => <option key={k.teamKeyId} value={k.teamKeyId}>{k.name || k.teamKeyId}</option>)}
-                </select>
+                <Select
+                  size="sm"
+                  value={picked}
+                  onChange={setPicked}
+                  options={keys.map((k) => [k.teamKeyId, k.name || k.teamKeyId] as const)}
+                  style={{ padding: '8px 10px', background: '#0b0e13', color: '#d6f0ff', fontSize: 13, maxWidth: 'none' }}
+                />
                 <button onClick={enable} disabled={!picked} style={btn(true)}>Enable private mode</button>
                 <button onClick={async () => { await openKeyManager({ makePrivate: slug }); }} style={btn(false)}>Key manager</button>
               </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { Panel } from '@/app/_components/Panel';
+import { Select } from '@/app/_components/Select';
 
 // B81: owner-only "magic" Discord connect for a team. Not connected → one
 // button that opens Discord's bot-invite (server picker) and bounces back here.
@@ -107,14 +108,14 @@ export function TeamDiscordConnect({
           : 'Connected. Choose a channel:'}
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select
+        <Select
+          size="sm"
           value={picked}
-          onChange={(e) => setPicked(e.target.value)}
-          style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '7px 10px', font: '13px inherit' }}
-        >
-          <option value="">{channels.length ? 'Select a channel…' : 'Loading channels…'}</option>
-          {channels.map((c) => <option key={c.id} value={c.id}>#{c.name}</option>)}
-        </select>
+          onChange={setPicked}
+          placeholder={channels.length ? 'Select a channel…' : 'Loading channels…'}
+          options={channels.map((c) => [c.id, `#${c.name}`] as const)}
+          style={{ padding: '7px 10px', fontSize: 13, maxWidth: 'none' }}
+        />
         <button type="button" onClick={saveChannel} disabled={!picked || picked === channelId} style={{ background: tokens.button.bg, color: tokens.color.accent, border: `1px solid ${tokens.color.primary}`, boxShadow: tokens.button.glow, borderRadius: tokens.radius.sm, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: !picked || picked === channelId ? 0.6 : 1 }}>Save</button>
         {channelId && <button type="button" onClick={sendTest} style={{ background: 'transparent', color: '#a7d2ff', border: '1px solid #4d9dff', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Send test</button>}
         <button type="button" onClick={disconnect} style={{ background: 'transparent', color: '#a0a8b8', border: '1px solid #4a4e56', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Disconnect</button>
@@ -147,14 +148,14 @@ function OverrideRow({
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#c9d1dd' }}>
       <span style={{ flex: '0 0 120px' }}>{label}</span>
-      <select
+      <Select
+        size="sm"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', font: '13px inherit' }}
-      >
-        <option value="">Use main channel</option>
-        {channels.map((c) => <option key={c.id} value={c.id}>#{c.name}</option>)}
-      </select>
+        onChange={onChange}
+        placeholder="Use main channel"
+        options={channels.map((c) => [c.id, `#${c.name}`] as const)}
+        style={{ fontSize: 13, maxWidth: 'none' }}
+      />
     </label>
   );
 }

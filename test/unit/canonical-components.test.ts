@@ -48,13 +48,9 @@ const GUARDS: Guard[] = [
     concept: 'dropdown',
     pattern: /<select[\s>]/,
     canonical: ['app/_components/Select.tsx'],
-    // TODO(concept-dup tier 1): migrate these onto <Select>, then delete here.
-    allowlist: [
-      'app/(app)/teams/[slug]/TeamDiscordConnect.tsx',
-      'app/(app)/teams/[slug]/PrivateModeToggle.tsx',
-      'app/(app)/teams/[slug]/TransferOwnership.tsx',
-      'app/(app)/teams/[slug]/TeamTournaments.tsx',
-    ],
+    // Backlog cleared — all bespoke <select>s migrated onto <Select>. The ban is
+    // now absolute: any raw <select> outside the primitive fails CI.
+    allowlist: [],
     fix: 'use the shared <Select> (app/_components/Select.tsx)',
   },
 ];

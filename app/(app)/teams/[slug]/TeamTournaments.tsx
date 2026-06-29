@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
+import { Select } from '@/app/_components/Select';
 import { formatTimestamp } from '@/lib/datetime';
 
 // B124: the team page's Tournaments tab — list of this team's tournaments +
@@ -98,11 +99,17 @@ export function TeamTournaments({ teamSlug }: { teamSlug: string }) {
           </label>
           <label style={fieldLabelStyle}>
             Decklist visibility
-            <select value={visibility} onChange={(e) => setVisibility(e.target.value)} style={inputStyle}>
-              <option value="hidden-until-start">Hidden until the tournament starts</option>
-              <option value="open">Open — team-visible immediately</option>
-              <option value="private">Private — entrant + organizer only</option>
-            </select>
+            <Select
+              size="sm"
+              value={visibility}
+              onChange={setVisibility}
+              options={[
+                ['hidden-until-start', 'Hidden until the tournament starts'],
+                ['open', 'Open — team-visible immediately'],
+                ['private', 'Private — entrant + organizer only'],
+              ] as const}
+              style={{ ...inputStyle, maxWidth: 'none' }}
+            />
           </label>
           <div>
             <button type="button" onClick={create} disabled={!name.trim() || submitting} style={primaryButtonStyle}>

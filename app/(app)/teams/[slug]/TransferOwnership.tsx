@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { tokens } from '@/app/_theme/karabuddyTokens';
 import { Panel } from '@/app/_components/Panel';
+import { Select } from '@/app/_components/Select';
 import { ErrorNote } from '@/app/_components/StatusUi';
 import { btnGhost, btnDanger } from '@/app/_components/buttonStyles';
 
@@ -62,19 +62,15 @@ export function TransferOwnership({
 
       {!confirming ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select
-            data-testid="transfer-target"
+          <Select
+            size="sm"
+            testId="transfer-target"
             value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            style={selectStyle}
-          >
-            <option value="">Choose a member…</option>
-            {targets.map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {(m.name || 'Unnamed') + (m.role === 'owner' ? ' (owner)' : '')}
-              </option>
-            ))}
-          </select>
+            onChange={setTargetId}
+            placeholder="Choose a member…"
+            options={targets.map((m) => [m.userId, (m.name || 'Unnamed') + (m.role === 'owner' ? ' (owner)' : '')] as const)}
+            style={{ padding: '7px 10px', fontSize: 13, outline: 'none', minWidth: 200, maxWidth: 'none' }}
+          />
           <button
             type="button"
             data-testid="transfer-open"
@@ -108,8 +104,3 @@ export function TransferOwnership({
     </Panel>
   );
 }
-
-const selectStyle: React.CSSProperties = {
-  background: '#11141a', color: '#e6e6e6', border: `1px solid ${tokens.color.border}`, borderRadius: 6,
-  padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', outline: 'none', minWidth: 200,
-};

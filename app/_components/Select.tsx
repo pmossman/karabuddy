@@ -28,6 +28,7 @@ export function Select<V extends string>({
   ariaLabel,
   size = 'sm',
   style,
+  testId,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -38,12 +39,15 @@ export function Select<V extends string>({
   ariaLabel?: string;
   size?: 'sm' | 'md';
   style?: React.CSSProperties;
+  // Forwarded to the native <select> as data-testid (mirrors shareControls).
+  testId?: string;
 }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as V)}
       aria-label={ariaLabel}
+      data-testid={testId}
       style={{ ...SELECT_BASE, ...SELECT_SIZE[size], ...style }}
     >
       {placeholder && <option value="">{placeholder}</option>}
