@@ -20,6 +20,7 @@ import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
 // + by-leader / timeline views + reuse on /teams/[slug]. B123-followup merged
@@ -1237,37 +1238,42 @@ function formatDuration(ms: number) {
   return `${m}m ${String(r).padStart(2, '0')}s`;
 }
 
+// B116: sort the series GROUPS by the chosen key using each group's most-recent
+// game as its representative, so a series' games stay contiguous and in play
+// order regardless of column sort. Each comparator reads the representative row
+// of each group and returns the signed compare — preserving the original per-key
+// value extraction (dates by getTime, text keys lowercased, length||0,
+// comments??0, …) and the no-tiebreak behavior exactly.
+const repRow = (g: SeriesGroup) => g.rows[g.rows.length - 1]; // most recent game
+const byRep = (extract: (r: Row) => string | number) =>
+  (ga: SeriesGroup, gb: SeriesGroup, dir: 'asc' | 'desc') => {
+    const va = extract(repRow(ga)), vb = extract(repRow(gb));
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return dir === 'asc' ? cmp : -cmp;
+  };
+const TABLE_COMPARATORS: Record<SortKey, (a: SeriesGroup, b: SeriesGroup, dir: 'asc' | 'desc') => number> = {
+  date: byRep((r) => new Date(r.createdAt).getTime()),
+  replay: byRep((r) => matchupText(r).toLowerCase()),
+  leader: byRep((r) => leaderText(r).toLowerCase()),
+  format: byRep((r) => (r.match?.gameFormat || '').toLowerCase()),
+  mode: byRep((r) => (r.match?.gamesToWinMode || '').toLowerCase()),
+  length: byRep((r) => r.durationMs || 0),
+  member: byRep((r) => (r.ownerName || '').toLowerCase()),
+  shared: byRep((r) => sharedText(r)),
+  comments: byRep((r) => r.commentCount ?? 0),
+};
+
 function TableView({ rows, canManage = false, showShareColumn = true }: { rows: Row[]; canManage?: boolean; showShareColumn?: boolean }) {
-  // Default: newest first (matches the grid's pre-existing order).
-  const [sortKey, setSortKey] = useState<SortKey>('date');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const sel = useReplaySelection();
   const showSel = !!sel?.selectMode;
 
   // B116: group into Bo3 series (by lobbyId), then sort the GROUPS by the chosen
-  // key (using each group's most-recent game as its representative) so a series'
-  // games stay contiguous and in play order regardless of column sort.
-  const groups = useMemo(() => {
-    const val = (r: Row): string | number => {
-      switch (sortKey) {
-        case 'date': return new Date(r.createdAt).getTime();
-        case 'replay': return matchupText(r).toLowerCase();
-        case 'leader': return leaderText(r).toLowerCase();
-        case 'format': return (r.match?.gameFormat || '').toLowerCase();
-        case 'mode': return (r.match?.gamesToWinMode || '').toLowerCase();
-        case 'length': return r.durationMs || 0;
-        case 'member': return (r.ownerName || '').toLowerCase();
-        case 'shared': return sharedText(r);
-        case 'comments': return r.commentCount ?? 0;
-      }
-    };
-    const rep = (g: SeriesGroup) => g.rows[g.rows.length - 1]; // most recent game
-    return buildSeriesGroups(rows).sort((a, b) => {
-      const va = val(rep(a)), vb = val(rep(b));
-      const cmp = va < vb ? -1 : va > vb ? 1 : 0;
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [rows, sortKey, sortDir]);
+  // column. Default: newest first (matches the grid's pre-existing order). Dates /
+  // lengths / counts go highest-first on a fresh column; text columns go asc.
+  const { sorted: groups, sortKey, sortDir, onSort } = useSortable<SeriesGroup, SortKey>(
+    buildSeriesGroups(rows),
+    { initialKey: 'date', initialDir: 'desc', descKeys: ['date', 'length', 'comments'], comparators: TABLE_COMPARATORS },
+  );
 
   // Show the "Shared with" column only when share data is present (the personal
   // library passes it; the reused team grid doesn't → no empty column there) AND
@@ -1280,14 +1286,12 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
   // actions = 7 fixed + the two optional ones. Used for the series header colSpan.
   const colCount = 7 + (showShared ? 1 : 0) + (showComments ? 1 : 0) + (showSel ? 1 : 0);
 
-  const onHeaderClick = (k: SortKey) => {
-    if (sortKey === k) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(k);
-      // Sensible defaults: dates / lengths / counts go highest-first; text asc.
-      setSortDir(k === 'date' || k === 'length' || k === 'comments' ? 'desc' : 'asc');
-    }
+  // Per-site SortHeader props: ReplayFilters keeps its left-aligned, padded,
+  // letter-spaced headers + its current colors (no idle ↕ indicator).
+  const sortHeaderProps = {
+    current: sortKey, dir: sortDir, onSort,
+    align: 'left' as const, activeColor: '#e6e6e6', idleColor: '#a0a8b8',
+    style: { padding: '8px 10px', letterSpacing: '0.04em' } as React.CSSProperties,
   };
 
   return (
@@ -1296,14 +1300,14 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
         <thead>
           <tr style={{ background: 'rgba(17,20,26,0.6)' }}>
             {showSel && <PlainHeader>{''}</PlainHeader>}
-            <SortHeader k="date" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Date</SortHeader>
-            <SortHeader k="replay" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Replay</SortHeader>
-            {showShared && <SortHeader k="shared" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Shared with</SortHeader>}
-            <SortHeader k="member" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Member</SortHeader>
-            <SortHeader k="format" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Format</SortHeader>
+            <SortHeader<SortKey> k="date" {...sortHeaderProps}>Date</SortHeader>
+            <SortHeader<SortKey> k="replay" {...sortHeaderProps}>Replay</SortHeader>
+            {showShared && <SortHeader<SortKey> k="shared" {...sortHeaderProps}>Shared with</SortHeader>}
+            <SortHeader<SortKey> k="member" {...sortHeaderProps}>Member</SortHeader>
+            <SortHeader<SortKey> k="format" {...sortHeaderProps}>Format</SortHeader>
             <PlainHeader>Labels</PlainHeader>
-            <SortHeader k="length" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Length</SortHeader>
-            {showComments && <SortHeader k="comments" current={sortKey} dir={sortDir} onClick={onHeaderClick}>Comments</SortHeader>}
+            <SortHeader<SortKey> k="length" {...sortHeaderProps}>Length</SortHeader>
+            {showComments && <SortHeader<SortKey> k="comments" {...sortHeaderProps}>Comments</SortHeader>}
             <PlainHeader>{''}</PlainHeader>
           </tr>
         </thead>
@@ -1478,39 +1482,6 @@ export function DoubleSidedChip() {
 // scanning down the table, not for reading card text.
 function PlayerThumbs({ player }: { player: any }) {
   return <LeaderBasePair leader={player?.leader} base={player?.base} width={38} height={26} gap={1} radius={2} />;
-}
-
-function SortHeader({
-  k, current, dir, onClick, children,
-}: {
-  k: SortKey;
-  current: SortKey;
-  dir: 'asc' | 'desc';
-  onClick: (k: SortKey) => void;
-  children: React.ReactNode;
-}) {
-  const active = current === k;
-  return (
-    <th
-      scope="col"
-      aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-      style={{
-        textAlign: 'left',
-        padding: '8px 10px',
-        fontSize: 11,
-        fontWeight: 700,
-        color: active ? '#e6e6e6' : '#a0a8b8',
-        textTransform: 'uppercase',
-        letterSpacing: '0.04em',
-        cursor: 'pointer',
-        userSelect: 'none',
-      }}
-      onClick={() => onClick(k)}
-    >
-      {children}
-      {active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}
-    </th>
-  );
 }
 
 function PlainHeader({ children }: { children: React.ReactNode }) {

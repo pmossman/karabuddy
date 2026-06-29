@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
 import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/statsView';
+import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 
 // B101/Phase2 (reframed): the Stats/Meta client, centered on the team/personal
 // contexts teams actually want — "our leader matchups" and "card stats for the
@@ -65,8 +66,16 @@ export function StatsClient({
   const [teamGames, setTeamGames] = useState<'internal' | 'external' | 'all'>('internal');
   // Shared min-occurrences threshold + the Leaders-list sort & grouping controls.
   const [minGames, setMinGames] = useState(1);
-  const [leaderSort, setLeaderSort] = useState<SortKey>('games');
-  const [leaderDir, setLeaderDir] = useState<SortDir>('desc');
+  // Leaders-list sort STATE + header toggle only. The actual row ordering stays
+  // with lib/statsView.sortStatRows (below) so its direction-independent Win-%
+  // null-sinking + sample-size tiebreaks remain byte-identical — this hook never
+  // sorts the rows itself, hence empty items + no-op comparators. The toggle rule
+  // (re-click flips; a fresh column lands desc except the text 'name' column)
+  // matches the old onLeaderSort exactly via descKeys.
+  const { sortKey: leaderSort, sortDir: leaderDir, onSort: onLeaderSort } = useSortable<never, SortKey>(
+    [],
+    { initialKey: 'games', initialDir: 'desc', descKeys: ['games', 'winrate'], comparators: { games: () => 0, winrate: () => 0, name: () => 0 } },
+  );
   const [leaderGroup, setLeaderGroup] = useState<'leader' | 'deck'>('leader'); // by leader, or leader + base
 
   const scopeQs = useMemo(() => {
@@ -217,13 +226,6 @@ export function StatsClient({
       .sort((a, b) => (totals.get(b.key)!.games) - (totals.get(a.key)!.games));
     return { axes: ordered, cell, totals };
   }, [view, data, matchupLens, minGames]);
-
-  // Sort handler for the Leaders table headers: re-tapping the active column flips
-  // direction; a new column starts desc (asc for the name column).
-  const onLeaderSort = (k: SortKey) => {
-    if (k === leaderSort) setLeaderDir((d) => (d === 'desc' ? 'asc' : 'desc'));
-    else { setLeaderSort(k); setLeaderDir(k === 'name' ? 'asc' : 'desc'); }
-  };
 
   // Active non-default filters → removable chips, shown next to the collapsed Filters
   // toggle so the current state stays visible on mobile without opening the panel.
@@ -711,12 +713,21 @@ function Table({ cols, rows, sort, dir, onSort }: { cols: Col[]; rows: React.Rea
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
         <tr>{cols.map((c, i) => {
-          const sortable = !!(c.sortKey && onSort);
-          const active = !!(c.sortKey && c.sortKey === sort);
+          const align = i === 0 ? 'left' : 'right';
+          // Per-site cell extras merged over the shared SortHeader base.
+          const cellStyle: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid #2e333c', letterSpacing: '0.04em' };
+          if (c.sortKey && onSort) {
+            return (
+              <SortHeader<SortKey> key={i} k={c.sortKey} current={sort!} dir={dir ?? 'desc'} onSort={onSort}
+                align={align} neutralIndicator activeColor="#4dd2ff" idleColor="#6c7588" style={cellStyle}>
+                {c.label}
+              </SortHeader>
+            );
+          }
+          // Non-sortable column: plain header, idle color, no indicator (as before).
           return (
-            <th key={i} onClick={sortable ? () => onSort!(c.sortKey!) : undefined} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}
-              style={{ textAlign: i === 0 ? 'left' : 'right', padding: '8px 10px', borderBottom: '1px solid #2e333c', color: active ? '#4dd2ff' : '#6c7588', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: sortable ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}>
-              {c.label}{active ? (dir === 'asc' ? ' ▲' : ' ▼') : sortable ? ' ↕' : ''}
+            <th key={i} style={{ textAlign: align, ...cellStyle, color: '#6c7588', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'default', userSelect: 'none', whiteSpace: 'nowrap' }}>
+              {c.label}
             </th>
           );
         })}</tr>
