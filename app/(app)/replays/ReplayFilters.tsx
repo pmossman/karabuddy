@@ -11,6 +11,7 @@ import { useConfirm } from '@/app/_components/Confirm';
 import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, shareSectionLabel } from '@/app/_components/shareControls';
 import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
 import { formatTimestamp } from '@/lib/datetime';
 import { playerHandle } from '@/lib/players';
@@ -1476,36 +1477,8 @@ export function DoubleSidedChip() {
 // Per-player leader + base stacked vertically. Tiny — meant for at-a-glance
 // scanning down the table, not for reading card text.
 function PlayerThumbs({ player }: { player: any }) {
-  const leader = cardImageUrl(player?.leader, true);
-  const base = cardImageUrl(player?.base, false);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-      <Thumb src={leader} alt={player?.leader?.name} />
-      <Thumb src={base} alt={player?.base?.name} />
-    </div>
-  );
+  return <LeaderBasePair leader={player?.leader} base={player?.base} width={38} height={26} gap={1} radius={2} />;
 }
-
-function Thumb({ src, alt }: { src: string | null; alt?: string }) {
-  if (!src) {
-    return <div style={thumbBoxStyle} title={alt || ''} />;
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={thumbImgStyle} />;
-}
-
-const thumbImgStyle: React.CSSProperties = {
-  width: 38,
-  height: 26,
-  objectFit: 'contain',
-  borderRadius: 2,
-  background: '#0a0c10',
-  display: 'block',
-};
-const thumbBoxStyle: React.CSSProperties = {
-  ...thumbImgStyle,
-  border: '1px solid #2e333c',
-};
 
 function SortHeader({
   k, current, dir, onClick, children,

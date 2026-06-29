@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { MentionedComment } from '@/app/(app)/r/[slug]/MentionInput';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { relativeTime } from '@/lib/datetime';
@@ -210,30 +210,5 @@ function ParticipantBubbles({ participants }: { participants: Participant[] }) {
 }
 
 function PlayerThumbs({ player }: { player: any }) {
-  const leader = cardImageUrl(player?.leader, true);
-  const base = cardImageUrl(player?.base, false);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-      <Thumb src={leader} alt={player?.leader?.name} />
-      <Thumb src={base} alt={player?.base?.name} />
-    </div>
-  );
+  return <LeaderBasePair leader={player?.leader} base={player?.base} width={38} height={26} gap={1} radius={2} />;
 }
-
-function Thumb({ src, alt }: { src: string | null; alt?: string }) {
-  if (!src) {
-    return <div style={thumbBoxStyle} title={alt || ''} />;
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={thumbImgStyle} />;
-}
-
-const thumbImgStyle: React.CSSProperties = {
-  width: 38,
-  height: 26,
-  objectFit: 'contain',
-  borderRadius: 2,
-  background: '#0a0c10',
-  display: 'block',
-};
-const thumbBoxStyle: React.CSSProperties = { ...thumbImgStyle, border: '1px solid #2e333c' };
