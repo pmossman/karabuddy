@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { type DecksByUserId, type Frame, extractSeenCards } from '@/lib/replayDecoder';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { Modal } from '@/app/_components/Modal';
 import { DeckBlock, DeckList } from './Decks';
 
@@ -74,6 +75,7 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
 
   const activeDeck = activeId ? decks[activeId] : null;
   const isOpponentTab = activeId && activeId !== localPlayerId;
+  const narrow = useMediaQuery('(max-width: 640px)');
 
   return (
     <Modal open={open} onClose={onClose} ariaLabel="Replay decks" width="min(1100px, 95vw)" height="min(800px, 90vh)">
@@ -82,12 +84,13 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '14px 18px',
+            padding: narrow ? '12px 14px' : '14px 18px',
             borderBottom: '1px solid #2e333c',
             gap: 12,
           }}
         >
-          <div role="tablist" style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0, overflowX: 'auto' }}>
+          {/* B205: tabs WRAP instead of horizontally scrolling on narrow widths. */}
+          <div role="tablist" style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
             {orderedIds.map((pid) => {
               const deck = decks[pid];
               const isActive = pid === activeId;
@@ -110,6 +113,9 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
                     cursor: 'pointer',
                     fontFamily: 'inherit',
                     whiteSpace: 'nowrap',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                 >
                   {deck.username || 'Unknown'}{isLocal ? ' · You' : ''}
@@ -146,7 +152,7 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
           </div>
         </header>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: 22, display: 'flex', flexDirection: 'column', gap: 28 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: narrow ? 14 : 22, display: 'flex', flexDirection: 'column', gap: 28 }}>
           {activeDeck && (
             <DeckBlock
               deck={activeDeck}

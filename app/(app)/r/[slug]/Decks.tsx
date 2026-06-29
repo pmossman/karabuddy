@@ -7,6 +7,7 @@
 
 import Link from 'next/link';
 import { cardImageUrl } from '@/lib/cardImage';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import type { DecksByUserId, UserDeck, DeckCardRef } from '@/lib/replayDecoder';
 
 interface Props {
@@ -99,6 +100,9 @@ export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isL
 }
 
 export function DeckList({ title, cards }: { title: string; cards: DeckCardRef[] }) {
+  // B205: shrink the card thumbs on phones (~4/row) instead of 2 huge ones —
+  // mirrors the dense card-stats grid. Desktop keeps the roomier 120px floor.
+  const narrow = useMediaQuery('(max-width: 640px)');
   // Sort by cost asc, then by id for stable ordering. Matches karabast's
   // deckbuilder display order.
   const sorted = [...cards].sort((a, b) => {
@@ -112,7 +116,7 @@ export function DeckList({ title, cards }: { title: string; cards: DeckCardRef[]
       <h3 style={{ margin: 0, fontSize: 11, color: '#a0a8b8', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
         {title}
       </h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? 78 : 120}px, 1fr))`, gap: 8 }}>
         {sorted.map((c, i) => (
           <CardThumb key={`${c.id}-${i}`} card={c} />
         ))}
