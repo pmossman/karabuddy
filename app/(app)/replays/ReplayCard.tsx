@@ -9,7 +9,7 @@ import { ShareBadge } from './ShareBadge';
 import { RowActions } from './RowActions';
 import { CommentCountButton } from './CommentCountButton';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
-import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
+import { MatchupRow } from '@/app/_components/MatchupRow';
 import { useReplaySelection, SelectBox } from './selection';
 
 interface ReplayRow {
@@ -103,11 +103,7 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
           <PrivateMatchup row={replay as any} thumb={44} />
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
-              <Matchup player={p1} />
-              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
-              <Matchup player={p2} />
-            </div>
+            <MatchupRow p1={p1} p2={p2} />
             {/* B53: user-set display name takes precedence over the auto
                 deck-text. The auto deck-text moves to a smaller sub-line. */}
             {replay.displayName ? (
@@ -230,15 +226,6 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
         <div><CommentCountButton replay={replay} variant="card" /></div>
         <RowActions replay={replay} canManage={canManage} />
       </div>
-    </div>
-  );
-}
-
-function Matchup({ player }: { player: any }) {
-  if (!player) return <div style={{ flex: 1 }} />;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, alignItems: 'center', minWidth: 0 }}>
-      <LeaderBasePair leader={player.leader} base={player.base} width={90} height={64} radius={4} gap={4} align="center" fallback="name" />
     </div>
   );
 }

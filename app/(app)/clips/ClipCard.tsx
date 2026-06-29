@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
+import { MatchupRow } from '@/app/_components/MatchupRow';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { deckLabel } from '@/lib/players';
 import { formatTimestamp } from '@/lib/datetime';
@@ -44,11 +44,7 @@ export function ClipCard({ clip, showCreator }: { clip: SerializedClipRow; showC
       }}
     >
       <Link href={`/c/${clip.clipSlug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
-          <Matchup player={p1} />
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
-          <Matchup player={p2} />
-        </div>
+        <MatchupRow p1={p1} p2={p2} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span aria-hidden style={{ flex: '0 0 auto', color: '#4d9dff', display: 'flex' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
@@ -83,14 +79,5 @@ export function ClipCard({ clip, showCreator }: { clip: SerializedClipRow; showC
       )}
     </div>
     </>
-  );
-}
-
-function Matchup({ player }: { player: any }) {
-  if (!player) return <div style={{ flex: 1 }} />;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, alignItems: 'center', minWidth: 0 }}>
-      <LeaderBasePair leader={player.leader} base={player.base} width={90} height={64} radius={4} gap={4} align="center" fallback="name" />
-    </div>
   );
 }
