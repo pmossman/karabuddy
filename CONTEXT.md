@@ -212,3 +212,27 @@ for the decisions behind the model.
   across frames; only on forward playback. Animates an overlay CLONE (real base
   hidden underneath) — transforming the live base in the board DOM didn't move
   it.
+
+## Canonical UI components (build-here registry)
+
+When building a surface that does one of these jobs, **use the canonical component — don't re-roll it.** This list is the defense against conceptual duplication (the same job done by divergent code in different files — the failure that let the deck viewer fork into three implementations). It complements the audit method: classify components by concept, invert concept→components, and anything with >1 implementation is a re-fork to reconcile.
+
+| Concept | Canonical | Notes |
+| --- | --- | --- |
+| Modal / dialog overlay | `<Modal>` (`app/_components/Modal.tsx`) | portal + backdrop + Esc + scroll-lock |
+| Confirm | `useConfirm()` / `<ConfirmDialog>` (`Confirm.tsx`) | rides `<Modal>` |
+| Popover / responsive menu | `<Popover>`, `<ResponsiveMenu>` | desktop popover ↔ mobile sheet |
+| Dropdown `<select>` | `<Select>` | **CI-guarded** (canonical-components.test.ts) |
+| Single-select button group | `<Segmented>` | track/pill variants |
+| On/off + multi toggle | `<LedToggle>` | ADR-0006, **CI-guarded** (no-native-form-controls.test.ts) |
+| Scope / nav tabs | `<ScopeTabs>` | desktop strip ↔ mobile picker |
+| Per-player deck tabs | `<DecksTabs>` | viewer modal + grid quick-view + deck page |
+| Sortable table | `useSortable` + `<SortHeader>` | |
+| Filter toolbar | `<FilterChip>` / `<Field>` (`FilterToolbar.tsx`) | |
+| Leader+base thumbnail | `<LeaderBasePair>` | mini matchup thumb (NOT the live-board `LeaderBaseCard`) |
+| Matchup VS row | `<MatchupRow>` | replay/clip card header |
+| Deck card list | `<DeckBlock>` / `<DecksTabs>` | **retiring `DeckGrid`** — migrate, don't extend |
+| Status (error/loading/empty/muted) | `StatusUi.tsx` | |
+| Buttons | `glowButtonStyle` (primary) / `buttonStyles` (ghost/danger) | |
+
+**Greppable divergences are CI-enforced** (`test/unit/canonical-components.test.ts` + `no-native-form-controls.test.ts`); each guard carries an allowlist that is the migration backlog for that concept. Non-greppable concepts (deck rendering, segmented controls, activity rows) rely on this registry + a periodic concept-axis audit. **Known not-yet-unified (migrate onto the canonical, don't add new copies):** `DeckGrid`→`DeckBlock`; team/tournament form `<select>`s→`<Select>`; bespoke segmented controls (ReviewQueue/SeriesNav/JumpToMenu/StepModeOverlay/TimelineGroups)→`<Segmented>`; feed rows (TeamDiscussion/HomeTeamActivity/MentionsList/HomeReviewRequests)→a shared `<ActivityRow>`.
