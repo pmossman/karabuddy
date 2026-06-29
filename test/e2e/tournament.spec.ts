@@ -149,7 +149,7 @@ test('unregister removes the entrant while in setup', async ({ page }) => {
   await expect(page.getByTestId('entrant-row')).toHaveCount(1);
   // B145: Unregister lives on your row + confirms before removing.
   await page.getByTestId('entrant-row').getByRole('button', { name: 'Unregister' }).click();
-  await expect(page.getByTestId('confirm-modal')).toBeVisible();
-  await page.getByTestId('confirm-modal').getByRole('button', { name: 'Unregister' }).click();
+  await expect(page.getByTestId('confirm-dialog-confirm')).toBeVisible();
+  await page.getByTestId('confirm-dialog-confirm').click();
   await expect(page.getByTestId('entrant-row')).toHaveCount(0);
 });

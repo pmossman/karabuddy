@@ -7,6 +7,7 @@ import { ReplayCard } from './ReplayCard';
 import { RowActions } from './RowActions';
 import { ReplaySelectionProvider, SelectBox, useReplaySelection, type ReplaySelectionApi } from './selection';
 import { ResponsiveMenu } from '@/app/_components/ResponsiveMenu';
+import { useConfirm } from '@/app/_components/Confirm';
 import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, shareSectionLabel } from '@/app/_components/shareControls';
 import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
@@ -158,6 +159,7 @@ export function ReplayFilters({
   // degrades to the (already mobile-friendly) card layout so nothing is hidden
   // behind a horizontal scroll. SSR-safe: false on the server + first tick.
   const isNarrow = useMediaQuery('(max-width: 720px)');
+  const { confirm, confirmDialog } = useConfirm();
 
   // B116: filter by the leader the viewer/uploader was playing (`mine`) and the
   // leader played against (`vs`) — replaces the old single leader + opponent-
@@ -455,7 +457,7 @@ export function ReplayFilters({
           onSelectAll={() => setSelected(new Set(eligibleSlugs))}
           onClear={() => setSelected(new Set())}
           onApply={runBulkBatch}
-          onDelete={() => { if (confirm(`Delete ${selected.size} replay${selected.size === 1 ? '' : 's'}? This can't be undone.`)) runBulkBatch([{ op: 'delete' }]); }}
+          onDelete={async () => { if (!(await confirm({ title: `Delete ${selected.size} replay${selected.size === 1 ? '' : 's'}?`, message: "This can't be undone.", confirmLabel: 'Delete', destructive: true }))) return; runBulkBatch([{ op: 'delete' }]); }}
         />
       )}
 
@@ -506,6 +508,7 @@ export function ReplayFilters({
           </button>
         </div>
       )}
+      {confirmDialog}
     </ReplaySelectionProvider>
   );
 }

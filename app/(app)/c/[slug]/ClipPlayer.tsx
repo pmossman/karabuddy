@@ -17,6 +17,7 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cardImageUrl } from '@/lib/cardImage';
 import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
+import { useConfirm } from '@/app/_components/Confirm';
 
 // B136: the dedicated clip reel — a stripped, auto-playing, looping view of a
 // replay's [start,end] range. Reuses the board pipeline (own GameProvider +
@@ -50,6 +51,7 @@ export function ClipPlayer(props: ClipPlayerProps) {
 
 function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, endFrame, title, anonymize, canDelete }: ClipPlayerProps) {
   const router = useRouter();
+  const { confirm, confirmDialog } = useConfirm();
   const boardRef = useRef<HTMLDivElement>(null);
   const skipAnimRef = useRef(false);
 
@@ -371,7 +373,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
   };
   const canNativeShare = typeof navigator !== 'undefined' && !!(navigator as any).share;
   const del = async () => {
-    if (!confirm('Delete this clip? The link will stop working.')) return;
+    if (!(await confirm({ title: 'Delete this clip?', message: 'The link will stop working.', confirmLabel: 'Delete', destructive: true }))) return;
     try {
       const res = await fetch(`/api/clips/${clipSlug}`, { method: 'DELETE' });
       if ((await res.json()).ok) router.push(`/r/${replaySlug}`);
@@ -406,6 +408,8 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
   };
 
   return (
+    <>
+    {confirmDialog}
     <div style={{ position: 'relative', width: '100%', height: 'calc(100dvh - var(--kb-header-h, 0px))', background: '#0b0b12', overflow: 'hidden' }}>
       {/* Board layer — tapping it (empty area) toggles the chrome. Controls sit
           above as siblings, so tapping a control doesn't reach here. */}
@@ -568,6 +572,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
         </div>
       )}
     </div>
+    </>
   );
 }
 

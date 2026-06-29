@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Frame } from '@/lib/replayDecoder';
+import { Modal } from '@/app/_components/Modal';
 import { analyzeResourcing, type ResourcingReport, type RegretFlag } from '@/lib/resourcingAnalysis';
 
 // B101/Phase1: per-game, first-person resourcing report. Runs the analyzer
@@ -57,24 +58,12 @@ export function ResourcingModal({ open, onClose, frames, localPlayerId, onJump }
     return analyzeResourcing(frames, { recorderId: localPlayerId, costOf: (id) => catalog[id]?.cost ?? null, nameOf: (id) => catalog[id]?.name || id });
   }, [frames, catalog, localPlayerId]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [open, onClose]);
-
-  if (!open) return null;
   const jump = (i: number) => { onJump(i); onClose(); };
   // Severity-sort flags: buried (a missed play) first, then clogs by how much was floated.
   const flags = report ? [...report.flags].sort((a, b) => rank(b) - rank(a)) : [];
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div role="dialog" aria-modal="true" aria-label="Resourcing report" onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(760px, 95vw)', maxHeight: '90vh', background: '#11141a', border: '1px solid #2e333c', borderRadius: 10, display: 'flex', flexDirection: 'column', overflow: 'hidden', color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif' }}>
+    <Modal open={open} onClose={onClose} ariaLabel="Resourcing report" width="min(760px, 95vw)" maxHeight="90vh">
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #2e333c' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#4dd2ff' }}>Resourcing</span>
@@ -139,8 +128,7 @@ export function ResourcingModal({ open, onClose, frames, localPlayerId, onJump }
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

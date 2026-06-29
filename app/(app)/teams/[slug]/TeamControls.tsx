@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorNote } from '@/app/_components/StatusUi';
+import { useConfirm } from '@/app/_components/Confirm';
 
 // B55a: owner + member controls for a team — generate invite, copy link,
 // leave team, rename (owners). All inline on the team page header.
@@ -20,6 +21,7 @@ export function TeamControls({
   memberCount: number;
 }) {
   const router = useRouter();
+  const { confirm, confirmDialog } = useConfirm();
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -57,10 +59,10 @@ export function TeamControls({
   };
 
   const leave = async () => {
-    const confirmMsg = isOwner && memberCount === 1
-      ? 'Leaving as the only member effectively deletes this team (the data sticks around but is unreachable). Continue?'
-      : 'Leave this team?';
-    if (!confirm(confirmMsg)) return;
+    const opts = isOwner && memberCount === 1
+      ? { title: 'Leave and delete this team?', message: 'Leaving as the only member effectively deletes this team — the data sticks around but is unreachable.', confirmLabel: 'Leave team', destructive: true }
+      : { title: 'Leave this team?', message: 'You\'ll be removed from this team and need an invite link to rejoin.', confirmLabel: 'Leave team', destructive: true };
+    if (!(await confirm(opts))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/teams/${slug}`, { method: 'DELETE' });
@@ -107,6 +109,7 @@ export function TeamControls({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {confirmDialog}
       <ErrorNote>{error}</ErrorNote>
 
       {renaming && isOwner ? (

@@ -48,9 +48,9 @@ test('settings: Linked extensions section lists claimed tokens + supports revoke
   await expect(row).toBeVisible();
   await expect(row).toContainText(fakeToken.slice(0, 12));
 
-  // Revoke (auto-accept the confirm dialog).
-  page.once('dialog', (d) => d.accept());
+  // Revoke → confirm in the shared ConfirmDialog (B204, was a native confirm()).
   await row.getByRole('button', { name: /Revoke/i }).click();
+  await page.getByTestId('confirm-dialog-confirm').click();
   // After revoke the row is gone.
   await expect(page.getByTestId('linked-extension-row')).toHaveCount(0);
 });

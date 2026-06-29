@@ -6,6 +6,8 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 import { cardImageUrl } from '@/lib/cardImage';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { copyToClipboard } from '@/lib/clipboard';
+import { Modal } from '@/app/_components/Modal';
+import { ConfirmDialog } from '@/app/_components/Confirm';
 
 // B151: small leader + base thumbnails for an entrant's registered deck. Ids are
 // "SET_NNN"; the leader image uses the `-base` (deployed) side.
@@ -631,67 +633,18 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
         />
       )}
       {confirmLeave && myEntrant && (
-        <ConfirmModal
+        <ConfirmDialog
+          open
           title="Unregister?"
           message={`Remove your registration from ${t.name}? You'll lose your spot${myEntrant.hasDeck ? ' and submitted deck' : ''}. You can register again while registration is open.`}
           confirmLabel="Unregister"
+          destructive
           busy={busy}
           onConfirm={async () => { await leave(); setConfirmLeave(false); }}
-          onClose={() => setConfirmLeave(false)}
+          onCancel={() => setConfirmLeave(false)}
         />
       )}
     </section>
-  );
-}
-
-// B145: a generic "are you sure?" confirmation modal (destructive confirm).
-function ConfirmModal({
-  title, message, confirmLabel, busy, onConfirm, onClose,
-}: {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  busy: boolean;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      data-testid="confirm-modal-overlay"
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 60,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', padding: 16,
-      }}
-    >
-      <div
-        data-testid="confirm-modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#11141a', border: '1px solid #2e333c', borderRadius: 12,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', width: 'min(420px, 100%)',
-          padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>{title}</h3>
-          <button type="button" aria-label="Close" onClick={onClose} style={{ background: 'transparent', border: 0, color: '#a0a8b8', fontSize: 16, cursor: 'pointer', padding: 4 }}>✕</button>
-        </div>
-        <p style={{ margin: 0, fontSize: 13, color: '#a0a8b8', lineHeight: 1.5 }}>{message}</p>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} style={ghostButtonStyle}>Cancel</button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            style={{ background: 'transparent', border: '1px solid rgba(255,107,107,0.5)', color: '#ff8a8a', fontSize: 12, fontWeight: 700, padding: '8px 16px', borderRadius: 6, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}
-          >
-            {busy ? 'Working…' : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -730,23 +683,10 @@ function DeckModal({
   };
 
   return (
-    <div
-      data-testid="deck-modal-overlay"
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 60,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', padding: 16,
-      }}
-    >
+    <Modal open onClose={onClose} width="min(480px, 100%)">
       <div
         data-testid="deck-modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#11141a', border: '1px solid #2e333c', borderRadius: 12,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', width: 'min(480px, 100%)',
-          padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12,
-        }}
+        style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>
@@ -777,7 +717,7 @@ function DeckModal({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -832,23 +772,10 @@ function GuestModal({
   };
 
   return (
-    <div
-      data-testid="guest-modal-overlay"
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 60,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', padding: 16,
-      }}
-    >
+    <Modal open onClose={onClose} width="min(480px, 100%)">
       <div
         data-testid="guest-modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#11141a', border: '1px solid #2e333c', borderRadius: 12,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', width: 'min(480px, 100%)',
-          padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12,
-        }}
+        style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#e6e6e6' }}>
@@ -894,7 +821,7 @@ function GuestModal({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

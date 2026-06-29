@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
+import { useConfirm } from '@/app/_components/Confirm';
 import { formatTimestamp } from '@/lib/datetime';
 
 // B69: list the user's linked extension installs + show which row
@@ -21,6 +22,7 @@ export function LinkedExtensions() {
   const [error, setError] = useState<string | null>(null);
   const [thisBrowserToken, setThisBrowserToken] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // token currently being revoked
+  const { confirm, confirmDialog } = useConfirm();
 
   // Listen for both the bridge's proactive announcement AND fire an
   // explicit request — same pattern AutoClaim uses. Whichever returns
@@ -66,7 +68,7 @@ export function LinkedExtensions() {
   useEffect(() => { load(); }, []);
 
   const revoke = async (token: string) => {
-    if (!confirm('Revoke this extension link? Future replays from this install will upload as anonymous until you re-link from that browser.')) return;
+    if (!(await confirm({ title: 'Revoke extension link?', message: 'Future replays from this install will upload as anonymous until you re-link from that browser.', confirmLabel: 'Revoke', destructive: true }))) return;
     setBusy(token);
     try {
       const res = await fetch('/api/me/extensions', {
@@ -99,6 +101,8 @@ export function LinkedExtensions() {
   }
 
   return (
+    <>
+    {confirmDialog}
     <div data-testid="linked-extensions-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {extensions.map((ext) => {
         const isThis = thisBrowserToken === ext.token;
@@ -154,5 +158,6 @@ export function LinkedExtensions() {
         );
       })}
     </div>
+    </>
   );
 }

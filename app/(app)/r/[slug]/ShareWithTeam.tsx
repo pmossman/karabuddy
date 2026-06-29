@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ConfirmDialog } from '@/app/_components/Confirm';
 import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, shareSectionLabel } from '@/app/_components/shareControls';
 
 // B55b: replay-owner UI for sharing a replay explicitly with one or more
@@ -262,81 +263,20 @@ export function ShareWithTeam({
         {publicSection}
       </div>
       {confirm && (
-        <UnshareConfirm
-          teamName={confirm.name}
-          count={confirm.count}
+        <ConfirmDialog
+          open
+          title={`Un-share from ${confirm.name}?`}
+          message={
+            `This removes the replay from ${confirm.name}'s browser. ${confirm.count} ${confirm.count === 1 ? 'comment is' : 'comments are'} scoped to ` +
+            `${confirm.name} and will be untagged from the team — they stay on the replay but ` +
+            `won't appear in ${confirm.name}'s discussion anymore.`
+          }
+          confirmLabel="Un-share"
+          destructive
           onCancel={() => setConfirm(null)}
           onConfirm={() => { const slug = confirm.slug; setConfirm(null); applyToggle(slug); }}
         />
       )}
-    </div>
-  );
-}
-
-// B100: confirmation for an un-share that will also untag comments from the
-// team. Explains the consequence in plain terms before it happens. Rendered
-// inline (a child of the kebab menu, where ShareWithTeam lives on the team
-// grid) so the menu's outside-click guard keeps it mounted while you read it
-// — but it must reset `white-space` because the table's actions cell sets
-// `nowrap`, which would otherwise inherit in and stop the copy wrapping.
-function UnshareConfirm({
-  teamName,
-  count,
-  onConfirm,
-  onCancel,
-}: {
-  teamName: string;
-  count: number;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
-  const noun = count === 1 ? 'comment is' : 'comments are';
-  const message =
-    `This removes the replay from ${teamName}'s browser. ${count} ${noun} scoped to ` +
-    `${teamName} and will be untagged from the team — they stay on the replay but ` +
-    `won't appear in ${teamName}'s discussion anymore.`;
-
-  return (
-    <div
-      onClick={onCancel}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, whiteSpace: 'normal' }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-label={`Un-share from ${teamName}`}
-        data-testid="unshare-confirm"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(440px, 92vw)', boxSizing: 'border-box', background: '#11141a', border: '1px solid #2e333c', borderRadius: 10, padding: 18, color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif', textAlign: 'left' }}
-      >
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Un-share from {teamName}?</div>
-        <p style={{ fontSize: 13, color: '#c2c8d4', lineHeight: 1.5, margin: '0 0 16px', wordBreak: 'break-word' }}>
-          {message}
-        </p>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{ background: 'transparent', border: '1px solid #2e333c', color: '#a0a8b8', padding: '6px 14px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="unshare-confirm-button"
-            onClick={onConfirm}
-            style={{ background: 'rgba(255,107,107,0.14)', border: '1px solid #5a2a2a', color: '#ff6b6b', padding: '6px 14px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            Un-share
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

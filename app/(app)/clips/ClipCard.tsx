@@ -7,6 +7,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { deckLabel } from '@/lib/players';
 import { formatTimestamp } from '@/lib/datetime';
+import { useConfirm } from '@/app/_components/Confirm';
 import type { SerializedClipRow } from '@/lib/clipRow';
 
 // B142: one clip in the browser grid — the parent-replay matchup (leaders/bases)
@@ -16,9 +17,10 @@ export function ClipCard({ clip, showCreator }: { clip: SerializedClipRow; showC
   const [p1, p2] = players;
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const { confirm, confirmDialog } = useConfirm();
 
   const del = async () => {
-    if (busy || !confirm('Delete this clip? This can’t be undone.')) return;
+    if (busy || !(await confirm({ title: 'Delete this clip?', message: 'This can’t be undone.', confirmLabel: 'Delete', destructive: true }))) return;
     setBusy(true);
     const res = await fetch(`/api/clips/${clip.clipSlug}`, { method: 'DELETE' });
     if (res.ok) router.refresh();
@@ -26,6 +28,8 @@ export function ClipCard({ clip, showCreator }: { clip: SerializedClipRow; showC
   };
 
   return (
+    <>
+    {confirmDialog}
     <div
       style={{
         background: tokens.surface.panel,
@@ -78,6 +82,7 @@ export function ClipCard({ clip, showCreator }: { clip: SerializedClipRow; showC
         </div>
       )}
     </div>
+    </>
   );
 }
 

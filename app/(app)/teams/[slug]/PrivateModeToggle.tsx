@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getCompanionInfo, extensionPresent, companionCapabilityState, loadedTeamKeys, openKeyManager } from '@/lib/companion';
 import { Panel } from '@/app/_components/Panel';
 import { ErrorNote } from '@/app/_components/StatusUi';
+import { useConfirm } from '@/app/_components/Confirm';
 
 // B170 / ADR 0010: the owner's "Private (encrypted) mode" control on the team
 // Settings tab. The server only ever stores the NON-SECRET team_key_id (the key
@@ -26,6 +27,7 @@ export function PrivateModeToggle({
   initialTeamKeyId: string | null;
 }) {
   const router = useRouter();
+  const { confirm, confirmDialog } = useConfirm();
   const [isPrivate, setIsPrivate] = useState(initialPrivateMode);
   const [teamKeyId, setTeamKeyId] = useState(initialTeamKeyId);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -92,7 +94,12 @@ export function PrivateModeToggle({
   };
 
   const disable = async () => {
-    if (!window.confirm('Turn off private mode? New replays will upload as normal (plaintext). Already-encrypted replays stay encrypted and still need the key to view.')) return;
+    if (!(await confirm({
+      title: 'Turn off private mode?',
+      message: 'New replays will upload as normal (plaintext). Already-encrypted replays stay encrypted and still need the key to view.',
+      confirmLabel: 'Turn off',
+      destructive: true,
+    }))) return;
     setPhase('saving');
     const body = await patch({ privateMode: false });
     if (body.ok) { setIsPrivate(false); setTeamKeyId(null); setPhase('idle'); router.refresh(); }
@@ -169,6 +176,7 @@ export function PrivateModeToggle({
         </>
       )}
       <ErrorNote style={{ marginTop: 8 }}>{error}</ErrorNote>
+      {confirmDialog}
     </Panel>
   );
 }

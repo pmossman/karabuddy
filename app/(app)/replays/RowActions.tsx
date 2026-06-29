@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ShareWithTeam } from '@/app/(app)/r/[slug]/ShareWithTeam';
 import { ReplayDecksModal } from './ReplayDecksModal';
 import { ReplayCommentsModal } from './ReplayCommentsModal';
+import { useConfirm } from '@/app/_components/Confirm';
 import { matchupTitle } from '@/lib/matchMetadata';
 
 // B100: per-row kebab (⋮) menu of common actions. The frequent one —
@@ -38,6 +39,7 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const { confirm, confirmDialog } = useConfirm();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -76,7 +78,7 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
   }, [open]);
 
   const remove = async () => {
-    if (!confirm('Delete this replay? This cannot be undone.')) return;
+    if (!(await confirm({ title: 'Delete this replay?', message: 'This cannot be undone.', confirmLabel: 'Delete', destructive: true }))) return;
     setOpen(false);
     const res = await fetch(`/api/replays/${replay.slug}`, { method: 'DELETE' });
     const body = await res.json().catch(() => ({}));
@@ -181,6 +183,8 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
           onClose={() => setCommentsOpen(false)}
         />
       )}
+
+      {confirmDialog}
     </>
   );
 }

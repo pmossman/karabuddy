@@ -73,10 +73,11 @@ test('un-sharing a replay that has team-scoped comments confirms, then fully un-
   await menu.getByRole('checkbox', { name: 'Roster' }).click();
 
   // Confirmation explains the consequence (the scoped comment gets untagged).
-  const confirm = page.getByTestId('unshare-confirm');
+  // B204: now the shared ConfirmDialog (role=dialog; confirm button testid).
+  const confirm = page.getByRole('dialog');
   await expect(confirm).toBeVisible();
   await expect(confirm).toContainText(/1 comment/i);
-  await page.getByTestId('unshare-confirm-button').click();
+  await page.getByTestId('confirm-dialog-confirm').click();
 
   // Full un-share: even though it had a team-scoped comment, it's gone from
   // the team grid (the scope was stripped too).

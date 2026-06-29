@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { formatTimestamp } from '@/lib/datetime';
 import { ErrorNote, Loading, Muted } from '@/app/_components/StatusUi';
+import { Modal } from '@/app/_components/Modal';
 
 // B100: lightweight comments viewer reachable by clicking a replay's 💬
 // count in the browser — read the discussion without opening the full
@@ -29,17 +30,6 @@ export function ReplayCommentsModal({
 }) {
   const [tags, setTags] = useState<TagRow[] | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,70 +67,38 @@ export function ReplayCommentsModal({
   }, [tags]);
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 220,
-        background: 'rgba(0, 0, 0, 0.65)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Replay comments"
-        data-testid="comments-modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(560px, 95vw)',
-          maxHeight: '85vh',
-          background: '#11141a',
-          border: '1px solid #2e333c',
-          borderRadius: 10,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          color: '#e6e6e6',
-          fontFamily: 'var(--font-barlow), sans-serif',
-        }}
-      >
-        <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #2e333c', gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
-            <div style={{ fontSize: 11, color: '#6c7588', marginTop: 2 }}>Comments</div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 22, lineHeight: 1, cursor: 'pointer', padding: 4, fontFamily: 'inherit' }}
-          >
-            ×
-          </button>
-        </header>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {state === 'loading' && <Loading label="comments" />}
-          {state === 'error' && <ErrorNote>Couldn&apos;t load comments.</ErrorNote>}
-          {state === 'ready' && threads.length === 0 && <Muted>No comments on this replay yet.</Muted>}
-          {state === 'ready' && threads.map(({ tag, replies }) => (
-            <div key={tag.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <Comment tag={tag} replaySlug={replaySlug} />
-              {replies.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 14, borderLeft: '2px solid #2e333c', marginLeft: 4 }}>
-                  {replies.map((rep) => <Comment key={rep.id} tag={rep} replaySlug={replaySlug} />)}
-                </div>
-              )}
-            </div>
-          ))}
+    <Modal open onClose={onClose} ariaLabel="Replay comments" width="min(560px, 95vw)" maxHeight="85vh">
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #2e333c', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
+          <div style={{ fontSize: 11, color: '#6c7588', marginTop: 2 }}>Comments</div>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          style={{ background: 'transparent', color: '#a0a8b8', border: 0, fontSize: 22, lineHeight: 1, cursor: 'pointer', padding: 4, fontFamily: 'inherit' }}
+        >
+          ×
+        </button>
+      </header>
+
+      <div data-testid="comments-modal" style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {state === 'loading' && <Loading label="comments" />}
+        {state === 'error' && <ErrorNote>Couldn&apos;t load comments.</ErrorNote>}
+        {state === 'ready' && threads.length === 0 && <Muted>No comments on this replay yet.</Muted>}
+        {state === 'ready' && threads.map(({ tag, replies }) => (
+          <div key={tag.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Comment tag={tag} replaySlug={replaySlug} />
+            {replies.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 14, borderLeft: '2px solid #2e333c', marginLeft: 4 }}>
+                {replies.map((rep) => <Comment key={rep.id} tag={rep} replaySlug={replaySlug} />)}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
-    </div>
+    </Modal>
   );
 }
 

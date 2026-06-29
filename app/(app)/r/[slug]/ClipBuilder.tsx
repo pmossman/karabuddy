@@ -8,6 +8,7 @@ import { ClipBoardPreview } from './ClipBoardPreview';
 import { computeFrameDwells, PLAYBACK_TICK_MS } from './frameDwell';
 import { PLAYBACK_SPEEDS, PLAYBACK_SPEED_DEFAULT } from './playback';
 import { copyToClipboard } from '@/lib/clipboard';
+import { Modal } from '@/app/_components/Modal';
 import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B136: the clip trim builder — a large modal over the replay viewer with its
@@ -45,36 +46,13 @@ const KIND_COLOR: Record<ChapterKind, string> = {
 
 export function ClipBuilder(props: Props) {
   const { open, onClose } = props;
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [open, onClose]);
-  if (!open) return null;
   return (
-    <div
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'min(3vw, 24px)' }}
-    >
-      <div
-        role="dialog"
-        aria-label="Create a clip"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(1000px, 96vw)', maxHeight: '94vh', display: 'flex', flexDirection: 'column',
-          background: '#11141a', border: '1px solid #2e333c', borderRadius: 14, overflow: 'hidden',
-          boxShadow: '0 18px 50px rgba(0,0,0,0.6)', color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif',
-        }}
-      >
-        {/* Nested GameProvider → the builder's board is fully independent. */}
-        <GameProvider>
-          <ClipBuilderInner {...props} />
-        </GameProvider>
-      </div>
-    </div>
+    <Modal open={open} onClose={onClose} ariaLabel="Create a clip" width="min(1000px, 96vw)" maxHeight="94vh">
+      {/* Nested GameProvider → the builder's board is fully independent. */}
+      <GameProvider>
+        <ClipBuilderInner {...props} />
+      </GameProvider>
+    </Modal>
   );
 }
 

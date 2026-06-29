@@ -8,6 +8,7 @@ import type { Frame, MatchMeta, DecksByUserId } from '@/lib/replayDecoder';
 import { getOrCreateInstallToken, getOrCreateAuthorName } from '@/lib/installToken';
 import { canDeleteTag, canEditTag, canMutateReplay, type AuthContext } from '@/lib/replayPermissions';
 import { Popover } from '@/app/_components/Popover';
+import { useConfirm } from '@/app/_components/Confirm';
 import { DecksModal } from './DecksModal';
 import { ClipsList, type ClipSummary } from './ClipsList';
 import { SharePopover } from './SharePopover';
@@ -169,6 +170,7 @@ const loadStoredSidebarWidth = (): number => {
 
 export function TagSidebar({ replay, frames, currentIndex, lastTransition, onStep, onJump, onJumpToAdjacentTag, tags, setTags, toOriginalFrame, playerUsernames, mode, setMode, messagesByFrame, drawerOpen, setDrawerOpen, isMobile, reviewSize, reviewDragging, reviewHandleProps, mobileLandscape, mobilePortrait, sidebarWidth, setSidebarWidth, matchMeta, decks, localPlayerId, armedTeams, onArmedTeamsChange, onOpenResourcing, onOpenSideboard, anonymize, series, clips }: Props) {
   const { data: session } = useSession();
+  const { confirm, confirmDialog } = useConfirm();
   const [installToken, setInstallToken] = useState('');
   const [authorName, setAuthorName] = useState('');
   // B194: "Finish review" summary modal (the team being finished) + a bump that
@@ -471,7 +473,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
   }, [formOpen]);
 
   const deleteTag = async (id: string) => {
-    if (!confirm('Delete this tag?')) return;
+    if (!(await confirm({ title: 'Delete this tag?', message: 'This permanently removes the comment from the replay.', confirmLabel: 'Delete', destructive: true }))) return;
     const res = await fetch(`/api/replays/${replay.slug}/tags/${id}`, {
       method: 'DELETE',
       headers: { 'X-Install-Token': installToken },
@@ -743,6 +745,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
 
   return (
     <>
+      {confirmDialog}
       {/* B44/B66b/B100: the ☰ review toggle (log + tags). On DESKTOP it
           shifts horizontally past the docked sidebar when open so it isn't
           buried. On MOBILE it's pinned to the bottom-right corner and stays
