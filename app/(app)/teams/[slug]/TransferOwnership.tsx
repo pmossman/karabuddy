@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { Panel } from '@/app/_components/Panel';
 import { ErrorNote } from '@/app/_components/StatusUi';
+import { btnGhost, btnDanger } from '@/app/_components/buttonStyles';
 
 // B160: owner-only "Transfer ownership" control in team Settings. Pick a member,
 // then confirm an explicit warning — the acting owner hands the team over and
@@ -108,11 +109,6 @@ export function TransferOwnership({
   );
 }
 
-const btnBase: React.CSSProperties = {
-  border: 0, borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-};
-const btnDanger: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#ff7a7a', border: '1px solid rgba(255, 122, 122, 0.4)' };
-const btnGhost: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#a0a8b8', border: '1px solid #4a4e56' };
 const selectStyle: React.CSSProperties = {
   background: '#11141a', color: '#e6e6e6', border: `1px solid ${tokens.color.border}`, borderRadius: 6,
   padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', outline: 'none', minWidth: 200,

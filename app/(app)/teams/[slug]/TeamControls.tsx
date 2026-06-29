@@ -6,6 +6,7 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorNote } from '@/app/_components/StatusUi';
 import { useConfirm } from '@/app/_components/Confirm';
+import { btnBase, btnGhost, btnDanger } from '@/app/_components/buttonStyles';
 
 // B55a: owner + member controls for a team — generate invite, copy link,
 // leave team, rename (owners). All inline on the team page header.
@@ -189,15 +190,4 @@ export function TeamControls({
   );
 }
 
-const btnBase: React.CSSProperties = {
-  border: 0,
-  borderRadius: 6,
-  padding: '8px 14px',
-  fontSize: 12,
-  fontWeight: 600,
-  fontFamily: 'inherit',
-  cursor: 'pointer',
-};
 const btnPrimary: React.CSSProperties = { ...btnBase, background: tokens.button.bg, color: tokens.color.accent, border: `1px solid ${tokens.color.primary}`, boxShadow: tokens.button.glow };
-const btnGhost: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#a0a8b8', border: '1px solid #4a4e56' };
-const btnDanger: React.CSSProperties = { ...btnBase, background: 'transparent', color: '#ff7a7a', border: '1px solid rgba(255, 122, 122, 0.4)' };
