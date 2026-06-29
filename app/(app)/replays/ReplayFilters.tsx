@@ -23,6 +23,7 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
 import { Segmented } from '@/app/_components/Segmented';
+import { FilterChip, Field } from '@/app/_components/FilterToolbar';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
 // + by-leader / timeline views + reuse on /teams/[slug]. B123-followup merged
@@ -417,9 +418,8 @@ export function ReplayFilters({
             </button>
           )}
           {activeChips.map((c) => (
-            <button key={c.key} type="button" onClick={c.onClear} style={chipButtonStyle}>
-              {c.label} <span style={{ color: '#6c7588', marginLeft: 4 }}>×</span>
-            </button>
+            <FilterChip key={c.key} label={c.label} onClear={c.onClear} glyph="×" glyphStyle={{ marginLeft: 4 }}
+              style={{ background: 'rgba(77, 157, 255, 0.18)', border: '1px solid rgba(77, 157, 255, 0.5)', color: '#a7d2ff', padding: '3px 10px', borderRadius: 999 }} />
           ))}
           {activeChips.length > 0 && (
             <button
@@ -1655,54 +1655,43 @@ function FilterControls({
         gap: 8,
       }}
     >
-      <Field label="My leader">
+      <Field orientation="column" label="My leader">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"
           value={myLeader} onChange={setMyLeader} options={ownLeaders.map((l) => [l, l] as const)} />
       </Field>
-      <Field label="Opponent leader">
+      <Field orientation="column" label="Opponent leader">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"
           value={vsLeader} onChange={setVsLeader} options={oppLeaders.map((l) => [l, l] as const)} />
       </Field>
       {showUploaderFilter && (
-        <Field label="Uploaded by">
+        <Field orientation="column" label="Uploaded by">
           <Select size="sm" style={replaySelectStyle} placeholder="Any member"
             value={uploadedBy} onChange={setUploadedBy} options={uploaders.map((u) => [u, u] as const)} />
         </Field>
       )}
-      <Field label="Date">
+      <Field orientation="column" label="Date">
         <Select size="sm" style={replaySelectStyle}
           value={since} onChange={setSince} options={SINCE_OPTIONS.map((s) => [s.value, s.label] as const)} />
       </Field>
-      <Field label="Format">
+      <Field orientation="column" label="Format">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"
           value={format} onChange={setFormat} options={Object.entries(FORMAT_LABEL)} />
       </Field>
-      <Field label="Mode">
+      <Field orientation="column" label="Mode">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"
           value={mode} onChange={setMode} options={Object.entries(MODE_LABEL)} />
       </Field>
-      <Field label="Result">
+      <Field orientation="column" label="Result">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"
           value={result} onChange={setResult} options={[['wins', 'Wins'], ['losses', 'Losses']] as const} />
       </Field>
       {labels.length > 0 && (
-        <Field label="Label">
+        <Field orientation="column" label="Label">
           <Select size="sm" style={replaySelectStyle} placeholder="Any"
             value={label} onChange={setLabel} options={labels.map((l) => [l, l] as const)} />
         </Field>
       )}
     </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 10, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
-        {label}
-      </span>
-      {children}
-    </label>
   );
 }
 
@@ -1718,14 +1707,3 @@ function NoMatchesEmpty() {
 // to the old local `selectStyle`: radius 4 (not 6), tighter 6px 8px padding,
 // suppressed focus outline, and no 220px maxWidth cap.
 const replaySelectStyle: React.CSSProperties = { borderRadius: 4, padding: '6px 8px', outline: 'none', maxWidth: 'none' };
-const chipButtonStyle: React.CSSProperties = {
-  background: 'rgba(77, 157, 255, 0.18)',
-  border: '1px solid rgba(77, 157, 255, 0.5)',
-  color: '#a7d2ff',
-  padding: '3px 10px',
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};

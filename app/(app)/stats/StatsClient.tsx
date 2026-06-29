@@ -6,6 +6,7 @@ import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
 import { Segmented } from '@/app/_components/Segmented';
+import { FilterChip, Field } from '@/app/_components/FilterToolbar';
 
 // B101/Phase2 (reframed): the Stats/Meta client, centered on the team/personal
 // contexts teams actually want — "our leader matchups" and "card stats for the
@@ -270,24 +271,27 @@ export function StatsClient({
           non-default choices stay visible as removable chips. Sort lives on the table headers. */}
       <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <FiltersToggle open={filtersOpen} count={activeChips.length} onClick={() => setFiltersOpen((v) => !v)} />
-        {activeChips.map((c) => <Chip key={c.key} label={c.label} onClear={c.onClear} />)}
+        {activeChips.map((c) => (
+          <FilterChip key={c.key} label={c.label} onClear={c.onClear} title="Clear"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(77,157,255,0.12)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 14, padding: '4px 10px' }} />
+        ))}
       </div>
 
       {filtersOpen && (
         <div style={filtersPanel}>
           {scope === 'team' && (
-            <Field label="Games"><Segmented options={[['internal', 'Internal'], ['external', 'vs Outsiders'], ['all', 'All']]} value={teamGames} onChange={(v) => setTeamGames(v as 'internal' | 'external' | 'all')} /></Field>
+            <Field orientation="row" label="Games"><Segmented options={[['internal', 'Internal'], ['external', 'vs Outsiders'], ['all', 'All']]} value={teamGames} onChange={(v) => setTeamGames(v as 'internal' | 'external' | 'all')} /></Field>
           )}
-          <Field label="Format"><Select value={format} onChange={setFormat} options={FORMATS} /></Field>
+          <Field orientation="row" label="Format"><Select value={format} onChange={setFormat} options={FORMATS} /></Field>
 
           {view === 'leaders' && (
-            <Field label="Group"><Segmented options={[['leader', 'By leader'], ['deck', 'By leader + base']]} value={leaderGroup} onChange={(v) => setLeaderGroup(v as 'leader' | 'deck')} /></Field>
+            <Field orientation="row" label="Group"><Segmented options={[['leader', 'By leader'], ['deck', 'By leader + base']]} value={leaderGroup} onChange={(v) => setLeaderGroup(v as 'leader' | 'deck')} /></Field>
           )}
 
           {view === 'cards' && (<>
-            <Field label="Deck"><Select value={leaderCtx} onChange={setLeaderCtx} options={[['', 'All decks'], ...leaderOptions.map((id) => [id, nm(id)] as [string, string])]} /></Field>
+            <Field orientation="row" label="Deck"><Select value={leaderCtx} onChange={setLeaderCtx} options={[['', 'All decks'], ...leaderOptions.map((id) => [id, nm(id)] as [string, string])]} /></Field>
             {leaderCtx && (
-              <Field label="Base"><Select value={baseSel} onChange={setBaseSel} options={[
+              <Field orientation="row" label="Base"><Select value={baseSel} onChange={setBaseSel} options={[
                 ['', 'Any base'],
                 ...deckBases.map((b) => [
                   baseKeyOf(b.baseId, b.baseAspect),
@@ -295,20 +299,20 @@ export function StatsClient({
                 ] as [string, string]),
               ]} /></Field>
             )}
-            <Field label="Win rate when"><Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} /></Field>
+            <Field orientation="row" label="Win rate when"><Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} /></Field>
             {RECORDER_SIDE[event] && (
               <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>your side only</span>
             )}
-            <Field label="Sort"><Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} /></Field>
-            <Field label="Search"><input value={cardSearch} onChange={(e) => setCardSearch(e.target.value)} placeholder="Search cards…" type="search" style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', minWidth: 140 }} /></Field>
+            <Field orientation="row" label="Sort"><Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} /></Field>
+            <Field orientation="row" label="Search"><input value={cardSearch} onChange={(e) => setCardSearch(e.target.value)} placeholder="Search cards…" type="search" style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', minWidth: 140 }} /></Field>
           </>)}
 
           {view === 'matchups' && (<>
-            <Field label="Axis"><Segmented options={[['leaders', 'Leaders'], ['bases', 'Leaders & Bases']]} value={matchupLens} onChange={(v) => setMatchupLens(v as any)} /></Field>
-            <Field label="Cells"><Segmented options={[['pct', 'Win %'], ['wl', 'W–L']]} value={matchupMode} onChange={(v) => setMatchupMode(v as any)} /></Field>
+            <Field orientation="row" label="Axis"><Segmented options={[['leaders', 'Leaders'], ['bases', 'Leaders & Bases']]} value={matchupLens} onChange={(v) => setMatchupLens(v as any)} /></Field>
+            <Field orientation="row" label="Cells"><Segmented options={[['pct', 'Win %'], ['wl', 'W–L']]} value={matchupMode} onChange={(v) => setMatchupMode(v as any)} /></Field>
           </>)}
 
-          <Field label="Min games"><MinGamesInput value={minGames} onChange={setMinGames} /></Field>
+          <Field orientation="row" label="Min games"><MinGamesInput value={minGames} onChange={setMinGames} /></Field>
         </div>
       )}
 
@@ -353,7 +357,6 @@ export function StatsClient({
 }
 
 const dim: React.CSSProperties = { color: '#6c7588', fontStyle: 'italic', padding: '32px 0', textAlign: 'center' };
-const lbl: React.CSSProperties = { fontSize: 11, color: '#6c7588', textTransform: 'uppercase', letterSpacing: '0.05em' };
 const filtersPanel: React.CSSProperties = { marginTop: 10, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid #1c2128', borderRadius: 10, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' };
 
 // The single Filters disclosure that holds every secondary control (mobile-first).
@@ -364,21 +367,6 @@ function FiltersToggle({ open, count, onClick }: { open: boolean; count: number;
       Filters{count > 0 ? ` (${count})` : ''} <span style={{ fontSize: 9, color: '#6c7588' }}>{open ? '▲' : '▼'}</span>
     </button>
   );
-}
-
-// An active-filter chip — tap to reset that control to its default.
-function Chip({ label, onClear }: { label: string; onClear: () => void }) {
-  return (
-    <button type="button" onClick={onClear} title="Clear"
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(77,157,255,0.12)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 14, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-      {label} <span style={{ color: '#6c7588' }}>✕</span>
-    </button>
-  );
-}
-
-// A labelled control inside the Filters panel.
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={lbl}>{label}:</span>{children}</span>;
 }
 
 // Minimum-occurrences: a number input flanked by −/+ steppers — type any value or
