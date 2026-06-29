@@ -31,6 +31,39 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
   - Don't break the row's existing "click → /r/slug?f=frame" navigation; the preview is decorative.
 - **Refs:** `app/(app)/teams/[slug]/TeamDiscussion.tsx`, `app/(app)/r/[slug]/ReplayViewer.tsx` (payload load + decode pattern to mirror), `lib/replayDecoder.ts`, `app/_components/Gameboard/Gameboard.tsx`.
 
+### [B211] Retire `DeckGrid` — fold the tournament deck page onto `DeckBlock`
+
+- **Why:** `DeckGrid` (`BigCard`/`DeckList`/`sumCounts`) is the LAST separate deck-list renderer. Every replay deck surface now uses `DeckBlock`/`DecksTabs` (B65b), but the tournament entrant-deck page still uses `DeckGrid` — two implementations of "show a deck's cards," exactly the conceptual dup the concept audit (B210) flagged.
+- **Acceptance:** the tournament entrant-deck page renders via `DeckBlock` (or `DecksTabs` if a tabbed multi-entrant view makes sense); `app/_components/DeckGrid.tsx` is deleted (or any still-unique bit folded into the shared renderer). swudb card links + count badges stay (`DeckBlock`'s `CardThumb` has them). **EYEBALL before ship** — changes that page's look (big study cards → fit-to-screen solver), like B65b.
+- **Refs:** `app/_components/DeckGrid.tsx`; `app/(app)/teams/[slug]/tournaments/[id]/decks/[entrantId]/page.tsx`; `app/(app)/r/[slug]/Decks.tsx` (`DeckBlock`) + `DecksTabs.tsx`; CONTEXT.md "Canonical UI components" registry ("retiring `DeckGrid`").
+
+### [B212] Migrate bespoke segmented controls onto shared `<Segmented>` (+ `underline` variant)
+
+- **Why:** shared `<Segmented>` (track/pill) exists, but several single-select button groups still roll their own (concept audit B210).
+- **Acceptance:** migrate the clean fits to `<Segmented>` — `ReviewQueue` (Awaiting/Reviewed/All), `SeriesNav` (Bo3 pills), `MobileLandscapePanels.StepModeOverlay` (Action/Frame), `TimelineGroups` segmented bits; assess `JumpToMenu`. Then ADD an `underline` variant (fullWidth + count-in-label) and migrate `ReplayFilters.ShareTabs` (All/Shared/Unlisted + counts) and `TagSidebar.DrawerTab` (Tags/Game log, full-width). Preserve each look. Leave true nav tabs (`ScopeTabs`) + the data-driven `DecksTabs` alone.
+- **Refs:** `app/_components/Segmented.tsx`; `ReviewQueue.tsx`, `app/(app)/r/[slug]/{SeriesNav,MobileLandscapePanels,JumpToMenu,TagSidebar}.tsx`, `app/(app)/replays/ReplayFilters.tsx` (ShareTabs ~1549). A segmented CI guard (`canonical-components.test.ts`) can follow once the variant lands.
+
+### [B213] Extract a shared `<ActivityRow>` for the feed rows
+
+- **Why:** four feeds render a near-identical "linked row: avatar/author + comment/mention preview + metadata + frame deep-link," each hand-rolled (concept audit B210).
+- **Acceptance:** one `<ActivityRow>` (author + avatar/initials + comment preview + meta + `/r/<slug>?f=<frame>` link) backs all four; each feed passes its data + row-specific extras (review-count badge, mention highlight). Looks preserved.
+- **Refs:** `app/(app)/teams/[slug]/TeamDiscussion.tsx` (`DiscussionRow`); `app/(app)/HomeTeamActivity.tsx` (`ActivityRow`); `app/(app)/mentions/MentionsList.tsx`; `app/(app)/HomeReviewRequests.tsx`. Pairs with B214's `<Avatar>`.
+
+### [B214] Concept-dup cleanup — remaining audit findings (Tier 2/3) + guardrail follow-ups
+
+- **Why:** the concept audit (B210) surfaced more overlaps beyond Tier 1. Captured so they're not lost; pick off individually.
+- **Findings (each its own small PR):**
+  - **`<Avatar>`** — `ParticipantBubbles`, `ByMemberGroups` (initial-circles), `MembersList`, `SessionMenu` each roll their own avatar/initials.
+  - **Reconcile `ReplayMatchup` vs `MatchupRow`** — `MatchupRow` ≈ `ReplayMatchup` minus the result badge/names; one should wrap the other.
+  - **`<CardArt>` base** — `cardImageUrl(...) + <img>` re-implemented under `LeaderBasePair`, `Decks.CardThumb`, `DeckGrid.BigCard`, stats `CardThumb`/`CardTile`; a shared image primitive could underlie all (then a CI lint ban like the `<select>` one).
+  - **Modal-adoption verify** — confirm `EndGameSummary`, `PileViewer`, `ClipBuilder`, and the tournament `Deck`/`Guest`/`Registration` modals use shared `<Modal>` (or migrate).
+  - **Extension-detect + install-CTA** — `MineEmpty`, `MineAnonymous`, `MyClipsAnonymous`, `AutoDetectExtension` repeat the probe-for-token + install-steps logic → shared hook/component.
+  - **`<Chip>`** — the `borderRadius:999` pill is inlined dozens of places (label/match/status/count); only `ResultBadge`/`ShareBadge` are components.
+  - **Button system** — beyond E4's trio: `ManageKeysButton`↔`MyPrivateAccess` cyan-pill, `ProviderButton`, `Ctrl`, `PromptButton`, `ShareBtn`, etc.
+  - **`Timer` vs `GameTimer`** — two circular progress timers.
+- **Guardrail follow-ups:** add `jscpd` to CI (catches the code-level copy-paste subset automatically); save the concept-axis classification (B210) as a re-runnable script for periodic drift checks.
+- **Refs:** B210 (the audit + the `<select>` guardrail + CONTEXT.md registry); `test/unit/canonical-components.test.ts`.
+
 ## Continuation prompt
 
 A new chat can be bootstrapped with the prompt at `scripts/continuation-extension-rework.md`. Hand the user that file's contents and they're ready to `/clear` and start fresh.
@@ -38,6 +71,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 ## In Progress
 
 ## Done
+
+### [B210] Concept-duplication audit + canonical-components guardrails
+_completed: 2026-06-29 by claude_
+After the deck-viewer trio slipped past the earlier code-similarity DRY audit, ran a concept-AXIS audit: classified all ~132 components by the concept(s) they serve (6 parallel agents), inverted concept→components to find conceptual dups (same job, divergent code). Shipped the lock-in: a CI guardrail banning new raw `<select>` outside `<Select>` (`test/unit/canonical-components.test.ts`, extensible per-concept with allowlists), the "Canonical UI components" registry in CONTEXT.md (build-here table for the non-greppable concepts), and the Tier-1 Select migration (4 bespoke selects → `<Select>`, allowlist emptied). Remaining cleanup tracked as B211–B214.
 
 ### [B170] Private teams — client-side E2EE (opt-in encrypted team mode)
 _completed: 2026-06-29 (reconciled; shipped earlier) by claude_
