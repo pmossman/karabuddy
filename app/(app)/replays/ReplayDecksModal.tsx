@@ -42,7 +42,7 @@ export function ReplayDecksModal({
   }, [replaySlug]);
 
   return (
-    <Modal open onClose={onClose} ariaLabel="Replay decks" width="min(720px, 95vw)" maxHeight="90vh">
+    <Modal open onClose={onClose} ariaLabel="Replay decks" width="min(1600px, 96vw)" maxHeight="95vh">
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #2e333c', gap: 12 }}>
         <div style={{ fontSize: 15, fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}

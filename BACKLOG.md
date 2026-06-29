@@ -126,6 +126,14 @@ _claimed: 2026-06-15 by claude (worktree core-b150-private-teams)_
 
 ## Done
 
+### [B208] Deck modal: "Fit all" = fit-to-screen solver (max card size, balanced rows)
+_completed: 2026-06-28 by claude_
+The deck list now has two real modes via the header toggle. **"Fit all" (default)**: a solver measures the available width (container) + height (viewport below the leaders) and picks the LARGEST uniform card width such that every section's rows fit on screen without scrolling — then balances each row's length (fewest columns that preserves the row count, so no lonely stub row), centered. **"Larger"**: roomy auto-fill (`minmax(180px desktop / 120px phone)`) that scrolls, for reading card text. `DeckBlock` measures via a ref + ResizeObserver; `solveFitWidth`/`balancedCols` are pure helpers (portrait aspect 0.71, count-badge overhang accounted for; card badge scales `compact` under ~92px). Replaces the earlier fixed/"square" attempts — screens aren't square, so the solver maximizes image size while showing everything.
+
+### [B207] Deck modal: maximize width + fit the whole deck on desktop (+ "Fit all" toggle)
+_completed: 2026-06-28 by claude_
+Follow-up to B205 (desktop this time). The deck modals were capped narrow (ReplayDecksModal 720px, DecksModal 1100px), wasting most of a wide screen, and the cards were big enough that a full deck always scrolled. Widened both to `min(1600px, 96vw)` (DecksModal also switched from a fixed `height` to `maxHeight` so it shrinks to content), and dropped the default desktop `DeckList` card floor 120→96px — so with the wider modal most decks now fit without scrolling. Added a per-deck **"⊟ Fit all" / "⊞ Larger" toggle** (`DeckBlock` `dense` state → `DeckList` minmax 96→68 desktop / 78→52 phone, tighter gap, and a scaled-down count badge via `CardThumb compact`) — the escape hatch to cram the whole deck onto one screen, esp. on phones. tsc clean; decks e2e green.
+
 ### [B205] Deck modal: responsive card grid + wrapping deck tabs on mobile
 _completed: 2026-06-28 by claude_
 Noticed during the PR2 eyeball (pre-existing, not the DRY refactor). The "View decks" modal rendered huge 2-per-row card images on phones and its deck-switcher tabs horizontally scrolled. `DeckList` now uses a denser grid floor on narrow viewports (78px → ~4/row, like the card-stats grid; desktop keeps 120px), and the DecksModal tab row wraps (`flexWrap`) instead of `overflowX:auto`, with long deck names ellipsized + tighter mobile body/header padding. Gated on `useMediaQuery('(max-width: 640px)')`. tsc clean; decks-modal + viewer e2e green. Rides with PR2 (B204).

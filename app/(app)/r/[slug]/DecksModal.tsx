@@ -78,7 +78,7 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
   const narrow = useMediaQuery('(max-width: 640px)');
 
   return (
-    <Modal open={open} onClose={onClose} ariaLabel="Replay decks" width="min(1100px, 95vw)" height="min(800px, 90vh)">
+    <Modal open={open} onClose={onClose} ariaLabel="Replay decks" width="min(1600px, 96vw)" maxHeight="95vh">
         <header
           style={{
             display: 'flex',
