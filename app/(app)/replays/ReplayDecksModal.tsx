@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import type { DecksByUserId } from '@/lib/replayDecoder';
-import { Decks } from '@/app/(app)/r/[slug]/Decks';
+import { DecksTabs } from '@/app/(app)/r/[slug]/DecksTabs';
 import { ErrorNote } from '@/app/_components/StatusUi';
 import { Modal } from '@/app/_components/Modal';
 
-// B100: lightweight decks viewer reachable from the row kebab menu, so you
-// can eyeball a replay's decks (and jump to each player's dedicated deck
-// page) without opening the full viewer. Decks aren't carried in the list
-// payload (too heavy × 100 rows) — fetched lazily once opened.
+// B100: lightweight decks viewer reachable from the row kebab menu, so you can
+// eyeball a replay's decks (and jump to each player's dedicated deck page)
+// without opening the full viewer. Decks aren't carried in the list payload
+// (too heavy × 100 rows) — fetched lazily once opened. Shares <DecksTabs> with
+// the in-viewer modal + the deck page (tabbed per-player; opponent "seen during
+// play" lazily decoded client-side from the payload).
 export function ReplayDecksModal({
   replaySlug,
   title,
@@ -22,6 +24,7 @@ export function ReplayDecksModal({
   onClose: () => void;
 }) {
   const [decks, setDecks] = useState<DecksByUserId | null>(null);
+  const [payloadBlobUrl, setPayloadBlobUrl] = useState<string | undefined>(undefined);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
@@ -33,6 +36,9 @@ export function ReplayDecksModal({
         if (cancelled) return;
         if (!body.ok) { setState('error'); return; }
         setDecks((body.data?.decks as DecksByUserId | null) ?? null);
+        // Opponent "seen during play" is decoded client-side from the payload;
+        // skip encrypted replays (ciphertext needs the team key).
+        setPayloadBlobUrl(body.data?.encrypted ? undefined : (body.data?.payloadBlobUrl as string | undefined));
         setState('ready');
       } catch {
         if (!cancelled) setState('error');
@@ -40,6 +46,8 @@ export function ReplayDecksModal({
     })();
     return () => { cancelled = true; };
   }, [replaySlug]);
+
+  const hasDecks = !!decks && Object.keys(decks).length > 0;
 
   return (
     <Modal open onClose={onClose} ariaLabel="Replay decks" width="min(1600px, 96vw)" maxHeight="95vh">
@@ -56,10 +64,19 @@ export function ReplayDecksModal({
           ×
         </button>
       </header>
-      <div data-testid="decks-modal" style={{ flex: 1, overflowY: 'auto' }}>
+      <div data-testid="decks-modal" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {state === 'loading' && <p style={muted}>Loading decks…</p>}
         {state === 'error' && <ErrorNote style={{ padding: '14px 22px' }}>Couldn&apos;t load decks.</ErrorNote>}
-        {state === 'ready' && <Decks decks={decks} localPlayerId={localPlayerId} replaySlug={replaySlug} />}
+        {state === 'ready' && !hasDecks && <p style={muted}>No deck snapshot for this replay.</p>}
+        {state === 'ready' && hasDecks && (
+          <DecksTabs
+            decks={decks!}
+            localPlayerId={localPlayerId}
+            payloadBlobUrl={payloadBlobUrl}
+            replaySlug={replaySlug}
+            showFullPageLink
+          />
+        )}
       </div>
     </Modal>
   );

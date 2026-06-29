@@ -80,10 +80,53 @@ test('local-player tab does not show "Seen during play" (we already have the ful
   await expect(dialog.getByRole('heading', { name: /Seen during play/i })).toHaveCount(0);
 });
 
-// Page-side "Seen during play" is deferred — adding it requires fetching
-// + decoding the payload blob server-side per page load. Filed as a
-// follow-up (B65b). v1 surfaces seen cards in the modal only, since the
-// viewer's frames are already decoded client-side and free to reuse.
+// B65b: the standalone deck PAGE is now the same tabbed experience as the modal
+// (shared <DecksTabs>), and surfaces opponents' "Seen during play" by decoding
+// the payload blob server-side (the viewer reuses its client frames).
+test('deck PAGE: tabbed per-player + opponent tab shows server-decoded "Seen during play"', async ({ page, request }) => {
+  await signInAsTestUser(page, { name: 'PageSeen', email: 'pgsn@example.com' });
+  const localId = 'pgsn-l-' + Math.random().toString(36).slice(2, 8);
+  const oppId = 'pgsn-o-' + Math.random().toString(36).slice(2, 8);
+  const r = await uploadReplay(request, {
+    local: { id: localId, username: 'PageSeen' },
+    opponent: {
+      id: oppId,
+      username: 'Opp',
+      seenCards: [
+        { set: 'ASH', number: 50 },
+        { set: 'ASH', number: 60 },
+        { set: 'JTL', number: 100 },
+      ],
+    },
+    decks: {
+      [localId]: {
+        username: 'PageSeen', name: null,
+        leader: { id: 'ASH_005', count: 1 },
+        base: { id: 'JTL_024', count: 1 },
+        deck: [{ id: 'ASH_010', count: 3 }],
+        sideboard: null,
+      },
+      [oppId]: {
+        username: 'Opp', name: null,
+        leader: { id: 'ASH_014', count: 1 },
+        base: { id: 'JTL_024', count: 1 },
+        deck: null,
+        sideboard: null,
+      },
+    },
+  });
+  await claimInstallToken(page, r.installToken);
+
+  // Land directly on the opponent's per-player deck page.
+  await page.goto(`/r/${r.slug}/deck/${oppId}`);
+  // Same tabbed experience as the modal — both players' tabs present.
+  await expect(page.getByRole('tab', { name: /PageSeen/i })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /Opp/i })).toBeVisible();
+  // Opponent (initial) tab surfaces the server-decoded "seen during play" cards.
+  await expect(page.getByRole('heading', { name: /Seen during play/i })).toBeVisible();
+  await expect(page.getByTitle(/ASH_050/)).toBeVisible();
+  await expect(page.getByTitle(/JTL_100/)).toBeVisible();
+});
 
 test('opponent tab with no observed cards: section either hidden or empty-state', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'NoSeen', email: 'ns@example.com' });

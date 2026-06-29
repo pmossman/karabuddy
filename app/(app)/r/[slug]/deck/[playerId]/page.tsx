@@ -4,22 +4,22 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, users } from '@/lib/schema';
 import { matchChips } from '@/lib/matchMetadata';
-import { DeckList, BigCard, sumCounts } from '@/app/_components/DeckGrid';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizeDecks, anonByIdFromPlayers } from '@/lib/anonymizeReplay';
 import { auth } from '@/auth';
 import { canViewReplayIdentities } from '@/lib/altPerspective';
-import type { DecksByUserId, UserDeck, DeckCardRef } from '@/lib/replayDecoder';
+import type { DecksByUserId } from '@/lib/replayDecoder';
+import { DecksTabs } from '../../DecksTabs';
 
 export const dynamic = 'force-dynamic';
 
-// B58: per-replay, per-player deck page. Shareable URL, larger card art
-// than the in-viewer DecksDisclosure, sideboard in its own section.
-//
-// We render server-side from the `decks` jsonb column directly — no need
-// to fetch + decode the full replay payload, since the deck snapshot
-// was extracted at upload time and stored on the row.
+// B58/B65b: per-replay deck page. The URL is per-player + shareable, but it
+// renders the SAME tabbed per-player experience as the in-viewer DecksModal
+// (shared <DecksTabs>): switch players, and the opponent tab shows the cards we
+// saw them play. The deck snapshot (jsonb column) only has the recorder's full
+// list, so opponents' "seen during play" is decoded from the payload server-side
+// here (the viewer reuses its client-decoded frames instead).
 
 interface PageProps {
   params: Promise<{ slug: string; playerId: string }>;
@@ -58,78 +58,54 @@ export default async function DeckPage({ params }: PageProps) {
   }
 
   // identity anonymization: samples → "Player N" + drop deck title + uploader name.
-  const anonymize = isSample; // authorized viewers see real names; samples stay anon.
+  const anonymize = isSample;
   const ownerName = anonymize ? null : rawOwnerName;
   let decks = (replay.decks as DecksByUserId | null) || null;
   if (anonymize && decks) {
     const ordered = orderPlayersOwnerFirst((replay as any).players, (replay as any).ownerPlayerId);
     decks = anonymizeDecks(decks, anonByIdFromPlayers(ordered as any[])) as DecksByUserId;
   }
-  const deck = decks?.[playerId] || null;
   if (!decks) {
-    // The replay row exists but no deck snapshot was captured. Friendly
-    // empty state (most likely an older replay uploaded pre-B42).
     return (
       <main style={mainStyle}>
         <BackLink slug={slug} />
         <h1 style={h1Style}>Deck snapshot unavailable</h1>
         <p style={{ fontSize: 13, color: '#a0a8b8', lineHeight: 1.5 }}>
-          No deck snapshot was captured for this replay. Replays recorded
-          before the karabuddy extension started capturing deck data
-          don&apos;t have one. Newer replays will show the full deck here.
+          No deck snapshot was captured for this replay. Replays recorded before
+          the karabuddy extension started capturing deck data don&apos;t have one.
+          Newer replays will show the full deck here.
         </p>
       </main>
     );
   }
-  if (!deck) notFound();
+  if (!decks[playerId]) notFound();
 
-  const match = (replay.match as any) || null;
-  const chips = matchChips(match);
-  const hasFullDeck = Array.isArray(deck.deck) && deck.deck.length > 0;
-  const totalMain = hasFullDeck ? sumCounts(deck.deck!) : null;
-  const totalSide = deck.sideboard ? sumCounts(deck.sideboard) : 0;
+  const ownerPlayerId = ((replay as any).ownerPlayerId as string | null) ?? null;
+  // B65b: the opponent's deck is masked in the snapshot (leader/base only), so
+  // <DecksTabs> lazily fetches + decodes the payload client-side to surface what
+  // we saw them play (same path the viewer uses). Skip for encrypted replays —
+  // the ciphertext can't be decoded without the team key.
+  const payloadBlobUrl = (replay as any).encrypted ? undefined : ((replay as any).payloadBlobUrl as string | undefined);
+
+  const chips = matchChips((replay.match as any) || null);
 
   return (
     <main style={mainStyle}>
-      <BackLink slug={slug} />
-      <h1 style={h1Style}>{deck.name || `${deck.username || 'Player'}'s deck`}</h1>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, color: '#a0a8b8' }}>
-          {deck.username || 'Unknown player'}
-        </span>
-        {hasFullDeck && (
-          <span style={{ fontSize: 12, color: '#6c7588' }}>
-            {totalMain} cards{totalSide > 0 ? ` · ${totalSide} side` : ''}
-          </span>
-        )}
-        {ownerName && (
-          <span style={{ fontSize: 12, color: '#6c7588' }}>
-            uploaded by {ownerName}
-          </span>
-        )}
-        {chips.map((c) => (
-          <span key={c} style={chipStyle}>{c}</span>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <Link href={`/r/${slug}`} style={{ color: '#5db4ff', fontSize: 13, textDecoration: 'none' }}>
+          ← View replay
+        </Link>
+        {ownerName && <span style={{ fontSize: 12, color: '#6c7588' }}>uploaded by {ownerName}</span>}
+        {chips.map((c) => <span key={c} style={chipStyle}>{c}</span>)}
       </div>
-
-      <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {deck.leader && <BigCard card={deck.leader} isLeader />}
-        {deck.base && <BigCard card={deck.base} />}
+      <div style={panelStyle}>
+        <DecksTabs
+          decks={decks}
+          localPlayerId={ownerPlayerId}
+          initialPlayerId={playerId}
+          payloadBlobUrl={payloadBlobUrl}
+        />
       </div>
-
-      {!hasFullDeck ? (
-        <div style={noticeStyle}>
-          Full list not available — karabast only shares the local player&apos;s
-          full deck. This player&apos;s leader and base are shown above.
-        </div>
-      ) : (
-        <>
-          <DeckList title="Main deck" cards={deck.deck!} />
-          {totalSide > 0 && deck.sideboard && (
-            <DeckList title="Sideboard" cards={deck.sideboard} />
-          )}
-        </>
-      )}
     </main>
   );
 }
@@ -137,10 +113,7 @@ export default async function DeckPage({ params }: PageProps) {
 function BackLink({ slug }: { slug: string }) {
   return (
     <div style={{ marginBottom: 12 }}>
-      <Link
-        href={`/r/${slug}`}
-        style={{ color: '#5db4ff', fontSize: 13, textDecoration: 'none' }}
-      >
+      <Link href={`/r/${slug}`} style={{ color: '#5db4ff', fontSize: 13, textDecoration: 'none' }}>
         ← View replay
       </Link>
     </div>
@@ -148,9 +121,9 @@ function BackLink({ slug }: { slug: string }) {
 }
 
 const mainStyle: React.CSSProperties = {
-  maxWidth: 1100,
+  maxWidth: 'min(1600px, 96vw)',
   margin: '0 auto',
-  padding: '32px 28px 80px',
+  padding: '20px 20px 64px',
   color: '#e6e6e6',
   fontFamily: 'var(--font-barlow), sans-serif',
 };
@@ -166,13 +139,11 @@ const chipStyle: React.CSSProperties = {
   letterSpacing: '0.04em',
   textTransform: 'uppercase',
 };
-const noticeStyle: React.CSSProperties = {
-  marginTop: 24,
-  padding: '14px 18px',
-  background: 'rgba(224, 198, 74, 0.08)',
-  border: '1px dashed rgba(224, 198, 74, 0.35)',
-  borderRadius: 8,
-  color: '#e0c64a',
-  fontSize: 13,
-  lineHeight: 1.5,
+const panelStyle: React.CSSProperties = {
+  border: '1px solid #2e333c',
+  borderRadius: 12,
+  background: 'rgba(20, 24, 31, 0.6)',
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
 };

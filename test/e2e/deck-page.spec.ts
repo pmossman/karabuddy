@@ -45,7 +45,8 @@ test('local-player deck page renders leader + base + deck list + sideboard', asy
   await claimInstallToken(page, r.installToken);
 
   await page.goto(`/r/${r.slug}/deck/${localId}`);
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  // The page is the same tabbed experience as the modal — the local player's tab.
+  await expect(page.getByRole('tab', { name: /DeckPlayer/i })).toBeVisible();
   // Header surfaces the deck name and counts.
   await expect(page.getByText(/Tournament List/)).toBeVisible();
   // 8 main + 2 side = 10 total cards listed (3+2+3 main = 8, 2 side).

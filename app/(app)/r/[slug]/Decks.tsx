@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import type { DecksByUserId, UserDeck, DeckCardRef } from '@/lib/replayDecoder';
+import type { UserDeck, DeckCardRef } from '@/lib/replayDecoder';
 
 // B208: "Fit all" geometry. Cards are portrait (~0.71 w/h); we want the LARGEST
 // uniform card width such that every section's rows fit the available height —
@@ -38,41 +38,6 @@ function balancedCols(W: number, cw: number, n: number): number {
   const maxCols = Math.max(1, Math.floor((W + GAP) / (cw + GAP)));
   const rows = Math.max(1, Math.ceil(n / maxCols));
   return Math.max(1, Math.ceil(n / rows));
-}
-
-interface Props {
-  decks: DecksByUserId | null;
-  localPlayerId: string | null;
-  // B58: when provided, each player block gets a "View full page →" link
-  // to /r/[slug]/deck/[playerId] for the shareable dedicated view.
-  replaySlug?: string;
-}
-
-export function Decks({ decks, localPlayerId, replaySlug }: Props) {
-  if (!decks || Object.keys(decks).length === 0) {
-    return (
-      <div style={{ padding: '14px 22px', fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>
-        No deck snapshot for this replay. (Replays captured before deck-snapshot support landed don&apos;t have one.)
-      </div>
-    );
-  }
-  // Render local player first if known; otherwise iteration order.
-  const orderedIds = Object.keys(decks);
-  if (localPlayerId && orderedIds.includes(localPlayerId)) {
-    orderedIds.sort((a, b) => (a === localPlayerId ? -1 : b === localPlayerId ? 1 : 0));
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '14px 22px' }}>
-      {orderedIds.map((pid) => (
-        <DeckBlock
-          key={pid}
-          deck={decks[pid]}
-          isLocal={pid === localPlayerId}
-          fullPageHref={replaySlug ? `/r/${replaySlug}/deck/${pid}` : null}
-        />
-      ))}
-    </div>
-  );
 }
 
 export function DeckBlock({ deck, isLocal, fullPageHref, seenCards }: { deck: UserDeck; isLocal: boolean; fullPageHref: string | null; seenCards?: DeckCardRef[] }) {
