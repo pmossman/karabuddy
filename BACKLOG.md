@@ -13,6 +13,13 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B209] Hide non-active tournaments from the team dashboard's "Active tournaments" feed
+
+- **Why:** the dashboard "Active tournaments" feed lists COMPLETE tournaments (and the header count includes them) — screenshot shows "ACTIVE TOURNAMENTS · 3" with a panel badged COMPLETE ("Galactic Prep 1"). A finished tournament shouldn't surface as active.
+- **Likely root cause (one-liner fix):** `app/api/teams/[slug]/overview/route.ts:163` filters `tRows.filter((t) => t.status !== 'completed')`, but the status enum value is `'complete'` (no "d" — see `TeamTournaments.tsx:15`, `TournamentDetail.tsx`). The mismatch means the exclusion never fires, so completed tournaments pass through. Fix the string to `'complete'`.
+- **Acceptance:** the feed + its `· N` count include only genuinely active tournaments; complete ones don't appear. Decide whether `'setup'` (not-yet-started) belongs in "Active" — probably exclude it too (show only `'active'`), which also future-proofs against the typo class of bug. Empty feed → section stays hidden (already does at length 0).
+- **Refs:** screenshot (active-tournaments feed with a COMPLETE panel); `app/api/teams/[slug]/overview/route.ts:163` (the filter — fix here); `app/(app)/teams/[slug]/TeamOverview.tsx:68-74` (renders the feed + count).
+
 ### [B188] Proper team-replays pagination (follow-up to B187)
 
 - **Why:** B187 fixed the team replays grid silently hiding older shared replays — it capped at the 200 most-recent surfaced ROWS, so a team past ~100 games lost its older shares (a real CCC team with 1014 shared games saw only ~the last two days, despite the shares still existing). The B187 short-term fix windows by distinct GAME with a high bound (2000) + an opt-in incremental client render, and still re-fetches the full surfaced set on every tab load — a ceiling, and wasteful at scale.
