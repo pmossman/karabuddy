@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { deckLabel } from '@/lib/players';
 import { formatTimestamp } from '@/lib/datetime';
@@ -90,20 +90,7 @@ function Matchup({ player }: { player: any }) {
   if (!player) return <div style={{ flex: 1 }} />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, alignItems: 'center', minWidth: 0 }}>
-      <CardImg src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
-      <CardImg src={cardImageUrl(player.base, false)} alt={player.base?.name} />
+      <LeaderBasePair leader={player.leader} base={player.base} width={90} height={64} radius={4} gap={4} align="center" fallback="name" />
     </div>
   );
-}
-
-function CardImg({ src, alt }: { src: string | null; alt?: string }) {
-  if (!src) {
-    return (
-      <div style={{ width: 90, height: 64, borderRadius: 4, background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c7588', fontSize: 10, textAlign: 'center', padding: 4, boxSizing: 'border-box' }}>
-        {alt || '—'}
-      </div>
-    );
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={{ width: 90, height: 64, objectFit: 'contain', borderRadius: 4, background: '#0a0c10' }} />;
 }

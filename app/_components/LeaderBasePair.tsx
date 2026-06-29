@@ -2,11 +2,29 @@ import type { CSSProperties } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
 
 // Shared leader + base image pair — the mini "matchup thumbnail" rendered all
-// over the app (replay/clip cards, the replays table, the team discussion feed).
-// Owns image resolution + orientation/size/fit/fallback so the ~identical
-// hand-rolled copies collapse to one call. NOT for the full deck-detail cards
-// (count badge + swudb link) or the asymmetric stats leader+aspect chip.
-type CardLike = { set?: string; number?: string | number; name?: string } | null | undefined;
+// over the app (replay/clip cards, the replays table, the team discussion feed,
+// end-game summary, tournament decks, the matchup panel, the clip end-card).
+// Owns card-data normalization + image resolution + orientation/size/fit/fallback
+// so the ~identical hand-rolled copies collapse to one call. NOT for the full
+// deck-detail cards (count badge + swudb link) or the asymmetric stats
+// leader-thumb + aspect-chip (a single thumb, not a symmetric pair).
+
+// Accepts every leader/base data shape in the app: a {set,number,name} object,
+// a "SET_NUM" string id (tournament decks / stats), or a frame {setId:{...}} card.
+type CardInput =
+  | string
+  | { set?: string; number?: string | number; name?: string; setId?: { set?: string; number?: string | number } | null }
+  | null
+  | undefined;
+
+function normalizeCard(card: CardInput): { set?: string; number?: string | number; name?: string } | null {
+  if (!card) return null;
+  if (typeof card === 'string') {
+    const m = card.match(/^([A-Za-z0-9]+)_(\d+)$/);
+    return m ? { set: m[1], number: m[2] } : null;
+  }
+  return { set: card.set ?? card.setId?.set, number: card.number ?? card.setId?.number, name: card.name };
+}
 
 export function LeaderBasePair({
   leader,
@@ -23,8 +41,8 @@ export function LeaderBasePair({
   border,
   fallback = 'box',
 }: {
-  leader: CardLike;
-  base: CardLike;
+  leader: CardInput;
+  base: CardInput;
   orientation?: 'row' | 'column';
   reverse?: boolean;
   align?: 'start' | 'center' | 'end';
@@ -35,22 +53,27 @@ export function LeaderBasePair({
   radius?: number;
   background?: string;
   border?: string;
-  // box = empty bordered placeholder; name = show the card name; hide = render nothing
-  fallback?: 'box' | 'name' | 'hide';
+  // box = empty bordered placeholder; name = card name; initials = first 4 chars;
+  // hide = render nothing
+  fallback?: 'box' | 'name' | 'initials' | 'hide';
 }) {
-  const imgStyle: CSSProperties = { width, height, objectFit: fit, borderRadius: radius, background, display: 'block' };
-  const thumb = (card: CardLike, isLeader: boolean) => {
-    const url = cardImageUrl(card ?? null, isLeader);
-    const name = card?.name ?? '';
+  // `border`, when set, frames the actual image too (some sites have bordered
+  // cards); pass 'none' to suppress the box placeholder's default border.
+  const imgStyle: CSSProperties = { width, height, objectFit: fit, borderRadius: radius, background, display: 'block', ...(border ? { border } : {}) };
+  const thumb = (card: CardInput, isLeader: boolean) => {
+    const c = normalizeCard(card);
+    const url = cardImageUrl(c, isLeader);
+    const name = c?.name ?? '';
     if (url) {
       // eslint-disable-next-line @next/next/no-img-element
       return <img src={url} alt={name} title={name || undefined} loading="lazy" style={imgStyle} />;
     }
     if (fallback === 'hide') return null;
-    if (fallback === 'name') {
+    if (fallback === 'name' || fallback === 'initials') {
+      const text = fallback === 'initials' ? name.slice(0, 4) : name;
       return (
-        <div style={{ ...imgStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 2, fontSize: 10, lineHeight: 1.1, color: '#6c7588', overflow: 'hidden' }} title={name || undefined}>
-          {name}
+        <div style={{ ...imgStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 2, fontSize: fallback === 'initials' ? 8 : 10, lineHeight: 1.1, color: '#6c7588', overflow: 'hidden' }} title={name || undefined}>
+          {text}
         </div>
       );
     }

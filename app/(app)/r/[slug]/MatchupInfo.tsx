@@ -15,7 +15,7 @@ import { useState } from 'react';
 import { matchChips, matchupVs } from '@/lib/matchMetadata';
 import { playerHandle } from '@/lib/players';
 import { copyToClipboard } from '@/lib/clipboard';
-import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import type { MatchMeta } from '@/lib/replayDecoder';
 import { EditableTitle } from './EditableTitle';
 import { SeriesNav, type SeriesInfo } from './SeriesNav';
@@ -61,32 +61,21 @@ const chipStyle: React.CSSProperties = {
   textTransform: 'uppercase',
 };
 
-function Thumb({ src, alt, w, h }: { src: string | null; alt?: string; w: number; h: number }) {
-  if (!src) {
-    return (
-      <div style={{ width: w, height: h, borderRadius: 3, background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c7588', fontSize: 8, textAlign: 'center', padding: 2, boxSizing: 'border-box', flex: '0 0 auto' }}>
-        {(alt || '—').slice(0, 4)}
-      </div>
-    );
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={{ width: w, height: h, objectFit: 'contain', borderRadius: 3, background: '#0a0c10', display: 'block', flex: '0 0 auto' }} />;
-}
-
 function MatchupPlayer({ player, winners, variant }: { player: any; winners?: string[] | null; variant: 'sidebar' | 'panel' }) {
   if (!player) return <div style={{ flex: 1, minWidth: 0 }} />;
   const panel = variant === 'panel';
-  const w = panel ? 44 : 32;
-  const h = panel ? 30 : 32;
   return (
-    <div
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: panel ? 4 : 3, flex: 1, minWidth: 0 }}
-      title={`${player.leader?.name || '?'} / ${player.base?.name || '?'} — ${playerHandle(player)}`}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: panel ? 2 : 4 }}>
-        <Thumb src={cardImageUrl(player.leader, true)} alt={player.leader?.name} w={w} h={h} />
-        <Thumb src={cardImageUrl(player.base, false)} alt={player.base?.name} w={w} h={h} />
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: panel ? 4 : 3, flex: 1, minWidth: 0 }}>
+      <LeaderBasePair
+        leader={player.leader}
+        base={player.base}
+        orientation="row"
+        width={variant === 'panel' ? 44 : 32}
+        height={variant === 'panel' ? 30 : 32}
+        gap={variant === 'panel' ? 2 : 4}
+        radius={3}
+        fallback="initials"
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
         <ResultBadge playerId={player.id} winners={winners} />
         <span style={{ fontSize: 11, color: panel ? '#d6d6d6' : '#a0a8b8', fontWeight: panel ? 600 : 400, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

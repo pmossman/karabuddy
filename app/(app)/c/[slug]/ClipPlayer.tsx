@@ -14,7 +14,7 @@ import { usePlaybackBoard, createDwellStepper, type DwellStepper, PLAYBACK_SPEED
 import { computeFrameDwells, PLAYBACK_TICK_MS } from '@/app/(app)/r/[slug]/frameDwell';
 import { decodeReplay, collapseReplay, type Frame } from '@/lib/replayDecoder';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { useConfirm } from '@/app/_components/Confirm';
@@ -385,14 +385,10 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
   // are public game info, so this shows even for an anonymized viewer.
   const matchup = useMemo(() => {
     const players = frames.find((f) => f?.state?.players)?.state?.players as Record<string, any> | undefined;
-    if (!players) return [] as { leaderArt: string | null; baseArt: string | null }[];
+    if (!players) return [] as { leader: any; base: any }[];
     let ids = Object.keys(players);
     if (metaLocalPlayerId && ids.includes(metaLocalPlayerId)) ids = [metaLocalPlayerId, ...ids.filter((i) => i !== metaLocalPlayerId)];
-    const art = (card: any, isLeader: boolean) => {
-      const set = card?.setId?.set; const number = card?.setId?.number;
-      return set && number != null ? cardImageUrl({ set, number }, isLeader) : null;
-    };
-    return ids.slice(0, 2).map((id) => ({ leaderArt: art(players[id]?.leader, true), baseArt: art(players[id]?.base, false) }));
+    return ids.slice(0, 2).map((id) => ({ leader: players[id]?.leader, base: players[id]?.base }));
   }, [frames, metaLocalPlayerId]);
 
   if (state === 'error') {
@@ -538,10 +534,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
                 {matchup.map((m, i) => (
                   <Fragment key={i}>
                     {i > 0 && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>}
-                    <div style={{ display: 'flex', gap: 3 }}>
-                      <MatchupThumb src={m.leaderArt} />
-                      <MatchupThumb src={m.baseArt} />
-                    </div>
+                    <LeaderBasePair leader={m.leader} base={m.base} orientation="row" width={46} height={32} gap={3} radius={3} border="1px solid #2e333c" fallback="box" />
                   </Fragment>
                 ))}
               </div>
@@ -580,13 +573,6 @@ const ctrlStyle: React.CSSProperties = {
   background: 'rgba(36, 48, 68, 0.85)', border: '1px solid rgba(77,157,255,0.4)', color: '#d6e7ff',
   borderRadius: 8, padding: '7px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(6px)',
 };
-function MatchupThumb({ src }: { src: string | null }) {
-  const box: React.CSSProperties = { width: 46, height: 32, borderRadius: 3, background: '#0a0c10', border: '1px solid #2e333c', objectFit: 'contain' };
-  if (!src) return <div style={box} />;
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt="" loading="lazy" style={box} />;
-}
-
 function Ctrl({ children, danger, style, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean }) {
   return (
     <button type="button" {...rest} style={{ ...ctrlStyle, ...(danger ? { color: '#ff8f8f', borderColor: '#5a2a2a' } : {}), fontFamily: 'inherit', ...style }}>

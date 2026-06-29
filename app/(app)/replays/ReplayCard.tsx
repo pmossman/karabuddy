@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
 import { formatTimestamp } from '@/lib/datetime';
 import { playerHandle, deckLabel } from '@/lib/players';
@@ -10,6 +9,7 @@ import { ShareBadge } from './ShareBadge';
 import { RowActions } from './RowActions';
 import { CommentCountButton } from './CommentCountButton';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { useReplaySelection, SelectBox } from './selection';
 
 interface ReplayRow {
@@ -238,22 +238,9 @@ function Matchup({ player }: { player: any }) {
   if (!player) return <div style={{ flex: 1 }} />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, alignItems: 'center', minWidth: 0 }}>
-      <CardImg src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
-      <CardImg src={cardImageUrl(player.base, false)} alt={player.base?.name} />
+      <LeaderBasePair leader={player.leader} base={player.base} width={90} height={64} radius={4} gap={4} align="center" fallback="name" />
     </div>
   );
-}
-
-function CardImg({ src, alt }: { src: string | null; alt?: string }) {
-  if (!src) {
-    return (
-      <div style={{ width: 90, height: 64, borderRadius: 4, background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c7588', fontSize: 10, textAlign: 'center', padding: 4, boxSizing: 'border-box' }}>
-        {alt || '—'}
-      </div>
-    );
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={{ width: 90, height: 64, objectFit: 'contain', borderRadius: 4, background: '#0a0c10' }} />;
 }
 
 function formatDuration(ms: number) {

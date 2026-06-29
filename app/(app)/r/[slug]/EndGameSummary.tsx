@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import type { EndGameStats, PlayerEndStats } from '@/lib/endGameStats';
 
 // B104: end-of-replay summary card. Shown when you reach the final frame —
@@ -172,10 +172,19 @@ function PlayerHead({ entry, isLocal }: { entry: { player: any; s: PlayerEndStat
         background: won ? `${ACCENT}1f` : 'rgba(255,255,255,0.02)',
       }}
     >
-      <div style={{ display: 'flex', gap: 4 }}>
-        <Thumb src={cardImageUrl(player.leader, true)} alt={player.leader?.name} />
-        <Thumb src={cardImageUrl(player.base, false)} alt={player.base?.name} />
-      </div>
+      <LeaderBasePair
+        leader={player.leader}
+        base={player.base}
+        orientation="row"
+        width={30}
+        height={42}
+        fit="cover"
+        radius={3}
+        gap={4}
+        background="rgba(255,255,255,0.06)"
+        border="none"
+        fallback="box"
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}>
         {(won || lost) && (
           <span
@@ -194,12 +203,6 @@ function PlayerHead({ entry, isLocal }: { entry: { player: any; s: PlayerEndStat
       {isLocal && <span style={{ fontSize: 9.5, color: ACCENT, fontWeight: 700, letterSpacing: '0.05em' }}>YOU</span>}
     </div>
   );
-}
-
-function Thumb({ src, alt }: { src: string | null; alt?: string }) {
-  if (!src) return <div style={{ width: 30, height: 42, borderRadius: 3, background: 'rgba(255,255,255,0.06)' }} />;
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} style={{ width: 30, height: 42, borderRadius: 3, objectFit: 'cover' }} />;
 }
 
 // Count-up animation for the wow factor — runs once on mount (the summary

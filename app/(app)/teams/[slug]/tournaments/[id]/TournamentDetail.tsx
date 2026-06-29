@@ -1,21 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { copyToClipboard } from '@/lib/clipboard';
 import { Modal } from '@/app/_components/Modal';
 import { ConfirmDialog } from '@/app/_components/Confirm';
 
-// B151: small leader + base thumbnails for an entrant's registered deck. Ids are
-// "SET_NNN"; the leader image uses the `-base` (deployed) side.
-function artFromId(id: string | undefined, isLeader: boolean): string | null {
-  if (!id) return null;
-  const m = /^([A-Za-z0-9]+)_(\d+)$/.exec(id);
-  return m ? cardImageUrl({ set: m[1], number: m[2] }, isLeader) : null;
-}
 // B153: inline icons for the deck re-sync button (refresh → check on success).
 // SVG over a unicode glyph so they render crisp + consistent across platforms.
 function RefreshIcon() {
@@ -34,18 +27,14 @@ function CheckIcon() {
   );
 }
 
+// B151: small leader + base thumbnails for an entrant's registered deck. Ids are
+// "SET_NNN" — the shared primitive resolves them (leader uses the deployed side).
+// Leaders + bases are LANDSCAPE cards, so the thumbnails stay landscape (cover)
+// to avoid weird cropping. Render nothing when neither is present.
 function DeckLeaderBase({ deck }: { deck: any }) {
-  const leader = artFromId(deck?.leader?.id, true);
-  const base = artFromId(deck?.base?.id, false);
-  if (!leader && !base) return null;
-  // Leaders (deployed side) + bases are LANDSCAPE cards — keep the thumbnails
-  // landscape so they don't crop weirdly.
-  const thumb: CSSProperties = { width: 40, height: 28, borderRadius: 4, objectFit: 'cover', border: '1px solid #2e333c', flex: '0 0 auto', background: '#0b0e14' };
+  if (!deck?.leader?.id && !deck?.base?.id) return null;
   return (
-    <span style={{ display: 'inline-flex', gap: 4, flex: '0 0 auto' }}>
-      {leader && <img src={leader} alt="leader" title="Leader" style={thumb} />}
-      {base && <img src={base} alt="base" title="Base" style={thumb} />}
-    </span>
+    <LeaderBasePair leader={deck.leader?.id} base={deck.base?.id} orientation="row" width={40} height={28} fit="cover" radius={4} gap={4} background="#0b0e14" border="1px solid #2e333c" fallback="hide" />
   );
 }
 
