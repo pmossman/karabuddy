@@ -11,6 +11,8 @@ import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, shareSectionL
 import { CommentCountButton } from './CommentCountButton';
 import { cardImageUrl } from '@/lib/cardImage';
 import { FORMAT_LABEL, MODE_LABEL } from '@/lib/matchMetadata';
+import { formatTimestamp } from '@/lib/datetime';
+import { playerHandle } from '@/lib/players';
 import { segmentMatches, bestOfLabel } from '@/lib/seriesGrouping';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
@@ -718,7 +720,7 @@ function CompactSelectRow({ r }: { r: Row }) {
   const sel = useReplaySelection();
   const canSel = !!sel?.selectable(r);
   const isSel = !!sel?.selected.has(r.slug);
-  const meta = `${formatDateShort(r.createdAt)} · ${r.displayName || matchupText(r)}`;
+  const meta = `${formatTimestamp(r.createdAt)} · ${r.displayName || matchupText(r)}`;
   return (
     <div
       role={canSel ? 'button' : undefined}
@@ -1195,13 +1197,7 @@ function matchupText(r: Row): string {
   if (own || opp) return `${own || '?'} vs ${opp || '?'}`;
   // No perspective resolved (pre-B59 / anonymous): fall back to usernames.
   const players = Array.isArray(r.players) ? r.players : [];
-  return `${nameText(players[0])} vs ${nameText(players[1])}`;
-}
-
-function nameText(p: any) {
-  const u: string | undefined = p?.username;
-  if (!u || /^anonymous\s/i.test(u)) return 'anon';
-  return u;
+  return `${playerHandle(players[0])} vs ${playerHandle(players[1])}`;
 }
 
 // Own/opponent players in PERSPECTIVE order (viewer/uploader first). Falls back
@@ -1235,11 +1231,6 @@ function formatDuration(ms: number) {
   const r = s % 60;
   if (m === 0) return `${s}s`;
   return `${m}m ${String(r).padStart(2, '0')}s`;
-}
-
-function formatDateShort(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
 }
 
 function TableView({ rows, canManage = false, showShareColumn = true }: { rows: Row[]; canManage?: boolean; showShareColumn?: boolean }) {
@@ -1342,7 +1333,7 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
                     )}
                   </td>
                 )}
-                <td style={inSeries ? { ...cellStyle, paddingLeft: 30 } : cellStyle}>{formatDateShort(r.createdAt)}</td>
+                <td style={inSeries ? { ...cellStyle, paddingLeft: 30 } : cellStyle}>{formatTimestamp(r.createdAt)}</td>
                 <td style={cellStyle} data-testid="replay-cell">
                   <ReplayCellLink replay={r} gameNumber={gameNumber} />
                 </td>
@@ -1424,7 +1415,7 @@ function ReplayCellLink({ replay, gameNumber }: { replay: Row; gameNumber?: numb
         {replay.doubleSided && <DoubleSidedChip />}
       </div>
       {/* B116: usernames demoted to small secondary text. */}
-      <div style={{ fontSize: 10, color: '#6c7588' }}>{nameText(p1)} vs {nameText(p2)}</div>
+      <div style={{ fontSize: 10, color: '#6c7588' }}>{playerHandle(p1)} vs {playerHandle(p2)}</div>
     </Link>
   );
 }

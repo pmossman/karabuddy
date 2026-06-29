@@ -40,7 +40,8 @@ export const tokens = {
     // Status.
     success: '#6bd968',
     successText: '#7fd97f',
-    danger: '#ff6b6b',
+    danger: '#ff6b6b', // destructive actions (buttons)
+    dangerSoft: '#ff7a7a', // error-note text on dark (B203: unifies the #ff7a7a/#ff8a8a drift)
     warn: '#e0c64a',
   },
   // LED toggle aesthetic — mirrors the extension's "cockpit" share controls

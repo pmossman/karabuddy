@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { formatTimestamp } from '@/lib/datetime';
+import { ErrorNote, Loading, Muted } from '@/app/_components/StatusUi';
 
 // B100: lightweight comments viewer reachable by clicking a replay's 💬
 // count in the browser — read the discussion without opening the full
@@ -123,8 +125,8 @@ export function ReplayCommentsModal({
         </header>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {state === 'loading' && <Muted>Loading comments…</Muted>}
-          {state === 'error' && <Muted error>Couldn&apos;t load comments.</Muted>}
+          {state === 'loading' && <Loading label="comments" />}
+          {state === 'error' && <ErrorNote>Couldn&apos;t load comments.</ErrorNote>}
           {state === 'ready' && threads.length === 0 && <Muted>No comments on this replay yet.</Muted>}
           {state === 'ready' && threads.map(({ tag, replies }) => (
             <div key={tag.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -152,7 +154,7 @@ function Comment({ tag, replaySlug }: { tag: TagRow; replaySlug: string }) {
         <Link href={`/r/${replaySlug}?f=${tag.frameIndex}`} prefetch={false} style={{ fontSize: 10.5, color: '#5db4ff', textDecoration: 'none', fontWeight: 600 }}>
           Frame {tag.frameIndex} →
         </Link>
-        <span style={{ fontSize: 10.5, color: '#6c7588', marginLeft: 'auto' }}>{shortDate(tag.createdAt)}</span>
+        <span style={{ fontSize: 10.5, color: '#6c7588', marginLeft: 'auto' }}>{formatTimestamp(tag.createdAt, { year: false })}</span>
       </div>
       <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         {tag.comment || <span style={{ color: '#6c7588', fontStyle: 'italic' }}>(no text)</span>}
@@ -161,16 +163,6 @@ function Comment({ tag, replaySlug }: { tag: TagRow; replaySlug: string }) {
   );
 }
 
-function Muted({ children, error = false }: { children: React.ReactNode; error?: boolean }) {
-  return <div style={{ fontSize: 13, color: error ? '#ff7a7a' : '#6c7588', fontStyle: 'italic', padding: '6px 4px' }}>{children}</div>;
-}
-
 function cmpDate(a: TagRow, b: TagRow): number {
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-}
-
-function shortDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }

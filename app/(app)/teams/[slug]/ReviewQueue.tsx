@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ReplayCard } from '@/app/(app)/replays/ReplayCard';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ErrorNote, Loading, EmptyState } from '@/app/_components/StatusUi';
 
 // B149 / ADR 0009: the team's Reviews tab. Requests are durable — a replay never
 // leaves after one review. Each member leaves their OWN "✓ I reviewed" mark;
@@ -55,14 +56,14 @@ export function ReviewQueue({ teamSlug }: { teamSlug: string }) {
     filter === 'awaiting' ? !r.viewerReviewed : filter === 'reviewed' ? r.reviewerCount > 0 : true,
   ), [rows, filter]);
 
-  if (state === 'loading') return <div style={{ fontSize: 12, color: '#6c7588' }}>Loading reviews…</div>;
-  if (state === 'error') return <div style={{ fontSize: 12, color: '#ff7a7a' }}>{error}</div>;
+  if (state === 'loading') return <Loading label="reviews" />;
+  if (state === 'error') return <ErrorNote>{error}</ErrorNote>;
   if (rows.length === 0) {
     return (
-      <div style={{ fontSize: 13, color: '#6c7588', padding: '24px 0', lineHeight: 1.5 }}>
+      <EmptyState>
         No replays up for review. An uploader requests one from its{' '}
         <strong style={{ color: '#a0a8b8' }}>Share</strong>{' '}menu — &ldquo;Request team review&rdquo; on a team they&apos;ve shared it with.
-      </div>
+      </EmptyState>
     );
   }
 

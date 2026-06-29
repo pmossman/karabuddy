@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { deckLabel } from '@/lib/players';
+import { formatTimestamp } from '@/lib/datetime';
 import type { SerializedClipRow } from '@/lib/clipRow';
 
 // B142: one clip in the browser grid — the parent-replay matchup (leaders/bases)
@@ -52,11 +54,11 @@ export function ClipCard({ clip, showCreator }: { clip: SerializedClipRow; showC
           </span>
         </div>
         <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
-          {deckText(p1)} vs {deckText(p2)}
+          {deckLabel(p1)} vs {deckLabel(p2)}
         </div>
         <div style={{ fontSize: 12, color: '#6c7588', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>{clip.frameCount} frame{clip.frameCount === 1 ? '' : 's'} · from frame {clip.startFrame + 1}</span>
-          <span>· {formatDate(clip.clipCreatedAt)}</span>
+          <span>· {formatTimestamp(clip.clipCreatedAt)}</span>
           {showCreator && clip.creatorName && <span>· by {clip.creatorName}</span>}
         </div>
       </Link>
@@ -99,16 +101,4 @@ function CardImg({ src, alt }: { src: string | null; alt?: string }) {
   }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt || ''} loading="lazy" style={{ width: 90, height: 64, objectFit: 'contain', borderRadius: 4, background: '#0a0c10' }} />;
-}
-
-function deckText(p: any) {
-  if (!p) return 'Unknown';
-  const l = p.leader?.name || 'Unknown';
-  const b = p.base?.name || 'Unknown';
-  return `${l} / ${b}`;
-}
-
-function formatDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
 }

@@ -15,6 +15,8 @@ import { computeFrameDwells, PLAYBACK_TICK_MS } from '@/app/(app)/r/[slug]/frame
 import { decodeReplay, collapseReplay, type Frame } from '@/lib/replayDecoder';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cardImageUrl } from '@/lib/cardImage';
+import { copyToClipboard } from '@/lib/clipboard';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 
 // B136: the dedicated clip reel — a stripped, auto-playing, looping view of a
 // replay's [start,end] range. Reuses the board pipeline (own GameProvider +
@@ -357,7 +359,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
   };
 
   const clipUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const copy = async () => { try { await navigator.clipboard.writeText(clipUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { /* */ } };
+  const copy = async () => { try { await copyToClipboard(clipUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { /* */ } };
   // Native share sheet where supported (mobile); fall back to copying the link.
   const share = async () => {
     const nav = typeof navigator !== 'undefined' ? navigator : undefined;
@@ -392,7 +394,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
   }, [frames, metaLocalPlayerId]);
 
   if (state === 'error') {
-    return <div style={{ minHeight: '60vh', display: 'grid', placeItems: 'center', color: '#ff7a7a' }}>Couldn’t load this clip.</div>;
+    return <div style={{ minHeight: '60vh', display: 'grid', placeItems: 'center' }}><ErrorNote>Couldn’t load this clip.</ErrorNote></div>;
   }
 
   // The top chrome (title + watch-full) fades + slides down slightly when shown.
@@ -416,7 +418,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
       <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none', background: '#000', opacity: chromeShown && !ended ? 0.22 : 0, transition: 'opacity 220ms ease' }} />
 
       {state === 'loading' && (
-        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#6c7588', fontSize: 14 }}>Loading clip…</div>
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}><Loading label="clip" /></div>
       )}
 
       {/* Top-left: the clip title. */}

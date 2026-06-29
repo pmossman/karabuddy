@@ -7,6 +7,8 @@ import type { Chapter, ChapterKind } from '@/lib/replayChapters';
 import { ClipBoardPreview } from './ClipBoardPreview';
 import { computeFrameDwells, PLAYBACK_TICK_MS } from './frameDwell';
 import { PLAYBACK_SPEEDS, PLAYBACK_SPEED_DEFAULT } from './playback';
+import { copyToClipboard } from '@/lib/clipboard';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B136: the clip trim builder — a large modal over the replay viewer with its
 // OWN independent board (nested GameProvider; the underlying viewer board never
@@ -259,7 +261,9 @@ function ClipBuilderInner({
 
   const clipUrl = createdSlug ? `${typeof window !== 'undefined' ? window.location.origin : ''}/c/${createdSlug}` : '';
   const copy = async () => {
-    try { await navigator.clipboard.writeText(clipUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { /* noop */ }
+    await copyToClipboard(clipUrl);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
   };
 
   const pct = (i: number) => (last === 0 ? 0 : (i / last) * 100);
@@ -400,7 +404,7 @@ function ClipBuilderInner({
               />
               <Btn variant="primary" onClick={create} disabled={busy} data-testid="clip-create">{busy ? 'Creating…' : 'Create clip'}</Btn>
             </div>
-            {error && <div style={{ fontSize: 12, color: '#ff7a7a' }}>{error}</div>}
+            <ErrorNote>{error}</ErrorNote>
           </>
         )}
       </div>

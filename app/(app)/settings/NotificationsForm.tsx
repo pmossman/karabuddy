@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { LedToggle } from '@/app/_components/LedToggle';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B81/B99: global Discord-notifications switch (strictly-opt-in master, gates
 // mention DMs) + B194: a dedicated "review I requested was finished" DM toggle.
@@ -36,7 +37,7 @@ export function NotificationsForm({ initialDisabled, initialReviewDm }: { initia
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <LedToggle variant="inline" checked={mentions} onChange={toggleMentions} label="Send me Discord notifications when I’m @-mentioned" />
       <LedToggle variant="inline" checked={reviewDm} onChange={toggleReviewDm} label="DM me when a teammate finishes a review I requested" />
-      {error && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{error}</span>}
+      <ErrorNote>{error}</ErrorNote>
     </div>
   );
 }

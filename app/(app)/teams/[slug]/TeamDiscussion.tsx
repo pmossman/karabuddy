@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { cardImageUrl } from '@/lib/cardImage';
 import { MentionedComment } from '@/app/(app)/r/[slug]/MentionInput';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { relativeTime } from '@/lib/datetime';
+import { matchupTitle } from '@/lib/matchMetadata';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 
 // B61: Discussion feed for /teams/[slug]. Sits above the inventory.
 // Surfaces replays with active tag activity; rows are stable click
@@ -65,10 +68,10 @@ export function TeamDiscussion({ teamSlug }: { teamSlug: string }) {
   }, [teamSlug]);
 
   if (state === 'loading') {
-    return <div style={{ fontSize: 12, color: '#6c7588' }}>Loading discussion…</div>;
+    return <Loading label="discussion" />;
   }
   if (state === 'error') {
-    return <div style={{ fontSize: 12, color: '#ff7a7a' }}>{error}</div>;
+    return <ErrorNote>{error}</ErrorNote>;
   }
   if (items.length === 0) {
     return (
@@ -119,7 +122,7 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#a7d2ff' }}>
-            {matchupText(item)}
+            {matchupTitle(item)}
           </div>
         </div>
         <ParticipantBubbles participants={item.participants} />
@@ -144,7 +147,7 @@ function DiscussionRow({ item }: { item: DiscussionItem }) {
       </div>
 
       <div style={{ fontSize: 11, color: '#6c7588' }}>
-        {item.tagCount} {item.tagCount === 1 ? 'tag' : 'tags'} · last activity {timeAgo(item.latestTag.createdAt)}
+        {item.tagCount} {item.tagCount === 1 ? 'tag' : 'tags'} · last activity {relativeTime(item.latestTag.createdAt)}
       </div>
     </Link>
   );
@@ -234,28 +237,3 @@ const thumbImgStyle: React.CSSProperties = {
   display: 'block',
 };
 const thumbBoxStyle: React.CSSProperties = { ...thumbImgStyle, border: '1px solid #2e333c' };
-
-function matchupText(item: DiscussionItem): string {
-  if (item.displayName) return item.displayName;
-  const players = Array.isArray(item.players) ? item.players : [];
-  const [p1, p2] = players;
-  return `${nameText(p1)} vs ${nameText(p2)}`;
-}
-
-function nameText(p: any) {
-  const u: string | undefined = p?.username;
-  if (!u || /^anonymous\s/i.test(u)) return 'anon';
-  return u;
-}
-
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-}

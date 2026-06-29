@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 export function JoinClient({ code }: { code: string }) {
   const router = useRouter();
@@ -46,7 +47,7 @@ export function JoinClient({ code }: { code: string }) {
       {state === 'error' && (
         <>
           <h1 style={{ margin: '0 0 12px', fontSize: 22, fontWeight: 600 }}>Couldn&apos;t join</h1>
-          <p style={{ margin: '0 0 16px', fontSize: 13, color: '#ff7a7a' }}>{error}</p>
+          <ErrorNote style={{ margin: '0 0 16px' }}>{error}</ErrorNote>
           <Link href="/teams" style={{ color: '#5db4ff', fontSize: 13 }}>← All teams</Link>
         </>
       )}

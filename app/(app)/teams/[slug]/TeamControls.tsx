@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { copyToClipboard } from '@/lib/clipboard';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B55a: owner + member controls for a team — generate invite, copy link,
 // leave team, rename (owners). All inline on the team page header.
@@ -49,13 +51,9 @@ export function TeamControls({
 
   const copyInvite = async () => {
     if (!inviteUrl) return;
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback: select the text — user copies manually.
-    }
+    await copyToClipboard(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const leave = async () => {
@@ -109,11 +107,7 @@ export function TeamControls({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {error && (
-        <div style={{ fontSize: 12, color: '#ff7a7a', padding: '6px 10px', background: 'rgba(255, 122, 122, 0.08)', borderRadius: 4 }}>
-          {error}
-        </div>
-      )}
+      <ErrorNote>{error}</ErrorNote>
 
       {renaming && isOwner ? (
         <div style={{ display: 'flex', gap: 6 }}>

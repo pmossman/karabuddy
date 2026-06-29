@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B194: the "Finish review" summary. A teammate who was asked to review a replay
 // reviews it by leaving frame-anchored comments; this collects THEIR team-scoped
@@ -96,7 +97,7 @@ export function FinishReviewModal({
 
         {/* Footer */}
         <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #1c2128', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {error && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{error}</span>}
+          <ErrorNote>{error}</ErrorNote>
           <button type="button" onClick={submit} disabled={submitting || comments.length === 0}
             style={{ ...primaryBtn, width: '100%', padding: '10px', opacity: submitting || comments.length === 0 ? 0.5 : 1 }}>
             {submitting ? 'Submitting…' : alreadyReviewed ? 'Update review' : 'Submit review'}

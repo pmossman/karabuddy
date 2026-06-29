@@ -11,7 +11,8 @@ import { Popover } from '@/app/_components/Popover';
 import { DecksModal } from './DecksModal';
 import { ClipsList, type ClipSummary } from './ClipsList';
 import { SharePopover } from './SharePopover';
-import { MatchupInfo, useShareMoment, copyToClipboard } from './MatchupInfo';
+import { MatchupInfo, useShareMoment } from './MatchupInfo';
+import { copyToClipboard } from '@/lib/clipboard';
 import { MentionInput, MentionedComment, type MentionData } from './MentionInput';
 import { type SeriesInfo } from './SeriesNav';
 // B71: shared scope-derivation — same module the extension copies, so the

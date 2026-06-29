@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ReplayFilters } from '@/app/(app)/replays/ReplayFilters';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 
 // B133: the public browser — replays whose uploaders explicitly published
 // them. Rows arrive serialized + ANONYMIZED (Player1/Player2, no uploader
@@ -36,10 +37,10 @@ export function PublicReplays() {
   }, []);
 
   if (state === 'loading') {
-    return <div style={{ fontSize: 12, color: '#6c7588' }}>Loading public replays…</div>;
+    return <Loading label="public replays" />;
   }
   if (state === 'error') {
-    return <div style={{ fontSize: 12, color: '#ff7a7a' }}>{error}</div>;
+    return <ErrorNote>{error}</ErrorNote>;
   }
 
   return (

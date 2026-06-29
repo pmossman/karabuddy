@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { cardImageUrl } from '@/lib/cardImage';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
+import { copyToClipboard } from '@/lib/clipboard';
 
 // B151: small leader + base thumbnails for an entrant's registered deck. Ids are
 // "SET_NNN"; the leader image uses the `-base` (deployed) side.
@@ -131,8 +133,8 @@ export function TournamentDetail({ teamSlug, tournamentId }: { teamSlug: string;
   }, [base]);
   useEffect(() => { load(); }, [load]);
 
-  if (error) return <div style={{ color: '#ff8a8a', fontSize: 13 }}>{error}</div>;
-  if (!detail) return <div style={{ color: '#6c7588', fontSize: 13 }}>Loading…</div>;
+  if (error) return <ErrorNote>{error}</ErrorNote>;
+  if (!detail) return <Loading />;
 
   const { tournament: t } = detail;
   const status = STATUS_STYLE[t.status] ?? STATUS_STYLE.setup;
@@ -211,7 +213,7 @@ function OrganizerControls({ teamSlug, detail, onChanged }: { teamSlug: string; 
           )}
         </>
       )}
-      {error && <span style={{ color: '#ff8a8a', fontSize: 12 }}>{error}</span>}
+      <ErrorNote>{error}</ErrorNote>
     </div>
   );
 }
@@ -396,7 +398,7 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
         await onChanged(); // refresh so t.inviteCode is set for next time
       }
       const url = `${window.location.origin}/tournaments/join?code=${code}${claimToken ? `&claim=${claimToken}` : ''}`;
-      await navigator.clipboard.writeText(url);
+      await copyToClipboard(url);
       setCopied(label);
       setTimeout(() => setCopied(null), 2000);
     } catch {
@@ -571,7 +573,7 @@ function RegistrationPanel({ teamSlug, detail, onChanged }: { teamSlug: string; 
         ))}
       </div>
 
-      {actionError && <div style={{ color: '#ff8a8a', fontSize: 12, marginTop: 10 }}>{actionError}</div>}
+      <ErrorNote style={{ marginTop: 10 }}>{actionError}</ErrorNote>
 
       {/* Self-registration / decklist controls (members, while setup). Guests
           are added via a separate modal so the two flows never read as one form. */}

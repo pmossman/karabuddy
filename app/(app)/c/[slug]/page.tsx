@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { clips, replays } from '@/lib/schema';
 import { orderPlayersOwnerFirst } from '@/lib/players';
+import { matchupVs } from '@/lib/matchMetadata';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { canViewReplayIdentities } from '@/lib/altPerspective';
 import { auth } from '@/auth';
@@ -35,9 +36,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const anonymize = isSampleReplaySlug(replay.slug)
     || !(await canViewReplayIdentities(replay, { sessionUserId: viewerUserId, installToken: null }));
   const ordered = orderPlayersOwnerFirst(replay.players, replay.ownerPlayerId) as any[];
-  const nameOf = (p: any) => p?.username ?? 'Player';
-  const matchup = `${ordered[0]?.leader?.name ?? 'Unknown'} vs ${ordered[1]?.leader?.name ?? 'Unknown'}`;
-  const subjects = anonymize ? matchup : `${nameOf(ordered[0])} vs ${nameOf(ordered[1])}`;
+  const matchup = matchupVs({ players: ordered }, { anonymize: true });
+  const subjects = matchupVs({ players: ordered }, { anonymize });
   const titleText = clip.title || `Clip — ${matchup}`;
   const description = `${subjects} · a Star Wars Unlimited clip on KaraBuddy.`;
   const image = `/api/clips/${slug}/og-image`;

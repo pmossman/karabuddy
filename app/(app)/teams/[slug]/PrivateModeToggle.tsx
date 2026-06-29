@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getCompanionInfo, extensionPresent, companionCapabilityState, loadedTeamKeys, openKeyManager } from '@/lib/companion';
 import { Panel } from '@/app/_components/Panel';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B170 / ADR 0010: the owner's "Private (encrypted) mode" control on the team
 // Settings tab. The server only ever stores the NON-SECRET team_key_id (the key
@@ -167,7 +168,7 @@ export function PrivateModeToggle({
           )}
         </>
       )}
-      {error && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#ff6b6b' }}>{error}</p>}
+      <ErrorNote style={{ marginTop: 8 }}>{error}</ErrorNote>
     </Panel>
   );
 }

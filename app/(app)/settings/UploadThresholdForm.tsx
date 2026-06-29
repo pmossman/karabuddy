@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button, TextField } from '@mui/material';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B75: per-user minimum-actions-per-player threshold for the extension's
 // auto-uploads. PATCHes /api/me/settings; the extension reads it on record
@@ -40,7 +41,7 @@ export function UploadThresholdForm({ initial }: { initial: number }) {
         {status.kind === 'saving' ? 'Saving…' : 'Save'}
       </Button>
       {status.kind === 'ok' && <span style={{ fontSize: 12, color: '#6bd968' }}>{status.text}</span>}
-      {status.kind === 'error' && <span style={{ fontSize: 12, color: '#ff6b6b' }}>{status.text}</span>}
+      {status.kind === 'error' && <ErrorNote>{status.text}</ErrorNote>}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { DecksByUserId } from '@/lib/replayDecoder';
 import { Decks } from '@/app/(app)/r/[slug]/Decks';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // B100: lightweight decks viewer reachable from the row kebab menu, so you
 // can eyeball a replay's decks (and jump to each player's dedicated deck
@@ -98,7 +99,7 @@ export function ReplayDecksModal({
         </header>
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {state === 'loading' && <p style={muted}>Loading decks…</p>}
-          {state === 'error' && <p style={{ ...muted, color: '#ff7a7a' }}>Couldn&apos;t load decks.</p>}
+          {state === 'error' && <ErrorNote style={{ padding: '14px 22px' }}>Couldn&apos;t load decks.</ErrorNote>}
           {state === 'ready' && <Decks decks={decks} localPlayerId={localPlayerId} replaySlug={replaySlug} />}
         </div>
       </div>

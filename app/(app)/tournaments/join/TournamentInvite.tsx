@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 
 // B126: the public invite-registration flow. One component, four viewer states:
 //   signed out          → guest form (name + optional deck link); on success
@@ -93,8 +94,8 @@ export function TournamentInvite({ code, claimToken: claimFromUrl }: { code: str
     }
   };
 
-  if (error && !info) return <p style={{ fontSize: 13, color: '#ff8a8a' }}>{error}</p>;
-  if (!info) return <p style={{ fontSize: 13, color: '#6c7588' }}>Loading…</p>;
+  if (error && !info) return <ErrorNote>{error}</ErrorNote>;
+  if (!info) return <Loading />;
 
   const { viewer } = info;
   const active = info.entrants.filter((e) => !e.dropped);
@@ -124,7 +125,7 @@ export function TournamentInvite({ code, claimToken: claimFromUrl }: { code: str
         </div>
       </section>
 
-      {error && <div style={{ color: '#ff8a8a', fontSize: 12 }}>{error}</div>}
+      <ErrorNote>{error}</ErrorNote>
 
       {/* Claim flow: a guest entry waiting + a signed-in account → upgrade.
           B127: claiming links the entry to the account (tournament access);

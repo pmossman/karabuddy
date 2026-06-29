@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
+import { formatTimestamp } from '@/lib/datetime';
 
 // B124: the team page's Tournaments tab — list of this team's tournaments +
 // a create form. Detail lives at /teams/[slug]/tournaments/[id].
@@ -65,8 +67,8 @@ export function TeamTournaments({ teamSlug }: { teamSlug: string }) {
     }
   };
 
-  if (error) return <div style={{ color: '#ff8a8a', fontSize: 13 }}>{error}</div>;
-  if (rows === null) return <div style={{ color: '#6c7588', fontSize: 13 }}>Loading…</div>;
+  if (error) return <ErrorNote>{error}</ErrorNote>;
+  if (rows === null) return <Loading />;
 
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -126,7 +128,7 @@ export function TeamTournaments({ teamSlug }: { teamSlug: string }) {
                     {t.entrantCount} {t.entrantCount === 1 ? 'entrant' : 'entrants'}
                     {t.roundCount > 0 ? ` · round ${t.roundCount}` : ''}
                     {' · '}{VISIBILITY_LABEL[t.decklistVisibility] ?? t.decklistVisibility}
-                    {' · '}{new Date(t.createdAt).toLocaleDateString()}
+                    {' · '}{formatTimestamp(t.createdAt, { time: false })}
                   </div>
                 </div>
                 <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: status.color, background: status.bg, border: `1px solid ${status.color}40`, borderRadius: 999, padding: '3px 10px' }}>

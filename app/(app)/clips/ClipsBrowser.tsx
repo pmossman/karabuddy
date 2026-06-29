@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { ClipCard } from './ClipCard';
+import { EmptyState } from '@/app/_components/StatusUi';
 import type { SerializedClipRow } from '@/lib/clipRow';
 
 // B142: focused clip grid — title search + my-leader / opponent-leader filters +
@@ -41,7 +42,7 @@ export function ClipsBrowser({
   }, [rows, q, mine, vs, sort]);
 
   if (rows.length === 0) {
-    return <p style={{ color: '#828b99', fontSize: 14, marginTop: 24 }}>{emptyLabel}</p>;
+    return <EmptyState>{emptyLabel}</EmptyState>;
   }
 
   return (
@@ -58,7 +59,7 @@ export function ClipsBrowser({
         <Select value={sort} onChange={(v) => setSort(v as 'new' | 'old')} options={['new', 'old']} labels={{ new: 'Newest', old: 'Oldest' }} />
       </div>
       {filtered.length === 0 ? (
-        <p style={{ color: '#828b99', fontSize: 14 }}>No clips match these filters.</p>
+        <EmptyState>No clips match these filters.</EmptyState>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 14 }}>
           {filtered.map((c) => (

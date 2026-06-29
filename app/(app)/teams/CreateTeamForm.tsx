@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 export function CreateTeamForm() {
   const router = useRouter();
@@ -83,7 +84,7 @@ export function CreateTeamForm() {
           {busy ? 'Creating…' : 'Create'}
         </button>
       </div>
-      {error && <div style={{ fontSize: 12, color: '#ff7a7a' }}>{error}</div>}
+      <ErrorNote>{error}</ErrorNote>
     </form>
   );
 }

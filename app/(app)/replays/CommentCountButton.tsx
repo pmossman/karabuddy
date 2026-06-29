@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ReplayCommentsModal } from './ReplayCommentsModal';
+import { matchupTitle } from '@/lib/matchMetadata';
 
 // B100: the 💬 comment count, clickable to read the discussion inline (a
 // ReplayCommentsModal) instead of having to open the full viewer. Used on
@@ -24,8 +25,7 @@ export function CommentCountButton({ replay, variant }: { replay: CountRow; vari
     return variant === 'table' ? <span style={{ color: '#6c7588' }}>—</span> : null;
   }
 
-  const players = Array.isArray(replay.players) ? replay.players : [];
-  const title = replay.displayName || `${nameText(players[0])} vs ${nameText(players[1])}`;
+  const title = matchupTitle(replay);
 
   return (
     <>
@@ -56,10 +56,4 @@ export function CommentCountButton({ replay, variant }: { replay: CountRow; vari
       )}
     </>
   );
-}
-
-function nameText(p: any) {
-  const u: string | undefined = p?.username;
-  if (!u || /^anonymous\s/i.test(u)) return 'anon';
-  return u;
 }

@@ -6,6 +6,33 @@
 // the default and would be noise on every chip row.
 
 import type { MatchMeta } from './replayDecoder';
+import { playerHandle } from './players';
+
+// B203: a replay's "X vs Y" string (no displayName). `anonymize` (B122) forces
+// leader names so no karabast handle leaks; otherwise it's handle-vs-handle.
+// Was the `defaultTitleFor`/`matchupText` core, duplicated across the viewer +
+// browser + feeds. NOTE: the replay-browser's perspective variant (leads with
+// the viewer's own/opp leader) stays in ReplayFilters — it needs pre-resolved
+// perspective fields this generic helper doesn't have; it still calls
+// playerHandle for its fallback.
+export function matchupVs(replay: { players?: unknown }, opts: { anonymize?: boolean } = {}): string {
+  const players = Array.isArray(replay.players) ? replay.players : [];
+  const [p1, p2] = players;
+  if (!p1 && !p2) return 'Replay';
+  if (opts.anonymize) {
+    const lead = (p: any) => p?.leader?.name || 'Unknown';
+    return `${lead(p1)} vs ${lead(p2)}`;
+  }
+  return `${playerHandle(p1)} vs ${playerHandle(p2)}`;
+}
+
+// B203: a replay's human title — a user-set displayName wins, else `matchupVs`.
+export function matchupTitle(
+  replay: { displayName?: string | null; players?: unknown },
+  opts: { anonymize?: boolean } = {},
+): string {
+  return replay.displayName || matchupVs(replay, opts);
+}
 
 export const FORMAT_LABEL: Record<string, string> = {
   premier: 'Premier',

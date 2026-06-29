@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { Panel } from '@/app/_components/Panel';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 // Owner-only "Danger zone" — permanently delete the team. Two-step like
 // TransferOwnership: a danger button reveals a red-wash block that requires typing
@@ -48,7 +49,7 @@ export function DeleteTeam({ slug, teamName }: { slug: string; teamName: string 
         <strong>keep their own replays</strong> (they&apos;re just no longer shared here).
         <strong style={{ color: '#ffb3b3' }}> This cannot be undone.</strong>
       </p>
-      {error && <div style={{ fontSize: 12, color: '#ff7a7a' }}>{error}</div>}
+      <ErrorNote>{error}</ErrorNote>
 
       {!confirming ? (
         <button type="button" data-testid="delete-open" onClick={() => setConfirming(true)} style={btnDanger}>

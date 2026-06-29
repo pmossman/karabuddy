@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { glowButtonStyle } from '@/app/_components/glowButton';
+import { ErrorNote } from '@/app/_components/StatusUi';
 
 export function ClaimForm({
   prefilledToken,
@@ -74,9 +75,7 @@ export function ClaimForm({
       {status.kind === 'ok' && (
         <p style={{ marginTop: 12, fontSize: 12, color: '#6bd968' }}>{status.text}</p>
       )}
-      {status.kind === 'error' && (
-        <p style={{ marginTop: 12, fontSize: 12, color: '#ff6b6b' }}>{status.text}</p>
-      )}
+      {status.kind === 'error' && <ErrorNote style={{ marginTop: 12 }}>{status.text}</ErrorNote>}
     </div>
   );
 }

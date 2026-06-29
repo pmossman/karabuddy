@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { cardImageUrl } from '@/lib/cardImage';
 import { matchChips } from '@/lib/matchMetadata';
+import { formatTimestamp } from '@/lib/datetime';
+import { playerHandle, deckLabel } from '@/lib/players';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ShareBadge } from './ShareBadge';
 import { RowActions } from './RowActions';
@@ -114,16 +116,16 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
                   {replay.displayName}
                 </div>
                 <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
-                  {deckText(p1)} vs {deckText(p2)}
+                  {deckLabel(p1, { withSet: true })} vs {deckLabel(p2, { withSet: true })}
                 </div>
               </>
             ) : (
               <div style={{ fontSize: 13, color: '#d6d6d6', lineHeight: 1.35, fontWeight: 600 }}>
-                {deckText(p1)} vs {deckText(p2)}
+                {deckLabel(p1, { withSet: true })} vs {deckLabel(p2, { withSet: true })}
               </div>
             )}
             <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.3 }}>
-              {nameText(p1)} vs {nameText(p2)}
+              {playerHandle(p1)} vs {playerHandle(p2)}
             </div>
           </>
         )}
@@ -169,7 +171,7 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
               Game {gameNumber}
             </span>
           )}
-          <span>{formatDate(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
+          <span>{formatTimestamp(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
           {replay.doubleSided && (
             <span
               data-testid="double-sided-chip"
@@ -252,25 +254,6 @@ function CardImg({ src, alt }: { src: string | null; alt?: string }) {
   }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt || ''} loading="lazy" style={{ width: 90, height: 64, objectFit: 'contain', borderRadius: 4, background: '#0a0c10' }} />;
-}
-
-function deckText(p: any) {
-  if (!p) return 'Unknown';
-  const l = p.leader?.name || 'Unknown';
-  const b = p.base?.name || 'Unknown';
-  const ls = p.leader?.set ? ` (${p.leader.set})` : '';
-  return `${l}${ls} / ${b}`;
-}
-
-function nameText(p: any) {
-  const u: string | undefined = p?.username;
-  if (!u || /^anonymous\s/i.test(u)) return 'anon';
-  return u;
-}
-
-function formatDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
 }
 
 function formatDuration(ms: number) {

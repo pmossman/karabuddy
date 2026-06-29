@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ReplayFilters } from '@/app/(app)/replays/ReplayFilters';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 
 // B55b: client-fetched team replays grid.
 // B52-followup: now wrapped in ReplayFilters so the team page gets the
@@ -32,15 +33,11 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
   useEffect(() => { void load(); }, [load]);
 
   if (state === 'loading') {
-    return (
-      <div style={{ fontSize: 12, color: '#6c7588' }}>Loading replays…</div>
-    );
+    return <Loading label="replays" />;
   }
 
   if (state === 'error') {
-    return (
-      <div style={{ fontSize: 12, color: '#ff7a7a' }}>{error}</div>
-    );
+    return <ErrorNote>{error}</ErrorNote>;
   }
 
   // B116: rows arrive already serialized by lib/replayRow (shared with the

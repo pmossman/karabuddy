@@ -12,7 +12,9 @@
 
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { matchChips } from '@/lib/matchMetadata';
+import { matchChips, matchupVs } from '@/lib/matchMetadata';
+import { playerHandle } from '@/lib/players';
+import { copyToClipboard } from '@/lib/clipboard';
 import { cardImageUrl } from '@/lib/cardImage';
 import type { MatchMeta } from '@/lib/replayDecoder';
 import { EditableTitle } from './EditableTitle';
@@ -28,39 +30,9 @@ export interface MatchupReplay {
   winners?: string[] | null;
 }
 
-// Robust clipboard copy with a non-secure-context fallback. Shared so the
-// viewer's "share this moment" works the same on desktop + mobile.
-export async function copyToClipboard(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); } catch {}
-    document.body.removeChild(ta);
-  }
-}
-
-export function playerUsername(p: any): string {
-  const u: string | undefined = p?.username;
-  if (!u || /^anonymous\s/i.test(u)) return 'anon';
-  return u;
-}
-
-// The "username vs username" string the replay browser uses when no display
-// name is set. B122: anonymized viewers identify by leader matchup, not handles.
-export function defaultTitleFor(replay: { players: any }, anonymize?: boolean): string {
-  const players = Array.isArray(replay.players) ? replay.players : [];
-  const [p1, p2] = players;
-  if (!p1 && !p2) return 'Replay';
-  if (anonymize) {
-    const lead = (p: any) => p?.leader?.name || 'Unknown';
-    return `${lead(p1)} vs ${lead(p2)}`;
-  }
-  return `${playerUsername(p1)} vs ${playerUsername(p2)}`;
-}
+// B203: copyToClipboard / playerUsername / defaultTitleFor moved to lib/
+// (clipboard.ts, players.playerHandle, matchMetadata.matchupVs) so server code +
+// every surface share one copy. This client component just consumes them now.
 
 // B113: copy a link to the CURRENT frame so it unfurls into that board state.
 // Lifted out of TagSidebar so the mobile MatchupPanel can offer it too (the
@@ -109,7 +81,7 @@ function MatchupPlayer({ player, winners, variant }: { player: any; winners?: st
   return (
     <div
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: panel ? 4 : 3, flex: 1, minWidth: 0 }}
-      title={`${player.leader?.name || '?'} / ${player.base?.name || '?'} — ${playerUsername(player)}`}
+      title={`${player.leader?.name || '?'} / ${player.base?.name || '?'} — ${playerHandle(player)}`}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: panel ? 2 : 4 }}>
         <Thumb src={cardImageUrl(player.leader, true)} alt={player.leader?.name} w={w} h={h} />
@@ -118,7 +90,7 @@ function MatchupPlayer({ player, winners, variant }: { player: any; winners?: st
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
         <ResultBadge playerId={player.id} winners={winners} />
         <span style={{ fontSize: 11, color: panel ? '#d6d6d6' : '#a0a8b8', fontWeight: panel ? 600 : 400, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {playerUsername(player)}
+          {playerHandle(player)}
         </span>
       </div>
     </div>
@@ -157,7 +129,7 @@ export function MatchupInfo({
           replaySlug={replay.slug}
           installToken={installToken}
           initialDisplayName={replay.displayName ?? null}
-          defaultText={defaultTitleFor(replay, anonymize) + (series ? ` — Game ${series.current}` : '')}
+          defaultText={matchupVs(replay, { anonymize }) + (series ? ` — Game ${series.current}` : '')}
           canEdit={isOwner}
         />
       </div>

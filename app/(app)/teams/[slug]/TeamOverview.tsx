@@ -6,6 +6,8 @@ import { Panel } from '@/app/_components/Panel';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { relativeTime } from '@/lib/datetime';
+import { EmptyState } from '@/app/_components/StatusUi';
 
 // The team dashboard "hub" for someone actively running a team. When a
 // tournament is active it leads with a full-width hero (live standings or
@@ -86,12 +88,12 @@ export function TeamOverview({ slug }: { slug: string }) {
               {recentReplays.map((r) => (
                 <Link key={r.slug} href={`/r/${r.slug}`} style={{ ...rowLink, flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
                   <PrivateMatchup row={r} thumb={36} />
-                  <span style={metaText}>{r.ownerName ? `${r.ownerName} · ` : ''}{timeAgo(r.createdAt)}</span>
+                  <span style={metaText}>{r.ownerName ? `${r.ownerName} · ` : ''}{relativeTime(r.createdAt)}</span>
                 </Link>
               ))}
             </div>
           ) : (
-            <Empty>No replays surfaced to this team yet. Share or tag a game to get started.</Empty>
+            <EmptyState>No replays surfaced to this team yet. Share or tag a game to get started.</EmptyState>
           )}
         </Panel>
 
@@ -114,7 +116,7 @@ export function TeamOverview({ slug }: { slug: string }) {
                     <PrivateMatchup row={r} thumb={28} />
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, color: tokens.led.on, fontWeight: 700 }}>needs review</span>
-                      <span style={{ ...metaText, marginLeft: 'auto' }}>{r.requestedByName ? `${r.requestedByName} requested · ` : ''}{timeAgo(r.requestedAt)}</span>
+                      <span style={{ ...metaText, marginLeft: 'auto' }}>{r.requestedByName ? `${r.requestedByName} requested · ` : ''}{relativeTime(r.requestedAt)}</span>
                     </span>
                   </Link>
                 ))}
@@ -131,14 +133,14 @@ export function TeamOverview({ slug }: { slug: string }) {
                     <PrivateMatchup row={r} thumb={28} />
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, color: '#6bd968', fontWeight: 700 }}>✓ {r.commentCount} {r.commentCount === 1 ? 'note' : 'notes'}</span>
-                      <span style={{ ...metaText, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.reviewerNames ?? []).slice(0, 2).join(', ')} · {timeAgo(r.reviewedAt)}</span>
+                      <span style={{ ...metaText, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.reviewerNames ?? []).slice(0, 2).join(', ')} · {relativeTime(r.reviewedAt)}</span>
                     </span>
                   </Link>
                 ))}
               </div>
             </div>
           ) : awaitingReviews.length === 0 ? (
-            <Empty>No review feedback yet — comment on a teammate’s replay to leave one, or request a review on yours.</Empty>
+            <EmptyState>No review feedback yet — comment on a teammate’s replay to leave one, or request a review on yours.</EmptyState>
           ) : null}
         </Panel>
       </div>
@@ -155,13 +157,13 @@ export function TeamOverview({ slug }: { slug: string }) {
                 <Avatar name={d.author} image={d.authorImage} size={24} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
                   <span style={{ fontSize: 12.5, color: '#d6d6d6', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{d.comment || '(no text)'}</span>
-                  <span style={{ fontSize: 10.5, color: '#8a93a3' }}>{d.author} · {d.matchup} · {timeAgo(d.createdAt)}</span>
+                  <span style={{ fontSize: 10.5, color: '#8a93a3' }}>{d.author} · {d.matchup} · {relativeTime(d.createdAt)}</span>
                 </span>
               </Link>
             ))}
           </div>
         ) : (
-          <Empty>No discussion yet — tag a moment on a team replay to start one.</Empty>
+          <EmptyState>No discussion yet — tag a moment on a team replay to start one.</EmptyState>
         )}
       </Panel>
     </div>
@@ -229,7 +231,7 @@ function TournamentPanel({ slug, t }: { slug: string; t: ActiveTournament }) {
                 {t.pairings.slice(0, 8).map((p) => <PairingRow key={p.table} p={p} />)}
               </div>
             ) : (
-              <Empty>Pairings not posted yet.</Empty>
+              <EmptyState>Pairings not posted yet.</EmptyState>
             )}
           </div>
         </div>
@@ -244,7 +246,7 @@ function TournamentPanel({ slug, t }: { slug: string; t: ActiveTournament }) {
           <Link href={href} style={{ ...actionLink, display: 'inline-block', marginTop: 10 }}>Manage tournament →</Link>
         </div>
       ) : (
-        <Empty>No entrants yet. <Link href={href} style={{ color: tokens.color.accent, textDecoration: 'none' }}>Manage →</Link></Empty>
+        <EmptyState>No entrants yet. <Link href={href} style={{ color: tokens.color.accent, textDecoration: 'none' }}>Manage →</Link></EmptyState>
       )}
     </div>
   );
@@ -324,24 +326,6 @@ function tournamentSummary(t: ActiveTournament): string {
   }
   const round = t.currentRound > 0 ? `Round ${t.currentRound}${t.plannedRounds ? ` of ${t.plannedRounds}` : ''}` : 'Underway';
   return `${round} · ${t.entrantCount} players`;
-}
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (s < 60) return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p style={{ margin: 0, fontSize: 13, color: '#8a93a3', lineHeight: 1.5 }}>{children}</p>;
 }
 
 function DashboardSkeleton() {

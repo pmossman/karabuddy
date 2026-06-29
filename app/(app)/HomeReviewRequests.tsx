@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
+import { matchupTitle } from '@/lib/matchMetadata';
 
 // B149 / ADR 0009: the requester's "your review requests" home block. Lists the
 // review requests YOU opened (across your teams), each with how many teammates
@@ -18,11 +19,6 @@ interface RequestRow {
   oppLeader?: { name?: string } | null;
   reviewers: { userId: string; name: string | null; reviewedAt: string }[];
   reviewerCount: number;
-}
-
-function matchup(r: RequestRow): string {
-  if (r.displayName) return r.displayName;
-  return `${r.ownLeader?.name ?? '?'} vs ${r.oppLeader?.name ?? '?'}`;
 }
 
 export function HomeReviewRequests() {
@@ -56,7 +52,7 @@ export function HomeReviewRequests() {
         >
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#cdd4e0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {matchup(r)}
+              {matchupTitle({ displayName: r.displayName, players: [{ leader: r.ownLeader }, { leader: r.oppLeader }] }, { anonymize: true })}
             </span>
             <span style={{ fontSize: 11.5, color: '#8a93a6' }}>review · {r.teamName}</span>
           </span>

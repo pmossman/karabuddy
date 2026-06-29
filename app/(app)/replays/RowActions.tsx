@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ShareWithTeam } from '@/app/(app)/r/[slug]/ShareWithTeam';
 import { ReplayDecksModal } from './ReplayDecksModal';
 import { ReplayCommentsModal } from './ReplayCommentsModal';
+import { matchupTitle } from '@/lib/matchMetadata';
 
 // B100: per-row kebab (⋮) menu of common actions. The frequent one —
 // flipping which teams a replay is shared with — lives inline as toggles
@@ -40,8 +41,7 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const players = Array.isArray(replay.players) ? replay.players : [];
-  const title = replay.displayName || `${nameText(players[0])} vs ${nameText(players[1])}`;
+  const title = matchupTitle(replay);
 
   // Anchor the fixed menu under the kebab, right-aligned. Fixed positioning
   // escapes the table's overflow-x clip; clamp into the viewport.
@@ -235,10 +235,4 @@ function itemStyle(danger: boolean, hover: boolean): React.CSSProperties {
     cursor: 'pointer',
     fontFamily: 'inherit',
   };
-}
-
-function nameText(p: any) {
-  const u: string | undefined = p?.username;
-  if (!u || /^anonymous\s/i.test(u)) return 'anon';
-  return u;
 }

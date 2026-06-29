@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { requestInstallTokenFromExtension } from '@/lib/extensionBridge';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ErrorNote, Loading } from '@/app/_components/StatusUi';
+import { formatTimestamp } from '@/lib/datetime';
 
 // B69: list the user's linked extension installs + show which row
 // matches THIS browser. Lets users see what's linked and revoke
@@ -85,8 +87,8 @@ export function LinkedExtensions() {
     }
   };
 
-  if (state === 'loading') return <div style={{ fontSize: 13, color: '#6c7588' }}>Loading…</div>;
-  if (state === 'error') return <div style={{ fontSize: 13, color: '#ff7a7a' }}>{error}</div>;
+  if (state === 'loading') return <Loading />;
+  if (state === 'error') return <ErrorNote>{error}</ErrorNote>;
   if (extensions.length === 0) {
     return (
       <div style={{ fontSize: 13, color: '#a0a8b8', lineHeight: 1.5 }}>
@@ -127,7 +129,7 @@ export function LinkedExtensions() {
                 )}
               </div>
               <span style={{ fontSize: 11, color: '#6c7588' }}>
-                Linked {new Date(ext.linkedAt).toLocaleString()}
+                Linked {formatTimestamp(ext.linkedAt)}
               </span>
             </div>
             <button
