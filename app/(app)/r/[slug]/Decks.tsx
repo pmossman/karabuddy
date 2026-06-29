@@ -75,11 +75,17 @@ export function Decks({ decks, localPlayerId, replaySlug }: Props) {
   );
 }
 
-export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isLocal: boolean; fullPageHref: string | null }) {
+export function DeckBlock({ deck, isLocal, fullPageHref, seenCards }: { deck: UserDeck; isLocal: boolean; fullPageHref: string | null; seenCards?: DeckCardRef[] }) {
   const hasFullDeck = Array.isArray(deck.deck) && deck.deck.length > 0;
   const totalMain = hasFullDeck ? sumCounts(deck.deck!) : null;
   const totalSide = deck.sideboard ? sumCounts(deck.sideboard) : 0;
-  const mainCount = hasFullDeck ? deck.deck!.length : 0;
+  // Opponent decks have no full list (karabast masks it). When DecksModal passes
+  // the "seen during play" cards, render THOSE as the main grid so the opponent
+  // view uses the exact same fit-to-screen solver + 2-column layout as your deck.
+  const showSeen = !hasFullDeck && Array.isArray(seenCards) && seenCards.length > 0;
+  const mainCards: DeckCardRef[] | null = hasFullDeck ? deck.deck! : (showSeen ? seenCards! : null);
+  const mainTitle = hasFullDeck ? 'Main deck' : `Seen during play (${seenCards?.length ?? 0} unique)`;
+  const mainCount = mainCards ? mainCards.length : 0;
   const sideCount = totalSide > 0 && deck.sideboard ? deck.sideboard.length : 0;
 
   // B208: "Fit all" (default) sizes cards as LARGE as possible so the whole deck
@@ -108,7 +114,7 @@ export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isL
   const LEFT_W = 264;
   const COL_GAP = 16;
   const LEADERS_H = 150; // leaders row height reserved atop the left column
-  const twoCol = fit && !!box && box.w > 900 && hasFullDeck;
+  const twoCol = fit && !!box && box.w > 900 && mainCount > 0;
   // Target the modal's MAX height (95vh cap) derived from the viewport — NOT the
   // current modal bottom. The modal is content-height up to its cap, so measuring
   // it makes the cards + the modal chase each other downward and settle SMALLER
@@ -154,7 +160,7 @@ export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isL
             “{deck.name}”
           </span>
         )}
-        {hasFullDeck && (
+        {mainCount > 0 && (
           <button
             type="button"
             onClick={() => setFit((v) => !v)}
@@ -186,8 +192,8 @@ export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isL
             )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            {hasFullDeck && (
-              <DeckList title="Main deck" cards={deck.deck!} fitWidth={mainFitW} containerW={mainW} />
+            {mainCards && (
+              <DeckList title={mainTitle} cards={mainCards} fitWidth={mainFitW} containerW={mainW} />
             )}
           </div>
         </div>
@@ -197,8 +203,8 @@ export function DeckBlock({ deck, isLocal, fullPageHref }: { deck: UserDeck; isL
             {deck.leader && <CardThumb card={deck.leader} isLeader />}
             {deck.base && <CardThumb card={deck.base} />}
           </div>
-          {hasFullDeck && (
-            <DeckList title="Main deck" cards={deck.deck!} fitWidth={mainFitW} containerW={box?.w} />
+          {mainCards && (
+            <DeckList title={mainTitle} cards={mainCards} fitWidth={mainFitW} containerW={box?.w} />
           )}
           {totalSide > 0 && deck.sideboard && (
             <DeckList title="Sideboard" cards={deck.sideboard} fitWidth={mainFitW} containerW={box?.w} />

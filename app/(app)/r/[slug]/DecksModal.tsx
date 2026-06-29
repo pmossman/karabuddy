@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { type DecksByUserId, type Frame, extractSeenCards } from '@/lib/replayDecoder';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { Modal } from '@/app/_components/Modal';
-import { DeckBlock, DeckList } from './Decks';
+import { DeckBlock } from './Decks';
 
 // B64: large-overlay deck viewer. Replaces the broken in-sidebar
 // DecksDisclosure (which pushed sibling content offscreen and couldn't
@@ -160,10 +160,10 @@ export function DecksModal({ open, onClose, decks, localPlayerId, replaySlug, fr
               // The dedicated-page link lives in the modal header; no
               // need to render it inside DeckBlock again.
               fullPageHref={null}
+              // Opponent tab: feed the "seen during play" cards in as the main
+              // grid so they use the same fit-to-screen solver as your own deck.
+              seenCards={isOpponentTab && seenCards.length > 0 ? seenCards : undefined}
             />
-          )}
-          {isOpponentTab && seenCards.length > 0 && (
-            <DeckList title={`Seen during play (${seenCards.length} unique)`} cards={seenCards} />
           )}
         </div>
     </Modal>
