@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import { HeaderBar } from '@/app/_components/HeaderBar';
 import { Sidebar, FULL_WIDTH, VIEWER_BAR_H } from '@/app/_components/Sidebar';
 import { Footer } from '@/app/_components/Footer';
-import type { TeamRef } from '@/lib/activeTeam';
 import type { LastReplayRef } from '@/lib/lastReplay';
 
 // The app shell decides the chrome around every (app) page:
@@ -18,15 +17,11 @@ import type { LastReplayRef } from '@/lib/lastReplay';
 export function AppShell({
   signedIn,
   hasLinkedExtension,
-  active,
-  teams,
   lastReplay,
   children,
 }: {
   signedIn: boolean;
   hasLinkedExtension: boolean;
-  active: TeamRef | null;
-  teams: TeamRef[];
   lastReplay: LastReplayRef | null;
   children: React.ReactNode;
 }) {
@@ -82,7 +77,7 @@ export function AppShell({
           background: 'rgba(17, 20, 26, 0.85)', backdropFilter: 'blur(10px)', borderBottom: '1px solid #2e333c',
         }}
       >
-        <HeaderBar signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams} />
+        <HeaderBar hasLinkedExtension={hasLinkedExtension} />
       </header>
       <div style={{ flex: '1 1 auto' }}>{children}</div>
       <Footer />

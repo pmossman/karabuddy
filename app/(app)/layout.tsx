@@ -27,7 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <KaraBuddyThemeProvider>
       <ActiveTeamProvider active={active} teams={teams}>
-        <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} active={active} teams={teams} lastReplay={lastReplay}>
+        <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay}>
           {children}
         </AppShell>
       </ActiveTeamProvider>
