@@ -160,7 +160,7 @@ const getOverview = cachedRead(
   // Tournaments — count + ACTIVE ones (not completed) enriched with live
   // standings (in-progress) / registrant names (registration).
   const tRows = await db.select().from(tournaments).where(eq(tournaments.teamSlug, slug)).orderBy(desc(tournaments.createdAt));
-  const activeRows = tRows.filter((t) => t.status !== 'completed').slice(0, 3);
+  const activeRows = tRows.filter((t) => t.status !== 'complete').slice(0, 3);
   const activeTournaments = [];
   for (const t of activeRows) {
     const [entrants, matches, rounds] = await Promise.all([
