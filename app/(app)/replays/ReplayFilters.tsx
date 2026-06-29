@@ -21,6 +21,8 @@ import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
+import { Select } from '@/app/_components/Select';
+import { Segmented } from '@/app/_components/Segmented';
 
 // B52 MVP shipped local-state filters. B52-followup added URL persistence
 // + by-leader / timeline views + reuse on /teams/[slug]. B123-followup merged
@@ -1614,35 +1616,11 @@ function FiltersToggle({ open, count, onClick }: { open: boolean; count: number;
 }
 
 function ViewSwitcher({ view, setView, showMember = false }: { view: ViewMode; setView: (v: ViewMode) => void; showMember?: boolean }) {
-  const item = (v: ViewMode, label: string) => (
-    <button
-      key={v}
-      type="button"
-      onClick={() => setView(v)}
-      aria-pressed={view === v}
-      style={{
-        background: view === v ? 'rgba(77, 157, 255, 0.18)' : 'transparent',
-        color: view === v ? '#e6e6e6' : '#a0a8b8',
-        border: '1px solid ' + (view === v ? 'rgba(77, 157, 255, 0.5)' : '#2e333c'),
-        padding: '4px 10px',
-        fontSize: 11,
-        fontWeight: 600,
-        borderRadius: 4,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <div role="group" style={{ display: 'flex', gap: 4 }}>
-      {item('replays', 'Replays')}
-      {item('by-leader', 'By leader')}
-      {showMember && item('by-member', 'By member')}
-      {item('timeline', 'Timeline')}
-    </div>
-  );
+  // By-member only exists on the team grid — drop it from the options when off.
+  const options: ReadonlyArray<readonly [ViewMode, string]> = showMember
+    ? [['replays', 'Replays'], ['by-leader', 'By leader'], ['by-member', 'By member'], ['timeline', 'Timeline']]
+    : [['replays', 'Replays'], ['by-leader', 'By leader'], ['timeline', 'Timeline']];
+  return <Segmented variant="pill" value={view} onChange={setView} options={options} />;
 }
 
 function FilterControls({
@@ -1678,55 +1656,39 @@ function FilterControls({
       }}
     >
       <Field label="My leader">
-        <select value={myLeader} onChange={(e) => setMyLeader(e.target.value)} style={selectStyle}>
-          <option value="">Any</option>
-          {ownLeaders.map((l) => <option key={l} value={l}>{l}</option>)}
-        </select>
+        <Select size="sm" style={replaySelectStyle} placeholder="Any"
+          value={myLeader} onChange={setMyLeader} options={ownLeaders.map((l) => [l, l] as const)} />
       </Field>
       <Field label="Opponent leader">
-        <select value={vsLeader} onChange={(e) => setVsLeader(e.target.value)} style={selectStyle}>
-          <option value="">Any</option>
-          {oppLeaders.map((l) => <option key={l} value={l}>{l}</option>)}
-        </select>
+        <Select size="sm" style={replaySelectStyle} placeholder="Any"
+          value={vsLeader} onChange={setVsLeader} options={oppLeaders.map((l) => [l, l] as const)} />
       </Field>
       {showUploaderFilter && (
         <Field label="Uploaded by">
-          <select value={uploadedBy} onChange={(e) => setUploadedBy(e.target.value)} style={selectStyle}>
-            <option value="">Any member</option>
-            {uploaders.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
+          <Select size="sm" style={replaySelectStyle} placeholder="Any member"
+            value={uploadedBy} onChange={setUploadedBy} options={uploaders.map((u) => [u, u] as const)} />
         </Field>
       )}
       <Field label="Date">
-        <select value={since} onChange={(e) => setSince(e.target.value)} style={selectStyle}>
-          {SINCE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <Select size="sm" style={replaySelectStyle}
+          value={since} onChange={setSince} options={SINCE_OPTIONS.map((s) => [s.value, s.label] as const)} />
       </Field>
       <Field label="Format">
-        <select value={format} onChange={(e) => setFormat(e.target.value)} style={selectStyle}>
-          <option value="">Any</option>
-          {Object.entries(FORMAT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        <Select size="sm" style={replaySelectStyle} placeholder="Any"
+          value={format} onChange={setFormat} options={Object.entries(FORMAT_LABEL)} />
       </Field>
       <Field label="Mode">
-        <select value={mode} onChange={(e) => setMode(e.target.value)} style={selectStyle}>
-          <option value="">Any</option>
-          {Object.entries(MODE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        <Select size="sm" style={replaySelectStyle} placeholder="Any"
+          value={mode} onChange={setMode} options={Object.entries(MODE_LABEL)} />
       </Field>
       <Field label="Result">
-        <select value={result} onChange={(e) => setResult((e.target.value as ResultFilter) || '')} style={selectStyle}>
-          <option value="">Any</option>
-          <option value="wins">Wins</option>
-          <option value="losses">Losses</option>
-        </select>
+        <Select size="sm" style={replaySelectStyle} placeholder="Any"
+          value={result} onChange={setResult} options={[['wins', 'Wins'], ['losses', 'Losses']] as const} />
       </Field>
       {labels.length > 0 && (
         <Field label="Label">
-          <select value={label} onChange={(e) => setLabel(e.target.value)} style={selectStyle}>
-            <option value="">Any</option>
-            {labels.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
+          <Select size="sm" style={replaySelectStyle} placeholder="Any"
+            value={label} onChange={setLabel} options={labels.map((l) => [l, l] as const)} />
         </Field>
       )}
     </div>
@@ -1752,17 +1714,10 @@ function NoMatchesEmpty() {
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  background: '#11141a',
-  color: '#e6e6e6',
-  border: '1px solid #2e333c',
-  borderRadius: 4,
-  padding: '6px 8px',
-  fontSize: 12,
-  fontFamily: 'inherit',
-  outline: 'none',
-};
-const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' };
+// Overrides over the shared sm <Select> base to keep these selects byte-identical
+// to the old local `selectStyle`: radius 4 (not 6), tighter 6px 8px padding,
+// suppressed focus outline, and no 220px maxWidth cap.
+const replaySelectStyle: React.CSSProperties = { borderRadius: 4, padding: '6px 8px', outline: 'none', maxWidth: 'none' };
 const chipButtonStyle: React.CSSProperties = {
   background: 'rgba(77, 157, 255, 0.18)',
   border: '1px solid rgba(77, 157, 255, 0.5)',

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ClipCard } from './ClipCard';
 import { EmptyState } from '@/app/_components/StatusUi';
+import { Select } from '@/app/_components/Select';
 import type { SerializedClipRow } from '@/lib/clipRow';
 
 // B142: focused clip grid — title search + my-leader / opponent-leader filters +
@@ -54,9 +55,9 @@ export function ClipsBrowser({
           placeholder="Search clip titles…"
           style={inputStyle}
         />
-        <Select value={mine} onChange={setMine} options={mineLeaders} placeholder="My leader" />
-        <Select value={vs} onChange={setVs} options={vsLeaders} placeholder="Opponent leader" />
-        <Select value={sort} onChange={(v) => setSort(v as 'new' | 'old')} options={['new', 'old']} labels={{ new: 'Newest', old: 'Oldest' }} />
+        <Select size="md" style={clipSelectStyle} value={mine} onChange={setMine} options={mineLeaders.map((v) => [v, v] as const)} placeholder="My leader" />
+        <Select size="md" style={clipSelectStyle} value={vs} onChange={setVs} options={vsLeaders.map((v) => [v, v] as const)} placeholder="Opponent leader" />
+        <Select size="md" style={clipSelectStyle} value={sort} onChange={setSort} options={[['new', 'Newest'], ['old', 'Oldest']]} />
       </div>
       {filtered.length === 0 ? (
         <EmptyState>No clips match these filters.</EmptyState>
@@ -82,21 +83,7 @@ const inputStyle: React.CSSProperties = {
   padding: '8px 12px', fontSize: 14, fontFamily: 'inherit', minWidth: 180, flex: '1 1 180px', maxWidth: 280,
 };
 
-function Select({
-  value, onChange, options, placeholder, labels,
-}: {
-  value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; labels?: Record<string, string>;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      style={{ ...inputStyle, flex: '0 0 auto', minWidth: 150, maxWidth: 220, cursor: 'pointer' }}
-    >
-      {placeholder && <option value="">{placeholder}</option>}
-      {options.map((o) => (
-        <option key={o} value={o}>{labels?.[o] ?? o}</option>
-      ))}
-    </select>
-  );
-}
+// The shared md Select already carries this site's bg/border/radius/padding/font
+// + maxWidth:220 + cursor; this only re-adds the flex sizing the inputStyle copy
+// used to contribute (don't grow to fill; floor at 150px).
+const clipSelectStyle: React.CSSProperties = { flex: '0 0 auto', minWidth: 150 };

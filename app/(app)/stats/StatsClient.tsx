@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
 import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/statsView';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
+import { Select } from '@/app/_components/Select';
+import { Segmented } from '@/app/_components/Segmented';
 
 // B101/Phase2 (reframed): the Stats/Meta client, centered on the team/personal
 // contexts teams actually want — "our leader matchups" and "card stats for the
@@ -276,7 +278,7 @@ export function StatsClient({
           {scope === 'team' && (
             <Field label="Games"><Segmented options={[['internal', 'Internal'], ['external', 'vs Outsiders'], ['all', 'All']]} value={teamGames} onChange={(v) => setTeamGames(v as 'internal' | 'external' | 'all')} /></Field>
           )}
-          <Field label="Format"><Select value={format} onChange={setFormat} options={FORMATS as any} /></Field>
+          <Field label="Format"><Select value={format} onChange={setFormat} options={FORMATS} /></Field>
 
           {view === 'leaders' && (
             <Field label="Group"><Segmented options={[['leader', 'By leader'], ['deck', 'By leader + base']]} value={leaderGroup} onChange={(v) => setLeaderGroup(v as 'leader' | 'deck')} /></Field>
@@ -686,25 +688,6 @@ function CardTile({ cardId, name, win, observations, label }: { cardId: string; 
   );
 }
 
-function Segmented({ options, value, onChange }: { options: readonly (readonly [string, string])[]; value: string; onChange: (v: string) => void }) {
-  return (
-    <div style={{ display: 'inline-flex', border: '1px solid #2e333c', borderRadius: 6, overflow: 'hidden' }}>
-      {options.map(([v, label]) => (
-        <button key={v} type="button" onClick={() => onChange(v)} aria-pressed={v === value}
-          style={{ background: v === value ? 'rgba(77,157,255,0.22)' : 'transparent', color: v === value ? '#fff' : '#a0a8b8', border: 0, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: readonly (readonly [string, string])[] }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', maxWidth: 220 }}>
-      {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-    </select>
-  );
-}
 // Sort lives on the headers (the native data-table pattern, and the cleanest on
 // mobile): a sortable column shows ↕; the active one shows ▲/▼ and tapping it flips.
 type Col = { label: string; sortKey?: SortKey };
