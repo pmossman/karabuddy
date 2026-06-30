@@ -5,13 +5,11 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { ViewerTag } from './TagsFeature';
 import { useCreateTag, SignInToTagCta } from './tagCompose';
 
-// B216 redesign — "Tag Mode": a board-VISIBLE reading experience for mobile.
-// Full-screen is great for scanning, but reading-while-watching needs the board
-// and the tag at once. So: a draggable floating bubble shows the current frame's
-// tag(s); compose lives INSIDE that same bubble (it's the tag-centric surface);
-// prev/next chips PREVIEW the neighbouring tags ("‹ Here I'd resource…") and jump
-// the board to them. The board stays interactive (container pointer-events:none;
-// only the chrome captures input).
+// B216 redesign — "Tag Mode": the expanded form of the Tags rail icon. The icon
+// is always present (minimal: a current-frame tag count); tapping it expands THIS
+// floating window over the board (board stays interactive). Everything tag lives
+// here: read the current frame's tag(s), jump to prev/next tagged frames (with a
+// PREVIEW so you recognise them), and compose. Closing collapses back to the icon.
 
 const truncate = (s: string, n = 22) => { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 
@@ -35,24 +33,17 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
     return m;
   }, [tags]);
 
-  // Draggable bubble offset (pointer-based; touch + mouse). Drag is tracked via
-  // WINDOW listeners (robust — the pointer can leave the small header), and the
-  // delta is CLAMPED against the bubble's measured rect so you can never fling it
-  // off-screen: the whole bubble stays horizontally in view and its header stays
-  // reachable vertically (always re-grabbable). Closing Tag Mode re-centres it.
+  // Draggable bubble offset (window listeners + clamp so it can't leave the view).
   const wrapRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const cleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => () => cleanupRef.current?.(), []);
-  // Tucked: collapse the whole bubble to a small edge tab (PiP-style "put away")
-  // so a huge comment doesn't cover the board. The tab previews the current tag.
-  const [tucked, setTucked] = useState(false);
   const onDown = (e: React.PointerEvent) => {
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY, ox = pos.x, oy = pos.y;
-    const m = 8, keepBottom = 90; // keepBottom keeps the header grabbable
+    const m = 8, keepBottom = 90;
     const move = (ev: PointerEvent) => {
       const vw = window.innerWidth, vh = window.innerHeight;
       const dx = Math.min(Math.max(ev.clientX - sx, m - rect.left), (vw - m) - rect.right);
@@ -67,29 +58,33 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
 
   return (
     <div style={{ position: 'fixed', inset: 'var(--kb-header-h, 0px) 0 0 0', zIndex: 140, pointerEvents: 'none' }}>
-      {/* Tucked: a small right-edge tab previewing the current tag; tap to pull out. */}
-      {tucked && <TuckTab here={here} currentIndex={currentIndex} onExpand={() => setTucked(false)} />}
-
-      {!tucked && (<>
-      {/* Floating, draggable tag bubble (top) — reading + composing both live here. */}
       <div ref={wrapRef} style={{ position: 'absolute', top: 12 + pos.y, left: '50%', transform: `translateX(calc(-50% + ${pos.x}px))`, width: 'min(440px, 92vw)', pointerEvents: 'auto' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '62vh', background: tokens.color.surfaceSolid, border: `1px solid ${tokens.color.borderStrong}`, borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.55)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '64vh', background: tokens.color.surfaceSolid, border: `1px solid ${tokens.color.borderStrong}`, borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.55)', overflow: 'hidden' }}>
+          {/* Header doubles as the drag handle. ✕ collapses back to the icon. */}
           <div data-testid="tag-bubble-drag" onPointerDown={onDown}
             style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'grab', borderBottom: `1px solid ${tokens.color.border}`, touchAction: 'none' }}>
             <span aria-hidden style={{ color: tokens.led.on, fontSize: 13 }}>🏷</span>
             <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: tokens.color.textMuted }}>
-              Frame {currentIndex + 1}{here.length > 1 ? ` · ${here.length} tags` : ''}
+              Frame {currentIndex + 1}{here.length > 0 ? ` · ${here.length} tag${here.length > 1 ? 's' : ''}` : ''}
             </span>
             <span aria-hidden style={{ marginLeft: 6, color: tokens.color.textFaint, fontSize: 12 }}>⠿</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-              <button type="button" onClick={() => setTucked(true)} title="Tuck to side" aria-label="Tuck to side" style={iconBtn}>⇥</button>
               <button type="button" onClick={onOpenList} title="All tags (list)" aria-label="All tags" style={iconBtn}>≡</button>
-              <button type="button" onClick={onClose} title="Exit tag mode" aria-label="Exit tag mode" style={iconBtn}>✕</button>
+              <button type="button" onClick={onClose} title="Minimise to the tag icon" aria-label="Minimise" style={iconBtn}>✕</button>
             </span>
           </div>
+
+          {/* Prev/next tagged-frame nav — lives INSIDE the panel, with previews. */}
+          {(prev || next) && (
+            <div style={{ flex: '0 0 auto', display: 'flex', gap: 6, padding: '7px 8px', borderBottom: `1px solid ${tokens.color.border}` }}>
+              <NavBtn dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
+              <NavBtn dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
+            </div>
+          )}
+
           <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
             {here.length === 0 ? (
-              <div style={{ padding: '16px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 12.5 }}>No tag on this frame — use ‹ › below to jump to one, or add one.</div>
+              <div style={{ padding: '16px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 12.5 }}>No tag on this frame — jump to one above, or add one below.</div>
             ) : here.map((t) => (
               <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '10px 12px', borderTop: `1px solid ${tokens.color.border}` }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#e8ecf3' }}>{t.authorName || 'Anonymous'}</div>
@@ -103,58 +98,26 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
               </div>
             ))}
           </div>
-          {/* Compose lives in the bubble — it's the tag-centric surface. */}
           <ComposeFooter replaySlug={replaySlug} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />
         </div>
       </div>
-
-      {/* Prev/Next TAG jump buttons, anchored to the left/right edges just below
-          the frame chevrons — i.e. where "jump to the next/previous comment"
-          lives — each carrying a PREVIEW of the tag it jumps to, so the preview
-          belongs to the jump button (not a detached bar). Hidden when there's no
-          tag that direction. */}
-      <NavChip dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
-      <NavChip dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
-      </>)}
     </div>
   );
 }
 
-// The tucked tab — a small pill on the right edge previewing the current frame's
-// tag (or frame #), pulling the bubble back out on tap. PiP-style "put away".
-function TuckTab({ here, currentIndex, onExpand }: { here: ViewerTag[]; currentIndex: number; onExpand: () => void }) {
-  const preview = here.length ? truncate(here[0].comment, 16) : `Frame ${currentIndex + 1}`;
-  return (
-    <button type="button" onClick={onExpand} title="Pull out the tag bubble" aria-label="Pull out the tag bubble"
-      style={{
-        // Left edge — the rail lives top-right, so tuck away from it.
-        position: 'absolute', left: 0, top: 'max(80px, env(safe-area-inset-top, 80px))', pointerEvents: 'auto',
-        display: 'inline-flex', alignItems: 'center', gap: 7, maxWidth: '64vw',
-        background: tokens.color.surfaceSolid, border: `1px solid ${tokens.color.borderStrong}`, borderLeft: 0, color: tokens.color.accent,
-        borderRadius: '0 999px 999px 0', padding: '9px 13px 9px 10px', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
-      }}>
-      <span aria-hidden style={{ color: tokens.led.on }}>🏷</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{preview}</span>
-      <span aria-hidden style={{ color: tokens.color.textMuted }}>›</span>
-    </button>
-  );
-}
-
-function NavChip({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | null; onClick: () => void }) {
-  if (!tag) return null;
+function NavBtn({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | null; onClick: () => void }) {
   const arrow = dir === 'prev' ? '‹' : '›';
-  const side = dir === 'prev' ? { left: 8 } : { right: 8 };
+  const disabled = !tag;
+  const label = tag ? truncate(tag.comment, 18) : (dir === 'prev' ? 'No earlier tag' : 'No later tag');
   return (
-    <button type="button" onClick={onClick} title={`Frame ${tag.frameIndex + 1}: ${tag.comment}`}
+    <button type="button" onClick={onClick} disabled={disabled} title={tag ? `Frame ${tag.frameIndex + 1}: ${tag.comment}` : undefined}
       style={{
-        position: 'absolute', top: 'calc(50% + 54px)', transform: 'translateY(-50%)', ...side,
-        maxWidth: '46vw', pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
-        background: 'rgba(17,20,26,0.92)', border: `1px solid ${tokens.color.borderStrong}`, color: tokens.color.accent,
-        borderRadius: 999, padding: '8px 13px', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        flex: 1, minWidth: 0, display: 'inline-flex', alignItems: 'center', justifyContent: dir === 'prev' ? 'flex-start' : 'flex-end', gap: 5,
+        background: disabled ? 'transparent' : tokens.color.surface, border: `1px solid ${tokens.color.border}`, color: disabled ? tokens.color.textFaint : tokens.color.accent,
+        borderRadius: 8, padding: '6px 10px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: disabled ? 'default' : 'pointer',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>
-      {dir === 'prev' ? `${arrow} ${truncate(tag.comment)}` : `${truncate(tag.comment)} ${arrow}`}
+      {dir === 'prev' ? `${arrow} ${label}` : `${label} ${arrow}`}
     </button>
   );
 }

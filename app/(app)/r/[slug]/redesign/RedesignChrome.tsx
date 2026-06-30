@@ -54,6 +54,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const mobileFull = mode === 'mobile' && usable && !mobileTagMode;
   const desktopOpen = mode === 'desktop' && usable;
   useEffect(() => { onTagModeChange?.(mobileTagMode); }, [mobileTagMode, onTagModeChange]);
+  // The Tags icon summarises tags on the CURRENT frame (its minimised form).
+  const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
   const renderBody = (id: FeatureId): ReactNode => {
     if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />;
@@ -102,11 +104,15 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
         <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {FEATURES.map((f) => {
             const isOpen = open === f.id && !f.soon;
+            // The Tags icon is the minimised tag panel — it summarises how many
+            // tags sit on the CURRENT frame (updates as you scrub).
+            const badge = f.id === 'tags' && tagCountHere > 0 ? tagCountHere : null;
             return (
               <button key={f.id} type="button" title={f.soon ? `${f.label} — coming soon` : f.label} aria-label={f.label}
                 disabled={f.soon}
                 onClick={() => { if (!f.soon) setOpen((cur) => (cur === f.id ? null : f.id)); }}
                 style={{
+                  position: 'relative',
                   width: 46, height: 46, borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
                   cursor: f.soon ? 'default' : 'pointer', fontFamily: 'inherit',
@@ -117,6 +123,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                   backdropFilter: 'blur(4px)',
                 }}>
                 <span aria-hidden>{f.icon}</span>
+                {badge != null && (
+                  <span aria-hidden style={{ position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9, background: tokens.led.on, color: '#06121a', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>{badge}</span>
+                )}
               </button>
             );
           })}
