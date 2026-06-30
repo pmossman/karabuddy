@@ -33,6 +33,7 @@ import { ClipBubble } from './ClipBubble';
 import type { ClipSummary } from './ClipsList';
 import { ClipBuilder } from './ClipBuilder';
 import { FrameNavOverlay } from './FrameNavOverlay';
+import { RedesignChrome } from './redesign/RedesignChrome'; // B216: ?redesign=1 viewer chrome
 import { useDragSize } from './useDragSize';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSession } from 'next-auth/react';
@@ -304,6 +305,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // "total mess" of the old shared-state model. Desktop ignores matchupOpen.
   const [reviewOpen, setReviewOpenRaw] = useState(false);
   const [matchupOpen, setMatchupOpen] = useState(false);
+  // B216 (exploratory): `?redesign=1` swaps the TagSidebar + mobile sheets for
+  // the unified feature-bubble chrome. Client-only read (avoids SSR mismatch).
+  const [redesign, setRedesign] = useState(false);
+  useEffect(() => { try { setRedesign(new URLSearchParams(window.location.search).get('redesign') === '1'); } catch { /* noop */ } }, []);
   // B101: per-game resourcing report (analyzed client-side from decoded frames).
   const [resourcingOpen, setResourcingOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
@@ -1061,6 +1066,17 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           the board); re-assert the KaraBuddy theme over the sidebar so its
           MUI controls match the chrome instead of the gameboard's default
           MUI theme. TagSidebar uses no gameboard contexts, only the theme. */}
+      {redesign && (
+        <KaraBuddyThemeProvider>
+          <RedesignChrome
+            mode={isMobile ? 'mobile' : 'desktop'}
+            tags={displayTags as any}
+            currentIndex={currentIndex}
+            onJump={jumpTo}
+          />
+        </KaraBuddyThemeProvider>
+      )}
+      {!redesign && (
       <KaraBuddyThemeProvider>
       <TagSidebar
         replay={replay}
@@ -1102,6 +1118,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         clips={clips}
       />
       </KaraBuddyThemeProvider>
+      )}
       <ResourcingModal
         open={resourcingOpen}
         onClose={() => setResourcingOpen(false)}
