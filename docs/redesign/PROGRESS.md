@@ -71,3 +71,30 @@
   mobile portrait = board + scattered FABs, review sheet closed by default
   (cramped when opened, per Parker's shots).
 - Next: read ViewerShell render → gate new chrome behind `?redesign=1`.
+
+---
+### Log: 2026-06-30 — P1+P2 shipped to branch (commit e1cdd93)
+**Working** behind `?redesign=1` (view `http://localhost:3006/r/r_euxnsk?redesign=1`):
+- `redesign/FeaturePanel.tsx` — docks (desktop) / full-screen overlay (mobile).
+- `redesign/RedesignChrome.tsx` — bubble rail + openFeature state; Tags wired,
+  Log/Info/Decks = placeholder bubbles.
+- `redesign/TagsFeature.tsx` — readable tag cards (author dot, frame-jump pill,
+  comment, scope, nested replies), grouped This frame / Upcoming / Previous.
+- `ReplayViewer.tsx` gates TagSidebar vs RedesignChrome on the flag.
+- Screenshots: `shots/v2-*` (default) + `shots/v2-open-*` (Tags opened). Mobile
+  full-screen Tags reads great (multiple tags at once) ✅; desktop dock good ✅.
+
+**Known issues / next (priority order):**
+1. **Clutter (Parker's #1 gripe):** the rail currently OVERLAPS the old board
+   FABs (frame-nav chevrons center, ✂/ⓘ top-right, playback bottom-right) — the
+   redesign must REPLACE that chrome, not add to it. Plan: under the flag,
+   suppress the matchup/clip/review FABs (they become rail features) and keep
+   only playback + frame-nav (board controls). Then the rail is the single home.
+2. **Composer:** TagsFeature is read-only — add "+ tag this frame" + reply
+   (reuse the sign-in gate; POST /api/replays/[slug]/tags; append to setTagState).
+3. **Game Log** feature on the rail (ViewerShell has `messagesByFrame`) — proves
+   the pattern generalizes (the other desktop companion Parker named).
+4. Info (matchup) + Decks features → rail. Then flip `?redesign=1` to default.
+
+**Resume:** dev server :3006 (KARABUDDY_TEST_API=1). Shoot:
+`node docs/redesign/shoot.mjs r_euxnsk user162@example.com <label> "?redesign=1" 'button[aria-label="Tags"]' mobile-portrait`

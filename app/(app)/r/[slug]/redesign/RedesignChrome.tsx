@@ -16,7 +16,7 @@ interface FeatureDef { id: FeatureId; label: string; icon: string; soon?: boolea
 const FEATURES: FeatureDef[] = [
   { id: 'tags', label: 'Tags', icon: '🏷' },
   { id: 'log', label: 'Game log', icon: '📜', soon: true },
-  { id: 'info', label: 'Matchup', icon: 'ⓘ', soon: true },
+  { id: 'info', label: 'Matchup', icon: '⚔', soon: true },
   { id: 'decks', label: 'Decks', icon: '🃏', soon: true },
 ];
 
@@ -61,7 +61,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump }: {
       {/* The bubble rail — one icon per feature, consistent on both sizes. Hidden
           on mobile while a full-screen feature is open (the overlay owns the view). */}
       {!(mode === 'mobile' && panelOpen) && (
-        <div style={{ position: 'fixed', top: '50%', right: railRight, transform: 'translateY(-50%)', zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ position: 'fixed', top: 72, right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {FEATURES.map((f) => {
             const isOpen = open === f.id && !f.soon;
             return (
