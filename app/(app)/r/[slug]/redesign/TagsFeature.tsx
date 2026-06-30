@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import { getOrCreateInstallToken } from '@/lib/installToken';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B216 redesign — the Tags feature, designed to be READABLE at any size. The old
@@ -95,10 +97,80 @@ function Group({ label, count, tags, replyMap, onJump, currentIndex, dim }: {
   );
 }
 
-export function TagsFeature({ tags, currentIndex, onJump }: {
+// Compose a new tag at the current frame. Signed-out → the same "sign in to tag"
+// gate we ship in prod (anonymous tags can't become reviews). Signed-in → a
+// textarea that POSTs and optimistically appends (in ORIGINAL frame space, so
+// the viewer's collapsed-frame remap places it correctly — mirrors TagSidebar).
+function Composer({ replaySlug, currentIndex, toOriginalFrame, appendTag }: {
+  replaySlug: string; currentIndex: number; toOriginalFrame: (i: number) => number; appendTag: (t: ViewerTag) => void;
+}) {
+  const { data: session } = useSession();
+  const userId = (session?.user as { id?: string } | undefined)?.id || null;
+  const authorName = session?.user?.name || 'You';
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (!userId) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: tokens.color.primarySoft, border: `1px solid rgba(77,157,255,0.3)`, borderRadius: 8, textAlign: 'center' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#cfe3ff' }}>Sign in to tag this replay</span>
+        <span style={{ fontSize: 11, color: tokens.color.textSecondary, lineHeight: 1.4 }}>Tags are tied to your account so they count and can be submitted as a review.</span>
+        <a href={`/signin?callbackUrl=${encodeURIComponent(`/r/${replaySlug}`)}`}
+          style={{ alignSelf: 'center', marginTop: 2, background: 'rgba(77,157,255,0.16)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.45)', borderRadius: 6, padding: '6px 16px', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>Sign in →</a>
+      </div>
+    );
+  }
+
+  const submit = async () => {
+    const text = draft.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    const token = getOrCreateInstallToken();
+    const origFrame = toOriginalFrame(currentIndex);
+    try {
+      const res = await fetch(`/api/replays/${replaySlug}/tags`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Install-Token': token } : {}) },
+        body: JSON.stringify({ installToken: token, authorName, frameIndex: origFrame, comment: text }),
+      });
+      const body = await res.json();
+      if (!body.ok) { alert(`Failed to add tag: ${body.error || 'unknown'}`); return; }
+      appendTag({ id: body.id, frameIndex: origFrame, authorToken: token, authorName, comment: text, createdAt: new Date().toISOString(), scope: body.scope ?? [], parentTagId: null });
+      setDraft(''); setOpen(false);
+    } catch { alert('Network error adding tag.'); }
+    finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        style={{ width: '100%', background: 'transparent', border: `1px solid ${tokens.color.primary}`, color: tokens.color.primary, borderRadius: 8, padding: '9px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+        + Tag this frame
+      </button>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10, background: tokens.color.primarySoft, border: '1px solid rgba(77,157,255,0.3)', borderRadius: 8 }}>
+      <div style={{ fontSize: 11, color: tokens.color.textSecondary }}>Tagging frame {currentIndex + 1} as {authorName}</div>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus rows={3}
+        placeholder="Your note about this moment…"
+        onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(); }}
+        style={{ width: '100%', boxSizing: 'border-box', background: tokens.color.bg, color: tokens.color.text, border: `1px solid ${tokens.color.border}`, borderRadius: 6, padding: 8, fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button type="button" onClick={() => { setOpen(false); setDraft(''); }} style={{ background: 'transparent', border: 0, color: tokens.color.textSecondary, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+        <button type="button" onClick={submit} disabled={busy || !draft.trim()} style={{ background: 'rgba(77,157,255,0.16)', color: tokens.color.primary, border: `1px solid ${tokens.color.primary}`, borderRadius: 6, padding: '5px 14px', fontSize: 12.5, fontWeight: 800, cursor: busy || !draft.trim() ? 'default' : 'pointer', opacity: busy || !draft.trim() ? 0.5 : 1, fontFamily: 'inherit' }}>{busy ? 'Saving…' : 'Save tag'}</button>
+      </div>
+    </div>
+  );
+}
+
+export function TagsFeature({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
+  replaySlug: string;
+  toOriginalFrame: (i: number) => number;
+  appendTag: (t: ViewerTag) => void;
 }) {
   const { current, upcoming, previous, replyMap, total } = useMemo(() => {
     const top = tags.filter((t) => !t.parentTagId);
@@ -115,15 +187,18 @@ export function TagsFeature({ tags, currentIndex, onJump }: {
     };
   }, [tags, currentIndex]);
 
-  if (total === 0) {
-    return <div style={{ padding: '28px 18px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13 }}>No tags on this replay yet.</div>;
-  }
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '14px 14px 28px' }}>
-      {current.length > 0 && <Group label="This frame" count={current.length} tags={current} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} />}
-      <Group label="Upcoming" count={upcoming.length} tags={upcoming} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} />
-      <Group label="Previous" count={previous.length} tags={previous} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} dim />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '14px 14px 28px' }}>
+      <Composer replaySlug={replaySlug} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />
+      {total === 0 ? (
+        <div style={{ padding: '20px 0', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13 }}>No tags on this replay yet — add the first above.</div>
+      ) : (
+        <>
+          {current.length > 0 && <Group label="This frame" count={current.length} tags={current} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} />}
+          <Group label="Upcoming" count={upcoming.length} tags={upcoming} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} />
+          <Group label="Previous" count={previous.length} tags={previous} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} dim />
+        </>
+      )}
     </div>
   );
 }

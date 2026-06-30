@@ -44,7 +44,11 @@ for (const vp of VIEWPORTS) {
   await page.goto(`${BASE}/r/${slug}${suffix}`, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(3500); // board decode + render
-  if (openSel) { try { await page.click(openSel, { timeout: 3000 }); await page.waitForTimeout(800); } catch (e) { console.warn('openSel miss:', e.message); } }
+  // openSel may be several selectors separated by '|', clicked in sequence
+  // (e.g. open the panel, then open the composer).
+  for (const sel of openSel.split('|').map((s) => s.trim()).filter(Boolean)) {
+    try { await page.click(sel, { timeout: 3000 }); await page.waitForTimeout(700); } catch (e) { console.warn('click miss:', sel, e.message); }
+  }
   const file = `${outDir}${label}-${vp.name}.png`;
   await page.screenshot({ path: file });
   console.log('shot:', file.split('/').slice(-1)[0]);

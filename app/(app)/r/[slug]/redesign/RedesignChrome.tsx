@@ -20,11 +20,14 @@ const FEATURES: FeatureDef[] = [
   { id: 'decks', label: 'Decks', icon: '🃏', soon: true },
 ];
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
+  replaySlug: string;
+  toOriginalFrame: (i: number) => number;
+  appendTag: (t: ViewerTag) => void;
 }) {
   // Desktop opens Tags by default (parity with today's docked drawer); mobile
   // starts on the board (tap a bubble to open).
@@ -35,7 +38,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump }: {
   const panelOpen = !!active && !active.soon;
 
   const renderBody = (id: FeatureId): ReactNode => {
-    if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} />;
+    if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />;
     return <ComingSoon label={FEATURES.find((f) => f.id === id)?.label ?? ''} />;
   };
 

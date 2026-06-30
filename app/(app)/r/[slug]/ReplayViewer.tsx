@@ -1073,6 +1073,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
             tags={displayTags as any}
             currentIndex={currentIndex}
             onJump={jumpTo}
+            replaySlug={replay.slug}
+            toOriginalFrame={collapsedToOriginal}
+            appendTag={(t) => setTagState((prev) => [...prev, t as any])}
           />
         </KaraBuddyThemeProvider>
       )}
