@@ -7,6 +7,7 @@ import { TagsFeature, type ViewerTag } from './TagsFeature';
 import { GameLogFeature } from './GameLogFeature';
 import { MatchupFeature } from './MatchupFeature';
 import { DecksFeature } from './DecksFeature';
+import { TagReadMode } from './TagReadMode';
 
 // B216 redesign — the unified viewer chrome (gated behind ?redesign=1). Replaces
 // the old TagSidebar (desktop drawer) + mobile sheet system with ONE model:
@@ -38,10 +39,19 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Desktop opens Tags by default (parity with today's docked drawer); mobile
   // starts on the board (tap a bubble to open).
   const [open, setOpen] = useState<FeatureId | null>(null);
+  // Mobile Tags: board-visible "Tag Mode" by default; `tagsList` opens the
+  // full-screen scan list (via the bubble's ≡). Desktop always shows the list.
+  const [tagsList, setTagsList] = useState(false);
   useEffect(() => { setOpen(mode === 'desktop' ? 'tags' : null); }, [mode]);
+  useEffect(() => { if (open !== 'tags') setTagsList(false); }, [open]);
 
   const active = FEATURES.find((f) => f.id === open) || null;
-  const panelOpen = !!active && !active.soon;
+  const usable = !!active && !active.soon;
+  // Mobile Tags reads on the board (Tag Mode) unless the list was opened.
+  const mobileTagMode = mode === 'mobile' && open === 'tags' && !tagsList;
+  // A full-screen mobile overlay: any non-Tags feature, or the Tags LIST.
+  const mobileFull = mode === 'mobile' && usable && !mobileTagMode;
+  const desktopOpen = mode === 'desktop' && usable;
 
   const renderBody = (id: FeatureId): ReactNode => {
     if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />;
@@ -52,27 +62,41 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   };
 
   // Desktop: rail sits just left of the docked panel (or at the edge when closed).
-  const railRight = mode === 'desktop' && panelOpen ? 380 + 14 : 14;
+  const railRight = desktopOpen ? 380 + 14 : 14;
 
   return (
     <>
       {/* Docked panel (desktop) — a flex child of the board row. */}
-      {mode === 'desktop' && (
-        <FeaturePanel open={panelOpen} mode="desktop" title={active?.label ?? ''} icon={active?.icon} onClose={() => setOpen(null)}>
+      {desktopOpen && (
+        <FeaturePanel open mode="desktop" title={active?.label ?? ''} icon={active?.icon} onClose={() => setOpen(null)}>
           {active && renderBody(active.id)}
         </FeaturePanel>
       )}
 
-      {/* Full-screen panel (mobile) — fixed overlay above the board. */}
-      {mode === 'mobile' && (
-        <FeaturePanel open={panelOpen} mode="mobile" title={active?.label ?? ''} icon={active?.icon} onClose={() => setOpen(null)}>
+      {/* Mobile Tags → board-visible Tag Mode (floating bubble + prev/next preview
+          + compose pencil). The board stays interactive behind it. */}
+      {mobileTagMode && (
+        <TagReadMode
+          tags={tags} currentIndex={currentIndex} onJump={onJump}
+          onClose={() => setOpen(null)} onOpenList={() => setTagsList(true)}
+          replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag}
+        />
+      )}
+
+      {/* Full-screen mobile overlay: a non-Tags feature, or the Tags scan list. */}
+      {mobileFull && (open === 'tags' ? (
+        <FeaturePanel open mode="mobile" title="All tags" icon="🏷" onClose={() => setTagsList(false)}>
+          <TagsFeature tags={tags} currentIndex={currentIndex} onJump={(f) => { onJump(f); setTagsList(false); }} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />
+        </FeaturePanel>
+      ) : (
+        <FeaturePanel open mode="mobile" title={active?.label ?? ''} icon={active?.icon} onClose={() => setOpen(null)}>
           {active && renderBody(active.id)}
         </FeaturePanel>
-      )}
+      ))}
 
       {/* The bubble rail — one icon per feature, consistent on both sizes. Hidden
-          on mobile while a full-screen feature is open (the overlay owns the view). */}
-      {!(mode === 'mobile' && panelOpen) && (
+          only when a FULL-SCREEN mobile feature owns the view (Tag Mode keeps it). */}
+      {!mobileFull && (
         <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {FEATURES.map((f) => {
             const isOpen = open === f.id && !f.soon;
