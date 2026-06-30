@@ -16,7 +16,7 @@ import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
 // user + their teams only — no global/community aggregate. /api/stats does the
 // work; cardId→name via /api/cards.
 
-type Scope = 'personal' | 'team';
+type Scope = 'personal' | 'team' | 'global';
 type View = 'leaders' | 'matchups' | 'cards' | 'resourcing';
 type CardEvent = 'played' | 'drawn' | 'resourced' | 'discarded';
 const FORMATS = [['', 'All formats'], ['premier', 'Premier'], ['eternal', 'Eternal'], ['open', 'Open'], ['limited', 'Limited']] as const;
@@ -277,11 +277,13 @@ export function StatsClient({
       : { maxWidth: 940, margin: '0 auto', padding: '24px 16px 64px', color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif' }}>
       {!embedded && (
         <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 4px', color: '#fff' }}>
-          {scope === 'team' ? 'Team' : 'My'} <span style={{ color: '#4dd2ff' }}>Stats</span>
+          {scope === 'global' ? 'Meta' : scope === 'team' ? 'Team' : 'My'} <span style={{ color: '#4dd2ff' }}>Stats</span>
         </h1>
       )}
       <p style={{ color: '#6c7588', fontSize: 13, margin: embedded ? '0 0 14px' : '0 0 18px' }}>
-        {scope === 'team'
+        {scope === 'global'
+          ? 'Leader matchups and card stats across every recorded game in the meta. Win rates over games with a result; every figure shows its sample size.'
+          : scope === 'team'
           ? `Leader matchups and card stats across ${teamName ? `${teamName}’s` : 'your team’s'} recorded games. Win rates over games with a result; every figure shows its sample size.`
           : 'Your leader matchups and card stats for the decks you play. Win rates over games with a recorded result; every figure shows its sample size.'}
       </p>
@@ -525,7 +527,7 @@ function LeaderDetail({ leader, baseKey, baseQs, scope, teamName, nm, subs, reso
         )}
 
       {/* Recent games on this leader → the replay viewer. */}
-      <RecentGames replays={replays} />
+      {scope !== 'global' && <RecentGames replays={replays} />}
     </div>
   );
 }
@@ -633,7 +635,7 @@ function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveN
         : <div style={{ marginBottom: 24 }}><CardGrid cards={cardRows} event={event} nm={nm} /></div>}
 
       {/* The matchup's recent games → the replay viewer. */}
-      <RecentGames replays={replays} />
+      {scope !== 'global' && <RecentGames replays={replays} />}
     </div>
   );
 }
@@ -667,7 +669,7 @@ function RecentGames({ replays }: { replays: any[] | null }) {
 // Possessive subject for the "whose games are these" cue, folded into the record
 // copy: personal stats are strictly YOUR recorded side (isRecorder), team stats
 // are the team's games. Keeps the perspective clear without a dedicated info box.
-const subjectPoss = (scope: Scope, teamName?: string) => (scope === 'team' ? `${teamName || 'your team'}’s` : 'your');
+const subjectPoss = (scope: Scope, teamName?: string) => (scope === 'global' ? 'the meta’s' : scope === 'team' ? `${teamName || 'your team'}’s` : 'your');
 
 const dim: React.CSSProperties = { color: '#6c7588', fontStyle: 'italic', padding: '32px 0', textAlign: 'center' };
 const filtersPanel: React.CSSProperties = { marginTop: 10, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid #1c2128', borderRadius: 10, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' };

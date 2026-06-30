@@ -12,7 +12,10 @@ export function AdminDashboard({ metrics }: { metrics: AdminMetrics }) {
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>
           Under the hood <span style={{ fontSize: 12, fontWeight: 500, color: '#6c7588', marginLeft: 6 }}>admin</span>
         </h1>
-        <span style={{ fontSize: 11, color: '#6c7588' }}>as of {new Date(metrics.generatedAt).toLocaleString()}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          <a href="/admin/stats" style={{ color: '#5db4ff', fontSize: 13, textDecoration: 'none', fontWeight: 600 }}>Meta stats →</a>
+          <span style={{ fontSize: 11, color: '#6c7588' }}>as of {new Date(metrics.generatedAt).toLocaleString()}</span>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
