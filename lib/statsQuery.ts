@@ -123,9 +123,14 @@ function scopePredicate(scope: StatsScope) {
 // internal game. For an EXTERNAL game the opponent is an outsider and is dropped —
 // this is the fix for team stats counting the opponent's leader as one you played.
 const perspectiveCond = (scope: StatsScope) =>
-  scope.kind === 'personal' || scope.kind === 'global'
-    // Global counts each recorder's side; a co-recorded game contributes BOTH
-    // sides (one isRecorder row each) — correct for a directed matchup matrix.
+  // Global = the META: count BOTH sides of every game (match_players has one row
+  // per side). Each side is a real data point, so cell(A,B) and cell(B,A) are
+  // computed over the SAME games and stay complementary — the matrix is
+  // symmetric. (Counting only the recorder's side made (A,B)/(B,A) draw from
+  // different games — whichever player uploaded — so they didn't add to 100%.)
+  scope.kind === 'global'
+    ? undefined
+    : scope.kind === 'personal'
     ? eq(matchPlayers.isRecorder, true)
     : scope.internalGameIds.length
       ? or(eq(matchPlayers.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))

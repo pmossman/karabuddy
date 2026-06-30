@@ -106,18 +106,31 @@ describe('getLeaderStats — scope isolation', () => {
     expect(m.L3).toBeUndefined();
   });
 
-  // Global = the WHOLE meta: every recorder's side across all uploads, minus
+  // Global = the WHOLE meta: BOTH sides of every game across all uploads, minus
   // opted-out users (anonymous uploads kept). Admin-gated at the route.
-  it('global aggregates every recorder side across users, EXCLUDING opted-out (anonymous kept)', async () => {
+  it('global aggregates BOTH sides of every game, EXCLUDING opted-out users (anonymous kept)', async () => {
     const m = byLeader(await getLeaderStats({ scope: { kind: 'global', excludedUserIds: [userB] } }));
-    // userA's 2 L1 games (1W/1L) + the anonymous L1 win = 3 games / 2 wins.
-    // userB (opted out) also played L1 — must be dropped.
+    // L1 is the recorder side in every seeded game; userB's (opted-out) L1 game
+    // is dropped → userA's 2 games + the anonymous game = 3 games, 2 wins.
     expect(m.L1.games).toBe(3);
     expect(m.L1.wins).toBe(2);
-    expect(m.L1.winRate).toBeCloseTo(2 / 3);
-    // recorder side only — opponents' leaders (L2/L3) aren't the meta's "played" leaders here.
-    expect(m.L2).toBeUndefined();
-    expect(m.L3).toBeUndefined();
+    // BOTH sides count now, so the OPPONENTS' leaders appear too: L2 (userA's two
+    // games' opponent — 1 loss + 1 win) and L3 (anon's opponent — 1 loss). userB's
+    // whole game (its L1 and L3 sides) is excluded by the opt-out.
+    expect(m.L2.games).toBe(2); expect(m.L2.wins).toBe(1);
+    expect(m.L3.games).toBe(1); expect(m.L3.wins).toBe(0);
+  });
+
+  it('global matchup matrix is SYMMETRIC — cell(A,B) and cell(B,A) are complementary', async () => {
+    const rows = await getLeaderMatchups({ scope: { kind: 'global', excludedUserIds: [userB] } });
+    const cell = (a: string, b: string) => rows.find((r) => r.leader === a && r.opponentLeader === b);
+    const ab = cell('L1', 'L2'); const ba = cell('L2', 'L1');
+    expect(ab && ba).toBeTruthy();
+    // Same games seen from each side: equal counts, and each decisive game has
+    // exactly one winning side → wins sum to the game count, win rates to 1.
+    expect(ab!.games).toBe(ba!.games);
+    expect(ab!.wins + ba!.wins).toBe(ab!.games);
+    expect((ab!.winRate ?? 0) + (ba!.winRate ?? 0)).toBeCloseTo(1);
   });
 
   it('global with no exclusions WOULD include the opted-out user (proves the opt-out filter)', async () => {
