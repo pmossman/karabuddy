@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
 import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/statsView';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
+import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
 
 // B101/Phase2 (reframed): the Stats/Meta client, centered on the team/personal
 // contexts teams actually want — "our leader matchups" and "card stats for the
@@ -57,6 +59,7 @@ export function StatsClient({
   const [cardSearch, setCardSearch] = useState<string>('');
   const [matchupMode, setMatchupMode] = useState<'pct' | 'wl'>('pct'); // heatmap cell: win% vs W–L count
   const [matchupLens, setMatchupLens] = useState<'leaders' | 'bases'>('leaders'); // leader-vs-leader or deck-vs-deck
+  const [matchupSort, setMatchupSort] = useState<'games' | 'winrate' | 'name'>('games'); // matrix axis order
   const [data, setData] = useState<any[] | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [subs, setSubs] = useState<Record<string, string>>({}); // leader/card subtitles — disambiguate same-named leaders (e.g. the two Thrawns)
@@ -88,6 +91,25 @@ export function StatsClient({
     if (scope === 'team') p.set('games', teamGames);
     return p;
   }, [scope, format, teamSlug, teamGames]);
+
+  // Drill-in focus is URL-addressable (shareable, back-button friendly): `leader`
+  // = the focused leader cardId, `lbase` = an optional deck key (base:<id> | asp:<aspect>),
+  // `vs` = an opponent leader (→ matchup detail). Both pages keep their other params
+  // (team `tab`, etc.) when we push/clear focus.
+  const router = useRouter();
+  const pathname = usePathname();
+  const urlParams = useSearchParams();
+  const focusLeader = urlParams.get('leader') || '';
+  const focusBaseKey = urlParams.get('lbase') || '';
+  const focusVs = urlParams.get('vs') || '';
+  const pushFocus = (params: Record<string, string | null>) => {
+    const p = new URLSearchParams(urlParams.toString());
+    for (const [k, v] of Object.entries(params)) { if (v) p.set(k, v); else p.delete(k); }
+    router.push(`${pathname}${p.toString() ? `?${p}` : ''}`, { scroll: false });
+  };
+  const setFocus = (leader: string | null, baseKey?: string) => pushFocus({ leader, lbase: baseKey ?? null, vs: null });
+  const setMatchupFocus = (leader: string, vs: string) => pushFocus({ leader, vs, lbase: null });
+  const clearFocus = () => pushFocus({ leader: null, lbase: null, vs: null });
 
   const resolveNames = async (ids: Set<string>) => {
     if (!ids.size) return;
@@ -224,11 +246,16 @@ export function StatsClient({
       totals.set(self.key, t);
       if (!totals.has(opp.key)) totals.set(opp.key, { games: 0, wins: 0, decisive: 0 });
     }
+    // Axis order is user-controllable (min-games gates the axis by its TOTAL games).
+    const axisWin = (k: string) => { const t = totals.get(k)!; return t.decisive > 0 ? t.wins / t.decisive : -1; };
     const ordered = [...axes.values()]
       .filter((a) => (totals.get(a.key)?.games ?? 0) >= minGames)
-      .sort((a, b) => (totals.get(b.key)!.games) - (totals.get(a.key)!.games));
+      .sort((a, b) =>
+        matchupSort === 'name' ? nm(a.leader).localeCompare(nm(b.leader))
+        : matchupSort === 'winrate' ? axisWin(b.key) - axisWin(a.key) || totals.get(b.key)!.games - totals.get(a.key)!.games
+        : totals.get(b.key)!.games - totals.get(a.key)!.games);
     return { axes: ordered, cell, totals };
-  }, [view, data, matchupLens, minGames]);
+  }, [view, data, matchupLens, minGames, matchupSort, names]);
 
   // Active non-default filters → removable chips, shown next to the collapsed Filters
   // toggle so the current state stays visible on mobile without opening the panel.
@@ -261,6 +288,32 @@ export function StatsClient({
 
       {!signedIn ? (
         <div style={dim}>Sign in to see your personal stats.</div>
+      ) : focusLeader && focusVs ? (
+        <MatchupDetail
+          leader={focusLeader}
+          vs={focusVs}
+          baseQs={scopeQs.toString()}
+          scope={scope}
+          teamName={teamName}
+          nm={nm}
+          subs={subs}
+          resolveNames={resolveNames}
+          onBack={() => setFocus(focusLeader)}
+          onClose={clearFocus}
+        />
+      ) : focusLeader ? (
+        <LeaderDetail
+          leader={focusLeader}
+          baseKey={focusBaseKey}
+          baseQs={scopeQs.toString()}
+          scope={scope}
+          teamName={teamName}
+          nm={nm}
+          subs={subs}
+          resolveNames={resolveNames}
+          onOpenMatchup={(opp) => setMatchupFocus(focusLeader, opp)}
+          onBack={clearFocus}
+        />
       ) : (<>
       {/* Primary nav — the view switcher is always visible (scrolls horizontally on narrow screens). */}
       <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
@@ -310,6 +363,7 @@ export function StatsClient({
           {view === 'matchups' && (<>
             <Field orientation="row" label="Axis"><Segmented options={[['leaders', 'Leaders'], ['bases', 'Leaders & Bases']]} value={matchupLens} onChange={(v) => setMatchupLens(v as any)} /></Field>
             <Field orientation="row" label="Cells"><Segmented options={[['pct', 'Win %'], ['wl', 'W–L']]} value={matchupMode} onChange={(v) => setMatchupMode(v as any)} /></Field>
+            <Field orientation="row" label="Sort"><Segmented options={[['games', 'Most games'], ['winrate', 'Best win %'], ['name', 'Name']]} value={matchupSort} onChange={(v) => setMatchupSort(v as any)} /></Field>
           </>)}
 
           <Field orientation="row" label="Min games"><MinGamesInput value={minGames} onChange={setMinGames} /></Field>
@@ -318,7 +372,7 @@ export function StatsClient({
 
       {view === 'matchups' && (
         <p style={{ fontSize: 11, color: '#6c7588', margin: '10px 0 0' }}>
-          Row {matchupLens === 'bases' ? 'deck' : 'leader'} vs. column. Color = win rate, faded when the sample is small.
+          Win rate as the row {matchupLens === 'bases' ? 'deck' : 'leader'} vs. the column ({subjectPoss(scope, teamName)} side only — not every game involving it). Tap a cell for matchup detail. Color fades when the sample is small.
           {matchupLens === 'bases' && ' Ability bases are their own decks; vanilla bases collapse to aspect.'}
         </p>
       )}
@@ -339,11 +393,13 @@ export function StatsClient({
         ) : view === 'cards' ? (
           <CardGrid cards={cardRows} event={event} nm={nm} />
         ) : view === 'matchups' ? (
-          <MatchupMatrix matrix={matrix!} mode={matchupMode} byBase={matchupLens === 'bases'} nm={nm} />
+          <MatchupMatrix matrix={matrix!} mode={matchupMode} byBase={matchupLens === 'bases'} minGames={minGames} nm={nm} onFocus={setFocus} onMatchupFocus={setMatchupFocus} />
         ) : (
           <Table
             cols={[{ label: leaderGroup === 'deck' ? 'Deck' : 'Leader', sortKey: 'name' }, { label: 'Win %', sortKey: 'winrate' }, { label: 'Games', sortKey: 'games' }]}
             sort={leaderSort} dir={leaderDir} onSort={onLeaderSort}
+            rowKeys={leaderRows.map((r) => deckKeyOf(r.leader, r.baseId ?? null, r.baseAspect ?? null))}
+            onRowClick={leaderRows.map((r) => () => setFocus(r.leader, leaderGroup === 'deck' ? baseKeyOf(r.baseId ?? null, r.baseAspect ?? null) : undefined))}
             rows={leaderRows.map((r) => [
               leaderGroup === 'deck' ? deckCell(r, nm, subs) : leaderCell(r.leader, nm(r.leader), subs[r.leader]),
               <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>,
@@ -355,6 +411,263 @@ export function StatsClient({
     </div>
   );
 }
+
+// Drill-in detail for one leader (or leader+base): the focused leader's record
+// vs each opponent leader + the recorder's recent games on it. Fetches its own
+// data (so a shared/deep-linked URL works cold), scoped by the parent's
+// scope/format/team via `baseQs`. Recent games link to the replay viewer.
+function LeaderDetail({ leader, baseKey, baseQs, scope, teamName, nm, subs, resolveNames, onBack, onOpenMatchup }: {
+  leader: string; baseKey: string; baseQs: string; scope: Scope; teamName?: string;
+  nm: (id: string) => string; subs: Record<string, string>;
+  resolveNames: (ids: Set<string>) => Promise<void>; onBack: () => void; onOpenMatchup: (opponentLeader: string) => void;
+}) {
+  const [matchups, setMatchups] = useState<any[] | null>(null);
+  const [replays, setReplays] = useState<any[] | null>(null);
+  // Standard stats-table controls (sort + min-games), like the Leaders view —
+  // header sort via the SHARED useSortable hook (the actual ordering still runs
+  // through sortStatRows below, so its null-sinking + tiebreaks stay identical;
+  // the hook only owns the key/dir state + the flip-on-re-click toggle rule).
+  const { sortKey: mSort, sortDir: mDir, onSort: onMSort } = useSortable<never, SortKey>(
+    [],
+    { initialKey: 'games', initialDir: 'desc', descKeys: ['games', 'winrate'], comparators: { games: () => 0, winrate: () => 0, name: () => 0 } },
+  );
+  const [mMin, setMMin] = useState(1);
+
+  const baseId = baseKey.startsWith('base:') ? baseKey.slice(5) : null;
+  const baseAspect = baseKey.startsWith('asp:') ? baseKey.slice(4) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    setMatchups(null); setReplays(null);
+    const qs = new URLSearchParams(baseQs);
+    qs.set('leader', leader);
+    if (baseId) qs.set('base', baseId);
+    else if (baseAspect) qs.set('baseAspect', baseAspect);
+    (async () => {
+      try {
+        const [m, r] = await Promise.all([
+          fetch(`/api/stats?type=matchups&${qs}`).then((x) => x.json()),
+          fetch(`/api/stats?type=replays&${qs}`).then((x) => x.json()),
+        ]);
+        if (cancelled) return;
+        const mRows = m.ok ? m.data || [] : [];
+        setMatchups(mRows);
+        setReplays(r.ok ? r.data || [] : []);
+        const ids = new Set<string>([leader]);
+        if (baseId) ids.add(baseId);
+        for (const row of mRows) if (row.opponentLeader) ids.add(row.opponentLeader);
+        resolveNames(ids);
+      } catch { if (!cancelled) { setMatchups([]); setReplays([]); } }
+    })();
+    return () => { cancelled = true; };
+  }, [leader, baseKey, baseQs]);
+
+  // Overall record = the sum over the leader's opponent rows.
+  const overall = useMemo(() => {
+    const t = { games: 0, wins: 0, decisive: 0 };
+    for (const r of matchups || []) { t.games += r.games; t.wins += r.wins; t.decisive += r.decisive; }
+    return t;
+  }, [matchups]);
+  const sortedMatchups = useMemo(() =>
+    sortStatRows(filterMinGames(matchups || [], mMin, (r) => r.games), mSort, mDir, {
+      count: (r) => r.games,
+      winPct: (r) => pct(r.wins, r.decisive),
+      name: (r) => nm(r.opponentLeader),
+    }), [matchups, mSort, mDir, mMin, nm]);
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <button type="button" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 0, color: '#a7d2ff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0', marginBottom: 12 }}>
+        ‹ Back to stats
+      </button>
+
+      {/* Header: leader art + name (+ base) + overall record. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <CardThumb cardId={leader} isLeader h={56} />
+        {(baseId || baseAspect) && <BaseChip baseId={baseId} baseAspect={baseAspect} />}
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>
+            {nm(leader)}{baseId ? ` · ${nm(baseId)}` : baseAspect ? ` · ${baseAspect[0].toUpperCase()}${baseAspect.slice(1)}` : ''}
+          </span>
+          {subs[leader] && <span style={{ fontSize: 11, color: '#6c7588' }}>{subs[leader]}</span>}
+          {/* "your games" embeds the perspective subtly — these are the recorder's
+              games AS this leader, not every game involving it (no separate note). */}
+          <span style={{ fontSize: 13, color: '#a0a8b8', marginTop: 2 }}>
+            {overall.decisive > 0
+              ? <><Win>{fmtPct(pct(overall.wins, overall.decisive))}</Win> · {overall.wins}–{overall.decisive - overall.wins} over {overall.games} of {subjectPoss(scope, teamName)} game{overall.games === 1 ? '' : 's'}</>
+              : `${overall.games} of ${subjectPoss(scope, teamName)} game${overall.games === 1 ? '' : 's'} (no decided results)`}
+          </span>
+        </div>
+      </div>
+
+      {/* Matchups: vs each opponent leader. Sortable headers + min-games, like the
+          Leaders view; each row drills into that specific matchup. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '0 0 8px', flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6c7588' }}>Matchups</div>
+        <Field orientation="row" label="Min games"><MinGamesInput value={mMin} onChange={setMMin} /></Field>
+      </div>
+      {matchups == null ? <div style={dim}>Loading…</div>
+        : sortedMatchups.length === 0 ? <div style={{ ...dim, padding: '16px 0' }}>No recorded matchups yet.</div>
+        : (
+          <div style={{ marginBottom: 24 }}>
+            <Table
+              cols={[{ label: 'Opponent', sortKey: 'name' }, { label: 'Record' }, { label: 'Win %', sortKey: 'winrate' }, { label: 'Games', sortKey: 'games' }]}
+              sort={mSort} dir={mDir} onSort={onMSort}
+              rowKeys={sortedMatchups.map((r) => r.opponentLeader)}
+              onRowClick={sortedMatchups.map((r) => () => onOpenMatchup(r.opponentLeader))}
+              rows={sortedMatchups.map((r) => [
+                leaderCell(r.opponentLeader, nm(r.opponentLeader), subs[r.opponentLeader]),
+                <Muted key="rec">{r.wins}–{r.decisive - r.wins}</Muted>,
+                <Win key="w">{fmtPct(pct(r.wins, r.decisive))}</Win>,
+                <Muted key="g">{r.games}</Muted>,
+              ])} />
+          </div>
+        )}
+
+      {/* Recent games on this leader → the replay viewer. */}
+      <RecentGames replays={replays} />
+    </div>
+  );
+}
+
+// Matchup drill-in (leader A vs opponent leader B): the analytical weeds — the
+// head-to-head record, CARD-LEVEL stats within the matchup (win rate when a card
+// was played/drawn/… in A-vs-B games), and the matchup's recent games. Fetches its
+// own data (deep-linkable). Card grid carries the standard event/sort/min-games.
+function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveNames, onBack, onClose }: {
+  leader: string; vs: string; baseQs: string; scope: Scope; teamName?: string;
+  nm: (id: string) => string; subs: Record<string, string>;
+  resolveNames: (ids: Set<string>) => Promise<void>; onBack: () => void; onClose: () => void;
+}) {
+  const [record, setRecord] = useState<{ games: number; wins: number; decisive: number } | null>(null);
+  const [cards, setCards] = useState<any[] | null>(null);
+  const [replays, setReplays] = useState<any[] | null>(null);
+  const [event, setEvent] = useState<CardEvent>('played');
+  const [cardSort, setCardSort] = useState<'games' | 'winrate'>('games');
+  const [cardMin, setCardMin] = useState(1);
+  const [filtersOpen, setFiltersOpen] = useState(false); // controls collapse behind a Filters toggle (mobile real-estate)
+
+  useEffect(() => {
+    let cancelled = false;
+    setRecord(null); setCards(null); setReplays(null);
+    const qs = new URLSearchParams(baseQs);
+    qs.set('leader', leader); qs.set('vs', vs);
+    (async () => {
+      try {
+        const [m, c, r] = await Promise.all([
+          fetch(`/api/stats?type=matchups&${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(baseQs)), leader })}`).then((x) => x.json()),
+          fetch(`/api/stats?type=cards&event=${event}&${qs}`).then((x) => x.json()),
+          fetch(`/api/stats?type=replays&${qs}`).then((x) => x.json()),
+        ]);
+        if (cancelled) return;
+        const rec = (m.ok ? m.data || [] : []).find((row: any) => row.opponentLeader === vs);
+        setRecord(rec ? { games: rec.games, wins: rec.wins, decisive: rec.decisive } : { games: 0, wins: 0, decisive: 0 });
+        const cRows = c.ok ? c.data || [] : [];
+        setCards(cRows);
+        setReplays(r.ok ? r.data || [] : []);
+        resolveNames(new Set<string>([leader, vs, ...cRows.map((x: any) => x.cardId)]));
+      } catch { if (!cancelled) { setRecord({ games: 0, wins: 0, decisive: 0 }); setCards([]); setReplays([]); } }
+    })();
+    return () => { cancelled = true; };
+  }, [leader, vs, baseQs, event]);
+
+  const cardRows = useMemo(() => {
+    const rows = filterMinGames((cards || []).map((r) => ({ ...r, name: nm(r.cardId), win: pct(r.wins, r.decisive) })), cardMin, (r) => r.observations);
+    rows.sort((a, b) => cardSort === 'winrate' ? (b.win ?? -1) - (a.win ?? -1) || b.observations - a.observations : b.observations - a.observations || (b.win ?? -1) - (a.win ?? -1));
+    return rows;
+  }, [cards, cardSort, cardMin, nm]);
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 12, fontSize: 12, fontWeight: 700 }}>
+        <button type="button" onClick={onBack} style={{ background: 'transparent', border: 0, color: '#a7d2ff', cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0' }}>‹ {nm(leader)}</button>
+        <button type="button" onClick={onClose} style={{ background: 'transparent', border: 0, color: '#6c7588', cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0' }}>All stats</button>
+      </div>
+
+      {/* Header: A vs B + head-to-head record. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        <CardThumb cardId={leader} isLeader h={48} />
+        <span style={{ fontSize: 14, fontWeight: 800, color: '#6c7588' }}>VS</span>
+        <CardThumb cardId={vs} isLeader h={48} />
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, marginLeft: 4 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>{nm(leader)} vs {nm(vs)}</span>
+          <span style={{ fontSize: 13, color: '#a0a8b8', marginTop: 2 }}>
+            {record == null ? '…' : record.decisive > 0
+              ? <><Win>{fmtPct(pct(record.wins, record.decisive))}</Win> · {record.wins}–{record.decisive - record.wins} over {record.games} of {subjectPoss(scope, teamName)} game{record.games === 1 ? '' : 's'}</>
+              : `${record.games} of ${subjectPoss(scope, teamName)} game${record.games === 1 ? '' : 's'} (no decided results)`}
+          </span>
+        </div>
+      </div>
+
+      {/* Card-level stats within the matchup — controls tuck behind a Filters
+          toggle (like the main stats pages); active non-defaults stay as chips. */}
+      {(() => {
+        const chips: { key: string; label: string; onClear: () => void }[] = [];
+        if (event !== 'played') chips.push({ key: 'ev', label: EVENTS.find((e) => e[0] === event)![1], onClear: () => setEvent('played') });
+        if (cardSort !== 'games') chips.push({ key: 'sort', label: 'Best win %', onClear: () => setCardSort('games') });
+        if (cardMin > 1) chips.push({ key: 'min', label: `Min ${cardMin} games`, onClear: () => setCardMin(1) });
+        return (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '0 0 4px' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6c7588', marginRight: 4 }}>Cards in this matchup</div>
+              <FiltersToggle open={filtersOpen} count={chips.length} onClick={() => setFiltersOpen((v) => !v)} />
+              {chips.map((c) => (
+                <FilterChip key={c.key} label={c.label} onClear={c.onClear} title="Clear"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(77,157,255,0.12)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 14, padding: '4px 10px' }} />
+              ))}
+              {RECORDER_SIDE[event] && <span title="Drawn/resourced are only observable for the recorder." style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#e0c64a' }}>your side</span>}
+            </div>
+            {filtersOpen && (
+              <div style={filtersPanel}>
+                <Field orientation="row" label="Win rate when"><Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} /></Field>
+                <Field orientation="row" label="Sort"><Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} /></Field>
+                <Field orientation="row" label="Min games"><MinGamesInput value={cardMin} onChange={setCardMin} /></Field>
+              </div>
+            )}
+          </>
+        );
+      })()}
+      <div style={{ height: 12 }} />
+      {cards == null ? <div style={dim}>Loading…</div>
+        : cardRows.length === 0 ? <div style={{ ...dim, padding: '16px 0' }}>No card data for this matchup yet.</div>
+        : <div style={{ marginBottom: 24 }}><CardGrid cards={cardRows} event={event} nm={nm} /></div>}
+
+      {/* The matchup's recent games → the replay viewer. */}
+      <RecentGames replays={replays} />
+    </div>
+  );
+}
+
+const fmtShortDate = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()}`; };
+
+// Shared "Recent games" list for the drill-in detail views (LeaderDetail +
+// MatchupDetail rendered it identically) — date · matchup · W/L, linking to the
+// replay. Extracted so the two views don't duplicate the concept.
+function RecentGames({ replays }: { replays: any[] | null }) {
+  return (
+    <>
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6c7588', margin: '0 0 8px' }}>Recent games</div>
+      {replays == null ? <div style={dim}>Loading…</div>
+        : replays.length === 0 ? <div style={{ ...dim, padding: '16px 0' }}>No recent games.</div>
+        : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {replays.map((g) => (
+              <a key={g.slug} href={`/r/${g.slug}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 6, textDecoration: 'none', color: '#e6e6e6' }}>
+                <span style={{ width: 42, flex: '0 0 auto', color: '#6c7588', fontSize: 11 }}>{fmtShortDate(g.createdAt)}</span>
+                <span style={{ flex: 1, minWidth: 0 }}><ReplayMatchup players={g.players} ownerPlayerId={g.ownerPlayerId} winners={g.winners} thumb={26} /></span>
+                <span style={{ flex: '0 0 auto', fontWeight: 800, fontSize: 12, color: g.won === true ? '#6bd968' : g.won === false ? '#e06a5a' : '#6c7588' }}>{g.won === true ? 'W' : g.won === false ? 'L' : '—'}</span>
+              </a>
+            ))}
+          </div>
+        )}
+    </>
+  );
+}
+
+// Possessive subject for the "whose games are these" cue, folded into the record
+// copy: personal stats are strictly YOUR recorded side (isRecorder), team stats
+// are the team's games. Keeps the perspective clear without a dedicated info box.
+const subjectPoss = (scope: Scope, teamName?: string) => (scope === 'team' ? `${teamName || 'your team'}’s` : 'your');
 
 const dim: React.CSSProperties = { color: '#6c7588', fontStyle: 'italic', padding: '32px 0', textAlign: 'center' };
 const filtersPanel: React.CSSProperties = { marginTop: 10, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid #1c2128', borderRadius: 10, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' };
@@ -461,12 +774,13 @@ type Axis = { key: string; leader: string; baseId: string | null; baseAspect: st
 // Square matchup matrix. Rows/columns are leaders ("Leaders" lens) or decks
 // ("Leaders & Bases") sharing one games-ordered axis set. Each cell is win% or
 // W–L, tinted by heatColor; the leftmost Total column is the axis's overall rate.
-function MatchupMatrix({ matrix, mode, byBase, nm }: { matrix: { axes: Axis[]; cell: Map<string, any>; totals: Map<string, { games: number; wins: number; decisive: number }> }; mode: 'pct' | 'wl'; byBase: boolean; nm: (id: string) => string }) {
+function MatchupMatrix({ matrix, mode, byBase, minGames, nm, onFocus, onMatchupFocus }: { matrix: { axes: Axis[]; cell: Map<string, any>; totals: Map<string, { games: number; wins: number; decisive: number }> }; mode: 'pct' | 'wl'; byBase: boolean; minGames: number; nm: (id: string) => string; onFocus: (leader: string, baseKey?: string) => void; onMatchupFocus: (leader: string, vs: string) => void }) {
   const { axes, cell, totals } = matrix;
   const show = (wins: number, decisive: number) => {
     if (mode === 'wl') return decisive ? `${wins}–${decisive - wins}` : '—';
     return fmtPct(pct(wins, decisive));
   };
+  const focusOf = (a: Axis) => onFocus(a.leader, byBase ? baseKeyOf(a.baseId, a.baseAspect) : undefined);
   const label = (a: Axis) => nm(a.leader) + (byBase ? ` · ${a.baseId ? nm(a.baseId) : a.baseAspect ?? '?'}` : '');
   const COL = 44;
   return (
@@ -493,11 +807,12 @@ function MatchupMatrix({ matrix, mode, byBase, nm }: { matrix: { axes: Axis[]; c
             return (
               <tr key={rowA.key}>
                 <td style={{ position: 'sticky', left: 0, zIndex: 1, background: '#0e1116', paddingRight: 8, whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <button type="button" onClick={() => focusOf(rowA)} title={`See ${label(rowA)} detail`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 0, padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
                     <CardThumb cardId={rowA.leader} isLeader h={22} />
                     {byBase && <BaseChip baseId={rowA.baseId} baseAspect={rowA.baseAspect} />}
-                    <span style={{ color: '#e6e6e6', fontSize: 11, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label(rowA)}</span>
-                  </span>
+                    <span style={{ color: '#a7d2ff', fontSize: 11, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label(rowA)}</span>
+                  </button>
                 </td>
                 <td title={`${label(rowA)} overall — ${t.wins}–${t.decisive - t.wins}, ${t.games} games`}
                   style={{ width: COL, height: 30, textAlign: 'center', background: heatColor(pct(t.wins, t.decisive), t.decisive), color: '#fff', fontWeight: 700, borderLeft: '2px solid #0e1116' }}>
@@ -506,11 +821,12 @@ function MatchupMatrix({ matrix, mode, byBase, nm }: { matrix: { axes: Axis[]; c
                 {axes.map((colA) => {
                   if (rowA.key === colA.key) return <td key={colA.key} style={{ width: COL, textAlign: 'center', color: '#3a4150', background: '#14171d' }}>{'–'}</td>;
                   const r = cell.get(`${rowA.key}|${colA.key}`);
-                  if (!r) return <td key={colA.key} style={{ width: COL, background: '#101319' }} />;
+                  // Blank cells below the min-games threshold (tiny-sample noise).
+                  if (!r || r.games < minGames) return <td key={colA.key} style={{ width: COL, background: '#101319' }} />;
                   const p = pct(r.wins, r.decisive);
                   return (
-                    <td key={colA.key} title={`${label(rowA)} vs ${label(colA)} — ${r.wins}–${r.decisive - r.wins} (${fmtPct(p)}), ${r.games} games`}
-                      style={{ width: COL, height: 30, textAlign: 'center', background: heatColor(p, r.decisive), color: '#e6e6e6', fontWeight: 600 }}>
+                    <td key={colA.key} onClick={() => onMatchupFocus(rowA.leader, colA.leader)} title={`${label(rowA)} vs ${label(colA)} — ${r.wins}–${r.decisive - r.wins} (${fmtPct(p)}), ${r.games} games · click for matchup detail`}
+                      style={{ width: COL, height: 30, textAlign: 'center', background: heatColor(p, r.decisive), color: '#e6e6e6', fontWeight: 600, cursor: 'pointer' }}>
                       {show(r.wins, r.decisive)}
                     </td>
                   );
@@ -679,7 +995,7 @@ function CardTile({ cardId, name, win, observations, label }: { cardId: string; 
 // Sort lives on the headers (the native data-table pattern, and the cleanest on
 // mobile): a sortable column shows ↕; the active one shows ▲/▼ and tapping it flips.
 type Col = { label: string; sortKey?: SortKey };
-function Table({ cols, rows, sort, dir, onSort }: { cols: Col[]; rows: React.ReactNode[][]; sort?: SortKey; dir?: SortDir; onSort?: (k: SortKey) => void }) {
+function Table({ cols, rows, sort, dir, onSort, onRowClick, rowKeys }: { cols: Col[]; rows: React.ReactNode[][]; sort?: SortKey; dir?: SortDir; onSort?: (k: SortKey) => void; onRowClick?: (() => void)[]; rowKeys?: string[] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
@@ -704,7 +1020,15 @@ function Table({ cols, rows, sort, dir, onSort }: { cols: Col[]; rows: React.Rea
         })}</tr>
       </thead>
       <tbody>
-        {rows.map((r, ri) => <tr key={ri}>{r.map((c, ci) => <td key={ci} style={{ textAlign: ci === 0 ? 'left' : 'right', padding: '6px 10px', borderBottom: '1px solid #1c2128' }}>{c}</td>)}</tr>)}
+        {rows.map((r, ri) => {
+          const click = onRowClick?.[ri];
+          return (
+            <tr key={rowKeys?.[ri] ?? ri} onClick={click} title={click ? 'See detail' : undefined}
+              style={click ? { cursor: 'pointer' } : undefined}>
+              {r.map((c, ci) => <td key={ci} style={{ textAlign: ci === 0 ? 'left' : 'right', padding: '6px 10px', borderBottom: '1px solid #1c2128' }}>{c}</td>)}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
