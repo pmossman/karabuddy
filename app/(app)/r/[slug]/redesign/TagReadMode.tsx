@@ -44,6 +44,9 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const cleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => () => cleanupRef.current?.(), []);
+  // Tucked: collapse the whole bubble to a small edge tab (PiP-style "put away")
+  // so a huge comment doesn't cover the board. The tab previews the current tag.
+  const [tucked, setTucked] = useState(false);
   const onDown = (e: React.PointerEvent) => {
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -64,6 +67,10 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
 
   return (
     <div style={{ position: 'fixed', inset: 'var(--kb-header-h, 0px) 0 0 0', zIndex: 140, pointerEvents: 'none' }}>
+      {/* Tucked: a small right-edge tab previewing the current tag; tap to pull out. */}
+      {tucked && <TuckTab here={here} currentIndex={currentIndex} onExpand={() => setTucked(false)} />}
+
+      {!tucked && (<>
       {/* Floating, draggable tag bubble (top) — reading + composing both live here. */}
       <div ref={wrapRef} style={{ position: 'absolute', top: 12 + pos.y, left: '50%', transform: `translateX(calc(-50% + ${pos.x}px))`, width: 'min(440px, 92vw)', pointerEvents: 'auto' }}>
         <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '62vh', background: tokens.color.surfaceSolid, border: `1px solid ${tokens.color.borderStrong}`, borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.55)', overflow: 'hidden' }}>
@@ -75,6 +82,7 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
             </span>
             <span aria-hidden style={{ marginLeft: 6, color: tokens.color.textFaint, fontSize: 12 }}>⠿</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <button type="button" onClick={() => setTucked(true)} title="Tuck to side" aria-label="Tuck to side" style={iconBtn}>⇥</button>
               <button type="button" onClick={onOpenList} title="All tags (list)" aria-label="All tags" style={iconBtn}>≡</button>
               <button type="button" onClick={onClose} title="Exit tag mode" aria-label="Exit tag mode" style={iconBtn}>✕</button>
             </span>
@@ -107,7 +115,29 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
           tag that direction. */}
       <NavChip dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
       <NavChip dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
+      </>)}
     </div>
+  );
+}
+
+// The tucked tab — a small pill on the right edge previewing the current frame's
+// tag (or frame #), pulling the bubble back out on tap. PiP-style "put away".
+function TuckTab({ here, currentIndex, onExpand }: { here: ViewerTag[]; currentIndex: number; onExpand: () => void }) {
+  const preview = here.length ? truncate(here[0].comment, 16) : `Frame ${currentIndex + 1}`;
+  return (
+    <button type="button" onClick={onExpand} title="Pull out the tag bubble" aria-label="Pull out the tag bubble"
+      style={{
+        // Left edge — the rail lives top-right, so tuck away from it.
+        position: 'absolute', left: 0, top: 'max(80px, env(safe-area-inset-top, 80px))', pointerEvents: 'auto',
+        display: 'inline-flex', alignItems: 'center', gap: 7, maxWidth: '64vw',
+        background: tokens.color.surfaceSolid, border: `1px solid ${tokens.color.borderStrong}`, borderLeft: 0, color: tokens.color.accent,
+        borderRadius: '0 999px 999px 0', padding: '9px 13px 9px 10px', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
+      }}>
+      <span aria-hidden style={{ color: tokens.led.on }}>🏷</span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{preview}</span>
+      <span aria-hidden style={{ color: tokens.color.textMuted }}>›</span>
+    </button>
   );
 }
 
