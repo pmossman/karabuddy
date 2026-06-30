@@ -24,7 +24,7 @@ const FEATURES: FeatureDef[] = [
   { id: 'decks', label: 'Decks', icon: '🃏' },
 ];
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks, onTagModeChange }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -35,6 +35,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   messagesByFrame: any[][] | null;
   matchup: ComponentProps<typeof MatchupFeature>;
   decks: ComponentProps<typeof DecksFeature>;
+  onTagModeChange?: (active: boolean) => void;
 }) {
   // Desktop opens Tags by default (parity with today's docked drawer); mobile
   // starts on the board (tap a bubble to open).
@@ -52,6 +53,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // A full-screen mobile overlay: any non-Tags feature, or the Tags LIST.
   const mobileFull = mode === 'mobile' && usable && !mobileTagMode;
   const desktopOpen = mode === 'desktop' && usable;
+  useEffect(() => { onTagModeChange?.(mobileTagMode); }, [mobileTagMode, onTagModeChange]);
 
   const renderBody = (id: FeatureId): ReactNode => {
     if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />;

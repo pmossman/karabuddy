@@ -309,6 +309,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // the unified feature-bubble chrome. Client-only read (avoids SSR mismatch).
   const [redesign, setRedesign] = useState(false);
   useEffect(() => { try { setRedesign(new URLSearchParams(window.location.search).get('redesign') === '1'); } catch { /* noop */ } }, []);
+  // B216: Tag Mode owns tag-to-tag nav (its preview chips), so hide the board's
+  // duplicate tag-jump buttons while it's active.
+  const [tagMode, setTagMode] = useState(false);
   // B101: per-game resourcing report (analyzed client-side from decoded frames).
   const [resourcingOpen, setResourcingOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
@@ -1092,6 +1095,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               payloadBlobUrl: replay.payloadBlobUrl,
               replaySlug: replay.slug,
             }}
+            onTagModeChange={setTagMode}
           />
         </KaraBuddyThemeProvider>
       )}
@@ -1206,7 +1210,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               onJumpTag={jumpToAdjacentTag}
               canPrevTag={displayTags.some((t) => t.frameIndex < currentIndex)}
               canNextTag={displayTags.some((t) => t.frameIndex > currentIndex)}
-              showTagJump={displayTags.length > 0}
+              showTagJump={displayTags.length > 0 && !tagMode}
             />
             {/* B66b/B100: desktop step/playback controls as an inline pill that
                 tracks the docked sidebar (shifts left past it). On MOBILE the

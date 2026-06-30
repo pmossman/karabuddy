@@ -100,21 +100,33 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
         </div>
       </div>
 
-      {/* Prev/Next tag chips WITH preview text (bottom-centre, clear of corners). */}
-      <div style={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 8, maxWidth: '96vw', pointerEvents: 'auto' }}>
-        <NavChip dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
-        <NavChip dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
-      </div>
+      {/* Prev/Next TAG jump buttons, anchored to the left/right edges just below
+          the frame chevrons — i.e. where "jump to the next/previous comment"
+          lives — each carrying a PREVIEW of the tag it jumps to, so the preview
+          belongs to the jump button (not a detached bar). Hidden when there's no
+          tag that direction. */}
+      <NavChip dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
+      <NavChip dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
     </div>
   );
 }
 
 function NavChip({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | null; onClick: () => void }) {
+  if (!tag) return null;
   const arrow = dir === 'prev' ? '‹' : '›';
-  const base: React.CSSProperties = { maxWidth: '44vw', display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(17,20,26,0.92)', border: `1px solid ${tokens.color.borderStrong}`, borderRadius: 999, padding: '8px 13px', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' };
-  if (!tag) return <span style={{ ...base, color: tokens.color.textFaint, opacity: 0.6 }}>{dir === 'prev' ? `${arrow} no earlier tag` : `no later tag ${arrow}`}</span>;
-  const preview = `${arrow === '‹' ? arrow + ' ' : ''}${truncate(tag.comment)}${arrow === '›' ? ' ' + arrow : ''}`;
-  return <button type="button" onClick={onClick} title={`Frame ${tag.frameIndex + 1}: ${tag.comment}`} style={{ ...base, color: tokens.color.accent, cursor: 'pointer' }}>{preview}</button>;
+  const side = dir === 'prev' ? { left: 8 } : { right: 8 };
+  return (
+    <button type="button" onClick={onClick} title={`Frame ${tag.frameIndex + 1}: ${tag.comment}`}
+      style={{
+        position: 'absolute', top: 'calc(50% + 54px)', transform: 'translateY(-50%)', ...side,
+        maxWidth: '46vw', pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: 'rgba(17,20,26,0.92)', border: `1px solid ${tokens.color.borderStrong}`, color: tokens.color.accent,
+        borderRadius: 999, padding: '8px 13px', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+      }}>
+      {dir === 'prev' ? `${arrow} ${truncate(tag.comment)}` : `${truncate(tag.comment)} ${arrow}`}
+    </button>
+  );
 }
 
 function ComposeFooter({ replaySlug, currentIndex, toOriginalFrame, appendTag }: {
