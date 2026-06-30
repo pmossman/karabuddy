@@ -61,7 +61,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump }: {
       {/* The bubble rail — one icon per feature, consistent on both sizes. Hidden
           on mobile while a full-screen feature is open (the overlay owns the view). */}
       {!(mode === 'mobile' && panelOpen) && (
-        <div style={{ position: 'fixed', top: 72, right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {FEATURES.map((f) => {
             const isOpen = open === f.id && !f.soon;
             return (

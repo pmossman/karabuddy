@@ -1240,7 +1240,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 landscape (panel slides from the left — and the right edge is
                 where the review sheet's × close lives, so top-right would
                 collide with it). */}
-            {isMobile && (
+            {!redesign && isMobile && (
               <button
                 type="button"
                 onClick={() => openMatchup(!matchupOpen)}
@@ -1285,6 +1285,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               const menuBottom = mobilePortrait && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeB;
               return (
                 <>
+                  {!redesign && (
                   <JumpToMenu
                     chapters={chapters}
                     currentIndex={currentIndex}
@@ -1292,13 +1293,14 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                     bottom={`calc(${menuBottom} + 46px)`}
                     right={menuRight}
                   />
+                  )}
                   {/* B136: Clip FAB. Desktop → a labeled "Clip" pill at the
                       board's top-right (below the header; bottom-right was
                       crowded). Mobile → a compact scissors bubble on the SAME row
                       as the ⓘ matchup button, one FAB-width toward the interior
                       (B199: left of ⓘ in portrait / right of it in landscape,
                       where ⓘ hugs the left edge) rather than stacked below it. */}
-                  {isMobile ? (
+                  {!redesign && (isMobile ? (
                     <ClipBubble
                       onClick={() => setClipOpen(true)}
                       compact
@@ -1313,7 +1315,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                       top="calc(var(--kb-header-h, 0px) + max(10px, env(safe-area-inset-top, 10px)))"
                       right={menuRight}
                     />
-                  )}
+                  ))}
                   {/* B128: double-sided split control (hands-up toggle + flip)
                       — only when both teammates' recordings exist. Sits LEFT of
                       the Jump-to-moment bubble on the same row (38px FAB + 8px
@@ -1338,7 +1340,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           (☰ review in TagSidebar so it can track the desktop sidebar, ⓘ
           matchup in the overlay block above) sit just outside the open sheet
           rather than over it. */}
-      {isMobile && (matchupOpen || reviewOpen) && (
+      {!redesign && isMobile && (matchupOpen || reviewOpen) && (
         <div
           onClick={() => { setMatchupOpen(false); setReviewOpen(false); }}
           aria-hidden="true"
@@ -1354,7 +1356,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       {/* B66/B100: mobile matchup panel. Anchored LEFT in landscape, TOP in
           portrait. Opened by the dedicated ⓘ FAB (no longer shares the ☰
           tags trigger). Collapsed by default. */}
-      {isMobile && (
+      {!redesign && isMobile && (
         <MatchupPanel
           open={matchupOpen}
           onClose={() => setMatchupOpen(false)}
