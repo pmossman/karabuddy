@@ -49,6 +49,24 @@ for (const vp of VIEWPORTS) {
   const steps = Number(process.env.STEPS || 0);
   for (let s = 0; s < steps; s++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(40); }
   if (steps) await page.waitForTimeout(500);
+  // Optional drag test: DRAG="selector::dx::dy" — grab the element's centre and
+  // drag by (dx,dy). Used to verify the tag bubble can't be flung off-screen.
+  if (process.env.DRAG) {
+    const [sel, dx, dy] = process.env.DRAG.split('::');
+    try {
+      const box = await page.locator(sel).first().boundingBox();
+      if (box) {
+        const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+        const nx = Number(dx), ny = Number(dy);
+        await page.mouse.move(cx, cy); await page.mouse.down();
+        // Two incremental moves — a single move to far-off coords is unreliable.
+        await page.mouse.move(cx + nx / 2, cy + ny / 2, { steps: 8 });
+        await page.mouse.move(cx + nx, cy + ny, { steps: 8 });
+        await page.mouse.up();
+        await page.waitForTimeout(400);
+      }
+    } catch (e) { console.warn('drag miss:', e.message); }
+  }
   // openSel may be several selectors separated by '|', clicked in sequence
   // (e.g. open the panel, then open the composer).
   for (const sel of openSel.split('|').map((s) => s.trim()).filter(Boolean)) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { ViewerTag } from './TagsFeature';
 import { useCreateTag, SignInToTagCta } from './tagCompose';
@@ -35,19 +35,39 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
     return m;
   }, [tags]);
 
-  // Draggable bubble offset (pointer-based; works for touch + mouse).
+  // Draggable bubble offset (pointer-based; touch + mouse). Drag is tracked via
+  // WINDOW listeners (robust — the pointer can leave the small header), and the
+  // delta is CLAMPED against the bubble's measured rect so you can never fling it
+  // off-screen: the whole bubble stays horizontally in view and its header stays
+  // reachable vertically (always re-grabbable). Closing Tag Mode re-centres it.
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
-  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
-  const onDown = (e: React.PointerEvent) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y }; (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); };
-  const onMove = (e: React.PointerEvent) => { if (drag.current) setPos({ x: drag.current.ox + (e.clientX - drag.current.sx), y: drag.current.oy + (e.clientY - drag.current.sy) }); };
-  const onUp = () => { drag.current = null; };
+  const cleanupRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cleanupRef.current?.(), []);
+  const onDown = (e: React.PointerEvent) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = pos.x, oy = pos.y;
+    const m = 8, keepBottom = 90; // keepBottom keeps the header grabbable
+    const move = (ev: PointerEvent) => {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const dx = Math.min(Math.max(ev.clientX - sx, m - rect.left), (vw - m) - rect.right);
+      const dy = Math.min(Math.max(ev.clientY - sy, m - rect.top), (vh - keepBottom) - rect.top);
+      setPos({ x: ox + dx, y: oy + dy });
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
+    cleanupRef.current = up;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
 
   return (
     <div style={{ position: 'fixed', inset: 'var(--kb-header-h, 0px) 0 0 0', zIndex: 140, pointerEvents: 'none' }}>
       {/* Floating, draggable tag bubble (top) — reading + composing both live here. */}
-      <div style={{ position: 'absolute', top: 12 + pos.y, left: '50%', transform: `translateX(calc(-50% + ${pos.x}px))`, width: 'min(440px, 92vw)', pointerEvents: 'auto' }}>
+      <div ref={wrapRef} style={{ position: 'absolute', top: 12 + pos.y, left: '50%', transform: `translateX(calc(-50% + ${pos.x}px))`, width: 'min(440px, 92vw)', pointerEvents: 'auto' }}>
         <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '62vh', background: tokens.color.surfaceSolid, border: `1px solid ${tokens.color.borderStrong}`, borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.55)', overflow: 'hidden' }}>
-          <div onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
+          <div data-testid="tag-bubble-drag" onPointerDown={onDown}
             style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'grab', borderBottom: `1px solid ${tokens.color.border}`, touchAction: 'none' }}>
             <span aria-hidden style={{ color: tokens.led.on, fontSize: 13 }}>🏷</span>
             <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: tokens.color.textMuted }}>
