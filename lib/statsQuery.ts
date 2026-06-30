@@ -117,6 +117,22 @@ const perspectiveCond = (scope: StatsScope) =>
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
 
+// Self-side deck filter shared by leader-scoped producers (drill-in): exact base
+// for an ability base (`baseId`), or any vanilla base of an aspect (`baseAspect`,
+// excluding ability bases — they're their own decks). Pushes its WHERE conditions
+// into `conds` and returns the (possibly base-card-joined) dynamic builder.
+function applySelfBaseFilter(qb: any, opts: { baseId?: string | null; baseAspect?: string | null }, conds: any[]): any {
+  if (opts.baseId) {
+    conds.push(eq(matchPlayers.base, opts.baseId));
+  } else if (opts.baseAspect) {
+    const bc = alias(cards, 'self_base');
+    qb = qb.innerJoin(bc, eq(bc.cardId, matchPlayers.base));
+    conds.push(sql`${(bc as any).aspects} @> ${JSON.stringify([opts.baseAspect])}::jsonb`);
+    conds.push(sql`coalesce(${(bc as any).hasAbility}, false) = false`);
+  }
+  return qb;
+}
+
 export async function getLeaderStats(opts: StatsQueryOpts): Promise<LeaderStat[]> {
   const minGames = opts.minGames ?? 1;
   const db = getDb();
@@ -145,10 +161,13 @@ export async function getLeaderStats(opts: StatsQueryOpts): Promise<LeaderStat[]
   }));
 }
 
-export async function getLeaderMatchups(opts: StatsQueryOpts): Promise<LeaderMatchup[]> {
+// `leader`/`baseId`/`baseAspect` scope the SELF side to one leader (and optionally
+// one deck) — the drill-in's "this leader's record vs each opponent". Omit them
+// and it returns the full directed matrix as before.
+export async function getLeaderMatchups(opts: StatsQueryOpts & { leader?: string | null; baseId?: string | null; baseAspect?: string | null }): Promise<LeaderMatchup[]> {
   const minGames = opts.minGames ?? 1;
   const db = getDb();
-  const base = db
+  let base = db
     .select({
       leader: matchPlayers.leader,
       opponentLeader: matchPlayers.opponentLeader,
@@ -160,8 +179,11 @@ export async function getLeaderMatchups(opts: StatsQueryOpts): Promise<LeaderMat
     .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
+  const conds: any[] = [isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)];
+  if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
+  base = applySelfBaseFilter(base, opts, conds);
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(...conds))
     .groupBy(matchPlayers.leader, matchPlayers.opponentLeader)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -242,6 +264,63 @@ export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number
   }));
 }
 
+// B194 drill-in: the recorder's recent replays on a given leader (and optionally a
+// deck). "My side only" — `isRecorder` rows where matchPlayers.leader = the focus
+// leader, so it lists games where YOU played that leader (not games you faced it).
+// Returns the replay fields the viewer cards need + the recorder's result, newest
+// first by the STABLE replays.createdAt (matches.createdAt resets on re-persist).
+export interface EntityReplay {
+  gameId: string;
+  slug: string;
+  createdAt: string;
+  players: unknown;
+  winners: string[] | null;
+  ownerPlayerId: string | null;
+  displayName: string | null;
+  won: boolean | null;
+}
+
+export async function getEntityReplays(
+  opts: StatsQueryOpts & { leader?: string | null; baseId?: string | null; baseAspect?: string | null; opponentLeader?: string | null; limit?: number },
+): Promise<EntityReplay[]> {
+  const db = getDb();
+  let base = db
+    .select({
+      gameId: matchPlayers.gameId,
+      slug: replays.slug,
+      createdAt: replays.createdAt,
+      players: replays.players,
+      winners: replays.winners,
+      ownerPlayerId: replays.ownerPlayerId,
+      displayName: replays.displayName,
+      won: matchPlayers.won,
+    })
+    .from(matchPlayers)
+    .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
+    .innerJoin(replays, eq(replays.slug, matches.replaySlug))
+    .$dynamic();
+  // My side only (recorder) — independent of perspectiveCond (which, for team,
+  // also counts opponent rows): a "replays on leader X" list means games I played X.
+  const conds: any[] = [eq(matchPlayers.isRecorder, true), fmtCond(opts.format), scopePredicate(opts.scope)];
+  if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
+  if (opts.opponentLeader) conds.push(eq(matchPlayers.opponentLeader, opts.opponentLeader));
+  base = applySelfBaseFilter(base, opts, conds);
+  const rows = await base
+    .where(and(...conds))
+    .orderBy(sql`${replays.createdAt} desc`)
+    .limit(opts.limit ?? 50);
+  return rows.map((r: any) => ({
+    gameId: r.gameId,
+    slug: r.slug,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    players: r.players,
+    winners: Array.isArray(r.winners) ? r.winners : null,
+    ownerPlayerId: r.ownerPlayerId ?? null,
+    displayName: r.displayName ?? null,
+    won: r.won,
+  }));
+}
+
 export type CardEventKind = 'drawn' | 'resourced' | 'played' | 'discarded';
 
 export interface CardStat {
@@ -265,7 +344,7 @@ export interface CardStat {
 // of that aspect). This is the "how does card X do in MY Krennic/Vigilance deck"
 // view the teams actually want, scoped to your own / your team's recorded games.
 export async function getCardStats(
-  opts: StatsQueryOpts & { event: CardEventKind; leader?: string | null; baseAspect?: string | null; baseId?: string | null },
+  opts: StatsQueryOpts & { event: CardEventKind; leader?: string | null; baseAspect?: string | null; baseId?: string | null; opponentLeader?: string | null },
 ): Promise<CardStat[]> {
   const minGames = opts.minGames ?? 1;
   const db = getDb();
@@ -281,10 +360,11 @@ export async function getCardStats(
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
   const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, scopePredicate(opts.scope)];
-  if (opts.leader || opts.baseAspect || opts.baseId) {
+  if (opts.leader || opts.baseAspect || opts.baseId || opts.opponentLeader) {
     // Join the EVENT side's own match_players row (same game + player).
     base = base.innerJoin(matchPlayers, and(eq(matchPlayers.gameId, cardEvents.gameId), eq(matchPlayers.playerId, cardEvents.playerId)));
     if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
+    if (opts.opponentLeader) conds.push(eq(matchPlayers.opponentLeader, opts.opponentLeader));
     if (opts.baseId) {
       // An ability base IS the deck — match the exact base card.
       conds.push(eq(matchPlayers.base, opts.baseId));

@@ -68,6 +68,18 @@ describe('GET /api/stats — scope authorization', () => {
     expect(Array.isArray((await byBase.json()).data)).toBe(true);
   });
 
+  it('B194: dispatches the drill-in types (matchups+leader, replays)', async () => {
+    as(await seedUser());
+    const m = await GET(req('scope=personal&type=matchups&leader=L1'));
+    expect(m.status).toBe(200);
+    expect((await m.json())).toMatchObject({ ok: true, type: 'matchups' });
+    const r = await GET(req('scope=personal&type=replays&leader=L1'));
+    expect(r.status).toBe(200);
+    expect(Array.isArray((await r.json()).data)).toBe(true);
+    as(null);
+    expect((await GET(req('scope=personal&type=replays&leader=L1'))).status).toBe(401);
+  });
+
   it('resourcing requires a session (personal/team only, like everything)', async () => {
     as(await seedUser());
     expect((await GET(req('scope=personal&type=resourcing'))).status).toBe(200);

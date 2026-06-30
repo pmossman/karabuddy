@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
 import { teamGameIds } from '@/lib/teamSurface';
-import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
+import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, getEntityReplays, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
 import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
@@ -23,7 +23,7 @@ import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 // per-request; only the data read (incl. the teamGameIds resolution) is cached.
 
 const CARD_EVENTS = ['drawn', 'resourced', 'played', 'discarded'];
-const TYPES = new Set(['leaders', 'matchups', 'decks', 'resourcing', 'cards']);
+const TYPES = new Set(['leaders', 'matchups', 'decks', 'resourcing', 'cards', 'replays']);
 
 interface StatsKey {
   type: string;
@@ -37,6 +37,7 @@ interface StatsKey {
   leader: string | null;
   baseId: string | null;
   baseAspect: string | null;
+  opponentLeader: string | null;
 }
 
 const computeStats = cachedRead(
@@ -51,10 +52,13 @@ const computeStats = cachedRead(
     }
     const opts = { scope, format: k.format, minGames: 1 };
     switch (k.type) {
-      case 'matchups': return k.byBase ? getDeckMatchups(opts) : getLeaderMatchups(opts);
+      // Leader lens accepts a self-side leader/deck filter (drill-in: one leader's
+      // record vs each opponent). The deck-vs-deck matrix (byBase) stays unfiltered.
+      case 'matchups': return k.byBase ? getDeckMatchups(opts) : getLeaderMatchups({ ...opts, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect });
       case 'decks': return getDecks({ ...opts, leader: k.leader });
       case 'resourcing': return getResourcingGames(opts);
-      case 'cards': return getCardStats({ ...opts, event: k.event, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect });
+      case 'cards': return getCardStats({ ...opts, event: k.event, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect, opponentLeader: k.opponentLeader });
+      case 'replays': return getEntityReplays({ ...opts, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect, opponentLeader: k.opponentLeader });
       default: return getLeaderStats(opts);
     }
   },
@@ -103,6 +107,7 @@ export async function GET(req: Request) {
     leader: url.searchParams.get('leader') || null,
     baseId: url.searchParams.get('base') || null,
     baseAspect: url.searchParams.get('baseAspect') || null,
+    opponentLeader: url.searchParams.get('vs') || null,
   });
 
   return NextResponse.json({ ok: true, scope: scopeKind, type, format, minGames: 1, data });

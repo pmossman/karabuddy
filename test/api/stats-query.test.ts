@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, matches, matchPlayers, replayTeamShares, cardEvents, cards } from '@/lib/schema';
-import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames } from '@/lib/statsQuery';
+import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, getEntityReplays } from '@/lib/statsQuery';
 import { teamGameIds } from '@/lib/teamSurface';
 
 // B101/P1: the scoping + aggregation layer. These tests double as the privacy
@@ -252,5 +252,87 @@ describe('getLeaderMatchups', () => {
     expect(l1vL2.games).toBe(2);
     expect(l1vL2.wins).toBe(1);
     expect(l1vL2.winRate).toBeCloseTo(0.5);
+  });
+});
+
+// B194 drill-in: a leader's matchup breakdown (getLeaderMatchups filtered to one
+// leader / leader+base) + the recorder's recent replays on that leader/deck
+// (getEntityReplays). Backs the Leaders-row → detail-view drill-in.
+describe('B194 drill-in producers', () => {
+  let u: string;
+  beforeEach(async () => {
+    u = await seedUser(false);
+    // All recorder-side (p1) games for u on L1, plus a different leader + an
+    // opponent-side L1 game that must NOT count as "my L1 games".
+    await seedMatch({ gameId: 'd1', userId: u, p1: { leader: 'L1', won: true,  base: 'BA' }, p2: { leader: 'L2', won: false } });
+    await seedMatch({ gameId: 'd2', userId: u, p1: { leader: 'L1', won: false, base: 'BA' }, p2: { leader: 'L3', won: true  } });
+    await seedMatch({ gameId: 'd3', userId: u, p1: { leader: 'L1', won: true,  base: 'BB' }, p2: { leader: 'L2', won: false } });
+    await seedMatch({ gameId: 'd4', userId: u, p1: { leader: 'L9', won: true,  base: 'BA' }, p2: { leader: 'L2', won: false } }); // different leader
+    await seedMatch({ gameId: 'd5', userId: u, p1: { leader: 'L7', won: true }, p2: { leader: 'L1', won: false } }); // L1 is the OPPONENT here
+  });
+  const scope = () => ({ kind: 'personal' as const, userId: u });
+
+  it('getLeaderMatchups(leader) returns only that leader’s directed rows', async () => {
+    const rows = await getLeaderMatchups({ scope: scope(), leader: 'L1' });
+    expect(rows.every((r) => r.leader === 'L1')).toBe(true);
+    const vL2 = rows.find((r) => r.opponentLeader === 'L2')!;
+    const vL3 = rows.find((r) => r.opponentLeader === 'L3')!;
+    expect(vL2).toMatchObject({ games: 2, wins: 2 }); // d1 + d3
+    expect(vL3).toMatchObject({ games: 1, wins: 0 }); // d2
+    expect(rows.find((r) => r.leader === 'L9')).toBeUndefined();
+  });
+
+  it('getLeaderMatchups(leader, baseId) scopes to that deck', async () => {
+    const rows = await getLeaderMatchups({ scope: scope(), leader: 'L1', baseId: 'BA' });
+    // Only BA games (d1 vs L2, d2 vs L3); d3 is base BB → excluded.
+    expect(rows.find((r) => r.opponentLeader === 'L2')).toMatchObject({ games: 1, wins: 1 });
+    expect(rows.find((r) => r.opponentLeader === 'L3')).toMatchObject({ games: 1, wins: 0 });
+  });
+
+  it('getEntityReplays(leader) = the recorder’s replays on that leader, newest first', async () => {
+    const rows = await getEntityReplays({ scope: scope(), leader: 'L1' });
+    expect(rows).toHaveLength(3); // d1, d2, d3 — NOT d4 (L9) and NOT d5 (L1 is opponent)
+    expect(rows.every((r) => typeof r.slug === 'string')).toBe(true);
+    // won reflects the recorder's result
+    expect(rows.filter((r) => r.won === true)).toHaveLength(2);
+  });
+
+  it('getEntityReplays(leader, baseId) scopes to the deck', async () => {
+    const rows = await getEntityReplays({ scope: scope(), leader: 'L1', baseId: 'BB' });
+    expect(rows).toHaveLength(1); // d3 only
+  });
+
+  it('getEntityReplays excludes games where the leader was the OPPONENT (my side only)', async () => {
+    const rows = await getEntityReplays({ scope: scope(), leader: 'L7' });
+    expect(rows).toHaveLength(1); // d5 — recorder played L7
+    const asOpp = await getEntityReplays({ scope: scope(), leader: 'L1' });
+    expect(asOpp.find((r) => r.gameId === 'd5')).toBeUndefined();
+  });
+});
+
+// B195 matchup drill-in: card-level stats + replays scoped to a specific matchup
+// (leader A vs opponent leader B), powering the matrix-cell → matchup detail view.
+describe('B195 matchup drill-in producers', () => {
+  let u: string;
+  beforeEach(async () => {
+    u = await seedUser(false);
+    await seedMatch({ gameId: 'm1', userId: u, p1: { leader: 'L1', won: true }, p2: { leader: 'L2', won: false }, events: [{ side: 'p1', cardId: 'CX', event: 'played' }] });
+    await seedMatch({ gameId: 'm2', userId: u, p1: { leader: 'L1', won: false }, p2: { leader: 'L3', won: true }, events: [{ side: 'p1', cardId: 'CX', event: 'played' }] });
+    await seedMatch({ gameId: 'm3', userId: u, p1: { leader: 'L1', won: true }, p2: { leader: 'L2', won: false }, events: [{ side: 'p1', cardId: 'CX', event: 'played' }] });
+  });
+  const scope = () => ({ kind: 'personal' as const, userId: u });
+
+  it('getCardStats(leader, opponentLeader) scopes card stats to that matchup', async () => {
+    const all = await getCardStats({ scope: scope(), event: 'played', leader: 'L1' });
+    expect(all.find((r) => r.cardId === 'CX')!.observations).toBe(3); // all L1 games
+    const vsL2 = await getCardStats({ scope: scope(), event: 'played', leader: 'L1', opponentLeader: 'L2' });
+    expect(vsL2.find((r) => r.cardId === 'CX')!.observations).toBe(2); // m1 + m3 only
+    expect(vsL2.find((r) => r.cardId === 'CX')!.wins).toBe(2);
+  });
+
+  it('getEntityReplays(leader, opponentLeader) lists only that matchup’s replays', async () => {
+    const rows = await getEntityReplays({ scope: scope(), leader: 'L1', opponentLeader: 'L2' });
+    expect(rows).toHaveLength(2); // m1, m3
+    expect(rows.every((r) => r.won === true)).toBe(true);
   });
 });
