@@ -136,6 +136,23 @@ const perspectiveCond = (scope: StatsScope) =>
       ? or(eq(matchPlayers.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))
       : eq(matchPlayers.isRecorder, true);
 
+// Card-stats perspective. getCardStats reads card_events (one row per SIDE) and
+// must apply the same audience boundary as perspectiveCond — but card_events
+// carries its own per-side isRecorder, so we key on THAT (not match_players').
+// It matters only for board-visible events: played/discarded are attribution
+// 'both' (materialized for BOTH sides), so without this an opponent's play would
+// be counted as one of YOURS (personal) / the OUTSIDER's into a team aggregate.
+// drawn/resourced only ever have a recorder-side row, so the filter is a no-op
+// for them. Global keeps both sides (the whole-meta board), same as the matrix.
+const cardPerspectiveCond = (scope: StatsScope) =>
+  scope.kind === 'global'
+    ? undefined
+    : scope.kind === 'personal'
+    ? eq(cardEvents.isRecorder, true)
+    : scope.internalGameIds.length
+      ? or(eq(cardEvents.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))
+      : eq(cardEvents.isRecorder, true);
+
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
 
 // Self-side deck filter shared by leader-scoped producers (drill-in): exact base
@@ -380,7 +397,7 @@ export async function getCardStats(
     .innerJoin(matches, eq(matches.gameId, cardEvents.gameId))
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
-  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, scopePredicate(opts.scope)];
+  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, cardPerspectiveCond(opts.scope), scopePredicate(opts.scope)];
   if (opts.leader || opts.baseAspect || opts.baseId || opts.opponentLeader) {
     // Join the EVENT side's own match_players row (same game + player).
     base = base.innerJoin(matchPlayers, and(eq(matchPlayers.gameId, cardEvents.gameId), eq(matchPlayers.playerId, cardEvents.playerId)));

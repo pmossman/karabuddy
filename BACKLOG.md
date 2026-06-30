@@ -64,6 +64,13 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 - **Guardrail follow-ups:** add `jscpd` to CI (catches the code-level copy-paste subset automatically); save the concept-axis classification (B210) as a re-runnable script for periodic drift checks.
 - **Refs:** B210 (the audit + the `<select>` guardrail + CONTEXT.md registry); `test/unit/canonical-components.test.ts`.
 
+### [B215] Co-recorded game: second uploader's persist destroys the first's hand-data facts
+
+- **Why:** `persistReplayFacts` materializes a game by `DELETE FROM matches WHERE gameId=X` (cascading to `match_players` + `card_events`), then re-inserting from the uploading replay. When BOTH players record the same game (co-record), the second upload's persist wipes the first recorder's facts and re-derives everything from the second's payload. The match_players rows (leader/opponent/won) survive intact (both sides are in either payload, and the leader matrix counts both sides → no visible loss there — the stats accuracy audit confirmed the matrix is correct). What's LOST is the first recorder's **hand-visible** card_events: `drawn`/`resourced` are `attribution='recorder'` and only ever materialize for the uploader's own side, so after the overwrite only the second recorder's drawn/resourced survive. The first recorder's "win rate when I drew X" data for that game silently vanishes.
+- **Severity:** latent — **0 co-recorded games in prod today** (verified during the audit), and B166 already moved to per-recorder rows for the replay surface. This is a stats-materialization gap, not a surface bug. Fix before co-recording becomes common.
+- **Acceptance:** a co-recorded game retains BOTH recorders' recorder-attributed card_events (drawn/resourced from each side), not just the last writer's. Either (a) make persist additive/idempotent per (gameId, recorder side) instead of delete-by-gameId, or (b) merge siblings' card_events at persist time. match_players + the leader/deck matrices stay correct (they already are). Add a co-record card-stats test (two recorders, each drew a distinct card → both appear in personal stats for their respective owner).
+- **Refs:** `lib/statsPersist.ts` (the `DELETE … WHERE gameId` + re-insert); `lib/statsExtract.ts` (attribution model); `lib/statsQuery.getCardStats` (`cardPerspectiveCond`); B166 (per-recorder rows); ADR 0007. Surfaced by the stats accuracy audit (2026-06).
+
 ## Continuation prompt
 
 A new chat can be bootstrapped with the prompt at `scripts/continuation-extension-rework.md`. Hand the user that file's contents and they're ready to `/clear` and start fresh.

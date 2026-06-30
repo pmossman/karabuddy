@@ -231,6 +231,76 @@ describe('getCardStats', () => {
     const onCmdVanilla = await getCardStats({ scope, event: 'drawn', leader: 'L1', baseAspect: 'command' });
     expect(onCmdVanilla.find((r) => r.cardId === 'C1')).toBeUndefined();
   });
+
+  // Perspective by scope for BOARD-VISIBLE events (played/discarded are
+  // attribution 'both' → materialized for BOTH sides). The audience boundary
+  // must drop the wrong side, exactly like the leader matrix (cardPerspectiveCond).
+  describe('perspective by scope (played is two-sided)', () => {
+    it('personal counts only YOUR play, not the opponent’s board play', async () => {
+      await seedMatch({
+        gameId: 'pp-' + id().slice(0, 6), userId: userA,
+        p1: { leader: 'LM', won: true }, p2: { leader: 'LO', won: false },
+        events: [{ side: 'p1', cardId: 'PM', event: 'played' }, { side: 'p2', cardId: 'PO', event: 'played' }],
+      });
+      const ids = (await getCardStats({ scope: { kind: 'personal', userId: userA }, event: 'played' })).map((r) => r.cardId);
+      expect(ids).toContain('PM');
+      expect(ids).not.toContain('PO'); // the opponent's play is not "a card YOU played"
+    });
+
+    it('team EXTERNAL game counts the member’s play, never the outsider’s', async () => {
+      // userA (member) vs an outsider, shared with tT → EXTERNAL (single recorder).
+      await seedMatch({
+        gameId: 'ext-' + id().slice(0, 6), userId: userA, shareTeam: 'tT',
+        p1: { leader: 'LM', won: true }, p2: { leader: 'LO', won: false },
+        events: [{ side: 'p1', cardId: 'CM', event: 'played' }, { side: 'p2', cardId: 'CO', event: 'played' }],
+      });
+      const sets = await teamGameIds('tT');
+      const scope = { kind: 'team' as const, teamSlug: 'tT', restrictGameIds: [...sets.internal, ...sets.external], internalGameIds: sets.internal };
+      const ids = (await getCardStats({ scope, event: 'played' })).map((r) => r.cardId);
+      expect(ids).toContain('CM');
+      expect(ids).not.toContain('CO'); // the OUTSIDER's play must not leak into team stats
+    });
+
+    it('team INTERNAL game counts BOTH teammates’ plays (the non-recorder side too)', async () => {
+      const db = getDb();
+      const userC = await seedUser(false);
+      await db.insert(teamMembers).values({ teamSlug: 'tT', userId: userC, role: 'member' });
+      const gid = 'cint-' + id().slice(0, 6);
+      const slugA = 'r_aaa' + id().slice(0, 5);
+      const slugC = 'r_zzz' + id().slice(0, 5);
+      await db.insert(replays).values([
+        { slug: slugA, gameId: gid, userId: userA, ownerToken: 'kbx_' + id(), players: [], payloadBlobUrl: 'memory://x', durationMs: 1 },
+        { slug: slugC, gameId: gid, userId: userC, ownerToken: 'kbx_' + id(), players: [], payloadBlobUrl: 'memory://x', durationMs: 1 },
+      ]);
+      await db.insert(replayTeamShares).values({ replaySlug: slugA, teamSlug: 'tT', sharedBy: userA });
+      await db.insert(matches).values({ gameId: gid, replaySlug: slugA, format: 'premier', result: 'decisive' });
+      await db.insert(matchPlayers).values([
+        { gameId: gid, playerId: 'p1', leader: 'LX', opponentLeader: 'LY', won: true, isRecorder: true, format: 'premier' },
+        { gameId: gid, playerId: 'p2', leader: 'LY', opponentLeader: 'LX', won: false, isRecorder: false, format: 'premier' },
+      ]);
+      await db.insert(cardEvents).values([
+        { gameId: gid, playerId: 'p1', isRecorder: true, cardId: 'IA', event: 'played', attribution: 'both', frameIndex: 1, sideWon: true, format: 'premier' },
+        { gameId: gid, playerId: 'p2', isRecorder: false, cardId: 'IB', event: 'played', attribution: 'both', frameIndex: 2, sideWon: false, format: 'premier' },
+      ]);
+      const sets = await teamGameIds('tT');
+      expect(sets.internal).toContain(gid);
+      const scope = { kind: 'team' as const, teamSlug: 'tT', restrictGameIds: sets.internal, internalGameIds: sets.internal };
+      const ids = (await getCardStats({ scope, event: 'played' })).map((r) => r.cardId);
+      expect(ids).toContain('IA'); // recorder side
+      expect(ids).toContain('IB'); // teammate (non-recorder) side counts in an internal game
+    });
+
+    it('global counts BOTH sides of a board-visible event (the whole-meta board)', async () => {
+      await seedMatch({
+        gameId: 'gg-' + id().slice(0, 6), userId: null, // anonymous → included in global
+        p1: { leader: 'LM', won: true }, p2: { leader: 'LO', won: false },
+        events: [{ side: 'p1', cardId: 'GM', event: 'played' }, { side: 'p2', cardId: 'GO', event: 'played' }],
+      });
+      const ids = (await getCardStats({ scope: { kind: 'global', excludedUserIds: [userB] }, event: 'played' })).map((r) => r.cardId);
+      expect(ids).toContain('GM');
+      expect(ids).toContain('GO'); // both board plays are real meta data points
+    });
+  });
 });
 
 describe('getDecks', () => {

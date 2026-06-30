@@ -246,10 +246,18 @@ export function StatsClient({
       totals.set(self.key, t);
       if (!totals.has(opp.key)) totals.set(opp.key, { games: 0, wins: 0, decisive: 0 });
     }
-    // Axis order is user-controllable (min-games gates the axis by its TOTAL games).
+    // Drop an axis unless it has at least ONE matchup (a single cell, either
+    // direction) meeting min-games. Gating by an axis's TOTAL games kept leaders
+    // whose games were spread thin across many opponents — their row/column was
+    // then all-blank (every individual matchup < min), the sparse "junk" grid.
+    // Here a leader survives only if it has a real, sufficiently-sampled matchup.
+    const qualifies = new Set<string>();
+    for (const [k, r] of cell) {
+      if (r.games >= minGames) { const [s, o] = k.split('|'); qualifies.add(s); qualifies.add(o); }
+    }
     const axisWin = (k: string) => { const t = totals.get(k)!; return t.decisive > 0 ? t.wins / t.decisive : -1; };
     const ordered = [...axes.values()]
-      .filter((a) => (totals.get(a.key)?.games ?? 0) >= minGames)
+      .filter((a) => qualifies.has(a.key))
       .sort((a, b) =>
         matchupSort === 'name' ? nm(a.leader).localeCompare(nm(b.leader))
         : matchupSort === 'winrate' ? axisWin(b.key) - axisWin(a.key) || totals.get(b.key)!.games - totals.get(a.key)!.games
@@ -302,6 +310,8 @@ export function StatsClient({
           resolveNames={resolveNames}
           onBack={() => setFocus(focusLeader)}
           onClose={clearFocus}
+          onFlip={() => setMatchupFocus(focusVs, focusLeader)}
+          onOpenLeader={(l) => setFocus(l)}
         />
       ) : focusLeader ? (
         <LeaderDetail
@@ -356,7 +366,7 @@ export function StatsClient({
             )}
             <Field orientation="row" label="Win rate when"><Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} /></Field>
             {RECORDER_SIDE[event] && (
-              <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>your side only</span>
+              <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>{scope === 'global' ? 'recorder side only' : 'your side only'}</span>
             )}
             <Field orientation="row" label="Sort"><Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} /></Field>
             <Field orientation="row" label="Search"><input value={cardSearch} onChange={(e) => setCardSearch(e.target.value)} placeholder="Search cards…" type="search" style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', minWidth: 140 }} /></Field>
@@ -381,7 +391,12 @@ export function StatsClient({
 
       {view === 'resourcing' && (
         <p style={{ color: '#6c7588', fontSize: 12, margin: '14px 0 0' }}>
-          How tightly you spend resources, from your own games. Efficiency = resources spent ÷ resources you had, excluding rounds you claimed initiative and the game-deciding round. Higher is better.
+          {scope === 'global'
+            ? 'How tightly players spend resources, across the meta — recorder side only, since an opponent’s resource use isn’t observable. '
+            : scope === 'team'
+            ? 'How tightly your team spends resources, from your team’s games. '
+            : 'How tightly you spend resources, from your own games. '}
+          Efficiency = resources spent ÷ resources available, excluding rounds the player claimed initiative and the game-deciding round. Higher is better.
         </p>
       )}
 
@@ -536,10 +551,11 @@ function LeaderDetail({ leader, baseKey, baseQs, scope, teamName, nm, subs, reso
 // head-to-head record, CARD-LEVEL stats within the matchup (win rate when a card
 // was played/drawn/… in A-vs-B games), and the matchup's recent games. Fetches its
 // own data (deep-linkable). Card grid carries the standard event/sort/min-games.
-function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveNames, onBack, onClose }: {
+function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveNames, onBack, onClose, onFlip, onOpenLeader }: {
   leader: string; vs: string; baseQs: string; scope: Scope; teamName?: string;
   nm: (id: string) => string; subs: Record<string, string>;
   resolveNames: (ids: Set<string>) => Promise<void>; onBack: () => void; onClose: () => void;
+  onFlip: () => void; onOpenLeader: (leader: string) => void;
 }) {
   const [record, setRecord] = useState<{ games: number; wins: number; decisive: number } | null>(null);
   const [cards, setCards] = useState<any[] | null>(null);
@@ -586,11 +602,15 @@ function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveN
         <button type="button" onClick={onClose} style={{ background: 'transparent', border: 0, color: '#6c7588', cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0' }}>All stats</button>
       </div>
 
-      {/* Header: A vs B + head-to-head record. */}
+      {/* Header: A vs B + head-to-head record. Each leader's art links to that
+          leader's stats; the ⇄ flips to the opponent's point of view. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-        <CardThumb cardId={leader} isLeader h={48} />
-        <span style={{ fontSize: 14, fontWeight: 800, color: '#6c7588' }}>VS</span>
-        <CardThumb cardId={vs} isLeader h={48} />
+        <ThumbButton cardId={leader} title={`View ${nm(leader)} stats`} onClick={() => onOpenLeader(leader)} />
+        <button type="button" onClick={onFlip} title="Flip — view this matchup from the other side"
+          style={{ background: 'transparent', border: 0, color: '#6c7588', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, padding: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span aria-hidden style={{ fontSize: 16 }}>⇄</span> VS
+        </button>
+        <ThumbButton cardId={vs} title={`View ${nm(vs)} stats`} onClick={() => onOpenLeader(vs)} />
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, marginLeft: 4 }}>
           <span style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>{nm(leader)} vs {nm(vs)}</span>
           <span style={{ fontSize: 13, color: '#a0a8b8', marginTop: 2 }}>
@@ -617,7 +637,7 @@ function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveN
                 <FilterChip key={c.key} label={c.label} onClear={c.onClear} title="Clear"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(77,157,255,0.12)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 14, padding: '4px 10px' }} />
               ))}
-              {RECORDER_SIDE[event] && <span title="Drawn/resourced are only observable for the recorder." style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#e0c64a' }}>your side</span>}
+              {RECORDER_SIDE[event] && <span title="Drawn/resourced are only observable for the recorder." style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#e0c64a' }}>{scope === 'global' ? 'recorder side' : 'your side'}</span>}
             </div>
             {filtersOpen && (
               <div style={filtersPanel}>
@@ -729,6 +749,18 @@ function CardThumb({ cardId, isLeader, h = 40 }: { cardId: string; isLeader?: bo
   if (!url) return null;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt="" loading="lazy" style={{ height: h, width: 'auto', borderRadius: 3, background: '#0a0c10', flex: '0 0 auto' }} />;
+}
+// A leader thumbnail that links somewhere (matchup header → that leader's stats).
+// Bare button so the art stays the affordance; subtle ring + lift on hover.
+function ThumbButton({ cardId, title, onClick, h = 48 }: { cardId: string; title: string; onClick: () => void; h?: number }) {
+  return (
+    <button type="button" onClick={onClick} title={title} aria-label={title}
+      style={{ background: 'transparent', border: 0, padding: 0, lineHeight: 0, cursor: 'pointer', borderRadius: 3 }}
+      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 0 0 2px #4d9dff'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; }}>
+      <CardThumb cardId={cardId} isLeader h={h} />
+    </button>
+  );
 }
 const Win = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#4dd2ff', fontWeight: 700 }}>{children}</span>;
 const Muted = ({ children }: { children: React.ReactNode }) => <span style={{ color: '#a0a8b8' }}>{children}</span>;
