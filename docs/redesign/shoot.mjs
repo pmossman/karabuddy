@@ -44,6 +44,11 @@ for (const vp of VIEWPORTS) {
   await page.goto(`${BASE}/r/${slug}${suffix}`, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(3500); // board decode + render
+  // Optional: advance frames (STEPS=N env) so frame-dependent features (Game Log)
+  // have content. ArrowRight steps the viewer.
+  const steps = Number(process.env.STEPS || 0);
+  for (let s = 0; s < steps; s++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(40); }
+  if (steps) await page.waitForTimeout(500);
   // openSel may be several selectors separated by '|', clicked in sequence
   // (e.g. open the panel, then open the composer).
   for (const sel of openSel.split('|').map((s) => s.trim()).filter(Boolean)) {

@@ -1076,6 +1076,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
             replaySlug={replay.slug}
             toOriginalFrame={collapsedToOriginal}
             appendTag={(t) => setTagState((prev) => [...prev, t as any])}
+            messagesByFrame={activeDecoded?.messagesByFrame || null}
           />
         </KaraBuddyThemeProvider>
       )}
