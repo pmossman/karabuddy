@@ -129,3 +129,48 @@ so Parker can A/B vs the current viewer AND still use not-yet-migrated features
 
 **Next steps (priority):** 1. Matchup/Info feature (closes the gap). 2. Decks
 feature. 3. Reply composer on tag cards. 4. Final sweep + summary for Parker.
+
+---
+### Log: 2026-06-30 (overnight) — Matchup + Decks features; MVP COMPLETE (commits d68d390, + Decks)
+- **Matchup (Info)** (d68d390): reuses shared `<MatchupInfo>` (variant=panel) —
+  chips, editable title, leader/base thumbs, W/L, series + resourcing link.
+  Restores the player/leader/format context de-cluttering removed.
+- **Decks**: reuses canonical `<DecksTabs>` (player tabs, main/sideboard,
+  seen-during-play via lazy payload decode). No placeholder bubbles left.
+- Final all-ratios sweep (`shots/final-*`, `shots/final-open-*`): board + rail
+  clean at 390×844 / 844×390 / 768 / 1440; every feature opens full-screen on
+  mobile (portrait AND landscape read great) / docks on desktop.
+
+## ✅ MVP COMPLETE — morning summary for Parker
+
+**What it is:** one unified viewer chrome behind `?redesign=1`. A **bubble rail**
+(Tags 🏷 / Game Log 📜 / Matchup ⚔ / Decks 🃏) + a single **FeaturePanel** that
+**docks on desktop** (right of the board) and goes **full-screen on mobile** —
+the SAME component, no separate view-models. The old TagSidebar + mobile-sheet
+split is replaced; the board is de-cluttered (old matchup/clip/jump FABs gone
+under the flag; only frame-nav + playback remain).
+
+**Features (all work desktop + mobile, all 4 ratios):**
+- **Tags** — readable roomy cards (author, frame-jump, comment, scope, nested
+  replies) grouped This frame / Upcoming / Previous + **compose** ("+ Tag this
+  frame", with the signed-out sign-in gate). The cramped strip is gone.
+- **Game Log** — cumulative, current frame highlighted, player colors.
+- **Matchup** — chips, title, leader/base, W/L, series, resourcing link.
+- **Decks** — player tabs, main/sideboard, seen-during-play.
+
+**How to review:** `http://localhost:3006/r/r_euxnsk?redesign=1` (drop the flag
+for the current viewer to A/B). Screenshots in `docs/redesign/shots/`
+(`final-*` = clean default, `v2-open-*`/`matchup-*`/`decks-*`/`gamelog2-*` =
+each feature, `baseline-*` = current viewer). Branch `redesign/replay-viewer`,
+NOT shipped to prod.
+
+**Deliberately kept as a FLAG (not default):** lets you A/B and still use the old
+viewer's not-yet-migrated bits. Flip the default once you're happy.
+
+**Known follow-ups (not blocking):** reply composer on tag cards; the board
+"Initiative" pill grazes a rail bubble in some states; tablet (≤900px) uses the
+full-screen treatment — a "docked on tablet" mode could be nicer; migrate Clip +
+Jump-to-moment onto the rail (currently suppressed under the flag); @mentions +
+scope chip in the new composer (the old form had them).
+
+**Loop stopped here** — MVP criteria met. Resume points above if you want more.
