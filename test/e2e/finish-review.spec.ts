@@ -100,3 +100,29 @@ test('Reviews-tab "Finish review →" deep-links into the viewer and auto-opens 
 
   await ctx2.close();
 });
+
+test('mobile: Reviews-tab "Finish review →" deep-link still opens the summary (drawer starts closed)', async ({ page, browser, request }) => {
+  const { teamSlug, slug, page2, ctx2 } = await seedRequestedReview(page, browser, request);
+  // Phone-sized: the viewer's review drawer starts CLOSED here, so TagSidebar —
+  // which owns the ?finishReview auto-open — only mounts if the deep-link forces
+  // the drawer open. Regression guard for "Finish review does nothing on mobile".
+  await page2.setViewportSize({ width: 390, height: 844 });
+
+  await page2.goto(`/teams/${teamSlug}?tab=review`);
+  const queueBtn = page2.getByTestId(`mark-reviewed-${slug}`);
+  await expect(queueBtn).toContainText('Finish review');
+  await queueBtn.click();
+
+  await page2.waitForURL(new RegExp(`/r/${slug}`));
+  const modal = page2.getByRole('dialog', { name: /Finish review for Finish Squad/ });
+  await expect(modal).toBeVisible();
+  await expect(modal).toContainText('overextended into the sweep');
+  // Click Submit too — Playwright's actionability fails if the modal is obscured
+  // (z-index occlusion that toBeVisible wouldn't catch), so this exercises the
+  // whole mobile path, not just "is it in the DOM".
+  await modal.getByRole('button', { name: 'Submit review' }).click();
+  await expect(modal).toBeHidden();
+  await expect(page2.getByTestId(`viewer-finish-review-${teamSlug}`)).toContainText('Update review');
+
+  await ctx2.close();
+});

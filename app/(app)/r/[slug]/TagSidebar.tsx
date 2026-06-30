@@ -639,7 +639,8 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
           }}
         >
           {replies.map((r) => rowFor(r, false))}
-          {installToken && (open ? (
+          {/* Replies are account-gated too (same anonymous-comment trap). */}
+          {sessionUserId && (open ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <textarea
                 autoFocus
@@ -965,6 +966,21 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
         />
       )}
       <section style={{ padding: '14px 22px', borderBottom: '1px solid #2e333c', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Tagging is account-gated: a signed-out viewer can't leave anonymous
+            comments. Anonymous tags have no userId, so they can never become a
+            review (the review gate keys on tags.userId) — the trap that makes
+            "Finish review" look broken (comment signed out, then can't submit it
+            once signed in). Show a sign-in CTA that returns here instead. */}
+        {!sessionUserId ? (
+          <div data-testid="tag-signin-gate" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(77, 157, 255, 0.08)', border: '1px solid rgba(77, 157, 255, 0.3)', borderRadius: 6, textAlign: 'center' }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: '#cfe3ff' }}>Sign in to tag this replay</span>
+            <span style={{ fontSize: 11, color: '#8a93a6', lineHeight: 1.4 }}>Tags and reviews are tied to your account — sign in so your notes count and can be submitted as a review.</span>
+            <a data-testid="tag-signin-cta" href={`/signin?callbackUrl=${encodeURIComponent(`/r/${replay.slug}`)}`}
+              style={{ alignSelf: 'center', marginTop: 2, display: 'inline-block', background: 'rgba(77, 157, 255, 0.16)', color: '#9fc4ff', border: '1px solid rgba(77, 157, 255, 0.45)', borderRadius: 6, padding: '6px 16px', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>
+              Sign in →
+            </a>
+          </div>
+        ) : (<>
         {/* B34: "+ Tag this frame" gets its own line (full-width button) so
             it's the primary action above the tag list. Prev/Next tag nav
             moved out of here, into its own section below the tag display
@@ -1040,6 +1056,7 @@ export function TagSidebar({ replay, frames, currentIndex, lastTransition, onSte
             </div>
           </div>
         )}
+        </>)}
       </section>
 
       <section ref={tagListScrollRef} style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', padding: '14px 22px', borderTop: '1px solid #2e333c' }}>
