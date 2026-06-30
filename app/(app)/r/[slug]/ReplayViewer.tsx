@@ -1086,6 +1086,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               series: series ?? null,
               onOpenResourcing: () => setResourcingOpen(true),
             }}
+            decks={{
+              decks: decksForView,
+              localPlayerId: anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null),
+              payloadBlobUrl: replay.payloadBlobUrl,
+              replaySlug: replay.slug,
+            }}
           />
         </KaraBuddyThemeProvider>
       )}

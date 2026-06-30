@@ -6,6 +6,7 @@ import { FeaturePanel } from './FeaturePanel';
 import { TagsFeature, type ViewerTag } from './TagsFeature';
 import { GameLogFeature } from './GameLogFeature';
 import { MatchupFeature } from './MatchupFeature';
+import { DecksFeature } from './DecksFeature';
 
 // B216 redesign — the unified viewer chrome (gated behind ?redesign=1). Replaces
 // the old TagSidebar (desktop drawer) + mobile sheet system with ONE model:
@@ -19,10 +20,10 @@ const FEATURES: FeatureDef[] = [
   { id: 'tags', label: 'Tags', icon: '🏷' },
   { id: 'log', label: 'Game log', icon: '📜' },
   { id: 'info', label: 'Matchup', icon: '⚔' },
-  { id: 'decks', label: 'Decks', icon: '🃏', soon: true },
+  { id: 'decks', label: 'Decks', icon: '🃏' },
 ];
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -32,6 +33,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   appendTag: (t: ViewerTag) => void;
   messagesByFrame: any[][] | null;
   matchup: ComponentProps<typeof MatchupFeature>;
+  decks: ComponentProps<typeof DecksFeature>;
 }) {
   // Desktop opens Tags by default (parity with today's docked drawer); mobile
   // starts on the board (tap a bubble to open).
@@ -45,6 +47,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />;
     if (id === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
     if (id === 'info') return <MatchupFeature {...matchup} />;
+    if (id === 'decks') return <DecksFeature {...decks} />;
     return <ComingSoon label={FEATURES.find((f) => f.id === id)?.label ?? ''} />;
   };
 
