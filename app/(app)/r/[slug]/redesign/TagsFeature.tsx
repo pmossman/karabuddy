@@ -41,7 +41,7 @@ function relativeTime(iso: string): string {
   return new Date(t).toLocaleDateString();
 }
 
-function TagCard({ tag, replies, onJump, isCurrent }: { tag: ViewerTag; replies: ViewerTag[]; onJump: (frame: number) => void; isCurrent: boolean }) {
+function TagCard({ tag, replies, onJump, isCurrent, opacity = 1 }: { tag: ViewerTag; replies: ViewerTag[]; onJump: (frame: number) => void; isCurrent: boolean; opacity?: number }) {
   const color = authorColor(tag.authorName || 'anon');
   return (
     <div style={{
@@ -51,6 +51,7 @@ function TagCard({ tag, replies, onJump, isCurrent }: { tag: ViewerTag; replies:
       background: isCurrent ? 'rgba(77,210,255,0.06)' : tokens.color.surface,
       padding: '11px 13px',
       display: 'flex', flexDirection: 'column', gap: 7,
+      opacity,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flex: '0 0 auto' }} />
@@ -83,16 +84,19 @@ function TagCard({ tag, replies, onJump, isCurrent }: { tag: ViewerTag; replies:
   );
 }
 
-function Group({ label, count, tags, replyMap, onJump, currentIndex, dim }: {
+function Group({ label, count, tags, replyMap, onJump, currentIndex, dim, fade }: {
   label: string; count: number; tags: ViewerTag[]; replyMap: Map<string, ViewerTag[]>;
   onJump: (frame: number) => void; currentIndex: number; dim?: boolean;
+  // fade: away-from-current groups (Upcoming/Previous) fade gradually by rank so
+  // the current frame's tags stay the most prominent.
+  fade?: boolean;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: dim ? tokens.color.textFaint : tokens.color.textMuted }}>{label} {count > 0 && <span style={{ opacity: 0.7 }}>({count})</span>}</div>
       {tags.length === 0
         ? <div style={{ fontSize: 12, color: tokens.color.textFaint, fontStyle: 'italic' }}>Nothing here.</div>
-        : tags.map((t) => <TagCard key={t.id} tag={t} replies={replyMap.get(t.id) ?? []} onJump={onJump} isCurrent={t.frameIndex === currentIndex} />)}
+        : tags.map((t, i) => <TagCard key={t.id} tag={t} replies={replyMap.get(t.id) ?? []} onJump={onJump} isCurrent={t.frameIndex === currentIndex} opacity={fade ? Math.max(0.4, 1 - (i + 1) * 0.15) : 1} />)}
     </div>
   );
 }
@@ -195,8 +199,8 @@ export function TagsFeature({ tags, currentIndex, onJump, replaySlug, toOriginal
       ) : (
         <>
           {current.length > 0 && <Group label="This frame" count={current.length} tags={current} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} />}
-          <Group label="Upcoming" count={upcoming.length} tags={upcoming} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} />
-          <Group label="Previous" count={previous.length} tags={previous} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} dim />
+          <Group label="Upcoming" count={upcoming.length} tags={upcoming} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} fade />
+          <Group label="Previous" count={previous.length} tags={previous} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} dim fade />
         </>
       )}
     </div>

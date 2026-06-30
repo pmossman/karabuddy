@@ -312,6 +312,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // B216: Tag Mode owns tag-to-tag nav (its preview chips), so hide the board's
   // duplicate tag-jump buttons while it's active.
   const [tagMode, setTagMode] = useState(false);
+  // B216: width of the redesign's docked desktop panel (0 = closed), so the
+  // board chevrons/playback clear it instead of the old TagSidebar.
+  const [redesignDockW, setRedesignDockW] = useState(0);
   // B101: per-game resourcing report (analyzed client-side from decoded frames).
   const [resourcingOpen, setResourcingOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
@@ -1096,6 +1099,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               replaySlug: replay.slug,
             }}
             onTagModeChange={setTagMode}
+            onDockWidthChange={setRedesignDockW}
           />
         </KaraBuddyThemeProvider>
       )}
@@ -1174,8 +1178,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         //     review) pushes the right chevron + FABs inward past its left edge.
         const edgeR = 'max(8px, env(safe-area-inset-right, 8px))';
         const edgeB = 'max(12px, env(safe-area-inset-bottom, 12px))';
-        const rightSheetOpen = drawerOpen && (!isMobile || mobileLandscape);
-        const rightSheetW = isMobile ? `${reviewDrag.size}px` : `${sidebarWidth}px`;
+        // B216: in redesign mode the docked panel is RedesignChrome's (380px, with
+        // its own open state), not the old TagSidebar — position against THAT.
+        const drawerOpenEff = redesign ? redesignDockW > 0 : drawerOpen;
+        const sidebarWidthEff = redesign ? redesignDockW : sidebarWidth;
+        const rightSheetOpen = drawerOpenEff && (!isMobile || mobileLandscape);
+        const rightSheetW = isMobile ? `${reviewDrag.size}px` : `${sidebarWidthEff}px`;
         const chevRight = rightSheetOpen ? `calc(${rightSheetW} + 8px)` : 'max(8px, env(safe-area-inset-left, 8px))';
         const portraitLift = mobilePortrait && drawerOpen;
         const fabRight = mobileLandscape && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeR;
@@ -1228,8 +1236,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 speeds={PLAYBACK_SPEEDS as { label: string; value: number }[]}
                 onSetSpeed={setSpeedValue}
                 landscape
-                drawerOpen={drawerOpen}
-                drawerWidth={`${sidebarWidth}px`}
+                drawerOpen={drawerOpenEff}
+                drawerWidth={`${sidebarWidthEff}px`}
                 dragging={reviewDrag.dragging}
                 pulse={pulsePlay}
               />

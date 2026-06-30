@@ -24,7 +24,7 @@ const FEATURES: FeatureDef[] = [
   { id: 'decks', label: 'Decks', icon: '🃏' },
 ];
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks, onTagModeChange }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks, onTagModeChange, onDockWidthChange }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -36,6 +36,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   matchup: ComponentProps<typeof MatchupFeature>;
   decks: ComponentProps<typeof DecksFeature>;
   onTagModeChange?: (active: boolean) => void;
+  // Reports the desktop docked-panel width (0 when closed) so the board can
+  // position its chevrons/playback against the redesign panel, not the old one.
+  onDockWidthChange?: (w: number) => void;
 }) {
   // Desktop opens Tags by default (parity with today's docked drawer); mobile
   // starts on the board (tap a bubble to open).
@@ -54,6 +57,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const mobileFull = mode === 'mobile' && usable && !mobileTagMode;
   const desktopOpen = mode === 'desktop' && usable;
   useEffect(() => { onTagModeChange?.(mobileTagMode); }, [mobileTagMode, onTagModeChange]);
+  useEffect(() => { onDockWidthChange?.(desktopOpen ? 380 : 0); }, [desktopOpen, onDockWidthChange]);
   // The Tags icon summarises tags on the CURRENT frame (its minimised form).
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
