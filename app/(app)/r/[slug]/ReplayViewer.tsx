@@ -1077,6 +1077,15 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
             toOriginalFrame={collapsedToOriginal}
             appendTag={(t) => setTagState((prev) => [...prev, t as any])}
             messagesByFrame={activeDecoded?.messagesByFrame || null}
+            matchup={{
+              replay: replay as any,
+              matchMeta: replay.match ?? activeDecoded?.meta.match ?? null,
+              installToken,
+              isOwner,
+              anonymize,
+              series: series ?? null,
+              onOpenResourcing: () => setResourcingOpen(true),
+            }}
           />
         </KaraBuddyThemeProvider>
       )}

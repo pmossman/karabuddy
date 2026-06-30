@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, type ComponentProps } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { FeaturePanel } from './FeaturePanel';
 import { TagsFeature, type ViewerTag } from './TagsFeature';
 import { GameLogFeature } from './GameLogFeature';
+import { MatchupFeature } from './MatchupFeature';
 
 // B216 redesign — the unified viewer chrome (gated behind ?redesign=1). Replaces
 // the old TagSidebar (desktop drawer) + mobile sheet system with ONE model:
@@ -17,11 +18,11 @@ interface FeatureDef { id: FeatureId; label: string; icon: string; soon?: boolea
 const FEATURES: FeatureDef[] = [
   { id: 'tags', label: 'Tags', icon: '🏷' },
   { id: 'log', label: 'Game log', icon: '📜' },
-  { id: 'info', label: 'Matchup', icon: '⚔', soon: true },
+  { id: 'info', label: 'Matchup', icon: '⚔' },
   { id: 'decks', label: 'Decks', icon: '🃏', soon: true },
 ];
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -30,6 +31,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   toOriginalFrame: (i: number) => number;
   appendTag: (t: ViewerTag) => void;
   messagesByFrame: any[][] | null;
+  matchup: ComponentProps<typeof MatchupFeature>;
 }) {
   // Desktop opens Tags by default (parity with today's docked drawer); mobile
   // starts on the board (tap a bubble to open).
@@ -42,6 +44,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const renderBody = (id: FeatureId): ReactNode => {
     if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />;
     if (id === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
+    if (id === 'info') return <MatchupFeature {...matchup} />;
     return <ComingSoon label={FEATURES.find((f) => f.id === id)?.label ?? ''} />;
   };
 
