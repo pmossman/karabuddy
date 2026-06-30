@@ -11,13 +11,19 @@
 // audiences can never leak into each other. Aggregation is plain SQL via the
 // drizzle query builder (portable across neon / pg / pglite).
 
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, isNotNull, notInArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
 import { matchPlayers, matches, replays, cardEvents, cards } from './schema';
 
 export type StatsScope =
   | { kind: 'personal'; userId: string }
+  // global: the WHOLE meta — every recorder's side across all uploads, minus
+  // users who opted out of global stats (users.exclude_from_global_stats).
+  // Encrypted (private-team) replays never produce facts, so they're already
+  // absent. Admin-gated at the route today; built to be public-safe (aggregate-
+  // only — the route refuses per-replay drill-in for this scope).
+  | { kind: 'global'; excludedUserIds: string[] }
   // restrictGameIds: the team's eligible GAMEIDS for this view (team-member
   // recorded + ≥1 sibling shared with the team), already split internal /
   // external / all by the caller via teamGameIds. Filtering by gameId — not a
@@ -96,6 +102,14 @@ function baseIdentityCols(bc: ReturnType<typeof alias>) {
 // — an empty set means "no games" (always-false).
 function scopePredicate(scope: StatsScope) {
   if (scope.kind === 'personal') return eq(replays.userId, scope.userId);
+  if (scope.kind === 'global') {
+    // All uploads, minus opted-out users. Anonymous uploads (null userId) have
+    // no account to opt out → kept. (`x NOT IN (...)` is null on null x, so the
+    // explicit isNull is required to include them.)
+    return scope.excludedUserIds.length
+      ? or(isNull(replays.userId), notInArray(replays.userId, scope.excludedUserIds))
+      : sql`true`;
+  }
   if (scope.restrictGameIds.length === 0) return sql`false`;
   return inArray(matches.gameId, scope.restrictGameIds);
 }
@@ -109,7 +123,9 @@ function scopePredicate(scope: StatsScope) {
 // internal game. For an EXTERNAL game the opponent is an outsider and is dropped —
 // this is the fix for team stats counting the opponent's leader as one you played.
 const perspectiveCond = (scope: StatsScope) =>
-  scope.kind === 'personal'
+  scope.kind === 'personal' || scope.kind === 'global'
+    // Global counts each recorder's side; a co-recorded game contributes BOTH
+    // sides (one isRecorder row each) — correct for a directed matchup matrix.
     ? eq(matchPlayers.isRecorder, true)
     : scope.internalGameIds.length
       ? or(eq(matchPlayers.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))

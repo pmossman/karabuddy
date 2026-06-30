@@ -106,8 +106,29 @@ describe('getLeaderStats — scope isolation', () => {
     expect(m.L3).toBeUndefined();
   });
 
-  // Global/community scope was removed — karabuddy is team-internal only, with
-  // no userbase-wide aggregate (see lib/statsQuery). Personal + team only.
+  // Global = the WHOLE meta: every recorder's side across all uploads, minus
+  // opted-out users (anonymous uploads kept). Admin-gated at the route.
+  it('global aggregates every recorder side across users, EXCLUDING opted-out (anonymous kept)', async () => {
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'global', excludedUserIds: [userB] } }));
+    // userA's 2 L1 games (1W/1L) + the anonymous L1 win = 3 games / 2 wins.
+    // userB (opted out) also played L1 — must be dropped.
+    expect(m.L1.games).toBe(3);
+    expect(m.L1.wins).toBe(2);
+    expect(m.L1.winRate).toBeCloseTo(2 / 3);
+    // recorder side only — opponents' leaders (L2/L3) aren't the meta's "played" leaders here.
+    expect(m.L2).toBeUndefined();
+    expect(m.L3).toBeUndefined();
+  });
+
+  it('global with no exclusions WOULD include the opted-out user (proves the opt-out filter)', async () => {
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'global', excludedUserIds: [] } }));
+    expect(m.L1.games).toBe(4); // now userB's L1 game is counted too
+  });
+
+  it('global min-N gates low-sample rows', async () => {
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'global', excludedUserIds: [userB] }, minGames: 4 }));
+    expect(m.L1).toBeUndefined(); // 3 global games < 4
+  });
 
   it('team EXTERNAL game = the member’s leader only, never the outsider’s', async () => {
     // game1 (userA vs an outsider, single recorder) is EXTERNAL. Team stats must

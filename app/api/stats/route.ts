@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { teamMembers } from '@/lib/schema';
+import { teamMembers, users } from '@/lib/schema';
+import { auth } from '@/auth';
+import { isAdmin } from '@/lib/admin';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
 import { teamGameIds } from '@/lib/teamSurface';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, getEntityReplays, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
@@ -27,7 +29,7 @@ const TYPES = new Set(['leaders', 'matchups', 'decks', 'resourcing', 'cards', 'r
 
 interface StatsKey {
   type: string;
-  scopeKind: 'personal' | 'team';
+  scopeKind: 'personal' | 'team' | 'global';
   userId: string | null;
   teamSlug: string | null;
   games: string;
@@ -45,6 +47,9 @@ const computeStats = cachedRead(
     let scope: StatsScope;
     if (k.scopeKind === 'personal') {
       scope = { kind: 'personal', userId: k.userId! };
+    } else if (k.scopeKind === 'global') {
+      const optedOut = await getDb().select({ id: users.id }).from(users).where(eq(users.excludeFromGlobalStats, true));
+      scope = { kind: 'global', excludedUserIds: optedOut.map((u) => u.id) };
     } else {
       const sets = await teamGameIds(k.teamSlug!);
       const restrictGameIds = k.games === 'external' ? sets.external : k.games === 'all' ? [...sets.internal, ...sets.external] : sets.internal;
@@ -58,7 +63,9 @@ const computeStats = cachedRead(
       case 'decks': return getDecks({ ...opts, leader: k.leader });
       case 'resourcing': return getResourcingGames(opts);
       case 'cards': return getCardStats({ ...opts, event: k.event, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect, opponentLeader: k.opponentLeader });
-      case 'replays': return getEntityReplays({ ...opts, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect, opponentLeader: k.opponentLeader });
+      // Global is aggregate-only — never expose individual replays meta-wide
+      // (public-safety; they're other users'). The UI hides "recent games" too.
+      case 'replays': return k.scopeKind === 'global' ? [] : getEntityReplays({ ...opts, leader: k.leader, baseId: k.baseId, baseAspect: k.baseAspect, opponentLeader: k.opponentLeader });
       default: return getLeaderStats(opts);
     }
   },
@@ -72,8 +79,8 @@ export async function GET(req: Request) {
   const scopeKind = url.searchParams.get('scope') || 'personal';
   const format = url.searchParams.get('format') || null;
 
-  if (scopeKind !== 'personal' && scopeKind !== 'team') {
-    return NextResponse.json({ ok: false, error: 'global stats are disabled; use scope=personal or scope=team' }, { status: 400 });
+  if (scopeKind !== 'personal' && scopeKind !== 'team' && scopeKind !== 'global') {
+    return NextResponse.json({ ok: false, error: 'bad scope' }, { status: 400 });
   }
   if (!TYPES.has(type)) return NextResponse.json({ ok: false, error: 'bad type' }, { status: 400 });
   const event = (url.searchParams.get('event') || 'played') as CardEventKind;
@@ -85,6 +92,9 @@ export async function GET(req: Request) {
   let games = 'internal';
   if (scopeKind === 'personal') {
     if (!userId) return NextResponse.json({ ok: false, error: 'not signed in' }, { status: 401 });
+  } else if (scopeKind === 'global') {
+    // Whole-meta aggregate — admin-only for now (built to go public later).
+    if (!isAdmin(await auth())) return NextResponse.json({ ok: false, error: 'admin only' }, { status: 403 });
   } else {
     teamSlug = url.searchParams.get('team');
     if (!teamSlug) return NextResponse.json({ ok: false, error: 'team slug required' }, { status: 400 });
@@ -101,7 +111,8 @@ export async function GET(req: Request) {
   }
 
   const data = await computeStats({
-    type, scopeKind, userId: userId ?? null, teamSlug, games, format,
+    // Global data is user-independent → null userId so all admins share its cache.
+    type, scopeKind, userId: scopeKind === 'global' ? null : (userId ?? null), teamSlug, games, format,
     byBase: url.searchParams.get('byBase') === '1',
     event,
     leader: url.searchParams.get('leader') || null,
