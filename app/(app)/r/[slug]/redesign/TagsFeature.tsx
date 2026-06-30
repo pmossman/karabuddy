@@ -105,8 +105,8 @@ function Group({ label, count, tags, replyMap, onJump, currentIndex, dim, fade }
 // gate we ship in prod (anonymous tags can't become reviews). Signed-in → a
 // textarea that POSTs and optimistically appends (in ORIGINAL frame space, so
 // the viewer's collapsed-frame remap places it correctly — mirrors TagSidebar).
-function Composer({ replaySlug, currentIndex, toOriginalFrame, appendTag }: {
-  replaySlug: string; currentIndex: number; toOriginalFrame: (i: number) => number; appendTag: (t: ViewerTag) => void;
+function Composer({ replaySlug, currentIndex, toOriginalFrame, appendTag, canTag }: {
+  replaySlug: string; currentIndex: number; toOriginalFrame: (i: number) => number; appendTag: (t: ViewerTag) => void; canTag: boolean;
 }) {
   const { data: session } = useSession();
   const userId = (session?.user as { id?: string } | undefined)?.id || null;
@@ -115,6 +115,11 @@ function Composer({ replaySlug, currentIndex, toOriginalFrame, appendTag }: {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Entitlement gate: an anonymized viewer (not the owner / a teammate / shared
+  // with their team) can't SEE tags here, so they shouldn't add orphan ones.
+  if (!canTag) {
+    return <div style={{ fontSize: 11.5, color: tokens.color.textMuted, textAlign: 'center', padding: '8px 4px', fontStyle: 'italic' }}>Tagging is for this replay’s owner and their teams.</div>;
+  }
   if (!userId) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: tokens.color.primarySoft, border: `1px solid rgba(77,157,255,0.3)`, borderRadius: 8, textAlign: 'center' }}>
@@ -168,13 +173,14 @@ function Composer({ replaySlug, currentIndex, toOriginalFrame, appendTag }: {
   );
 }
 
-export function TagsFeature({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag }: {
+export function TagsFeature({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, canTag }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
   replaySlug: string;
   toOriginalFrame: (i: number) => number;
   appendTag: (t: ViewerTag) => void;
+  canTag: boolean;
 }) {
   const { current, upcoming, previous, replyMap, total } = useMemo(() => {
     const top = tags.filter((t) => !t.parentTagId);
@@ -193,9 +199,9 @@ export function TagsFeature({ tags, currentIndex, onJump, replaySlug, toOriginal
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '14px 14px 28px' }}>
-      <Composer replaySlug={replaySlug} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />
+      <Composer replaySlug={replaySlug} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag} />
       {total === 0 ? (
-        <div style={{ padding: '20px 0', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13 }}>No tags on this replay yet — add the first above.</div>
+        <div style={{ padding: '20px 0', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13 }}>{canTag ? 'No tags on this replay yet — add the first above.' : 'No tags visible on this replay.'}</div>
       ) : (
         <>
           {current.length > 0 && <Group label="This frame" count={current.length} tags={current} replyMap={replyMap} onJump={onJump} currentIndex={currentIndex} />}

@@ -1100,6 +1100,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
             }}
             onTagModeChange={setTagMode}
             onDockWidthChange={setRedesignDockW}
+            canTag={!anonymize}
           />
         </KaraBuddyThemeProvider>
       )}

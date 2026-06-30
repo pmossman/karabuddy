@@ -24,7 +24,7 @@ const FEATURES: FeatureDef[] = [
   { id: 'decks', label: 'Decks', icon: '🃏' },
 ];
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks, onTagModeChange, onDockWidthChange }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks, onTagModeChange, onDockWidthChange, canTag }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -39,6 +39,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Reports the desktop docked-panel width (0 when closed) so the board can
   // position its chevrons/playback against the redesign panel, not the old one.
   onDockWidthChange?: (w: number) => void;
+  // false for an anonymized viewer (not owner/teammate/shared) — gates compose.
+  canTag: boolean;
 }) {
   // Desktop opens Tags by default (parity with today's docked drawer); mobile
   // starts on the board (tap a bubble to open).
@@ -62,7 +64,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
   const renderBody = (id: FeatureId): ReactNode => {
-    if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />;
+    if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag} />;
     if (id === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
     if (id === 'info') return <MatchupFeature {...matchup} />;
     if (id === 'decks') return <DecksFeature {...decks} />;
@@ -87,14 +89,14 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
         <TagReadMode
           tags={tags} currentIndex={currentIndex} onJump={onJump}
           onClose={() => setOpen(null)} onOpenList={() => setTagsList(true)}
-          replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag}
+          replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag}
         />
       )}
 
       {/* Full-screen mobile overlay: a non-Tags feature, or the Tags scan list. */}
       {mobileFull && (open === 'tags' ? (
         <FeaturePanel open mode="mobile" title="All tags" icon="🏷" onClose={() => setTagsList(false)}>
-          <TagsFeature tags={tags} currentIndex={currentIndex} onJump={(f) => { onJump(f); setTagsList(false); }} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />
+          <TagsFeature tags={tags} currentIndex={currentIndex} onJump={(f) => { onJump(f); setTagsList(false); }} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag} />
         </FeaturePanel>
       ) : (
         <FeaturePanel open mode="mobile" title={active?.label ?? ''} icon={active?.icon} onClose={() => setOpen(null)}>

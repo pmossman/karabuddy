@@ -13,7 +13,7 @@ import { useCreateTag, SignInToTagCta } from './tagCompose';
 
 const truncate = (s: string, n = 22) => { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 
-export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, replaySlug, toOriginalFrame, appendTag }: {
+export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, replaySlug, toOriginalFrame, appendTag, canTag }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
@@ -22,6 +22,7 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
   replaySlug: string;
   toOriginalFrame: (i: number) => number;
   appendTag: (t: ViewerTag) => void;
+  canTag: boolean;
 }) {
   const top = useMemo(() => tags.filter((t) => !t.parentTagId).sort((a, b) => a.frameIndex - b.frameIndex), [tags]);
   const here = useMemo(() => top.filter((t) => t.frameIndex === currentIndex), [top, currentIndex]);
@@ -84,7 +85,7 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
 
           <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
             {here.length === 0 ? (
-              <div style={{ padding: '16px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 12.5 }}>No tag on this frame — jump to one above, or add one below.</div>
+              <div style={{ padding: '16px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 12.5 }}>No tag on this frame{(prev || next) ? ' — jump to one above' : ''}{canTag ? ', or add one below.' : '.'}</div>
             ) : here.map((t) => (
               <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '10px 12px', borderTop: `1px solid ${tokens.color.border}` }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#e8ecf3' }}>{t.authorName || 'Anonymous'}</div>
@@ -98,7 +99,7 @@ export function TagReadMode({ tags, currentIndex, onJump, onClose, onOpenList, r
               </div>
             ))}
           </div>
-          <ComposeFooter replaySlug={replaySlug} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} appendTag={appendTag} />
+          <ComposeFooter replaySlug={replaySlug} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag} />
         </div>
       </div>
     </div>
@@ -122,8 +123,8 @@ function NavBtn({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | 
   );
 }
 
-function ComposeFooter({ replaySlug, currentIndex, toOriginalFrame, appendTag }: {
-  replaySlug: string; currentIndex: number; toOriginalFrame: (i: number) => number; appendTag: (t: ViewerTag) => void;
+function ComposeFooter({ replaySlug, currentIndex, toOriginalFrame, appendTag, canTag }: {
+  replaySlug: string; currentIndex: number; toOriginalFrame: (i: number) => number; appendTag: (t: ViewerTag) => void; canTag: boolean;
 }) {
   const { signedIn, authorName, create } = useCreateTag(replaySlug, toOriginalFrame, appendTag);
   const [open, setOpen] = useState(false);
@@ -132,6 +133,8 @@ function ComposeFooter({ replaySlug, currentIndex, toOriginalFrame, appendTag }:
   const submit = async () => { if (busy || !draft.trim()) return; setBusy(true); const ok = await create(currentIndex, draft); setBusy(false); if (ok) { setDraft(''); setOpen(false); } };
 
   const border = `1px solid ${tokens.color.border}`;
+  // Entitlement gate (matches the list composer): anonymized viewers can't tag.
+  if (!canTag) return <div style={{ flex: '0 0 auto', borderTop: border, padding: '10px', fontSize: 11.5, color: tokens.color.textMuted, textAlign: 'center', fontStyle: 'italic' }}>Tagging is for this replay’s owner and their teams.</div>;
   if (!signedIn) return <div style={{ flex: '0 0 auto', borderTop: border, padding: 10 }}><SignInToTagCta replaySlug={replaySlug} compact /></div>;
   if (!open) {
     return (
