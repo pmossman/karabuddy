@@ -174,3 +174,21 @@ Jump-to-moment onto the rail (currently suppressed under the flag); @mentions +
 scope chip in the new composer (the old form had them).
 
 **Loop stopped here** — MVP criteria met. Resume points above if you want more.
+
+---
+### Log: 2026-06-30 — Tag Mode (interactive feel iteration with Parker)
+Mobile tag UX evolved from the full-screen list into a board-visible "Tag Mode":
+- Floating, draggable bubble over a visible board; clamped on-screen (can't fling
+  off); compose lives IN the bubble (footer), not an orphaned pencil.
+- Prev/next tagged-frame nav moved INSIDE the panel (preview row under header).
+- UNIFIED: the rail Tags icon IS the minimised panel — shows a current-frame tag
+  COUNT badge; tap expands the floating window; ✕ collapses back. No separate
+  tuck tab / edge chips.
+- Desktop keeps the docked side-panel (board visible alongside); count badge on
+  the icon there too.
+- Fixes: desktop chevron/playback now position against the redesign dock width
+  (RedesignChrome reports it) not the old TagSidebar; Upcoming/Previous sidebar
+  tags fade by rank so the current frame stays prominent.
+Files: redesign/TagReadMode.tsx, tagCompose.tsx (shared compose hook+CTA),
+RedesignChrome.tsx, TagsFeature.tsx, ReplayViewer.tsx. Branch only; not shipped.
+OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
