@@ -16,7 +16,7 @@ import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
 // user + their teams only — no global/community aggregate. /api/stats does the
 // work; cardId→name via /api/cards.
 
-type Scope = 'personal' | 'team' | 'global';
+type Scope = 'personal' | 'team';
 type View = 'leaders' | 'matchups' | 'cards' | 'resourcing';
 type CardEvent = 'played' | 'drawn' | 'resourced' | 'discarded';
 const FORMATS = [['', 'All formats'], ['premier', 'Premier'], ['eternal', 'Eternal'], ['open', 'Open'], ['limited', 'Limited']] as const;
@@ -285,13 +285,11 @@ export function StatsClient({
       : { maxWidth: 940, margin: '0 auto', padding: '24px 16px 64px', color: '#e6e6e6', fontFamily: 'var(--font-barlow), sans-serif' }}>
       {!embedded && (
         <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 4px', color: '#fff' }}>
-          {scope === 'global' ? 'Meta' : scope === 'team' ? 'Team' : 'My'} <span style={{ color: '#4dd2ff' }}>Stats</span>
+          {scope === 'team' ? 'Team' : 'My'} <span style={{ color: '#4dd2ff' }}>Stats</span>
         </h1>
       )}
       <p style={{ color: '#6c7588', fontSize: 13, margin: embedded ? '0 0 14px' : '0 0 18px' }}>
-        {scope === 'global'
-          ? 'Leader matchups and card stats across every recorded game in the meta. Win rates over games with a result; every figure shows its sample size.'
-          : scope === 'team'
+        {scope === 'team'
           ? `Leader matchups and card stats across ${teamName ? `${teamName}’s` : 'your team’s'} recorded games. Win rates over games with a result; every figure shows its sample size.`
           : 'Your leader matchups and card stats for the decks you play. Win rates over games with a recorded result; every figure shows its sample size.'}
       </p>
@@ -366,7 +364,7 @@ export function StatsClient({
             )}
             <Field orientation="row" label="Win rate when"><Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} /></Field>
             {RECORDER_SIDE[event] && (
-              <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>{scope === 'global' ? 'recorder side only' : 'your side only'}</span>
+              <span title="Drawn and resourced cards are only observable for the recorder of each game." style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#e0c64a' }}>your side only</span>
             )}
             <Field orientation="row" label="Sort"><Segmented options={[['games', 'Most played'], ['winrate', 'Best win %']]} value={cardSort} onChange={(v) => setCardSort(v as any)} /></Field>
             <Field orientation="row" label="Search"><input value={cardSearch} onChange={(e) => setCardSearch(e.target.value)} placeholder="Search cards…" type="search" style={{ background: '#11141a', color: '#e6e6e6', border: '1px solid #2e333c', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', minWidth: 140 }} /></Field>
@@ -391,12 +389,7 @@ export function StatsClient({
 
       {view === 'resourcing' && (
         <p style={{ color: '#6c7588', fontSize: 12, margin: '14px 0 0' }}>
-          {scope === 'global'
-            ? 'How tightly players spend resources, across the meta — recorder side only, since an opponent’s resource use isn’t observable. '
-            : scope === 'team'
-            ? 'How tightly your team spends resources, from your team’s games. '
-            : 'How tightly you spend resources, from your own games. '}
-          Efficiency = resources spent ÷ resources available, excluding rounds the player claimed initiative and the game-deciding round. Higher is better.
+          How tightly you spend resources, from your own games. Efficiency = resources spent ÷ resources you had, excluding rounds you claimed initiative and the game-deciding round. Higher is better.
         </p>
       )}
 
@@ -542,7 +535,7 @@ function LeaderDetail({ leader, baseKey, baseQs, scope, teamName, nm, subs, reso
         )}
 
       {/* Recent games on this leader → the replay viewer. */}
-      {scope !== 'global' && <RecentGames replays={replays} />}
+      <RecentGames replays={replays} />
     </div>
   );
 }
@@ -637,7 +630,7 @@ function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveN
                 <FilterChip key={c.key} label={c.label} onClear={c.onClear} title="Clear"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(77,157,255,0.12)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.3)', borderRadius: 14, padding: '4px 10px' }} />
               ))}
-              {RECORDER_SIDE[event] && <span title="Drawn/resourced are only observable for the recorder." style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#e0c64a' }}>{scope === 'global' ? 'recorder side' : 'your side'}</span>}
+              {RECORDER_SIDE[event] && <span title="Drawn/resourced are only observable for the recorder." style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#e0c64a' }}>your side</span>}
             </div>
             {filtersOpen && (
               <div style={filtersPanel}>
@@ -655,7 +648,7 @@ function MatchupDetail({ leader, vs, baseQs, scope, teamName, nm, subs, resolveN
         : <div style={{ marginBottom: 24 }}><CardGrid cards={cardRows} event={event} nm={nm} /></div>}
 
       {/* The matchup's recent games → the replay viewer. */}
-      {scope !== 'global' && <RecentGames replays={replays} />}
+      <RecentGames replays={replays} />
     </div>
   );
 }
@@ -689,7 +682,7 @@ function RecentGames({ replays }: { replays: any[] | null }) {
 // Possessive subject for the "whose games are these" cue, folded into the record
 // copy: personal stats are strictly YOUR recorded side (isRecorder), team stats
 // are the team's games. Keeps the perspective clear without a dedicated info box.
-const subjectPoss = (scope: Scope, teamName?: string) => (scope === 'global' ? 'the meta’s' : scope === 'team' ? `${teamName || 'your team'}’s` : 'your');
+const subjectPoss = (scope: Scope, teamName?: string) => (scope === 'team' ? `${teamName || 'your team'}’s` : 'your');
 
 const dim: React.CSSProperties = { color: '#6c7588', fontStyle: 'italic', padding: '32px 0', textAlign: 'center' };
 const filtersPanel: React.CSSProperties = { marginTop: 10, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid #1c2128', borderRadius: 10, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' };

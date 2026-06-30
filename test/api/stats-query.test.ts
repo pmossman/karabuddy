@@ -6,12 +6,11 @@ import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatch
 import { teamGameIds } from '@/lib/teamSurface';
 
 // B101/P1: the scoping + aggregation layer. These tests double as the privacy
-// QA — they pin that personal/team/global never leak into each other, that an
-// opted-out uploader is excluded from global, and that min-N gates global rows.
+// QA — they pin that personal and team scopes never leak into each other.
 
 const id = () => randomUUID();
 let userA: string;
-let userB: string; // opted out of global
+let userB: string; // a second, unrelated user — for scope-isolation checks
 
 async function seedUser(optedOut = false) {
   const uid = id();
@@ -62,7 +61,7 @@ async function seedMatch(opts: {
 beforeEach(async () => {
   const db = getDb();
   userA = await seedUser(false);
-  userB = await seedUser(true); // opted OUT of global
+  userB = await seedUser(false);
   await db.insert(teams).values({ slug: 'tT', name: 'Team T', createdBy: userA });
   await db.insert(teamMembers).values({ teamSlug: 'tT', userId: userA, role: 'owner' });
 
@@ -86,10 +85,6 @@ beforeEach(async () => {
     gameId: 'q-' + id().slice(0, 6), userId: userA, p1: { leader: 'L1', won: false, base: 'B_VIG' }, p2: { leader: 'L2', won: true, base: 'B_VIG' },
     events: [{ side: 'p1', cardId: 'C1', event: 'drawn' }],
   });
-  // userB (opted out): L1 wins vs L3 — must NOT appear in global.
-  await seedMatch({ gameId: 'q-' + id().slice(0, 6), userId: userB, p1: { leader: 'L1', won: true }, p2: { leader: 'L3', won: false } });
-  // anonymous upload: L1 wins vs L3 — included in global (no user to opt out).
-  await seedMatch({ gameId: 'q-' + id().slice(0, 6), userId: null, p1: { leader: 'L1', won: true }, p2: { leader: 'L3', won: false } });
 });
 
 const byLeader = (rows: { leader: string }[]) => Object.fromEntries(rows.map((r) => [r.leader, r])) as Record<string, any>;
@@ -104,43 +99,6 @@ describe('getLeaderStats — scope isolation', () => {
     // of userA's own leader stats. (Personal scope = the recorder's row only.)
     expect(m.L2).toBeUndefined();
     expect(m.L3).toBeUndefined();
-  });
-
-  // Global = the WHOLE meta: BOTH sides of every game across all uploads, minus
-  // opted-out users (anonymous uploads kept). Admin-gated at the route.
-  it('global aggregates BOTH sides of every game, EXCLUDING opted-out users (anonymous kept)', async () => {
-    const m = byLeader(await getLeaderStats({ scope: { kind: 'global', excludedUserIds: [userB] } }));
-    // L1 is the recorder side in every seeded game; userB's (opted-out) L1 game
-    // is dropped → userA's 2 games + the anonymous game = 3 games, 2 wins.
-    expect(m.L1.games).toBe(3);
-    expect(m.L1.wins).toBe(2);
-    // BOTH sides count now, so the OPPONENTS' leaders appear too: L2 (userA's two
-    // games' opponent — 1 loss + 1 win) and L3 (anon's opponent — 1 loss). userB's
-    // whole game (its L1 and L3 sides) is excluded by the opt-out.
-    expect(m.L2.games).toBe(2); expect(m.L2.wins).toBe(1);
-    expect(m.L3.games).toBe(1); expect(m.L3.wins).toBe(0);
-  });
-
-  it('global matchup matrix is SYMMETRIC — cell(A,B) and cell(B,A) are complementary', async () => {
-    const rows = await getLeaderMatchups({ scope: { kind: 'global', excludedUserIds: [userB] } });
-    const cell = (a: string, b: string) => rows.find((r) => r.leader === a && r.opponentLeader === b);
-    const ab = cell('L1', 'L2'); const ba = cell('L2', 'L1');
-    expect(ab && ba).toBeTruthy();
-    // Same games seen from each side: equal counts, and each decisive game has
-    // exactly one winning side → wins sum to the game count, win rates to 1.
-    expect(ab!.games).toBe(ba!.games);
-    expect(ab!.wins + ba!.wins).toBe(ab!.games);
-    expect((ab!.winRate ?? 0) + (ba!.winRate ?? 0)).toBeCloseTo(1);
-  });
-
-  it('global with no exclusions WOULD include the opted-out user (proves the opt-out filter)', async () => {
-    const m = byLeader(await getLeaderStats({ scope: { kind: 'global', excludedUserIds: [] } }));
-    expect(m.L1.games).toBe(4); // now userB's L1 game is counted too
-  });
-
-  it('global min-N gates low-sample rows', async () => {
-    const m = byLeader(await getLeaderStats({ scope: { kind: 'global', excludedUserIds: [userB] }, minGames: 4 }));
-    expect(m.L1).toBeUndefined(); // 3 global games < 4
   });
 
   it('team EXTERNAL game = the member’s leader only, never the outsider’s', async () => {
@@ -288,17 +246,6 @@ describe('getCardStats', () => {
       const ids = (await getCardStats({ scope, event: 'played' })).map((r) => r.cardId);
       expect(ids).toContain('IA'); // recorder side
       expect(ids).toContain('IB'); // teammate (non-recorder) side counts in an internal game
-    });
-
-    it('global counts BOTH sides of a board-visible event (the whole-meta board)', async () => {
-      await seedMatch({
-        gameId: 'gg-' + id().slice(0, 6), userId: null, // anonymous → included in global
-        p1: { leader: 'LM', won: true }, p2: { leader: 'LO', won: false },
-        events: [{ side: 'p1', cardId: 'GM', event: 'played' }, { side: 'p2', cardId: 'GO', event: 'played' }],
-      });
-      const ids = (await getCardStats({ scope: { kind: 'global', excludedUserIds: [userB] }, event: 'played' })).map((r) => r.cardId);
-      expect(ids).toContain('GM');
-      expect(ids).toContain('GO'); // both board plays are real meta data points
     });
   });
 });

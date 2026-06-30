@@ -21,19 +21,13 @@ async function seedUser() {
 }
 
 describe('GET /api/stats — scope authorization', () => {
-  it('global (whole-meta) stats are admin-only — 403 for a non-admin, 200 for an admin', async () => {
-    // A signed-in non-admin can't see the meta.
+  it('global (whole-meta) scope is not exposed — rejected as a bad scope, for everyone', async () => {
+    // The userbase-wide aggregate was removed for privacy (it shouldn't be reachable
+    // by anyone, including admins). `scope=global` is now rejected like any unknown
+    // scope — no admin gate, no data path.
     as(await seedUser());
-    expect((await GET(req('type=leaders&scope=global'))).status).toBe(403);
-    // An admin (email in KARABUDDY_ADMIN_EMAILS) can.
-    process.env.KARABUDDY_ADMIN_EMAILS = 'boss@e.com';
-    vi.mocked(auth).mockResolvedValue({ user: { id: randomUUID(), email: 'boss@e.com' } } as any);
-    expect((await GET(req('type=leaders&scope=global'))).status).toBe(200);
-    // Global is aggregate-only: per-replay drill-in is refused (empty, not exposed).
-    const replays = await (await GET(req('type=replays&scope=global&leader=L1'))).json();
-    expect(replays.data).toEqual([]);
-    delete process.env.KARABUDDY_ADMIN_EMAILS;
-    // No scope param defaults to personal (not global), so it needs a session.
+    expect((await GET(req('type=leaders&scope=global'))).status).toBe(400);
+    // No scope param defaults to personal, so it still needs a session.
     as(null);
     expect((await GET(req('type=leaders'))).status).toBe(401);
   });
