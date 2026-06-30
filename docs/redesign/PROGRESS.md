@@ -98,3 +98,34 @@
 
 **Resume:** dev server :3006 (KARABUDDY_TEST_API=1). Shoot:
 `node docs/redesign/shoot.mjs r_euxnsk user162@example.com <label> "?redesign=1" 'button[aria-label="Tags"]' mobile-portrait`
+
+---
+### Log: 2026-06-30 (overnight) — de-clutter + composer + Game Log (commits b63a015, 8ee10cb, 3e21835)
+**Done this loop:**
+- **De-clutter** (b63a015): under ?redesign=1, suppressed old board FABs that
+  become rail features (matchup ⓘ, Clip ✂, Jump-to) + old mobile sheets
+  (MatchupPanel, backdrop). Kept frame-nav chevrons + tag-jump, playback, Pov.
+  Rail moved to cleared top-right. Board reads much cleaner ✅.
+- **Tag composer** (8ee10cb): "+ Tag this frame" → textarea → POST + optimistic
+  append (original-frame space; viewer remaps). Signed-out = the prod sign-in
+  gate. Verified desktop + mobile (`shots/compose-*`).
+- **Game Log** (3e21835): second real rail feature — cumulative log, current
+  frame highlighted, player colors; full-screen mobile / docked desktop. Verified
+  at frame ~45 (`shots/gamelog2-*`).
+
+**State:** rail has Tags + Game Log live; Matchup(⚔)/Decks(🃏) still placeholder.
+Tags = read + compose. System (rail + FeaturePanel docking/full-screen) proven
+across desktop + mobile.
+
+**IMPORTANT GAP I created:** suppressing the old matchup FAB + the TagSidebar
+header removed ALL matchup/player context under the flag (no players/leaders/W-L/
+format shown). → NEXT priority: build a **Matchup (Info) feature** (players +
+leaders + base + W/L + format; reuse matchMeta + replay.players + decks). Then
+Decks feature. Then final all-ratios sweep.
+
+**Default flip decision (judgment):** keep `?redesign=1` as a FLAG (not default)
+so Parker can A/B vs the current viewer AND still use not-yet-migrated features
+(Clip/Decks/Matchup) via the old viewer. Revisit once all features are migrated.
+
+**Next steps (priority):** 1. Matchup/Info feature (closes the gap). 2. Decks
+feature. 3. Reply composer on tag cards. 4. Final sweep + summary for Parker.
