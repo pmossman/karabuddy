@@ -13,7 +13,7 @@ const GLASS_BG = 'rgba(13, 17, 25, 0.82)';
 const GLASS_BLUR = 'blur(22px) saturate(1.3)';
 
 export function FeaturePanel({
-  open, mode, title, icon, onClose, headerRight, toolbar, width = 380, onWidthChange, resizable, children,
+  open, mode, title, icon, onClose, headerRight, toolbar, hideHeader, width = 380, onWidthChange, resizable, children,
 }: {
   open: boolean;
   mode: 'desktop' | 'mobile';
@@ -22,6 +22,9 @@ export function FeaturePanel({
   onClose: () => void;
   headerRight?: ReactNode;
   toolbar?: ReactNode;      // sticky row under the header (e.g. the view selector)
+  // When true, drop the title/icon header — the toolbar (view selector) is the
+  // top, with the close button tucked into its corner.
+  hideHeader?: boolean;
   width?: number;
   onWidthChange?: (w: number) => void;
   resizable?: boolean;
@@ -42,22 +45,32 @@ export function FeaturePanel({
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
 
+  const closeBtn = (
+    <button type="button" onClick={onClose} aria-label="Close" title="Close"
+      style={{ background: 'transparent', border: 0, color: tokens.color.accent, cursor: 'pointer', fontFamily: 'inherit', fontSize: mode === 'mobile' ? 22 : 18, lineHeight: 1, padding: mode === 'mobile' ? '4px 6px' : '2px 4px' }}>✕</button>
+  );
+
   const header = (
     <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: mode === 'mobile' ? '14px 16px' : '12px 16px', borderBottom: `1px solid ${tokens.color.border}` }}>
       {icon && <span aria-hidden style={{ display: 'inline-flex', color: tokens.led.on, fontSize: 18 }}>{icon}</span>}
       <span style={{ fontSize: mode === 'mobile' ? 16 : 14, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#fff' }}>{title}</span>
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-        {headerRight}
-        <button type="button" onClick={onClose} aria-label="Close" title="Close"
-          style={{ background: 'transparent', border: 0, color: tokens.color.accent, cursor: 'pointer', fontFamily: 'inherit', fontSize: mode === 'mobile' ? 22 : 18, lineHeight: 1, padding: mode === 'mobile' ? '4px 6px' : 0 }}>✕</button>
-      </div>
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>{headerRight}{closeBtn}</div>
     </div>
   );
 
   const inner = (
     <>
-      {header}
-      {toolbar && <div style={{ flex: '0 0 auto', borderBottom: `1px solid ${tokens.color.border}` }}>{toolbar}</div>}
+      {hideHeader ? (
+        <div style={{ position: 'relative', flex: '0 0 auto', borderBottom: `1px solid ${tokens.color.border}` }}>
+          {toolbar}
+          <div style={{ position: 'absolute', top: 6, right: 8 }}>{closeBtn}</div>
+        </div>
+      ) : (
+        <>
+          {header}
+          {toolbar && <div style={{ flex: '0 0 auto', borderBottom: `1px solid ${tokens.color.border}` }}>{toolbar}</div>}
+        </>
+      )}
       <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable' }}>{children}</div>
     </>
   );

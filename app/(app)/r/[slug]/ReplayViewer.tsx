@@ -1109,6 +1109,13 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               clips,
               installToken,
               isOwner,
+              // Double-sided (POV) controls — the Playback view renders these
+              // when canFlip; otherwise it hides them.
+              canFlip: !!canFlip,
+              viewLabel: viewingHandle,
+              onFlip: flipPov,
+              revealHands,
+              onRevealHandsChange: setRevealHands,
             }}
             onTagModeChange={setTagMode}
             onDockWidthChange={setRedesignDockW}
@@ -1225,7 +1232,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               canPrev={currentIndex > 0}
               canNext={!!frames && currentIndex < frames.length - 1}
               // Desktop only: faint keyboard hint adjacent to each chevron.
-              showKeyboardHint={!isMobile}
+              // B216: dropped in redesign (read as redundant) + frosted styling.
+              showKeyboardHint={!isMobile && !redesign}
+              glassy={redesign}
               // B132: jump to the previous/next annotated frame — companion
               // buttons under the chevrons, shown only when tags exist.
               onJumpTag={jumpToAdjacentTag}
@@ -1364,7 +1373,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                       — only when both teammates' recordings exist. Sits LEFT of
                       the Jump-to-moment bubble on the same row (38px FAB + 8px
                       gap), tracking the same offsets. */}
-                  {canFlip && (
+                  {canFlip && !redesign && (
                     <PovBubble
                       viewLabel={viewingHandle}
                       onFlip={flipPov}

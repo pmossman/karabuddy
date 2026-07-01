@@ -28,6 +28,7 @@ export function FrameNavOverlay({
   canPrevTag,
   canNextTag,
   showTagJump,
+  glassy,
 }: {
   // Edge offsets + vertical centre are computed by the parent (ReplayViewer)
   // from the live review-sheet size, so the chevrons ride with the sheet.
@@ -48,6 +49,8 @@ export function FrameNavOverlay({
   canPrevTag?: boolean;
   canNextTag?: boolean;
   showTagJump?: boolean;
+  // B216 redesign: frosted-glass styling to match the new rail/HUD (shape kept).
+  glassy?: boolean;
 }) {
   return (
     <>
@@ -60,6 +63,7 @@ export function FrameNavOverlay({
         disabled={!canPrev}
         onClick={() => onStep(-1)}
         keyboardHint={showKeyboardHint ? '←' : null}
+        glassy={glassy}
       >
         ‹
       </ChevronButton>
@@ -72,6 +76,7 @@ export function FrameNavOverlay({
         disabled={!canNext}
         onClick={() => onStep(1)}
         keyboardHint={showKeyboardHint ? '→' : null}
+        glassy={glassy}
       >
         ›
       </ChevronButton>
@@ -86,6 +91,7 @@ export function FrameNavOverlay({
             disabled={!canPrevTag}
             onClick={() => onJumpTag(-1)}
             keyboardHint={showKeyboardHint ? '[' : null}
+            glassy={glassy}
             compact
             testId="tag-jump-prev"
           >
@@ -100,6 +106,7 @@ export function FrameNavOverlay({
             disabled={!canNextTag}
             onClick={() => onJumpTag(1)}
             keyboardHint={showKeyboardHint ? ']' : null}
+            glassy={glassy}
             compact
             testId="tag-jump-next"
           >
@@ -133,6 +140,7 @@ function ChevronButton({
   keyboardHint,
   compact,
   testId,
+  glassy,
   children,
 }: {
   side: 'left' | 'right';
@@ -147,6 +155,7 @@ function ChevronButton({
   // stays the dominant affordance).
   compact?: boolean;
   testId?: string;
+  glassy?: boolean;
   children: React.ReactNode;
 }) {
   // Press animation: briefly nudge the chevron in the step direction +
@@ -184,9 +193,9 @@ function ChevronButton({
         zIndex: 90,
         width: 36,
         height: compact ? 40 : 84,
-        background: pressed ? 'rgba(77, 157, 255, 0.45)' : 'rgba(36, 48, 68, 0.7)',
+        background: pressed ? 'rgba(77, 210, 255, 0.32)' : (glassy ? 'rgba(255,255,255,0.07)' : 'rgba(36, 48, 68, 0.7)'),
         color: disabled ? '#4a4e56' : '#d6e7ff',
-        border: '1px solid rgba(77, 157, 255, 0.3)',
+        border: `1px solid ${glassy ? 'rgba(255,255,255,0.16)' : 'rgba(77, 157, 255, 0.3)'}`,
         borderRadius: 10,
         padding: 0,
         fontSize: 28,
@@ -195,11 +204,12 @@ function ChevronButton({
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.4 : 1,
         fontFamily: 'var(--font-barlow), -apple-system, sans-serif',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
+        boxShadow: glassy ? '0 2px 10px rgba(0,0,0,0.35)' : '0 2px 8px rgba(0, 0, 0, 0.45)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backdropFilter: 'blur(6px)',
+        backdropFilter: glassy ? 'blur(16px) saturate(1.4)' : 'blur(6px)',
+        WebkitBackdropFilter: glassy ? 'blur(16px) saturate(1.4)' : 'blur(6px)',
         transition: dragging
           ? 'opacity 120ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms ease'
           : 'right 220ms cubic-bezier(0.4, 0, 0.2, 1), left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms ease',

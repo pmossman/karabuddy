@@ -13,7 +13,7 @@ export const Icon: Record<string, ReactNode> = {
   decks: svg(<><rect x="3" y="7" width="12" height="14" rx="2" /><rect x="9" y="3" width="12" height="14" rx="2" /></>),
   play: svg(<polygon points="7 4 20 12 7 20" />, { fill: true }),
   pause: svg(<><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></>, { fill: true }),
-  jump: svg(<><line x1="5" y1="3" x2="5" y2="21" /><path d="M5 4h12l-2.5 3.5L17 11H5" /></>), // flag — jump to a marked moment
+  jump: svg(<><path d="M12 21.5s-6.5-5.6-6.5-10.5a6.5 6.5 0 1 1 13 0c0 4.9-6.5 10.5-6.5 10.5Z" /><circle cx="12" cy="11" r="2.3" /></>), // map-pin — the original jump-to glyph
   clip: svg(<><circle cx="6" cy="6" r="2.4" /><circle cx="6" cy="18" r="2.4" /><line x1="8.1" y1="7.4" x2="20" y2="17" /><line x1="8.1" y1="16.6" x2="20" y2="7" /></>), // scissors
   clips: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><line x1="8" y1="6" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="18" /></>), // film strip
   sidebar: svg(<><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="15" y1="4" x2="15" y2="20" /></>),

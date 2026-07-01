@@ -90,10 +90,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
   const railRight = desktopDock ? sidebarW + 14 : 14;
 
-  // Rail = current-frame actions.
+  // Rail = current-frame actions. (Play is a larger standalone FAB, below.)
   const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }[] = [
     { key: 'tags', icon: Icon.tag, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
-    { key: 'play', icon: controls.playing ? Icon.pause : Icon.play, label: controls.playing ? 'Pause' : 'Play', active: controls.playing, onClick: controls.onTogglePlay },
     { key: 'jump', icon: Icon.jump, label: 'Jump to…', active: jumpOpen, onClick: () => setJumpOpen((v) => !v) },
     { key: 'clip', icon: Icon.clip, label: 'Clip', onClick: controls.onOpenClip },
     { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => setSidebarOpen((v) => !v) },
@@ -114,7 +113,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           / slide-out drawer (mobile). Independent of the HUD. */}
       {sidebarOpen && (
         <FeaturePanel
-          open mode={mode} title={activeView.label} icon={activeView.icon}
+          open mode={mode} title={activeView.label} icon={activeView.icon} hideHeader
           width={sidebarW} onWidthChange={setSidebarW} resizable={mode === 'desktop'}
           onClose={() => setSidebarOpen(false)}
           toolbar={<ViewSelector value={sidebarView} onChange={setSidebarView} />}
@@ -127,6 +126,25 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {jumpOpen && !mobileDrawer && (
         <JumpMenu chapters={controls.chapters} currentIndex={currentIndex} right={railRight + 52}
           onJump={(f) => { onJump(f); setJumpOpen(false); }} onClose={() => setJumpOpen(false)} />
+      )}
+
+      {/* Play/Pause — a larger standalone FAB near its pre-redesign home (bottom,
+          tracking the dock), a bit bigger than the rail icons. */}
+      {!mobileDrawer && (
+        <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={controls.onTogglePlay}
+          style={{
+            position: 'fixed', zIndex: 121,
+            bottom: 'max(18px, env(safe-area-inset-bottom, 18px))',
+            right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`,
+            width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+            background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
+            color: controls.playing ? tokens.led.on : '#eef2f8',
+            border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
+            boxShadow: controls.playing ? tokens.led.ringGlow : '0 3px 16px rgba(0,0,0,0.45)',
+            backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+          }}>
+          <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
+        </button>
       )}
 
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
@@ -167,7 +185,7 @@ function RailBtn({ icon, label, active, badge, onClick }: { icon: ReactNode; lab
 
 function ViewSelector({ value, onChange }: { value: SidebarView; onChange: (v: SidebarView) => void }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 12px' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 44px 10px 12px' }}>
       {VIEWS.map((v) => {
         const on = v.id === value;
         return (

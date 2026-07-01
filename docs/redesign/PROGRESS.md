@@ -252,3 +252,19 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
 - Glassy finish extended to FeaturePanel (dock + drawer), the view selector, and JumpMenu.
 - Shots: rail5, sb-playback, jumpmenu (desktop); m-rail, m-drawer (mobile).
 - NOTE: mobile dev shots show a "N issues" badge = Next.js dev overlay (unrelated to UI).
+
+---
+### Log: 2026-06-30 — controls polish (play FAB, glassy chevrons, POV→playback)
+- Play moved OUT of the rail into a larger standalone glassy FAB (58px) bottom-right,
+  dock-aware (its pre-redesign home). Rail is now Tags · Jump · Clip · Sidebar.
+- Frame-nav chevrons got the frosted-glass treatment (shape kept) + the ←/→ keyboard
+  hint keycaps dropped in redesign (FrameNavOverlay gains a `glassy` prop; ReplayViewer
+  passes glassy + showKeyboardHint=false under redesign).
+- Jump-to rail icon reverted to the original map-pin glyph (ChaptersGlyph) to avoid
+  churn.
+- Sidebar header dropped (FeaturePanel `hideHeader`) — the selected view pill is the
+  label; the ✕ tucks into the selector's top-right corner.
+- Hands-up / Flip (double-sided POV) moved into the Playback sidebar view (Perspective
+  section, gated on canFlip); the old PovBubble is now `!redesign`. ReplayViewer threads
+  canFlip/viewLabel/onFlip/revealHands/onRevealHandsChange through the controls bundle.
+- Shots: v2-default, v2-playback (desktop); v2-mobile.
