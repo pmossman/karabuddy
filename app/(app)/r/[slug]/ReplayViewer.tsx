@@ -610,9 +610,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
 
   // B104: the next action-boundary frame from `from` in `dir`. Actions are runs
   // of frames sharing an active player PLUS the regroup-phase beats (a player
-  // drawing / resourcing / discarding), so stepping by action stops on those
-  // instead of blowing through them. Both directions land on a stop, so a
-  // forward step then a back step are inverses. (B108)
+  // drawing / resourcing / discarding) PLUS the setup mulligan/resource
+  // decisions (B217 — log-driven, since setup has no active player), so stepping
+  // by action stops on those instead of blowing through them. Both directions
+  // land on a stop, so a forward step then a back step are inverses. (B108)
   const actionStops = useMemo(() => computeActionStops(frames, activeByFrame), [frames, activeByFrame]);
   const actionBoundary = useCallback(
     (from: number, dir: 1 | -1) => nextActionStop(actionStops, from, dir),
