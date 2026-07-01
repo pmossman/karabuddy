@@ -84,24 +84,19 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   // animating the wrapper transform in sync with the height.
   useEffect(() => {
     if (minimized) return;
-    const bubble = bubbleRef.current, body = bodyRef.current, content = contentRef.current, wrap = wrapRef.current;
-    if (!bubble || !body || !content || !wrap) return;
+    const bubble = bubbleRef.current, body = bodyRef.current, content = contentRef.current;
+    if (!bubble || !body || !content) return;
     const fromH = bubble.getBoundingClientRect().height;
     const chrome = fromH - body.clientHeight;        // header + tabs + controls + borders
     const toH = Math.min(window.innerHeight * 0.82, Math.max(120, chrome + content.scrollHeight + 24));
-    const delta = toH - fromH;
-    const fromY = pos.y, toY = pos.y - delta / 2;    // move centre up half the growth → bottom fixed
     setSize((s) => ({ w: s.w, h: toH }));            // keep it explicit so the next nav has a real "from"
-    setPos((p) => ({ x: p.x, y: toY }));
-    if (Math.abs(delta) > 3) {
+    if (Math.abs(toH - fromH) > 3) {
+      // Single height animation. The wrapper is BOTTOM-anchored (translateY(-100%)),
+      // so the browser re-resolves the anchor against the animating height each
+      // frame — the bottom edge (prev/next controls) stays fixed with no second
+      // animation to sync (which was causing the jitter).
       stopAnim();
-      const ease = 'cubic-bezier(0.22, 1, 0.36, 1)', duration = 280;
-      const tx = `calc(-50% - ${sidebarW / 2}px + ${pos.x}px)`;
-      animRef.current = bubble.animate([{ height: `${fromH}px` }, { height: `${toH}px` }], { duration, easing: ease });
-      wrap.animate([
-        { transform: `translate(${tx}, calc(-50% + ${fromY}px))` },
-        { transform: `translate(${tx}, calc(-50% + ${toY}px))` },
-      ], { duration, easing: ease });
+      animRef.current = bubble.animate([{ height: `${fromH}px` }, { height: `${toH}px` }], { duration: 280, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
     }
   }, [active?.id, minimized]);
 
@@ -162,10 +157,13 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none' }}>
+    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       {minimized ? (
         <MiniRow onDown={onDown} active={active} currentIndex={currentIndex} prev={prev} next={next} onJump={onJump} onExpand={() => setMinimized(false)} />
       ) : (
+      <>
+      {/* The glass rectangle, with prev/next tag "ears" on its left & right sides. */}
+      <div style={{ position: 'relative', width: '100%', pointerEvents: 'none' }}>
       <div ref={bubbleRef} onPointerDown={onDown} style={{ ...GLASS, borderRadius: 20, position: 'relative', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', height: size.h != null ? size.h : undefined, maxHeight: size.h != null ? undefined : '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif', cursor: 'grab' }}>
         {/* Drag handle (the whole panel chrome drags; this bar is the obvious grip). */}
         <div data-testid="taghud-drag" style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', touchAction: 'none', borderBottom: here.length > 1 ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
@@ -201,7 +199,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
 
         {/* Body — the active comment (+ replies), or the inline editor, or empty.
             data-no-drag so scrolling/selecting here doesn't move the panel. */}
-        <div ref={bodyRef} data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px', cursor: 'auto' }}>
+        <div ref={bodyRef} data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 26px', cursor: 'auto' }}>
           <div ref={contentRef}>
           {(() => {
             if (editor) {
@@ -243,18 +241,6 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           </div>
         </div>
 
-        {/* Control bar: prev · [add][reply][edit] · next. Wraps as a safety on very
-            narrow panels; extra right/bottom pad leaves a gutter for the grip. */}
-        <div style={{ flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, rowGap: 8, padding: '8px 22px 12px 10px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
-          <NavBtn dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
-          <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center', gap: 6 }}>
-            <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
-            <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={!canTag || !active} active={editor?.kind === 'reply'} />
-            <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment)} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
-          </div>
-          <NavBtn dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
-        </div>
-
         {/* Resize grip — tucked inside the rounded corner so it isn't clipped. */}
         <div data-no-drag data-testid="taghud-resize" onPointerDown={onResizeDown} title="Resize" aria-label="Resize"
           style={{ position: 'absolute', right: 7, bottom: 7, width: 14, height: 14, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', cursor: 'nwse-resize', touchAction: 'none', color: 'rgba(255,255,255,0.6)', zIndex: 4 }}>
@@ -262,7 +248,19 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
             <line x1="11" y1="3" x2="3" y2="11" /><line x1="11" y1="7" x2="7" y2="11" />
           </svg>
         </div>
+        </div>
+        {/* Prev/Next tag — glass "ears" on the panel's sides, at its vertical centre. */}
+        <SideNav dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
+        <SideNav dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
       </div>
+
+      {/* Add / reply / edit — a glass control row BELOW the rectangle. */}
+      <div style={{ pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 999, ...GLASS }}>
+        <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
+        <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={!canTag || !active} active={editor?.kind === 'reply'} />
+        <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment)} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
+      </div>
+      </>
       )}
     </div>
   );
@@ -303,20 +301,23 @@ function ExpandIcon() {
   );
 }
 
-// Tag-to-tag nav — a simple "Prev tag" / "Next tag" (double-chevron so it's not
-// mistaken for the single-chevron frame stepper). No preview.
-function NavBtn({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | null; onClick: () => void }) {
+// Tag-to-tag nav — glass "ears" on the left & right of the panel, vertically
+// centred. Double-chevron so it's not mistaken for the frame steppers. They
+// half-overlap the panel edge (the body has padding to clear them) so they fit
+// even on a near-full-width mobile panel.
+function SideNav({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | null; onClick: () => void }) {
   const disabled = !tag;
-  const label = dir === 'prev' ? 'Prev tag' : 'Next tag';
   return (
-    <button type="button" onClick={onClick} disabled={disabled} title={disabled ? undefined : (dir === 'prev' ? 'Previous tagged frame' : 'Next tagged frame')}
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={dir === 'prev' ? 'Previous tag' : 'Next tag'} title={disabled ? undefined : (dir === 'prev' ? 'Previous tag' : 'Next tag')}
       style={{
-        flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 5,
-        background: disabled ? 'transparent' : 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
-        color: disabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '6px 11px',
-        fontSize: 12, fontWeight: 700, fontFamily: 'inherit', cursor: disabled ? 'default' : 'pointer', whiteSpace: 'nowrap',
+        ...GLASS, position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+        ...(dir === 'prev' ? { left: -13 } : { right: -13 }),
+        width: 34, height: 54, borderRadius: 14, zIndex: 3, pointerEvents: 'auto',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit',
+        color: disabled ? 'rgba(255,255,255,0.28)' : '#eef2f8', fontSize: 19, fontWeight: 800,
+        opacity: disabled ? 0.55 : 1,
       }}>
-      {dir === 'prev' ? <><span aria-hidden style={{ fontWeight: 800 }}>«</span> {label}</> : <>{label} <span aria-hidden style={{ fontWeight: 800 }}>»</span></>}
+      <span aria-hidden>{dir === 'prev' ? '«' : '»'}</span>
     </button>
   );
 }
