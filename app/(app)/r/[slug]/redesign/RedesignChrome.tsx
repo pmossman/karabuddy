@@ -167,7 +167,7 @@ function RailBtn({ icon, label, active, badge, onClick }: { icon: ReactNode; lab
 
 function ViewSelector({ value, onChange }: { value: SidebarView; onChange: (v: SidebarView) => void }) {
   return (
-    <div style={{ display: 'flex', gap: 6, padding: '10px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 12px' }}>
       {VIEWS.map((v) => {
         const on = v.id === value;
         return (
