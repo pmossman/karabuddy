@@ -25,7 +25,7 @@ const GLASS: React.CSSProperties = {
 
 type Editor = null | { kind: 'add' } | { kind: 'reply'; id: string } | { kind: 'edit'; id: string };
 
-export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, canTag, sidebarW = 0, onOpenFeed }: {
+export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, canTag, sidebarW = 0 }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
@@ -35,7 +35,6 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   updateTag: (id: string, patch: Partial<ViewerTag>) => void;
   canTag: boolean;
   sidebarW?: number;
-  onOpenFeed?: () => void;
 }) {
   const { signedIn, authorName, isMine, create, edit } = useCreateTag(replaySlug, toOriginalFrame, appendTag, updateTag);
 
@@ -188,11 +187,14 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
             if (!active) return <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.55)', fontSize: 13, padding: '4px 0' }}>No tags on this frame</div>;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(255,255,255,0.72)' }}>{active.authorName || 'Anonymous'}</div>
-                <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{active.comment}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: authorColor(active.authorName || 'anon') }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: authorColor(active.authorName || 'anon') }}>{active.authorName || 'Anonymous'}</span>
+                </div>
+                <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgba(255,255,255,0.92)' }}>{active.comment}</div>
                 {(replies.get(active.id) ?? []).map((r) => (
-                  <div key={r.id} style={{ marginLeft: 8, paddingLeft: 8, borderLeft: '1px solid rgba(255,255,255,0.15)', marginTop: 2 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.65)' }}>{r.authorName || 'Anonymous'}: </span>
+                  <div key={r.id} style={{ marginLeft: 8, paddingLeft: 9, borderLeft: `2px solid ${authorColor(r.authorName || 'anon')}`, marginTop: 2 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: authorColor(r.authorName || 'anon') }}>{r.authorName || 'Anonymous'}: </span>
                     <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{r.comment}</span>
                   </div>
                 ))}
@@ -209,7 +211,6 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
             <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
             <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={!canTag || !active} active={editor?.kind === 'reply'} />
             <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment)} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
-            {onOpenFeed && <IconBtn label="All tags" glyph="≣" onClick={onOpenFeed} />}
           </div>
           <NavBtn dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
         </div>
@@ -239,8 +240,9 @@ function MiniRow({ onDown, active, currentIndex, prev, next, onJump, onExpand }:
       style={{ flex: '0 0 auto', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', color: disabled ? 'rgba(255,255,255,0.3)' : '#eef2f8', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>{content}</button>
   );
   return (
-    <div style={{ ...GLASS, borderRadius: 999, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 10px', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
-      <span data-testid="taghud-drag" onPointerDown={onDown} aria-hidden style={{ flex: '0 0 auto', cursor: 'grab', touchAction: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
+    // The WHOLE pill is a drag handle (buttons opt out via the onDown guard).
+    <div data-testid="taghud-drag" onPointerDown={onDown} style={{ ...GLASS, borderRadius: 999, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 10px', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif', cursor: 'grab', touchAction: 'none' }}>
+      <span aria-hidden style={{ flex: '0 0 auto', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
       <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: active ? '#eef2f8' : 'rgba(255,255,255,0.55)' }}>{label}</span>
       {mini('«', () => prev && onJump(prev.frameIndex), 'Previous tag', !prev)}
       {mini('»', () => next && onJump(next.frameIndex), 'Next tag', !next)}
@@ -261,23 +263,20 @@ function ExpandIcon() {
   );
 }
 
-// Tag-to-tag nav — deliberately NOT the single-chevron frame stepper: a double-
-// chevron (jump-to-marker) + the target author's colour dot + a text preview.
+// Tag-to-tag nav — a simple "Prev tag" / "Next tag" (double-chevron so it's not
+// mistaken for the single-chevron frame stepper). No preview.
 function NavBtn({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | null; onClick: () => void }) {
-  const chev = dir === 'prev' ? '«' : '»';
   const disabled = !tag;
-  const dot = <span style={{ width: 6, height: 6, borderRadius: '50%', flex: '0 0 auto', background: tag ? authorColor(tag.authorName || 'anon') : 'transparent' }} />;
-  const preview = <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tag ? truncate(tag.comment, 12) : 'No tag'}</span>;
+  const label = dir === 'prev' ? 'Prev tag' : 'Next tag';
   return (
-    <button type="button" onClick={onClick} disabled={disabled} title={tag ? `Jump to tag on frame ${tag.frameIndex + 1}: ${tag.comment}` : undefined}
+    <button type="button" onClick={onClick} disabled={disabled} title={disabled ? undefined : (dir === 'prev' ? 'Previous tagged frame' : 'Next tagged frame')}
       style={{
-        flex: '0 1 auto', maxWidth: '34%', display: 'inline-flex', alignItems: 'center', gap: 5,
+        flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 5,
         background: disabled ? 'transparent' : 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
-        color: disabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '5px 9px',
-        fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit', cursor: disabled ? 'default' : 'pointer', minWidth: 0,
+        color: disabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '6px 11px',
+        fontSize: 12, fontWeight: 700, fontFamily: 'inherit', cursor: disabled ? 'default' : 'pointer', whiteSpace: 'nowrap',
       }}>
-      {dir === 'prev' ? (<><span aria-hidden style={{ fontWeight: 800, flex: '0 0 auto' }}>{chev}</span>{dot}{preview}</>)
-        : (<>{preview}{dot}<span aria-hidden style={{ fontWeight: 800, flex: '0 0 auto' }}>{chev}</span></>)}
+      {dir === 'prev' ? <><span aria-hidden style={{ fontWeight: 800 }}>«</span> {label}</> : <>{label} <span aria-hidden style={{ fontWeight: 800 }}>»</span></>}
     </button>
   );
 }

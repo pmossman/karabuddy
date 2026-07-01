@@ -32,11 +32,11 @@ export interface ViewerControls extends PlaybackControls {
 
 type SidebarView = 'tags' | 'log' | 'info' | 'decks' | 'playback' | 'share' | 'clips';
 const VIEWS: { id: SidebarView; label: string; icon: ReactNode }[] = [
-  { id: 'tags', label: 'Tags', icon: Icon.tag },
+  { id: 'tags', label: 'Tags', icon: Icon.messages },
   { id: 'log', label: 'Log', icon: Icon.log },
   { id: 'info', label: 'Matchup', icon: Icon.matchup },
   { id: 'decks', label: 'Decks', icon: Icon.decks },
-  { id: 'playback', label: 'Playback', icon: Icon.play },
+  { id: 'playback', label: 'Playback', icon: Icon.gear },
   { id: 'share', label: 'Share', icon: Icon.share },
   { id: 'clips', label: 'Clips', icon: Icon.clips },
 ];
@@ -100,7 +100,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // sidebar's Clips view.
   const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }[] = [
     { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => setSidebarOpen((v) => !v) },
-    { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
+    // Tags: when the sidebar is open, switch it to the tags feed; otherwise the
+    // board-visible HUD (the sidebar stays closed).
+    { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen || (sidebarOpen && sidebarView === 'tags'), badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => { if (sidebarOpen) setSidebarView('tags'); else setHudOpen((v) => !v); } },
   ];
 
   return (
@@ -110,7 +112,6 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           tags={tags} currentIndex={currentIndex} onJump={onJump}
           replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} updateTag={updateTag} canTag={canTag}
           sidebarW={desktopDock ? sidebarW : 0}
-          onOpenFeed={() => openSidebar('tags')}
         />
       )}
 
@@ -168,7 +169,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
             </button>
-            <button type="button" title="Playback options" aria-label="Playback options" onClick={() => openSidebar('playback')}
+            <button type="button" title="Playback options" aria-label="Playback options" onClick={() => { if (sidebarOpen) setSidebarOpen(false); else openSidebar('playback'); }}
               style={{
                 position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
                 background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(22,28,38,0.95)',
@@ -184,7 +185,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
+        <div style={{ position: 'fixed', top: 'calc(var(--kb-header-h, 46px) + 14px)', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
           {railItems.map((it, i) => (
             <div key={it.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
               {/* subtle divider between the sidebar toggle (whole-replay) and Tags
@@ -249,6 +250,9 @@ function JumpMenu({ chapters, currentIndex, right, bottom, onJump, onClose }: { 
   // Start scrolled to the current moment (the list opens upward from the bottom).
   useEffect(() => { ref.current?.querySelector('[data-active="1"]')?.scrollIntoView({ block: 'nearest' }); }, []);
   return (
+    <>
+    {/* Tap outside to close. */}
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 124 }} />
     <div ref={ref} style={{
       position: 'fixed', bottom, right, zIndex: 125,
       width: 'min(280px, 84vw)', maxHeight: '62vh', overflowY: 'auto', borderRadius: 16, padding: 6,
@@ -282,5 +286,6 @@ function JumpMenu({ chapters, currentIndex, right, bottom, onJump, onClose }: { 
         );
       })}
     </div>
+    </>
   );
 }
