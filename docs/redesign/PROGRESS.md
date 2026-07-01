@@ -210,3 +210,22 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
 - Shots: hud-tag-desktop / hud-tag-mobile (comment in glass), hud2-mobile (rail).
 - OPEN/consider: a very long comment makes the centred glass tall (scrollable +
   translucent mitigates); consider a collapse/expand or a max-lines "more".
+
+---
+### Log: 2026-06-30 — HUD ⟂ sidebar decoupling + drag/resize/recenter
+- **TagHud**: whole-panel drag (chrome; body/controls opt out), bottom-right
+  resize grip (centre-anchored math keeps top-left put), re-center button (resets
+  pos+size), minimize (−) / expand (⤢). Verified resize + recenter by measurement.
+- **RedesignChrome** state split into TWO independent surfaces (desktop + mobile
+  unified): `hudOpen` (the Tag HUD overlay, toggled by the Tags rail icon) and
+  `panelView` (docked sidebar / full-page: tags-feed | log | info | decks, toggled
+  by its rail icon; feed also opens from the HUD's ≣). The HUD is usable with the
+  panel collapsed, stays open across panel view changes, and a feed-entry click
+  opens the HUD + jumps (mobile closes the full-page feed). HUD re-centres on the
+  board region when the sidebar docks (sidebarW = desktopDock ? 380 : 0).
+- **Feed** (TagsFeature): condensed chronological timeline (start→end), current
+  lit, others equally dimmed, click-to-jump, auto-scrolls to current; browse-only.
+- **Nav**: tag-to-tag uses «/» + author dot (distinct from single-chevron frame
+  steppers).
+- Shots: decouple-default (HUD standalone), decouple-decks (HUD + Decks sidebar),
+  decouple-feed (HUD + docked feed).

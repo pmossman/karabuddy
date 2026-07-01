@@ -45,32 +45,33 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // false for an anonymized viewer (not owner/teammate/shared) — gates compose.
   canTag: boolean;
 }) {
-  // Desktop opens Tags by default (parity with today's docked drawer); mobile
-  // starts on the board (tap a bubble to open).
-  const [open, setOpen] = useState<FeatureId | null>(null);
-  // Mobile Tags: the glassy HUD floats over the board; `tagsFeed` opens the
-  // full-page feed (all tags). Desktop shows the feed in the docked sidebar.
-  const [tagsFeed, setTagsFeed] = useState(false);
-  useEffect(() => { setOpen(mode === 'desktop' ? 'tags' : null); }, [mode]);
-  useEffect(() => { if (open !== 'tags') setTagsFeed(false); }, [open]);
+  // Two INDEPENDENT surfaces, shared by desktop + mobile (B216):
+  //  • the Tag HUD — a glassy overlay over the board, the PRIMARY tag surface,
+  //    toggled by the Tags rail icon. Fully usable with the panel collapsed.
+  //  • the panel — a docked sidebar (desktop) / full-page overlay (mobile) that
+  //    shows ONE view (tags feed / log / matchup / decks), toggled by its rail
+  //    icon (the feed also opens from the HUD's ≣).
+  // Decoupled: the HUD stays open across panel view changes, and the feed can be
+  // open without the HUD (until you click an entry, which opens it).
+  const [hudOpen, setHudOpen] = useState(false);
+  const [panelView, setPanelView] = useState<FeatureId | null>(null);
+  useEffect(() => { setHudOpen(mode === 'desktop'); setPanelView(null); }, [mode]);
 
-  const active = FEATURES.find((f) => f.id === open) || null;
-  const usable = !!active && !active.soon;
-  const tagsOpen = open === 'tags';
-  // The glassy Tag HUD floats over the board whenever Tags is open (both sizes) —
-  // except when the mobile full-page feed has taken over.
-  const showHud = tagsOpen && !(mode === 'mobile' && tagsFeed);
-  const desktopOpen = mode === 'desktop' && usable; // docked panel present (feed or feature)
-  // Full-screen mobile overlay: a non-Tags feature, or the Tags full-page feed.
-  const mobileFullScreen = mode === 'mobile' && ((usable && !tagsOpen) || (tagsOpen && tagsFeed));
-  // Tags open → the HUD/feed owns tag-to-tag nav, so hide the board's tag-jump.
-  useEffect(() => { onTagModeChange?.(tagsOpen); }, [tagsOpen, onTagModeChange]);
-  useEffect(() => { onDockWidthChange?.(desktopOpen ? 380 : 0); }, [desktopOpen, onDockWidthChange]);
-  // The Tags icon summarises tags on the CURRENT frame (its minimised form).
+  const panelDef = FEATURES.find((f) => f.id === panelView) || null;
+  const panelUsable = !!panelDef && !panelDef.soon;
+  const desktopDock = mode === 'desktop' && panelUsable;      // docked sidebar present
+  const mobileFullScreen = mode === 'mobile' && panelUsable;  // full-page panel present
+  const showHud = hudOpen && !mobileFullScreen;               // a mobile panel takes over the HUD
+  // The HUD owns tag-to-tag nav → hide the board's tag-jump while it's open.
+  useEffect(() => { onTagModeChange?.(hudOpen); }, [hudOpen, onTagModeChange]);
+  useEffect(() => { onDockWidthChange?.(desktopDock ? 380 : 0); }, [desktopDock, onDockWidthChange]);
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
-  const renderBody = (id: FeatureId): ReactNode => {
-    if (id === 'tags') return tagsFeatureFeed();
+  // Click a feed entry → jump there AND open the HUD (on mobile, close the
+  // full-page feed so the board + HUD show; desktop keeps the sidebar).
+  const openTagFromFeed = (f: number) => { onJump(f); setHudOpen(true); if (mode === 'mobile') setPanelView(null); };
+  const renderPanel = (id: FeatureId): ReactNode => {
+    if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={openTagFromFeed} />;
     if (id === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
     if (id === 'info') return <MatchupFeature {...matchup} />;
     if (id === 'decks') return <DecksFeature {...decks} />;
@@ -78,56 +79,48 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   };
 
   // Desktop: rail sits just left of the docked panel (or at the edge when closed).
-  const railRight = desktopOpen ? 380 + 14 : 14;
-
-  const tagsFeatureFeed = (onJumpDone?: () => void) => (
-    <TagsFeature tags={tags} currentIndex={currentIndex} onJump={(f) => { onJump(f); onJumpDone?.(); }} />
-  );
+  const railRight = desktopDock ? 380 + 14 : 14;
 
   return (
     <>
-      {/* Glassy Tag HUD over the CENTRE of the board (both sizes) when Tags is
-          open — the primary current-frame surface. Board reads through it. */}
+      {/* Glassy Tag HUD over the board — independent of the panel/sidebar. Its ≣
+          opens the feed (docked on desktop, full-page on mobile). */}
       {showHud && (
         <TagHud
           tags={tags} currentIndex={currentIndex} onJump={onJump}
           replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} updateTag={updateTag} canTag={canTag}
-          sidebarW={mode === 'desktop' ? 380 : 0}
-          onOpenFeed={mode === 'mobile' ? () => setTagsFeed(true) : undefined}
+          sidebarW={desktopDock ? 380 : 0}
+          onOpenFeed={() => setPanelView('tags')}
         />
       )}
 
-      {/* Docked desktop panel: the Tags FEED (all tags) or a non-Tags feature. */}
-      {desktopOpen && (
-        <FeaturePanel open mode="desktop" title={tagsOpen ? 'Tags' : (active?.label ?? '')} icon={active?.icon} onClose={() => setOpen(null)}>
-          {tagsOpen ? tagsFeatureFeed() : (active && renderBody(active.id))}
+      {/* Docked desktop panel — any view, independent of the HUD. */}
+      {desktopDock && panelView && (
+        <FeaturePanel open mode="desktop" title={panelDef?.label ?? ''} icon={panelDef?.icon} onClose={() => setPanelView(null)}>
+          {renderPanel(panelView)}
         </FeaturePanel>
       )}
 
-      {/* Mobile full-page overlay: the Tags feed, or a non-Tags feature. */}
-      {mobileFullScreen && (tagsOpen ? (
-        <FeaturePanel open mode="mobile" title="All tags" icon={active?.icon} onClose={() => setTagsFeed(false)}>
-          {tagsFeatureFeed(() => setTagsFeed(false))}
+      {/* Mobile full-page panel — any view. */}
+      {mobileFullScreen && panelView && (
+        <FeaturePanel open mode="mobile" title={panelView === 'tags' ? 'All tags' : (panelDef?.label ?? '')} icon={panelDef?.icon} onClose={() => setPanelView(null)}>
+          {renderPanel(panelView)}
         </FeaturePanel>
-      ) : (
-        <FeaturePanel open mode="mobile" title={active?.label ?? ''} icon={active?.icon} onClose={() => setOpen(null)}>
-          {active && renderBody(active.id)}
-        </FeaturePanel>
-      ))}
+      )}
 
       {/* The bubble rail — one icon per feature. Hidden only when a full-screen
           mobile overlay owns the view (the board-visible HUD keeps it). */}
       {!mobileFullScreen && (
         <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {FEATURES.map((f) => {
-            const isOpen = open === f.id && !f.soon;
-            // The Tags icon is the minimised tag panel — it summarises how many
-            // tags sit on the CURRENT frame (updates as you scrub).
+            // Tags toggles the HUD overlay; every other icon toggles its panel view.
+            const isOpen = f.id === 'tags' ? hudOpen : (panelView === f.id && !f.soon);
+            // The Tags icon summarises how many tags sit on the CURRENT frame.
             const badge = f.id === 'tags' && tagCountHere > 0 ? tagCountHere : null;
             return (
               <button key={f.id} type="button" title={f.soon ? `${f.label} — coming soon` : f.label} aria-label={f.label}
                 disabled={f.soon}
-                onClick={() => { if (!f.soon) setOpen((cur) => (cur === f.id ? null : f.id)); }}
+                onClick={() => { if (f.soon) return; if (f.id === 'tags') setHudOpen((v) => !v); else setPanelView((cur) => (cur === f.id ? null : f.id)); }}
                 style={{
                   position: 'relative',
                   width: 44, height: 44, borderRadius: '50%',
