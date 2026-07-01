@@ -132,8 +132,8 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     const move = (ev: PointerEvent) => {
       const maxW = Math.min(620, window.innerWidth * 0.94);
       const maxH = window.innerHeight * 0.82;
-      // Floor keeps the control bar on one row (capped so it never exceeds the viewport).
-      const minW = Math.min(332, window.innerWidth * 0.92);
+      // Content is just text now (controls moved out), so it can be fairly narrow.
+      const minW = Math.min(240, window.innerWidth * 0.86);
       const nw = Math.min(maxW, Math.max(minW, ow + (ev.clientX - sx)));
       const nh = Math.min(maxH, Math.max(150, oh + (ev.clientY - sy)));
       setSize({ w: nw, h: nh });
@@ -157,7 +157,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, calc(100vw - 108px))', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       {minimized ? (
         <MiniRow onDown={onDown} active={active} currentIndex={currentIndex} prev={prev} next={next} onJump={onJump} onExpand={() => setMinimized(false)} />
       ) : (
@@ -199,7 +199,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
 
         {/* Body — the active comment (+ replies), or the inline editor, or empty.
             data-no-drag so scrolling/selecting here doesn't move the panel. */}
-        <div ref={bodyRef} data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 26px', cursor: 'auto' }}>
+        <div ref={bodyRef} data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px', cursor: 'auto' }}>
           <div ref={contentRef}>
           {(() => {
             if (editor) {
@@ -311,7 +311,7 @@ function SideNav({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag |
     <button type="button" onClick={onClick} disabled={disabled} aria-label={dir === 'prev' ? 'Previous tag' : 'Next tag'} title={disabled ? undefined : (dir === 'prev' ? 'Previous tag' : 'Next tag')}
       style={{
         ...GLASS, position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-        ...(dir === 'prev' ? { left: -13 } : { right: -13 }),
+        ...(dir === 'prev' ? { left: -42 } : { right: -42 }),
         width: 34, height: 54, borderRadius: 14, zIndex: 3, pointerEvents: 'auto',
         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit',
         color: disabled ? 'rgba(255,255,255,0.28)' : '#eef2f8', fontSize: 19, fontWeight: 800,
