@@ -229,3 +229,26 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
   steppers).
 - Shots: decouple-default (HUD standalone), decouple-decks (HUD + Decks sidebar),
   decouple-feed (HUD + docked feed).
+
+---
+### Log: 2026-06-30 — rail/sidebar split (current-frame vs whole-replay)
+- Conceptual model (Parker): RAIL = current-frame actions; SIDEBAR = whole-replay
+  views behind a selector.
+- **Rail** (RedesignChrome): Tags (HUD toggle) · Play/Pause · Jump-to · Clip ·
+  Sidebar-toggle. Play/pause → toggleAutoplay; Clip → opens ClipBuilder; Jump →
+  glassy chapter menu (JumpMenu, from lib/replayChapters).
+- **Sidebar**: one toggleable surface — resizable dock (desktop, left-edge handle,
+  300–50vw) / slide-out drawer (mobile, ~92vw + backdrop). Glassy. A scrollable
+  view SELECTOR (FeaturePanel `toolbar`) switches: Tags feed · Log · Matchup ·
+  Decks · Playback · Share · Clips.
+- New views: PlaybackFeature (play/speed/step-mode/animate), ShareFeature (copy
+  link + ShareWithTeam), ClipsFeature (ClipsList + new-clip). icons.tsx = shared
+  line-icon set.
+- ReplayViewer passes a `controls` bundle (playing/onTogglePlay/speed/speeds/
+  onSetSpeed/animate/onToggleAnimate/stepMode/onSetStepMode/chapters/onOpenClip/
+  clips/installToken/isOwner) and now GATES the old StepModeOverlay + MobileControlsFab
+  on `!redesign` (playback lives in the rail + sidebar). FrameNav chevrons + ClipBuilder
+  stay shared.
+- Glassy finish extended to FeaturePanel (dock + drawer), the view selector, and JumpMenu.
+- Shots: rail5, sb-playback, jumpmenu (desktop); m-rail, m-drawer (mobile).
+- NOTE: mobile dev shots show a "N issues" badge = Next.js dev overlay (unrelated to UI).

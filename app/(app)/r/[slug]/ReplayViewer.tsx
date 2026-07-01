@@ -1099,6 +1099,17 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               payloadBlobUrl: replay.payloadBlobUrl,
               replaySlug: replay.slug,
             }}
+            controls={{
+              playing, onTogglePlay: toggleAutoplay,
+              speed, speeds: PLAYBACK_SPEEDS as { label: string; value: number }[], onSetSpeed: setSpeedValue,
+              animate, onToggleAnimate: toggleAnimate,
+              stepMode: mode, onSetStepMode: setMode,
+              chapters,
+              onOpenClip: () => setClipOpen(true),
+              clips,
+              installToken,
+              isOwner,
+            }}
             onTagModeChange={setTagMode}
             onDockWidthChange={setRedesignDockW}
             canTag={!anonymize}
@@ -1226,7 +1237,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 tracks the docked sidebar (shifts left past it). On MOBILE the
                 same controls collapse into a bubble FAB (below) so they don't
                 sprawl across the cramped bottom edge. */}
-            {!isMobile && (
+            {!isMobile && !redesign && (
               <StepModeOverlay
                 mode={mode}
                 setMode={setMode}
@@ -1249,7 +1260,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 small panel with play/pause, speed, step-mode + animate —
                 mirroring the ☰/ⓘ bubble pattern. Lifts above the portrait
                 sheet using the same offsets as its neighbours. */}
-            {isMobile && (
+            {isMobile && !redesign && (
               <MobileControlsFab
                 mode={mode}
                 setMode={setMode}

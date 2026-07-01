@@ -1,32 +1,48 @@
 'use client';
 
-import { useEffect, useState, type ReactNode, type ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type ComponentProps } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { type Chapter } from '@/lib/replayChapters';
 import { FeaturePanel } from './FeaturePanel';
 import { TagsFeature, type ViewerTag } from './TagsFeature';
 import { GameLogFeature } from './GameLogFeature';
 import { MatchupFeature } from './MatchupFeature';
 import { DecksFeature } from './DecksFeature';
+import { PlaybackFeature, type PlaybackControls } from './PlaybackFeature';
+import { ShareFeature } from './ShareFeature';
+import { ClipsFeature } from './ClipsFeature';
 import { TagHud } from './TagHud';
+import { Icon } from './icons';
+import { type ClipSummary } from '../ClipsList';
 
-// B216 redesign — the unified viewer chrome (gated behind ?redesign=1). Replaces
-// the old TagSidebar (desktop drawer) + mobile sheet system with ONE model:
-// a bubble RAIL (each feature = one icon) + a FeaturePanel that docks on desktop
-// / goes full-screen on mobile. Same components, screen-tailored. Stage 1 wires
-// the Tags feature fully; the other bubbles are placeholders for the same rail.
+// B216 redesign — the unified viewer chrome (gated behind ?redesign=1).
+// Conceptual split (Parker): the RAIL = current-frame actions (tags · play/pause ·
+// jump-to · clip · sidebar toggle); the SIDEBAR = whole-replay views behind a view
+// selector (tag feed · game log · matchup · decks · playback · share · clips).
+// Sidebar = a resizable dock on desktop, a slide-out drawer on mobile. The Tag HUD
+// is an independent overlay. Same model drives both screen sizes.
 
-type FeatureId = 'tags' | 'log' | 'info' | 'decks';
-interface FeatureDef { id: FeatureId; label: string; icon: ReactNode; soon?: boolean }
-// Minimal line icons (glassy/iOS feel) instead of skeuomorphic emoji.
-const S = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-const FEATURES: FeatureDef[] = [
-  { id: 'tags', label: 'Tags', icon: (<svg {...S}><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none" /></svg>) },
-  { id: 'log', label: 'Game log', icon: (<svg {...S}><line x1="8" y1="7" x2="20" y2="7" /><line x1="8" y1="12" x2="20" y2="12" /><line x1="8" y1="17" x2="15" y2="17" /><circle cx="4.5" cy="7" r="0.6" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="0.6" fill="currentColor" stroke="none" /><circle cx="4.5" cy="17" r="0.6" fill="currentColor" stroke="none" /></svg>) },
-  { id: 'info', label: 'Matchup', icon: (<svg {...S}><polyline points="10 6 5 12 10 18" /><polyline points="14 6 19 12 14 18" /></svg>) },
-  { id: 'decks', label: 'Decks', icon: (<svg {...S}><rect x="3" y="7" width="12" height="14" rx="2" /><rect x="9" y="3" width="12" height="14" rx="2" /></svg>) },
+export interface ViewerControls extends PlaybackControls {
+  chapters: Chapter[];
+  onOpenClip: () => void;
+  clips: ClipSummary[];
+  installToken: string;
+  isOwner: boolean;
+}
+
+type SidebarView = 'tags' | 'log' | 'info' | 'decks' | 'playback' | 'share' | 'clips';
+const VIEWS: { id: SidebarView; label: string; icon: ReactNode }[] = [
+  { id: 'tags', label: 'Tags', icon: Icon.tag },
+  { id: 'log', label: 'Log', icon: Icon.log },
+  { id: 'info', label: 'Matchup', icon: Icon.matchup },
+  { id: 'decks', label: 'Decks', icon: Icon.decks },
+  { id: 'playback', label: 'Playback', icon: Icon.play },
+  { id: 'share', label: 'Share', icon: Icon.share },
+  { id: 'clips', label: 'Clips', icon: Icon.clips },
 ];
+const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4ff', leader: '#e0c64a', tag: '#4dd2ff', end: '#8aa0b8' };
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, messagesByFrame, matchup, decks, onTagModeChange, onDockWidthChange, canTag }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -38,116 +54,164 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   messagesByFrame: any[][] | null;
   matchup: ComponentProps<typeof MatchupFeature>;
   decks: ComponentProps<typeof DecksFeature>;
+  controls: ViewerControls;
   onTagModeChange?: (active: boolean) => void;
-  // Reports the desktop docked-panel width (0 when closed) so the board can
-  // position its chevrons/playback against the redesign panel, not the old one.
   onDockWidthChange?: (w: number) => void;
-  // false for an anonymized viewer (not owner/teammate/shared) — gates compose.
   canTag: boolean;
 }) {
-  // Two INDEPENDENT surfaces, shared by desktop + mobile (B216):
-  //  • the Tag HUD — a glassy overlay over the board, the PRIMARY tag surface,
-  //    toggled by the Tags rail icon. Fully usable with the panel collapsed.
-  //  • the panel — a docked sidebar (desktop) / full-page overlay (mobile) that
-  //    shows ONE view (tags feed / log / matchup / decks), toggled by its rail
-  //    icon (the feed also opens from the HUD's ≣).
-  // Decoupled: the HUD stays open across panel view changes, and the feed can be
-  // open without the HUD (until you click an entry, which opens it).
   const [hudOpen, setHudOpen] = useState(false);
-  const [panelView, setPanelView] = useState<FeatureId | null>(null);
-  useEffect(() => { setHudOpen(mode === 'desktop'); setPanelView(null); }, [mode]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarView, setSidebarView] = useState<SidebarView>('tags');
+  const [sidebarW, setSidebarW] = useState(380);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  useEffect(() => { setHudOpen(mode === 'desktop'); setSidebarOpen(false); setJumpOpen(false); }, [mode]);
 
-  const panelDef = FEATURES.find((f) => f.id === panelView) || null;
-  const panelUsable = !!panelDef && !panelDef.soon;
-  const desktopDock = mode === 'desktop' && panelUsable;      // docked sidebar present
-  const mobileFullScreen = mode === 'mobile' && panelUsable;  // full-page panel present
-  const showHud = hudOpen && !mobileFullScreen;               // a mobile panel takes over the HUD
-  // The HUD owns tag-to-tag nav → hide the board's tag-jump while it's open.
+  const desktopDock = mode === 'desktop' && sidebarOpen;
+  const mobileDrawer = mode === 'mobile' && sidebarOpen;
+  const showHud = hudOpen && !mobileDrawer; // the mobile drawer covers the HUD
   useEffect(() => { onTagModeChange?.(hudOpen); }, [hudOpen, onTagModeChange]);
-  useEffect(() => { onDockWidthChange?.(desktopDock ? 380 : 0); }, [desktopDock, onDockWidthChange]);
+  useEffect(() => { onDockWidthChange?.(desktopDock ? sidebarW : 0); }, [desktopDock, sidebarW, onDockWidthChange]);
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
-  // Click a feed entry → jump there AND open the HUD (on mobile, close the
-  // full-page feed so the board + HUD show; desktop keeps the sidebar).
-  const openTagFromFeed = (f: number) => { onJump(f); setHudOpen(true); if (mode === 'mobile') setPanelView(null); };
-  const renderPanel = (id: FeatureId): ReactNode => {
-    if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={openTagFromFeed} />;
-    if (id === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
-    if (id === 'info') return <MatchupFeature {...matchup} />;
-    if (id === 'decks') return <DecksFeature {...decks} />;
-    return <ComingSoon label={FEATURES.find((f) => f.id === id)?.label ?? ''} />;
-  };
+  const openSidebar = (v: SidebarView) => { setSidebarView(v); setSidebarOpen(true); };
+  // Click a feed entry → jump + open the HUD (mobile closes the drawer to reveal the board).
+  const openTagFromFeed = (f: number) => { onJump(f); setHudOpen(true); if (mode === 'mobile') setSidebarOpen(false); };
 
-  // Desktop: rail sits just left of the docked panel (or at the edge when closed).
-  const railRight = desktopDock ? 380 + 14 : 14;
+  const renderView = (v: SidebarView): ReactNode => {
+    if (v === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={openTagFromFeed} />;
+    if (v === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
+    if (v === 'info') return <MatchupFeature {...matchup} />;
+    if (v === 'decks') return <DecksFeature {...decks} />;
+    if (v === 'playback') return <PlaybackFeature {...controls} />;
+    if (v === 'share') return <ShareFeature replaySlug={replaySlug} installToken={controls.installToken} isOwner={controls.isOwner} />;
+    return <ClipsFeature clips={controls.clips} onCreate={controls.onOpenClip} canCreate={canTag} />;
+  };
+  const activeView = VIEWS.find((v) => v.id === sidebarView)!;
+
+  const railRight = desktopDock ? sidebarW + 14 : 14;
+
+  // Rail = current-frame actions.
+  const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }[] = [
+    { key: 'tags', icon: Icon.tag, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
+    { key: 'play', icon: controls.playing ? Icon.pause : Icon.play, label: controls.playing ? 'Pause' : 'Play', active: controls.playing, onClick: controls.onTogglePlay },
+    { key: 'jump', icon: Icon.jump, label: 'Jump to…', active: jumpOpen, onClick: () => setJumpOpen((v) => !v) },
+    { key: 'clip', icon: Icon.clip, label: 'Clip', onClick: controls.onOpenClip },
+    { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => setSidebarOpen((v) => !v) },
+  ];
 
   return (
     <>
-      {/* Glassy Tag HUD over the board — independent of the panel/sidebar. Its ≣
-          opens the feed (docked on desktop, full-page on mobile). */}
       {showHud && (
         <TagHud
           tags={tags} currentIndex={currentIndex} onJump={onJump}
           replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} updateTag={updateTag} canTag={canTag}
-          sidebarW={desktopDock ? 380 : 0}
-          onOpenFeed={() => setPanelView('tags')}
+          sidebarW={desktopDock ? sidebarW : 0}
+          onOpenFeed={() => openSidebar('tags')}
         />
       )}
 
-      {/* Docked desktop panel — any view, independent of the HUD. */}
-      {desktopDock && panelView && (
-        <FeaturePanel open mode="desktop" title={panelDef?.label ?? ''} icon={panelDef?.icon} onClose={() => setPanelView(null)}>
-          {renderPanel(panelView)}
+      {/* Sidebar — whole-replay views behind a selector. Resizable dock (desktop)
+          / slide-out drawer (mobile). Independent of the HUD. */}
+      {sidebarOpen && (
+        <FeaturePanel
+          open mode={mode} title={activeView.label} icon={activeView.icon}
+          width={sidebarW} onWidthChange={setSidebarW} resizable={mode === 'desktop'}
+          onClose={() => setSidebarOpen(false)}
+          toolbar={<ViewSelector value={sidebarView} onChange={setSidebarView} />}
+        >
+          {renderView(sidebarView)}
         </FeaturePanel>
       )}
 
-      {/* Mobile full-page panel — any view. */}
-      {mobileFullScreen && panelView && (
-        <FeaturePanel open mode="mobile" title={panelView === 'tags' ? 'All tags' : (panelDef?.label ?? '')} icon={panelDef?.icon} onClose={() => setPanelView(null)}>
-          {renderPanel(panelView)}
-        </FeaturePanel>
+      {/* Jump-to-moment menu (rail → glassy popover). */}
+      {jumpOpen && !mobileDrawer && (
+        <JumpMenu chapters={controls.chapters} currentIndex={currentIndex} right={railRight + 52}
+          onJump={(f) => { onJump(f); setJumpOpen(false); }} onClose={() => setJumpOpen(false)} />
       )}
 
-      {/* The bubble rail — one icon per feature. Hidden only when a full-screen
-          mobile overlay owns the view (the board-visible HUD keeps it). */}
-      {!mobileFullScreen && (
-        <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {FEATURES.map((f) => {
-            // Tags toggles the HUD overlay; every other icon toggles its panel view.
-            const isOpen = f.id === 'tags' ? hudOpen : (panelView === f.id && !f.soon);
-            // The Tags icon summarises how many tags sit on the CURRENT frame.
-            const badge = f.id === 'tags' && tagCountHere > 0 ? tagCountHere : null;
-            return (
-              <button key={f.id} type="button" title={f.soon ? `${f.label} — coming soon` : f.label} aria-label={f.label}
-                disabled={f.soon}
-                onClick={() => { if (f.soon) return; if (f.id === 'tags') setHudOpen((v) => !v); else setPanelView((cur) => (cur === f.id ? null : f.id)); }}
-                style={{
-                  position: 'relative',
-                  width: 44, height: 44, borderRadius: '50%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: f.soon ? 'default' : 'pointer', fontFamily: 'inherit',
-                  // Frosted glass — translucent + blur, cyan when active.
-                  background: isOpen ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
-                  color: isOpen ? tokens.led.on : 'rgba(255,255,255,0.82)',
-                  border: `1px solid ${isOpen ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
-                  boxShadow: isOpen ? tokens.led.ringGlow : '0 2px 10px rgba(0,0,0,0.35)',
-                  opacity: f.soon ? 0.38 : 1,
-                  backdropFilter: 'blur(16px) saturate(1.4)',
-                  WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                }}>
-                <span aria-hidden>{f.icon}</span>
-                {badge != null && (
-                  <span aria-hidden style={{ position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9, background: tokens.led.on, color: '#06121a', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>{badge}</span>
-                )}
-              </button>
-            );
-          })}
+      {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
+      {!mobileDrawer && (
+        <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
+          {railItems.map((it, i) => (
+            <div key={it.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+              {/* subtle divider before the sidebar toggle (the whole-replay control) */}
+              {it.key === 'sidebar' && <div style={{ width: 26, height: 1, background: 'rgba(255,255,255,0.14)', margin: '0 9px' }} />}
+              <RailBtn {...it} />
+            </div>
+          ))}
         </div>
       )}
     </>
   );
 }
 
-function ComingSoon({ label }: { label: string }) {
-  return <div style={{ padding: '28px 18px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13 }}>{label} moves onto this rail next.</div>;
+function RailBtn({ icon, label, active, badge, onClick }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }) {
+  return (
+    <button type="button" title={label} aria-label={label} onClick={onClick}
+      style={{
+        position: 'relative', width: 44, height: 44, borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+        background: active ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
+        color: active ? tokens.led.on : 'rgba(255,255,255,0.82)',
+        border: `1px solid ${active ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
+        boxShadow: active ? tokens.led.ringGlow : '0 2px 10px rgba(0,0,0,0.35)',
+        backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+      }}>
+      <span aria-hidden>{icon}</span>
+      {badge != null && (
+        <span aria-hidden style={{ position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9, background: tokens.led.on, color: '#06121a', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
+function ViewSelector({ value, onChange }: { value: SidebarView; onChange: (v: SidebarView) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, padding: '10px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+      {VIEWS.map((v) => {
+        const on = v.id === value;
+        return (
+          <button key={v.id} type="button" onClick={() => onChange(v.id)} title={v.label}
+            style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
+              background: on ? 'rgba(77,210,255,0.2)' : 'rgba(255,255,255,0.05)', color: on ? '#eaf9ff' : 'rgba(255,255,255,0.72)',
+              border: `1px solid ${on ? tokens.led.on : 'rgba(255,255,255,0.14)'}` }}>
+            <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.82)' }}>{v.icon}</span>{v.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function JumpMenu({ chapters, currentIndex, right, onJump, onClose }: { chapters: Chapter[]; currentIndex: number; right: number; onJump: (f: number) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const activeIdx = useMemo(() => {
+    let best = 0; for (let i = 0; i < chapters.length; i++) if (chapters[i].frameIndex <= currentIndex) best = i; return best;
+  }, [chapters, currentIndex]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div ref={ref} style={{
+      position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right, zIndex: 125,
+      width: 'min(280px, 84vw)', maxHeight: '62vh', overflowY: 'auto', borderRadius: 16, padding: 6,
+      background: 'rgba(16,20,28,0.72)', backdropFilter: 'blur(20px) saturate(1.4)', WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+      border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 12px 44px rgba(0,0,0,0.5)', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif',
+    }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(255,255,255,0.5)', padding: '6px 10px 4px' }}>Jump to a moment</div>
+      {chapters.map((c, i) => {
+        const on = i === activeIdx;
+        return (
+          <button key={`${c.frameIndex}-${i}`} type="button" onClick={() => onJump(c.frameIndex)}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', border: 0,
+              background: on ? 'rgba(77,210,255,0.16)' : 'transparent', color: on ? '#eaf9ff' : 'rgba(255,255,255,0.85)' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: CHAPTER_COLOR[c.kind] ?? '#8aa0b8' }} />
+            <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: on ? 700 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}{c.sublabel ? <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}> · {c.sublabel}</span> : null}</span>
+            <span style={{ flex: '0 0 auto', fontSize: 10.5, color: 'rgba(255,255,255,0.45)' }}>#{c.frameIndex + 1}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
