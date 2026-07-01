@@ -64,11 +64,30 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   // the pointer can leave the panel; clamp so it can't be flung off-screen.
   const wrapRef = useRef<HTMLDivElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState<{ w: number | null; h: number | null }>({ w: null, h: null });
   const cleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => () => cleanupRef.current?.(), []);
   const recenter = () => { setPos({ x: 0, y: 0 }); setSize({ w: null, h: null }); };
+
+  // Navigating to a new tag GROWS the panel to fit it if the content would
+  // otherwise be clipped/scroll; a smaller tag leaves the size untouched. Grow
+  // downward (keep the top edge fixed via the centre-anchor offset).
+  useEffect(() => {
+    if (minimized) return;
+    const body = bodyRef.current, bubble = bubbleRef.current;
+    if (!body || !bubble) return;
+    const overflow = body.scrollHeight - body.clientHeight;
+    if (overflow <= 4) return; // fits (or smaller) → no resize
+    const cur = bubble.getBoundingClientRect().height;
+    const newH = Math.min(window.innerHeight * 0.82, cur + overflow);
+    if (newH > cur + 1) {
+      const delta = newH - cur;
+      setSize((s) => ({ w: s.w, h: newH }));
+      setPos((p) => ({ x: p.x, y: p.y + delta / 2 }));
+    }
+  }, [active?.id, currentIndex, minimized]);
 
   const onDown = (e: React.PointerEvent) => {
     // Drag from anywhere EXCEPT interactive bits and the scrollable body (marked
@@ -165,7 +184,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
 
         {/* Body — the active comment (+ replies), or the inline editor, or empty.
             data-no-drag so scrolling/selecting here doesn't move the panel. */}
-        <div data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px', cursor: 'auto' }}>
+        <div ref={bodyRef} data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px', cursor: 'auto' }}>
           {(() => {
             if (editor) {
               if (!(canTag || editor.kind === 'edit')) return <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', textAlign: 'center' }}>Tagging is for this replay’s owner and their teams.</div>;
