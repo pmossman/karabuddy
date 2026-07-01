@@ -3,16 +3,16 @@
 import type { ReactNode } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { MatchupInfo, type MatchupReplay } from '../MatchupInfo';
+import { MatchupHistory, type OpponentHistory } from './MatchupHistory';
 import type { MatchMeta } from '@/lib/replayDecoder';
 import type { SeriesInfo } from '../SeriesNav';
 
 // B216 redesign — the Matchup (Info) rail feature. De-cluttering removed the old
 // matchup FAB + the TagSidebar header, which is where all player/leader/W-L/
 // format context lived — this restores it. Reuses the shared <MatchupInfo>
-// (B196) so there's no third copy, plus optional companion actions (decks,
-// resourcing) the old MatchupPanel offered.
+// (B196) so there's no third copy, plus (owner-only) history vs the same opponent.
 export function MatchupFeature({
-  replay, matchMeta, installToken, isOwner, anonymize, series, onOpenResourcing, onOpenDecks,
+  replay, matchMeta, installToken, isOwner, anonymize, series, opponentHistory, onOpenResourcing, onOpenDecks,
 }: {
   replay: MatchupReplay;
   matchMeta: MatchMeta | null;
@@ -20,6 +20,7 @@ export function MatchupFeature({
   isOwner: boolean;
   anonymize?: boolean;
   series?: SeriesInfo | null;
+  opponentHistory?: OpponentHistory | null;
   onOpenResourcing?: () => void;
   onOpenDecks?: () => void;
 }) {
@@ -34,6 +35,7 @@ export function MatchupFeature({
         series={series}
         variant="panel"
       />
+      {opponentHistory && opponentHistory.groups.length > 0 && <MatchupHistory history={opponentHistory} />}
       {(onOpenDecks || onOpenResourcing) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
           {onOpenDecks && <LinkRow label="View decks →" onClick={onOpenDecks} />}

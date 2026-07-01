@@ -268,3 +268,20 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
   section, gated on canFlip); the old PovBubble is now `!redesign`. ReplayViewer threads
   canFlip/viewLabel/onFlip/revealHands/onRevealHandsChange through the controls bundle.
 - Shots: v2-default, v2-playback (desktop); v2-mobile.
+
+---
+### Log: 2026-06-30 — Matchup view: history vs the same opponent
+- NEW server loader page.tsx `loadMatchesVsOpponent(row, viewerUserId)` — OWNER-ONLY
+  (scopes to the viewer's own replays, which they're always entitled to; a teammate
+  must not see the uploader's private history). Finds the uploader's recent replays
+  (limit 80) whose opponent handle matches the current opponent, EXCLUDES the current
+  lobby (that's the SeriesNav series), groups by lobby (Bo3 → one series), newest
+  first, cap 6. Skipped when the opponent is anonymous.
+- Threaded `opponentHistory` page → ReplayViewer → matchup bundle → MatchupFeature.
+- NEW redesign/MatchupHistory.tsx: "History vs <opponent>" — per group a date/time +
+  Bo-N score header, a ReplayMatchup card (leader/base + W/L), and per-game W/L chips
+  linking to /r/<slug>; single games link the whole card. Reuses ReplayMatchup.
+- Verified on r_kg7bke (parkermos vs SolarNomad1052): current Bo3 pills + a prior Bo2
+  (0–2) history group.
+- NOTE: adds one owner-only 80-row query per replay page load (force-dynamic); fine,
+  could cache later.

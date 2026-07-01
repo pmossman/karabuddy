@@ -33,6 +33,7 @@ import { ClipBubble } from './ClipBubble';
 import type { ClipSummary } from './ClipsList';
 import { ClipBuilder } from './ClipBuilder';
 import { FrameNavOverlay } from './FrameNavOverlay';
+import type { OpponentHistory } from './redesign/MatchupHistory';
 import { RedesignChrome } from './redesign/RedesignChrome'; // B216: ?redesign=1 viewer chrome
 import { useDragSize } from './useDragSize';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -116,16 +117,19 @@ interface Props {
   // B133: the owner published this replay — anonymized viewers still fetch
   // tags (the server serves them redacted).
   publicComments?: boolean;
+  // B216: the uploader's other matches vs this opponent (owner-only) for the
+  // redesign Matchup view's "History vs <opponent>" section.
+  opponentHistory?: OpponentHistory | null;
 }
 
-export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, publicComments }: Props) {
+export function ReplayViewer({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, opponentHistory, publicComments }: Props) {
   return (
     <ThemeContextProvider>
       <UserProvider>
         <CosmeticsProvider>
           <PopupProvider>
             <GameProvider>
-              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} sideboard={sideboard} publicComments={publicComments} />
+              <ViewerShell replay={replay} initialTags={initialTags} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} sideboard={sideboard} opponentHistory={opponentHistory} publicComments={publicComments} />
             </GameProvider>
           </PopupProvider>
         </CosmeticsProvider>
@@ -167,7 +171,7 @@ function InfoIcon() {
   );
 }
 
-function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, publicComments }: Props) {
+function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, opponentHistory, publicComments }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   // B170 / ADR 0010: for an encrypted replay, resolve the access tier (capability
   // handshake + key-presence) before fetching/decoding. `null` = still resolving;
@@ -1091,6 +1095,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               isOwner,
               anonymize,
               series: series ?? null,
+              opponentHistory: opponentHistory ?? null,
               // Resourcing report hidden in the redesign (B216) — omit the trigger.
             }}
             decks={{

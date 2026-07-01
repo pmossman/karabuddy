@@ -1,11 +1,12 @@
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import type { Metadata } from 'next';
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { segmentMatches } from '@/lib/seriesGrouping';
-import { orderPlayersOwnerFirst } from '@/lib/players';
+import { orderPlayersOwnerFirst, playerHandle } from '@/lib/players';
+import type { OpponentHistory } from './redesign/MatchupHistory';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { userHasLinkedExtension } from '@/lib/userResolution';
@@ -84,6 +85,58 @@ async function seriesFor(row: { slug: string; match: unknown }, anonymize: boole
   const current = games.find((g) => g.slug === row.slug)?.gameNumber;
   if (!current) return null;
   return { current, games };
+}
+
+// B216: the uploader's OTHER recorded matches against the same opponent, for the
+// Matchup view's "History vs <opponent>". OWNER-ONLY (we scope to the viewer's own
+// replays, which they're always entitled to — a teammate must not see the
+// uploader's private history). Grouped by lobby so a Bo3 reads as one series,
+// newest first; skipped for anonymous opponents (can't identify them).
+async function loadMatchesVsOpponent(row: any, viewerUserId: string | null): Promise<OpponentHistory | null> {
+  if (!viewerUserId || row.userId !== viewerUserId) return null;
+  const oppHandle = playerHandle((orderPlayersOwnerFirst(row.players, row.ownerPlayerId) as any[])[1]);
+  if (!oppHandle || oppHandle === 'anon') return null;
+  const currentLobby = (row.match as any)?.lobbyId ?? null;
+
+  const rows = await getDb()
+    .select({ slug: replays.slug, createdAt: replays.createdAt, players: replays.players, ownerPlayerId: replays.ownerPlayerId, winners: replays.winners, match: replays.match })
+    .from(replays)
+    .where(eq(replays.userId, viewerUserId))
+    .orderBy(desc(replays.createdAt))
+    .limit(80);
+  type R = (typeof rows)[number];
+  const wonOf = (r: R) => { const w = Array.isArray(r.winners) ? (r.winners as string[]) : null; return w && r.ownerPlayerId ? w.includes(r.ownerPlayerId) : null; };
+
+  const vs = rows.filter((r) => {
+    if (r.slug === row.slug) return false;
+    const lobby = (r.match as any)?.lobbyId ?? null;
+    if (currentLobby && lobby && lobby === currentLobby) return false; // the current series is shown separately
+    return playerHandle((orderPlayersOwnerFirst(r.players, r.ownerPlayerId) as any[])[1]) === oppHandle;
+  });
+  if (vs.length === 0) return null;
+
+  const byLobby = new Map<string, R[]>();
+  for (const r of vs) {
+    const key = ((r.match as any)?.lobbyId as string) || `solo:${r.slug}`;
+    const arr = byLobby.get(key) ?? []; arr.push(r); byLobby.set(key, arr);
+  }
+  const groups = [...byLobby.values()]
+    .map((gs) => {
+      const sorted = [...gs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      return {
+        date: sorted[sorted.length - 1].createdAt.toISOString(),
+        bestOf: sorted.length > 1,
+        games: sorted.map((g, i) => ({
+          slug: g.slug, gameNumber: i + 1, won: wonOf(g),
+          players: orderPlayersOwnerFirst(g.players, g.ownerPlayerId),
+          ownerPlayerId: g.ownerPlayerId, winners: (g.winners as string[] | null) ?? null,
+          createdAt: g.createdAt.toISOString(),
+        })),
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 6);
+  return { opponent: oppHandle, groups };
 }
 
 // B150: sideboard changes from the PREVIOUS game IN THIS MATCH (same opponent,
@@ -209,6 +262,8 @@ export default async function ReplayPage({ params }: PageProps) {
   const series = await seriesFor(row, anonymize);
   // B150: sideboard changes from the previous game (entitled viewers only).
   const sideboard = await loadSideboardChanges({ slug: row.slug, match: row.match, decks: (row as any).decks }, anonymize);
+  // B216: the uploader's other matches vs this opponent (owner-only) for the Matchup view.
+  const opponentHistory = await loadMatchesVsOpponent(row, viewerUserId);
 
   const replay = {
     ...row,
@@ -226,5 +281,5 @@ export default async function ReplayPage({ params }: PageProps) {
   // GET /api/replays/[slug]/tags so the server can scope them to the
   // viewer (own + team-scoped only). SSR'ing all tags would leak other
   // teams' / others' personal comments into the initial HTML.
-  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} sideboard={sideboard} publicComments={!!(row as any).publicAt} />;
+  return <ReplayViewer replay={replay} initialTags={[]} anonymize={anonymize} canFlip={canFlip} hasLinkedExtension={hasLinkedExtension} series={series} sideboard={sideboard} opponentHistory={opponentHistory} publicComments={!!(row as any).publicAt} />;
 }
