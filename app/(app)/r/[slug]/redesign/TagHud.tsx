@@ -78,20 +78,30 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   // We ALWAYS pin an explicit height (measured from the content, which sits in an
   // unconstrained ref so its natural height is available even while the panel is
   // still the old size) — otherwise auto-height snaps to the new content before we
-  // can measure a "from". The resize is animated with the Web Animations API
-  // (immune to React re-render timing + works in Firefox); grows/shrinks CENTRED so
-  // the centre-anchor repositions during the height animation.
+  // can measure a "from". Animated with the Web Animations API (immune to React
+  // re-render timing + works in Firefox). The BOTTOM edge stays fixed (so the
+  // prev/next controls don't move) by shifting the centre up half the delta and
+  // animating the wrapper transform in sync with the height.
   useEffect(() => {
     if (minimized) return;
-    const bubble = bubbleRef.current, body = bodyRef.current, content = contentRef.current;
-    if (!bubble || !body || !content) return;
+    const bubble = bubbleRef.current, body = bodyRef.current, content = contentRef.current, wrap = wrapRef.current;
+    if (!bubble || !body || !content || !wrap) return;
     const fromH = bubble.getBoundingClientRect().height;
     const chrome = fromH - body.clientHeight;        // header + tabs + controls + borders
     const toH = Math.min(window.innerHeight * 0.82, Math.max(120, chrome + content.scrollHeight + 24));
+    const delta = toH - fromH;
+    const fromY = pos.y, toY = pos.y - delta / 2;    // move centre up half the growth → bottom fixed
     setSize((s) => ({ w: s.w, h: toH }));            // keep it explicit so the next nav has a real "from"
-    if (Math.abs(toH - fromH) > 3) {
+    setPos((p) => ({ x: p.x, y: toY }));
+    if (Math.abs(delta) > 3) {
       stopAnim();
-      animRef.current = bubble.animate([{ height: `${fromH}px` }, { height: `${toH}px` }], { duration: 280, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+      const ease = 'cubic-bezier(0.22, 1, 0.36, 1)', duration = 280;
+      const tx = `calc(-50% - ${sidebarW / 2}px + ${pos.x}px)`;
+      animRef.current = bubble.animate([{ height: `${fromH}px` }, { height: `${toH}px` }], { duration, easing: ease });
+      wrap.animate([
+        { transform: `translate(${tx}, calc(-50% + ${fromY}px))` },
+        { transform: `translate(${tx}, calc(-50% + ${toY}px))` },
+      ], { duration, easing: ease });
     }
   }, [active?.id, minimized]);
 
