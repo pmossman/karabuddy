@@ -68,19 +68,25 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   const contentRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState<{ w: number | null; h: number | null }>({ w: null, h: null });
-  // `animate` gates the size/position CSS transition — ON only for the auto
-  // fit-to-tag change, OFF during manual drag/resize (so those stay 1:1).
-  const [animate, setAnimate] = useState(false);
+  // `dragging` DISABLES the size/position transition during manual drag + grip-
+  // resize (so those track the pointer 1:1). Otherwise the transition stays ON,
+  // so the fit-to-tag change below animates smoothly (the transition must already
+  // be present before the size changes — hence gate on dragging, not on a flag
+  // toggled in the same commit as the size change).
+  const [dragging, setDragging] = useState(false);
+  const draggingRef = useRef(false);
+  const setDrag = (v: boolean) => { draggingRef.current = v; setDragging(v); };
   const cleanupRef = useRef<(() => void) | null>(null);
-  const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { cleanupRef.current?.(); if (animTimer.current) clearTimeout(animTimer.current); }, []);
+  useEffect(() => () => cleanupRef.current?.(), []);
   const recenter = () => { setPos({ x: 0, y: 0 }); setSize({ w: null, h: null }); };
 
   // Navigating to a new tag re-fits the panel to the new content — grow OR shrink
-  // — animated so it isn't jarring, keeping the top edge fixed (centre-anchor
-  // offset). Manual drag/resize don't animate (they don't touch active/frame).
+  // — keeping the top edge fixed (centre-anchor offset). The always-on transition
+  // animates it. Keyed on the active tag's identity so autoplay/scrubbing through
+  // untagged frames doesn't churn; the ref-guard skips a fit mid-drag WITHOUT
+  // re-firing the fit (which would override a manual resize) when the drag ends.
   useEffect(() => {
-    if (minimized) return;
+    if (minimized || draggingRef.current) return;
     const body = bodyRef.current, bubble = bubbleRef.current, content = contentRef.current;
     if (!body || !bubble || !content) return;
     const bubbleH = bubble.getBoundingClientRect().height;
@@ -89,13 +95,16 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     const target = Math.min(window.innerHeight * 0.82, Math.max(120, chrome + desiredBody));
     if (Math.abs(target - bubbleH) > 3) {
       const delta = target - bubbleH;
-      setAnimate(true);
-      setSize((s) => ({ w: s.w, h: target }));
-      setPos((p) => ({ x: p.x, y: p.y + delta / 2 }));
-      if (animTimer.current) clearTimeout(animTimer.current);
-      animTimer.current = setTimeout(() => setAnimate(false), 280);
+      // Defer to the next frame so the CURRENT (pre-change) height is painted
+      // first — otherwise the browser coalesces the change and the transition
+      // never fires (it snaps).
+      const id = requestAnimationFrame(() => {
+        setSize((s) => ({ w: s.w, h: target }));
+        setPos((p) => ({ x: p.x, y: p.y + delta / 2 }));
+      });
+      return () => cancelAnimationFrame(id);
     }
-  }, [active?.id, currentIndex, minimized]);
+  }, [active?.id, minimized]);
 
   const onDown = (e: React.PointerEvent) => {
     // Drag from anywhere EXCEPT interactive bits and the scrollable body (marked
@@ -104,6 +113,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
     e.preventDefault();
+    setDrag(true);
     const sx = e.clientX, sy = e.clientY, ox = pos.x, oy = pos.y, m = 8, keepBottom = 90;
     const move = (ev: PointerEvent) => {
       const vw = window.innerWidth, vh = window.innerHeight;
@@ -111,7 +121,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
       const dy = Math.min(Math.max(ev.clientY - sy, m - rect.top), (vh - keepBottom) - rect.top);
       setPos({ x: ox + dx, y: oy + dy });
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
+    const up = () => { setDrag(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
     cleanupRef.current = up;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -124,6 +134,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     e.preventDefault(); e.stopPropagation();
     const rect = bubbleRef.current?.getBoundingClientRect();
     if (!rect) return;
+    setDrag(true);
     const sx = e.clientX, sy = e.clientY, ow = rect.width, oh = rect.height, opx = pos.x, opy = pos.y;
     const move = (ev: PointerEvent) => {
       const maxW = Math.min(620, window.innerWidth * 0.94);
@@ -135,7 +146,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
       setSize({ w: nw, h: nh });
       setPos({ x: opx + (nw - ow) / 2, y: opy + (nh - oh) / 2 });
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
+    const up = () => { setDrag(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
     cleanupRef.current = up;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -153,11 +164,11 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none', transition: animate ? 'transform 260ms cubic-bezier(0.22,1,0.36,1)' : undefined }}>
+    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none', transition: dragging ? undefined : 'transform 260ms cubic-bezier(0.22,1,0.36,1)' }}>
       {minimized ? (
         <MiniRow onDown={onDown} active={active} currentIndex={currentIndex} prev={prev} next={next} onJump={onJump} onExpand={() => setMinimized(false)} />
       ) : (
-      <div ref={bubbleRef} onPointerDown={onDown} style={{ ...GLASS, borderRadius: 20, position: 'relative', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', height: size.h != null ? size.h : undefined, maxHeight: size.h != null ? undefined : '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif', cursor: 'grab', transition: animate ? 'height 260ms cubic-bezier(0.22,1,0.36,1), width 260ms cubic-bezier(0.22,1,0.36,1)' : undefined }}>
+      <div ref={bubbleRef} onPointerDown={onDown} style={{ ...GLASS, borderRadius: 20, position: 'relative', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', height: size.h != null ? size.h : undefined, maxHeight: size.h != null ? undefined : '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif', cursor: 'grab', transition: dragging ? undefined : 'height 260ms cubic-bezier(0.22,1,0.36,1), width 260ms cubic-bezier(0.22,1,0.36,1)' }}>
         {/* Drag handle (the whole panel chrome drags; this bar is the obvious grip). */}
         <div data-testid="taghud-drag" style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', touchAction: 'none', borderBottom: here.length > 1 ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
           <span aria-hidden style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
