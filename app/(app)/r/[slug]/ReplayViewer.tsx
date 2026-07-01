@@ -438,6 +438,20 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     })();
     return () => { cancelled = true; };
   }, [installToken, sessionUserId, replay.slug, anonymize]);
+
+  // B149: record this visit + capture the PRIOR one, so tags added since then can
+  // be flagged "new" for a returning reviewee. Signed-in only (no-op otherwise).
+  const [lastViewedAt, setLastViewedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sessionUserId) return;
+    let live = true;
+    fetch(`/api/replays/${replay.slug}/viewed`, { method: 'POST' })
+      .then((r) => r.json())
+      .then((b) => { if (live && b?.ok) setLastViewedAt(b.previousViewedAt ?? null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [sessionUserId, replay.slug]);
+
   const isOwner = canMutateReplay(
     { userId: replay.userId, ownerToken: replay.ownerToken },
     { sessionUserId, installToken: installToken || null },
@@ -1088,6 +1102,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
             appendTag={(t) => setTagState((prev) => [...prev, t as any])}
             updateTag={(id, patch) => setTagState((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } as any : t)))}
             removeTag={(id) => setTagState((prev) => prev.filter((t) => t.id !== id))}
+            armedTeams={armedTeams}
+            lastViewedAt={lastViewedAt}
             messagesByFrame={activeDecoded?.messagesByFrame || null}
             matchup={{
               replay: replay as any,

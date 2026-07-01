@@ -44,7 +44,7 @@ const VIEWS: { id: SidebarView; label: string; icon: ReactNode }[] = [
 ];
 const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4ff', leader: '#e0c64a', tag: '#4dd2ff', end: '#8aa0b8' };
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -54,6 +54,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   appendTag: (t: ViewerTag) => void;
   updateTag: (id: string, patch: Partial<ViewerTag>) => void;
   removeTag: (id: string) => void;
+  armedTeams: { slug: string; name: string }[];
+  lastViewedAt: string | null;
   messagesByFrame: any[][] | null;
   matchup: ComponentProps<typeof MatchupFeature>;
   decks: ComponentProps<typeof DecksFeature>;
@@ -86,7 +88,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const openTagFromFeed = (f: number) => { setHudOpen(true); jumpFromSidebar(f); };
 
   const renderView = (v: SidebarView): ReactNode => {
-    if (v === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={openTagFromFeed} />;
+    if (v === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={openTagFromFeed} armedTeams={armedTeams} lastViewedAt={lastViewedAt} />;
     if (v === 'reviews') return <ReviewsFeature replaySlug={replaySlug} tags={tags} onJump={jumpFromSidebar} toOriginalFrame={toOriginalFrame} updateTag={updateTag} removeTag={removeTag} isOwner={controls.isOwner} />;
     if (v === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} onJump={jumpFromSidebar} />;
     if (v === 'info') return <MatchupFeature {...matchup} />;
@@ -115,6 +117,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
         <TagHud
           tags={tags} currentIndex={currentIndex} onJump={onJump}
           replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} updateTag={updateTag} removeTag={removeTag} canTag={canTag}
+          armedTeams={armedTeams} lastViewedAt={lastViewedAt}
           sidebarW={desktopDock ? sidebarW : 0}
           onClose={() => setHudOpen(false)}
         />

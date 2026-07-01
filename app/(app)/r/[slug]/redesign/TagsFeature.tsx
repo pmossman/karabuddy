@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import { getOrCreateInstallToken } from '@/lib/installToken';
+import { scopeLabel } from '@/lib/commentScope';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
 // B216 redesign — the Tags FEED: a condensed, chronological list of every tag on
@@ -30,11 +33,21 @@ export function authorColor(name: string): string {
 
 const DIM = 0.42; // uniform fade for every non-current tag
 
-export function TagsFeature({ tags, currentIndex, onJump }: {
+export function TagsFeature({ tags, currentIndex, onJump, armedTeams = [], lastViewedAt = null }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
+  armedTeams?: { slug: string; name: string }[];
+  lastViewedAt?: string | null;
 }) {
+  const { data: session } = useSession();
+  const myUserId = (session?.user as { id?: string } | undefined)?.id || null;
+  const [token] = useState(() => (typeof window !== 'undefined' ? getOrCreateInstallToken() : ''));
+  const isMine = (t: ViewerTag) => (!!myUserId && t.userId === myUserId) || (!!token && !!t.authorToken && t.authorToken === token);
+  const isNew = (t: ViewerTag) => !!lastViewedAt && !isMine(t) && t.createdAt > lastViewedAt;
+  const armedSlugs = useMemo(() => armedTeams.map((a) => a.slug), [armedTeams]);
+  const teamNames = useMemo(() => Object.fromEntries(armedTeams.map((a) => [a.slug, a.name])), [armedTeams]);
+
   const { rows, replyMap, total } = useMemo(() => {
     const top = tags.filter((t) => !t.parentTagId).sort((a, b) => a.frameIndex - b.frameIndex || (a.createdAt < b.createdAt ? -1 : 1));
     const replyMap = new Map<string, ViewerTag[]>();
@@ -73,9 +86,11 @@ export function TagsFeature({ tags, currentIndex, onJump }: {
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flex: '0 0 auto' }} />
               <span style={{ fontSize: 12.5, fontWeight: 700, color: '#e8ecf3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.authorName || 'Anonymous'}</span>
+              {isNew(t) && <span aria-hidden style={{ flex: '0 0 auto', background: 'rgba(86,199,255,0.18)', border: '1px solid rgba(86,199,255,0.5)', color: '#8fd6ff', borderRadius: 999, padding: '0 6px', fontSize: 9, fontWeight: 800, letterSpacing: '0.05em' }}>NEW</span>}
               <span style={{ marginLeft: 'auto', flex: '0 0 auto', fontSize: 10.5, fontWeight: 700, color: isCurrent ? tokens.color.accent : tokens.color.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Frame {t.frameIndex + 1}</span>
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.4, color: tokens.color.text, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{t.comment || '(no text)'}</div>
+            {isMine(t) && <div style={{ fontSize: 10, color: tokens.color.textFaint }}>Visible to {scopeLabel(t.scope ?? [], armedSlugs, teamNames)}</div>}
             {replies.map((r) => (
               <div key={r.id} style={{ display: 'flex', gap: 5, fontSize: 11.5, color: tokens.color.textSecondary, paddingLeft: 4 }}>
                 <span aria-hidden style={{ color: tokens.color.textMuted }}>↳</span>

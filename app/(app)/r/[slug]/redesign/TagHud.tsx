@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { scopeLabel } from '@/lib/commentScope';
 import type { ViewerTag } from './TagsFeature';
 import { useCreateTag, SignInToTagCta } from './tagCompose';
 
@@ -25,7 +26,7 @@ const GLASS: React.CSSProperties = {
 
 type Editor = null | { kind: 'add' } | { kind: 'reply'; id: string } | { kind: 'edit'; id: string };
 
-export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, canTag, sidebarW = 0, onClose }: {
+export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, canTag, sidebarW = 0, onClose, armedTeams, lastViewedAt }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
@@ -37,8 +38,13 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   canTag: boolean;
   sidebarW?: number;
   onClose: () => void;
+  armedTeams?: { slug: string; name: string }[];
+  lastViewedAt?: string | null;
 }) {
   const { signedIn, authorName, isMine, create, edit, remove } = useCreateTag(replaySlug, toOriginalFrame, appendTag, updateTag, removeTag);
+  const armedSlugs = useMemo(() => (armedTeams ?? []).map((a) => a.slug), [armedTeams]);
+  const teamNames = useMemo(() => Object.fromEntries((armedTeams ?? []).map((a) => [a.slug, a.name])), [armedTeams]);
+  const isNew = (t: ViewerTag) => !!lastViewedAt && !isMine(t) && t.createdAt > lastViewedAt;
 
   const top = useMemo(() => tags.filter((t) => !t.parentTagId).sort((a, b) => a.frameIndex - b.frameIndex), [tags]);
   const here = useMemo(() => top.filter((t) => t.frameIndex === currentIndex), [top, currentIndex]);
@@ -231,8 +237,10 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: authorColor(active.authorName || 'anon') }} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: authorColor(active.authorName || 'anon') }}>{active.authorName || 'Anonymous'}</span>
+                  {isNew(active) && <span aria-hidden style={{ background: 'rgba(86,199,255,0.18)', border: '1px solid rgba(86,199,255,0.5)', color: '#8fd6ff', borderRadius: 999, padding: '0 6px', fontSize: 9, fontWeight: 800, letterSpacing: '0.05em' }}>NEW</span>}
                 </div>
                 <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgba(255,255,255,0.92)' }}>{active.comment}</div>
+                {isMine(active) && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>Visible to {scopeLabel(active.scope ?? [], armedSlugs, teamNames)}</div>}
                 {(replies.get(active.id) ?? []).map((r) => (
                   <div key={r.id} style={{ marginLeft: 8, paddingLeft: 9, borderLeft: `2px solid ${authorColor(r.authorName || 'anon')}`, marginTop: 2 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: authorColor(r.authorName || 'anon') }}>{r.authorName || 'Anonymous'}: </span>
