@@ -26,7 +26,7 @@ const FEATURES: FeatureDef[] = [
   { id: 'decks', label: 'Decks', icon: (<svg {...S}><rect x="3" y="7" width="12" height="14" rx="2" /><rect x="9" y="3" width="12" height="14" rx="2" /></svg>) },
 ];
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks, onTagModeChange, onDockWidthChange, canTag }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, messagesByFrame, matchup, decks, onTagModeChange, onDockWidthChange, canTag }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -34,6 +34,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   replaySlug: string;
   toOriginalFrame: (i: number) => number;
   appendTag: (t: ViewerTag) => void;
+  updateTag: (id: string, patch: Partial<ViewerTag>) => void;
   messagesByFrame: any[][] | null;
   matchup: ComponentProps<typeof MatchupFeature>;
   decks: ComponentProps<typeof DecksFeature>;
@@ -90,7 +91,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {showHud && (
         <TagHud
           tags={tags} currentIndex={currentIndex} onJump={onJump}
-          replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag}
+          replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} updateTag={updateTag} canTag={canTag}
           sidebarW={mode === 'desktop' ? 380 : 0}
           onOpenFeed={mode === 'mobile' ? () => setTagsFeed(true) : undefined}
         />

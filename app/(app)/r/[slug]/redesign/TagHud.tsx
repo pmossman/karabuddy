@@ -1,17 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { ViewerTag } from './TagsFeature';
 import { useCreateTag, SignInToTagCta } from './tagCompose';
 
-// B216 redesign — the Tag HUD: a glassy, iOS-style bubble floating over the
-// CENTRE of the board (both desktop + mobile) showing the CURRENT frame's tag(s)
-// with minimal controls — add, reply, and prev/next-tag nav with a shortened
-// preview. The full feed lives elsewhere (desktop sidebar / mobile full-page).
-// Translucent so the board reads through it.
+// B216 redesign — the Tag HUD: a glassy, iOS-style bubble floating over the board
+// showing the CURRENT frame's tag(s). Draggable (clamped on-screen). When a frame
+// has multiple comments (same or different authors), a tab strip pages between
+// them. Minimal controls: add, reply, EDIT (own comments), prev/next-tag nav with
+// a shortened preview. The full feed lives in the sidebar / a full-page takeover.
 
 const truncate = (s: string, n = 22) => { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const COLORS = ['#4dd2ff', '#6bd968', '#e0c64a', '#ff8a7a', '#c08bff', '#5db4ff', '#ff9f4d'];
+function authorColor(name: string): string { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; }
 
 const GLASS: React.CSSProperties = {
   background: 'rgba(16, 20, 28, 0.55)',
@@ -21,21 +23,21 @@ const GLASS: React.CSSProperties = {
   boxShadow: '0 12px 44px rgba(0,0,0,0.5)',
 };
 
-export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, canTag, sidebarW = 0, onOpenFeed }: {
+type Editor = null | { kind: 'add' } | { kind: 'reply'; id: string } | { kind: 'edit'; id: string };
+
+export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, canTag, sidebarW = 0, onOpenFeed }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
   replaySlug: string;
   toOriginalFrame: (i: number) => number;
   appendTag: (t: ViewerTag) => void;
+  updateTag: (id: string, patch: Partial<ViewerTag>) => void;
   canTag: boolean;
-  sidebarW?: number; // desktop feed width — shift the HUD to centre on the board
-  onOpenFeed?: () => void; // "see all tags" (mobile full-page / desktop focuses sidebar)
+  sidebarW?: number;
+  onOpenFeed?: () => void;
 }) {
-  const { signedIn, authorName, create } = useCreateTag(replaySlug, toOriginalFrame, appendTag);
-  const [compose, setCompose] = useState<null | { replyTo?: string }>(null);
-  const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { signedIn, authorName, isMine, create, edit } = useCreateTag(replaySlug, toOriginalFrame, appendTag, updateTag);
 
   const top = useMemo(() => tags.filter((t) => !t.parentTagId).sort((a, b) => a.frameIndex - b.frameIndex), [tags]);
   const here = useMemo(() => top.filter((t) => t.frameIndex === currentIndex), [top, currentIndex]);
@@ -47,56 +49,120 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     return m;
   }, [tags]);
 
+  const [tab, setTab] = useState(0);
+  const [editor, setEditor] = useState<Editor>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  // New frame → reset to the first comment + close any editor.
+  useEffect(() => { setTab(0); setEditor(null); }, [currentIndex]);
+  const activeIdx = Math.min(tab, Math.max(0, here.length - 1));
+  const active = here[activeIdx] || null;
+
+  // Draggable (window listeners + clamp so it can't leave the viewport).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const cleanupRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cleanupRef.current?.(), []);
+  const onDown = (e: React.PointerEvent) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = pos.x, oy = pos.y, m = 8, keepBottom = 90;
+    const move = (ev: PointerEvent) => {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const dx = Math.min(Math.max(ev.clientX - sx, m - rect.left), (vw - m) - rect.right);
+      const dy = Math.min(Math.max(ev.clientY - sy, m - rect.top), (vh - keepBottom) - rect.top);
+      setPos({ x: ox + dx, y: oy + dy });
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
+    cleanupRef.current = up;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  const openEditor = (e: Editor, initial = '') => { setEditor(e); setDraft(initial); };
   const submit = async () => {
-    if (busy || !draft.trim() || !compose) return;
+    if (busy || !draft.trim() || !editor) return;
     setBusy(true);
-    const ok = await create(currentIndex, draft, compose.replyTo);
+    const ok = editor.kind === 'edit' ? await edit(editor.id, draft)
+      : editor.kind === 'reply' ? await create(currentIndex, draft, editor.id)
+      : await create(currentIndex, draft);
     setBusy(false);
-    if (ok) { setDraft(''); setCompose(null); }
+    if (ok) { setDraft(''); setEditor(null); }
   };
 
   return (
-    <div style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px), -50%)`, zIndex: 130, width: 'min(420px, 90vw)', pointerEvents: 'none' }}>
-      <div style={{ ...GLASS, borderRadius: 20, pointerEvents: 'auto', display: 'flex', flexDirection: 'column', maxHeight: '54vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
-        {/* Body: current frame's tag(s), or a minimal empty state. */}
-        <div style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: here.length ? '14px 16px 8px' : '18px 16px' }}>
-          {here.length === 0 ? (
-            <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>No tags on this frame</div>
-          ) : here.map((t) => (
-            <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingBottom: 8 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(255,255,255,0.7)' }}>{t.authorName || 'Anonymous'}</div>
-              <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{t.comment}</div>
-              {(replies.get(t.id) ?? []).map((r) => (
-                <div key={r.id} style={{ marginLeft: 8, paddingLeft: 8, borderLeft: '1px solid rgba(255,255,255,0.15)', marginTop: 2 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.65)' }}>{r.authorName || 'Anonymous'}: </span>
-                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{r.comment}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-
-          {/* Inline compose / reply. */}
-          {compose && (canTag ? (signedIn ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: here.length ? 6 : 0 }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>{compose.replyTo ? 'Replying' : `Tagging frame ${currentIndex + 1}`} as {authorName}</div>
-              <textarea value={draft} autoFocus rows={2} onChange={(e) => setDraft(e.target.value)} placeholder={compose.replyTo ? 'Your reply…' : 'Your note about this moment…'}
-                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(); }}
-                style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.35)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: 8, fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => { setCompose(null); setDraft(''); }} style={ghostBtn}>Cancel</button>
-                <button type="button" onClick={submit} disabled={busy || !draft.trim()} style={{ ...primaryBtn, opacity: busy || !draft.trim() ? 0.5 : 1 }}>{busy ? 'Saving…' : compose.replyTo ? 'Reply' : 'Save'}</button>
-              </div>
-            </div>
-          ) : <div style={{ marginTop: 8 }}><SignInToTagCta replaySlug={replaySlug} compact /></div>
-          ) : <div style={{ marginTop: 8, fontSize: 11.5, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', textAlign: 'center' }}>Tagging is for this replay’s owner and their teams.</div>)}
+    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: 'min(420px, 90vw)', pointerEvents: 'none' }}>
+      <div style={{ ...GLASS, borderRadius: 20, pointerEvents: 'auto', display: 'flex', flexDirection: 'column', maxHeight: '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
+        {/* Drag handle. */}
+        <div data-testid="taghud-drag" onPointerDown={onDown} style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'grab', touchAction: 'none', borderBottom: here.length > 1 ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
+          <span aria-hidden style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255,255,255,0.6)' }}>
+            Frame {currentIndex + 1}{here.length > 0 ? ` · ${here.length} tag${here.length > 1 ? 's' : ''}` : ''}
+          </span>
         </div>
 
-        {/* Control bar: prev · [add] [reply] [feed] · next. */}
+        {/* Tabs when the frame has multiple comments. */}
+        {here.length > 1 && (
+          <div style={{ flex: '0 0 auto', display: 'flex', gap: 6, padding: '0 10px 8px', overflowX: 'auto', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+            {here.map((t, i) => {
+              const on = i === activeIdx;
+              return (
+                <button key={t.id} type="button" onClick={() => { setTab(i); setEditor(null); }} title={t.authorName || 'Anonymous'}
+                  style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 5, background: on ? 'rgba(255,255,255,0.16)' : 'transparent', border: `1px solid ${on ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.12)'}`, color: on ? '#fff' : 'rgba(255,255,255,0.7)', borderRadius: 999, padding: '4px 9px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: authorColor(t.authorName || 'anon') }} />
+                  {truncate(t.authorName || 'Anon', 10)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Body — the active comment (+ replies), or the inline editor, or empty. */}
+        <div style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px' }}>
+          {(() => {
+            if (editor) {
+              if (!(canTag || editor.kind === 'edit')) return <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', textAlign: 'center' }}>Tagging is for this replay’s owner and their teams.</div>;
+              if (!signedIn && editor.kind !== 'edit') return <SignInToTagCta replaySlug={replaySlug} compact />;
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+                    {editor.kind === 'edit' ? 'Editing your comment' : editor.kind === 'reply' ? `Replying to ${active?.authorName || 'this comment'}` : `Tagging frame ${currentIndex + 1} as ${authorName}`}
+                  </div>
+                  <textarea value={draft} autoFocus rows={3} onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(); }}
+                    placeholder={editor.kind === 'reply' ? 'Your reply…' : 'Your note about this moment…'}
+                    style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.35)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: 8, fontSize: 13.5, fontFamily: 'inherit', resize: 'vertical' }} />
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => { setEditor(null); setDraft(''); }} style={ghostBtn}>Cancel</button>
+                    <button type="button" onClick={submit} disabled={busy || !draft.trim()} style={{ ...primaryBtn, opacity: busy || !draft.trim() ? 0.5 : 1 }}>{busy ? 'Saving…' : editor.kind === 'reply' ? 'Reply' : 'Save'}</button>
+                  </div>
+                </div>
+              );
+            }
+            if (!active) return <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.55)', fontSize: 13, padding: '4px 0' }}>No tags on this frame</div>;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(255,255,255,0.72)' }}>{active.authorName || 'Anonymous'}</div>
+                <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{active.comment}</div>
+                {(replies.get(active.id) ?? []).map((r) => (
+                  <div key={r.id} style={{ marginLeft: 8, paddingLeft: 8, borderLeft: '1px solid rgba(255,255,255,0.15)', marginTop: 2 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.65)' }}>{r.authorName || 'Anonymous'}: </span>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{r.comment}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Control bar: prev · [add][reply][edit][feed] · next. */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
           <NavBtn dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
           <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center', gap: 6 }}>
-            <IconBtn label="Add tag" glyph="＋" onClick={() => setCompose({})} disabled={!canTag} active={!!compose && !compose.replyTo} />
-            <IconBtn label="Reply" glyph="↩" onClick={() => here[0] && setCompose({ replyTo: here[0].id })} disabled={!canTag || here.length === 0} active={!!compose?.replyTo} />
+            <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
+            <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={!canTag || !active} active={editor?.kind === 'reply'} />
+            <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment)} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
             {onOpenFeed && <IconBtn label="All tags" glyph="≣" onClick={onOpenFeed} />}
           </div>
           <NavBtn dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
@@ -112,13 +178,13 @@ function NavBtn({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | 
   return (
     <button type="button" onClick={onClick} disabled={disabled} title={tag ? `Frame ${tag.frameIndex + 1}: ${tag.comment}` : undefined}
       style={{
-        flex: '0 1 auto', maxWidth: '34%', display: 'inline-flex', alignItems: 'center', gap: 4,
+        flex: '0 1 auto', maxWidth: '32%', display: 'inline-flex', alignItems: 'center', gap: 4,
         background: disabled ? 'transparent' : 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)',
         color: disabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.9)', borderRadius: 999, padding: '6px 10px',
         fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: disabled ? 'default' : 'pointer',
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>
-      {dir === 'prev' ? `${arrow} ${tag ? truncate(tag.comment, 14) : ''}` : `${tag ? truncate(tag.comment, 14) : ''} ${arrow}`}
+      {dir === 'prev' ? `${arrow} ${tag ? truncate(tag.comment, 12) : ''}` : `${tag ? truncate(tag.comment, 12) : ''} ${arrow}`}
     </button>
   );
 }

@@ -1,25 +1,49 @@
 'use client';
 
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { ViewerTag } from './TagsFeature';
 
-// B216 redesign — shared tag-compose logic, so the full-screen list (TagsFeature)
-// and the board-visible Tag Mode bubble post tags the same way (and share the
-// signed-out gate). Optimistically appends in ORIGINAL frame space (the viewer
-// remaps to the collapsed timeline) — mirrors the legacy TagSidebar.submitTag.
-export function useCreateTag(replaySlug: string, toOriginalFrame: (i: number) => number, appendTag: (t: ViewerTag) => void) {
+// B216 redesign — shared tag actions (create / reply / edit / "is mine"), so the
+// list, the HUD, and the feed all post the same way + share the signed-out gate.
+// Optimistically appends/updates in ORIGINAL frame space (the viewer remaps to
+// the collapsed timeline) — mirrors the legacy TagSidebar.submitTag.
+export function useCreateTag(
+  replaySlug: string,
+  toOriginalFrame: (i: number) => number,
+  appendTag: (t: ViewerTag) => void,
+  updateTag?: (id: string, patch: Partial<ViewerTag>) => void,
+) {
   const { data: session } = useSession();
   const userId = (session?.user as { id?: string } | undefined)?.id || null;
   const authorName = session?.user?.name || 'You';
+  const [token] = useState(() => (typeof window !== 'undefined' ? getOrCreateInstallToken() : ''));
+  // A tag is the viewer's own (editable) if it matches their account or token.
+  const isMine = (tag: { userId?: string | null; authorToken?: string }) =>
+    (!!userId && tag.userId === userId) || (!!token && !!tag.authorToken && tag.authorToken === token);
+
+  const edit = async (id: string, text: string): Promise<boolean> => {
+    const body = text.trim();
+    if (!body) return false;
+    try {
+      const res = await fetch(`/api/replays/${replaySlug}/tags/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Install-Token': token } : {}) },
+        body: JSON.stringify({ comment: body }),
+      });
+      const r = await res.json();
+      if (!r.ok) { alert(`Failed to edit: ${r.error || 'unknown'}`); return false; }
+      updateTag?.(id, { comment: body });
+      return true;
+    } catch { alert('Network error editing tag.'); return false; }
+  };
 
   // parentTagId set → a one-level reply (B78): the server anchors it to the
   // parent's frame + inherits its scope; we append it in that frame too.
   const create = async (currentIndex: number, text: string, parentTagId?: string): Promise<boolean> => {
     const body = text.trim();
     if (!body) return false;
-    const token = getOrCreateInstallToken();
     const origFrame = toOriginalFrame(currentIndex);
     try {
       const res = await fetch(`/api/replays/${replaySlug}/tags`, {
@@ -33,7 +57,7 @@ export function useCreateTag(replaySlug: string, toOriginalFrame: (i: number) =>
     } catch { alert('Network error adding tag.'); return false; }
   };
 
-  return { signedIn: !!userId, authorName, create };
+  return { signedIn: !!userId, authorName, isMine, create, edit };
 }
 
 // The signed-out gate shared by both compose surfaces (matches the prod CTA).
