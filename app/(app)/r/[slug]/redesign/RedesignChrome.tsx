@@ -92,12 +92,12 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
   const railRight = desktopDock ? sidebarW + 14 : 14;
 
-  // Rail = current-frame actions. (Play is a larger standalone FAB, below.)
+  // Top-right rail: the sidebar toggle (top corner) + Tags (the messages HUD).
+  // Play / gear / jump-to live in the bottom-right cluster; Clip lives in the
+  // sidebar's Clips view.
   const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }[] = [
-    { key: 'tags', icon: Icon.tag, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
-    { key: 'jump', icon: Icon.jump, label: 'Jump to…', active: jumpOpen, onClick: () => setJumpOpen((v) => !v) },
-    { key: 'clip', icon: Icon.clip, label: 'Clip', onClick: controls.onOpenClip },
     { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => setSidebarOpen((v) => !v) },
+    { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
   ];
 
   return (
@@ -124,40 +124,57 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
         </FeaturePanel>
       )}
 
-      {/* Jump-to-moment menu (rail → glassy popover). */}
+      {/* Jump-to-moment menu — opens UPWARD from the bottom-right jump bubble. */}
       {jumpOpen && !mobileDrawer && (
-        <JumpMenu chapters={controls.chapters} currentIndex={currentIndex} right={railRight + 52}
+        <JumpMenu chapters={controls.chapters} currentIndex={currentIndex}
+          right={(desktopDock ? sidebarW : 0) + 18}
+          bottom={'calc(max(18px, env(safe-area-inset-bottom, 18px)) + 66px)'}
           onJump={(f) => { onJump(f); setJumpOpen(false); }} onClose={() => setJumpOpen(false)} />
       )}
 
-      {/* Bottom-right transport cluster (its pre-redesign home, dock-aware): a
-          small gear that opens Playback options + a larger Play/Pause FAB that
-          breathes a subtle glow WHILE PLAYING (static once paused). */}
+      {/* Bottom-right transport cluster (its pre-redesign home, dock-aware): the
+          jump-to bubble + a larger Play/Pause FAB (breathes a glow WHILE PLAYING)
+          with a small gear OVERLAPPING it — clearly its playback options. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', alignItems: 'flex-end', gap: 12 }}>
           <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 7px 1px rgba(77,210,255,0.32)}50%{box-shadow:0 0 17px 5px rgba(77,210,255,0.55)}}'}</style>
-          <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={controls.onTogglePlay}
+          {/* Jump-to (original bottom-right spot). */}
+          <button type="button" title="Jump to a moment" aria-label="Jump to a moment" onClick={() => setJumpOpen((v) => !v)}
             style={{
-              width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
-              background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
-              color: controls.playing ? tokens.led.on : '#eef2f8',
-              border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
-              boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
+              width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 7,
+              background: jumpOpen ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
+              color: jumpOpen ? tokens.led.on : 'rgba(255,255,255,0.82)',
+              border: `1px solid ${jumpOpen ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
+              boxShadow: jumpOpen ? tokens.led.ringGlow : '0 2px 10px rgba(0,0,0,0.35)',
               backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-              animation: controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
             }}>
-            <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
+            <span aria-hidden>{Icon.jump}</span>
           </button>
-          <button type="button" title="Playback options" aria-label="Playback options" onClick={() => openSidebar('playback')}
-            style={{
-              width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
-              background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.2)' : 'rgba(255,255,255,0.07)',
-              color: sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.82)',
-              border: `1px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
-              boxShadow: '0 2px 10px rgba(0,0,0,0.35)', backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-            }}>
-            <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.82)' }}>{Icon.gear}</span>
-          </button>
+          {/* Play + overlapping gear. */}
+          <div style={{ position: 'relative' }}>
+            <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={controls.onTogglePlay}
+              style={{
+                width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+                background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
+                color: controls.playing ? tokens.led.on : '#eef2f8',
+                border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
+                boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
+                backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                animation: controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
+              }}>
+              <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
+            </button>
+            <button type="button" title="Playback options" aria-label="Playback options" onClick={() => openSidebar('playback')}
+              style={{
+                position: 'absolute', right: -4, bottom: -4, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+                background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(22,28,38,0.95)',
+                color: sidebarOpen && sidebarView === 'playback' ? '#06121a' : '#eef2f8',
+                border: `1.5px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.5)'}`,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+              }}>
+              <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.66)' }}>{Icon.gear}</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -166,8 +183,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
         <div style={{ position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
           {railItems.map((it, i) => (
             <div key={it.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
-              {/* subtle divider before the sidebar toggle (the whole-replay control) */}
-              {it.key === 'sidebar' && <div style={{ width: 26, height: 1, background: 'rgba(255,255,255,0.14)', margin: '0 9px' }} />}
+              {/* subtle divider between the sidebar toggle (whole-replay) and Tags
+                  (current-frame). */}
+              {it.key === 'tags' && <div style={{ width: 26, height: 1, background: 'rgba(255,255,255,0.14)', margin: '0 9px' }} />}
               <RailBtn {...it} />
             </div>
           ))}
@@ -215,7 +233,7 @@ function ViewSelector({ value, onChange }: { value: SidebarView; onChange: (v: S
   );
 }
 
-function JumpMenu({ chapters, currentIndex, right, onJump, onClose }: { chapters: Chapter[]; currentIndex: number; right: number; onJump: (f: number) => void; onClose: () => void }) {
+function JumpMenu({ chapters, currentIndex, right, bottom, onJump, onClose }: { chapters: Chapter[]; currentIndex: number; right: number; bottom: string; onJump: (f: number) => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const activeIdx = useMemo(() => {
     let best = 0; for (let i = 0; i < chapters.length; i++) if (chapters[i].frameIndex <= currentIndex) best = i; return best;
@@ -224,9 +242,11 @@ function JumpMenu({ chapters, currentIndex, right, onJump, onClose }: { chapters
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // Start scrolled to the current moment (the list opens upward from the bottom).
+  useEffect(() => { ref.current?.querySelector('[data-active="1"]')?.scrollIntoView({ block: 'nearest' }); }, []);
   return (
     <div ref={ref} style={{
-      position: 'fixed', top: 'max(14px, env(safe-area-inset-top, 14px))', right, zIndex: 125,
+      position: 'fixed', bottom, right, zIndex: 125,
       width: 'min(280px, 84vw)', maxHeight: '62vh', overflowY: 'auto', borderRadius: 16, padding: 6,
       background: 'rgba(16,20,28,0.72)', backdropFilter: 'blur(20px) saturate(1.4)', WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
       border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 12px 44px rgba(0,0,0,0.5)', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif',
@@ -235,7 +255,7 @@ function JumpMenu({ chapters, currentIndex, right, onJump, onClose }: { chapters
       {chapters.map((c, i) => {
         const on = i === activeIdx;
         return (
-          <button key={`${c.frameIndex}-${i}`} type="button" onClick={() => onJump(c.frameIndex)}
+          <button key={`${c.frameIndex}-${i}`} type="button" onClick={() => onJump(c.frameIndex)} data-active={on ? '1' : undefined}
             style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', border: 0,
               background: on ? 'rgba(77,210,255,0.16)' : 'transparent', color: on ? '#eaf9ff' : 'rgba(255,255,255,0.85)' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: CHAPTER_COLOR[c.kind] ?? '#8aa0b8' }} />

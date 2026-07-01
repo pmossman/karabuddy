@@ -1245,7 +1245,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               onJumpTag={jumpToAdjacentTag}
               canPrevTag={displayTags.some((t) => t.frameIndex < currentIndex)}
               canNextTag={displayTags.some((t) => t.frameIndex > currentIndex)}
-              showTagJump={displayTags.length > 0 && !tagMode}
+              showTagJump={displayTags.length > 0 && !tagMode && !redesign}
             />
             {/* B66b/B100: desktop step/playback controls as an inline pill that
                 tracks the docked sidebar (shifts left past it). On MOBILE the
