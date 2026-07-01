@@ -15,6 +15,7 @@ export function useCreateTag(
   toOriginalFrame: (i: number) => number,
   appendTag: (t: ViewerTag) => void,
   updateTag?: (id: string, patch: Partial<ViewerTag>) => void,
+  removeTag?: (id: string) => void,
 ) {
   const { data: session } = useSession();
   const userId = (session?.user as { id?: string } | undefined)?.id || null;
@@ -39,6 +40,18 @@ export function useCreateTag(
     } catch { alert('Network error editing tag.'); return false; }
   };
 
+  const remove = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/replays/${replaySlug}/tags/${id}`, {
+        method: 'DELETE', headers: { ...(token ? { 'X-Install-Token': token } : {}) },
+      });
+      const r = await res.json();
+      if (!r.ok) { alert(`Failed to delete: ${r.error || 'unknown'}`); return false; }
+      removeTag?.(id);
+      return true;
+    } catch { alert('Network error deleting tag.'); return false; }
+  };
+
   // parentTagId set → a one-level reply (B78): the server anchors it to the
   // parent's frame + inherits its scope; we append it in that frame too.
   const create = async (currentIndex: number, text: string, parentTagId?: string): Promise<boolean> => {
@@ -57,7 +70,7 @@ export function useCreateTag(
     } catch { alert('Network error adding tag.'); return false; }
   };
 
-  return { signedIn: !!userId, authorName, isMine, create, edit };
+  return { signedIn: !!userId, authorName, isMine, create, edit, remove };
 }
 
 // The signed-out gate shared by both compose surfaces (matches the prod CTA).

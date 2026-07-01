@@ -1087,6 +1087,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
             toOriginalFrame={collapsedToOriginal}
             appendTag={(t) => setTagState((prev) => [...prev, t as any])}
             updateTag={(id, patch) => setTagState((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } as any : t)))}
+            removeTag={(id) => setTagState((prev) => prev.filter((t) => t.id !== id))}
             messagesByFrame={activeDecoded?.messagesByFrame || null}
             matchup={{
               replay: replay as any,
