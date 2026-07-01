@@ -53,6 +53,9 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   const [editor, setEditor] = useState<Editor>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  // Minimized → collapse to a slim pill (get it out of the way of the board).
+  // Sticky across frames so you can scrub with it tucked.
+  const [minimized, setMinimized] = useState(false);
   // New frame → reset to the first comment + close any editor.
   useEffect(() => { setTab(0); setEditor(null); }, [currentIndex]);
   const activeIdx = Math.min(tab, Math.max(0, here.length - 1));
@@ -93,6 +96,9 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
 
   return (
     <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: 'min(420px, 90vw)', pointerEvents: 'none' }}>
+      {minimized ? (
+        <MiniRow onDown={onDown} active={active} currentIndex={currentIndex} prev={prev} next={next} onJump={onJump} onExpand={() => setMinimized(false)} />
+      ) : (
       <div style={{ ...GLASS, borderRadius: 20, pointerEvents: 'auto', display: 'flex', flexDirection: 'column', maxHeight: '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
         {/* Drag handle. */}
         <div data-testid="taghud-drag" onPointerDown={onDown} style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'grab', touchAction: 'none', borderBottom: here.length > 1 ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
@@ -100,6 +106,8 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255,255,255,0.6)' }}>
             Frame {currentIndex + 1}{here.length > 0 ? ` · ${here.length} tag${here.length > 1 ? 's' : ''}` : ''}
           </span>
+          <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={() => setMinimized(true)} title="Minimize" aria-label="Minimize"
+            style={{ marginLeft: 'auto', background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 17, lineHeight: 1, padding: '0 2px' }}>⌄</button>
         </div>
 
         {/* Tabs when the frame has multiple comments. */}
@@ -168,6 +176,29 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           <NavBtn dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
         </div>
       </div>
+      )}
+    </div>
+  );
+}
+
+// The minimized pill — a slim row (author + shortened text + prev/next + expand),
+// still draggable, so the HUD gets out of the way of the board.
+function MiniRow({ onDown, active, currentIndex, prev, next, onJump, onExpand }: {
+  onDown: (e: React.PointerEvent) => void; active: ViewerTag | null; currentIndex: number;
+  prev: ViewerTag | null; next: ViewerTag | null; onJump: (f: number) => void; onExpand: () => void;
+}) {
+  const label = active ? `${active.authorName || 'Anon'}: ${truncate(active.comment, 30)}` : `Frame ${currentIndex + 1} · no tags`;
+  const mini = (glyph: string, onClick: () => void, title: string, disabled?: boolean) => (
+    <button type="button" onClick={onClick} disabled={disabled} title={title} aria-label={title}
+      style={{ flex: '0 0 auto', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', color: disabled ? 'rgba(255,255,255,0.3)' : '#eef2f8', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>{glyph}</button>
+  );
+  return (
+    <div style={{ ...GLASS, borderRadius: 999, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 10px', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
+      <span data-testid="taghud-drag" onPointerDown={onDown} aria-hidden style={{ flex: '0 0 auto', cursor: 'grab', touchAction: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
+      <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: active ? '#eef2f8' : 'rgba(255,255,255,0.55)' }}>{label}</span>
+      {mini('‹', () => prev && onJump(prev.frameIndex), 'Previous tag', !prev)}
+      {mini('›', () => next && onJump(next.frameIndex), 'Next tag', !next)}
+      {mini('⌃', onExpand, 'Expand')}
     </div>
   );
 }
