@@ -18,12 +18,16 @@ const ACCENT = '#4dd2ff';
 
 const CARD_ASPECT = 0.71;      // width / height (portrait card)
 const CARD_GAP = 8;            // gap between cards in a group grid
+const COL_GAP = 24;            // gap between the IN and OUT columns
 const BADGE_OVERHANG = 8;      // count badge hangs ~6px below the card's last row
-const GROUP_LABEL_H = 34;      // "IN"/"OUT" label + gap + the inter-group gap
+const GROUP_LABEL_H = 34;      // "IN"/"OUT" label + gap
 const PLAYER_HEAD_H = 62;      // player name row + paddings + top border + block gap
+const NO_CHANGE_H = 24;        // "kept the same deck" line
 const HEADER_H = 118;          // splash header + grid padding (non-card vertical space)
-const MIN_CARD_W = 72;
+const MIN_CARD_W = 84;
 const MAX_CARD_W = 168;
+
+interface PlayerCounts { inN: number; outN: number }
 
 // "SET_NNN" → { set, number } for the art proxy.
 function artFor(id: string): string | null {
@@ -31,21 +35,26 @@ function artFor(id: string): string | null {
   return m ? cardImageUrl({ set: m[1], number: m[2] }) : null;
 }
 
-// Largest uniform card width (px) such that every player's IN/OUT groups fit
-// within `availH` at container width `W`. Steps down from a sane max — mirrors the
-// deck view's solveFitWidth, generalized over the splash's group structure.
-function solveCardWidth(W: number, availH: number, groups: number[][]): number {
-  if (W <= 0 || availH <= 0) return MAX_CARD_W;
+// Largest uniform card width (px) such that every player fits within `availH`.
+// IN and OUT sit SIDE BY SIDE (two columns), so a player's grid height is the
+// TALLER of its two columns — this uses the modal's width and keeps cards big.
+// Steps down from a sane max, mirroring the deck view's fit solver.
+function solveCardWidth(gridW: number, availH: number, players: PlayerCounts[]): number {
+  if (gridW <= 0 || availH <= 0) return MAX_CARD_W;
   for (let w = MAX_CARD_W; w >= MIN_CARD_W; w -= 2) {
-    const cols = Math.max(1, Math.floor((W + CARD_GAP) / (w + CARD_GAP)));
     const cardH = w / CARD_ASPECT;
     let h = 0;
-    for (const player of groups) {
+    for (const p of players) {
       h += PLAYER_HEAD_H;
-      for (const count of player) {
-        if (count === 0) continue;
-        h += GROUP_LABEL_H + Math.ceil(count / cols) * (cardH + CARD_GAP) + BADGE_OVERHANG;
-      }
+      if (p.inN === 0 && p.outN === 0) { h += NO_CHANGE_H; continue; }
+      // Both groups present → they share the width in two columns; else full width.
+      const both = p.inN > 0 && p.outN > 0;
+      const colW = both ? (gridW - COL_GAP) / 2 : gridW;
+      const cols = Math.max(1, Math.floor((colW + CARD_GAP) / (w + CARD_GAP)));
+      const inRows = p.inN > 0 ? Math.ceil(p.inN / cols) : 0;
+      const outRows = p.outN > 0 ? Math.ceil(p.outN / cols) : 0;
+      const rows = both ? Math.max(inRows, outRows) : inRows + outRows;
+      h += GROUP_LABEL_H + rows * (cardH + CARD_GAP) + BADGE_OVERHANG;
     }
     if (h <= availH) return w;
   }
@@ -100,9 +109,9 @@ function PlayerBlock({ p, isLocal, w }: { p: SideboardPlayerChanges; isLocal: bo
       {!p.changed ? (
         <div style={{ fontSize: 12.5, color: '#8b93a5', fontStyle: 'italic' }}>No sideboard changes — kept the same deck.</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <CardGrid label="IN" cards={p.in} color={IN_COLOR} sign="+" w={w} />
-          <CardGrid label="OUT" cards={p.out} color={OUT_COLOR} sign="−" w={w} />
+        <div style={{ display: 'flex', gap: COL_GAP, alignItems: 'flex-start' }}>
+          {p.in.length > 0 && <div style={{ flex: 1, minWidth: 0 }}><CardGrid label="IN" cards={p.in} color={IN_COLOR} sign="+" w={w} /></div>}
+          {p.out.length > 0 && <div style={{ flex: 1, minWidth: 0 }}><CardGrid label="OUT" cards={p.out} color={OUT_COLOR} sign="−" w={w} /></div>}
         </div>
       )}
     </div>
@@ -131,12 +140,12 @@ export function SideboardSplash({
   // race-free. Recompute on resize.
   const [cardW, setCardW] = useState(MIN_CARD_W);
   useLayoutEffect(() => {
-    const groups = players.map((p) => (p.changed ? [p.in.length, p.out.length] : [0]));
+    const counts: PlayerCounts[] = players.map((p) => ({ inN: p.changed ? p.in.length : 0, outN: p.changed ? p.out.length : 0 }));
     const measure = () => {
       const modalW = Math.min(1040, window.innerWidth * 0.96);
       const gridW = modalW - 44; // 22px padding each side
       const availH = window.innerHeight * 0.9 - HEADER_H; // dialog cap minus the non-card chrome
-      setCardW(solveCardWidth(gridW, availH, groups));
+      setCardW(solveCardWidth(gridW, availH, counts));
     };
     measure();
     window.addEventListener('resize', measure);
