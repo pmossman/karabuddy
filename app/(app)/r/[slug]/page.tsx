@@ -46,6 +46,7 @@ const loadLobbyForSeries = cache(async (lobbyId: string) => {
       ownerToken: replays.ownerToken,
       winners: replays.winners,
       ownerPlayerId: replays.ownerPlayerId,
+      players: replays.players,
       decks: replays.decks,
       fmt: sql<string | null>`${replays.match}->>'gamesToWinMode'`,
     })
@@ -81,7 +82,16 @@ async function seriesFor(row: { slug: string; match: unknown }, anonymize: boole
   if (anonymize || typeof lobbyId !== 'string' || !lobbyId) return null;
   const match = currentMatchGames(await loadLobbyForSeries(lobbyId), row.slug);
   if (match.length < 2) return null;
-  const games = match.map((g, i) => ({ slug: g.slug, gameNumber: i + 1 }));
+  // Enrich each game with its matchup summary (players/winner) so the viewer can
+  // render a full replay-summary row per game, not just a pill. Entitled-only
+  // (seriesFor bails on anonymize), so player identities are fine to include.
+  const games = match.map((g, i) => ({
+    slug: g.slug,
+    gameNumber: i + 1,
+    players: orderPlayersOwnerFirst(g.players, g.ownerPlayerId),
+    ownerPlayerId: g.ownerPlayerId,
+    winners: (g.winners as string[] | null) ?? null,
+  }));
   const current = games.find((g) => g.slug === row.slug)?.gameNumber;
   if (!current) return null;
   return { current, games };

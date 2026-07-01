@@ -9,9 +9,19 @@ import Link from 'next/link';
 // captured, the labels shift, which is the honest representation of what
 // we have.
 
+export interface SeriesGame {
+  slug: string;
+  gameNumber: number;
+  // Enriched (viewer-entitled only) so a full matchup-summary row can render per
+  // game; the legacy pill nav below ignores these.
+  players?: any[] | null;
+  ownerPlayerId?: string | null;
+  winners?: string[] | null;
+}
+
 export interface SeriesInfo {
   current: number; // 1-based game number of THIS replay
-  games: { slug: string; gameNumber: number }[];
+  games: SeriesGame[];
 }
 
 export function SeriesNav({ series }: { series: SeriesInfo }) {

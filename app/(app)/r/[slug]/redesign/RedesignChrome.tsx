@@ -74,10 +74,16 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Glow the Play (▶) to invite the first play this session; stops once played and
   // never re-glows (not even when you pause).
   const [invitePlay, setInvitePlay] = useState(true);
+  // Deep-link view captured ONCE (?panel=<view>). Read via a lazy initializer, not
+  // re-read in the effect — otherwise Strict Mode's double-invoked effect strips the
+  // param on the first pass and the second pass sees none and closes the panel.
+  const [initialPanel] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try { return new URLSearchParams(window.location.search).get('panel'); } catch { return null; }
+  });
   // The board loads clean: the HUD starts CLOSED and only opens when you engage
   // tagging (Tags rail icon / a tag in the feed). Your open/close choice is
   // remembered across reloads (desktop only — mobile always uses the drawer).
-  // Restored in an effect (not a lazy initializer) to stay hydration-safe.
   useEffect(() => {
     setSidebarOpen(false); setJumpOpen(false);
     if (mode !== 'desktop') { setHudOpen(false); return; }
@@ -85,6 +91,17 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     try { saved = localStorage.getItem(HUD_PREF_KEY); } catch { /* private mode */ }
     setHudOpen(saved === '1'); // default closed when unset
   }, [mode]);
+  // Deep-link: open the sidebar straight to ?panel=<view> ONCE on mount (used by the
+  // series rows so hopping between games lands on the same panel). Declared after the
+  // mode effect so its setSidebarOpen(false) doesn't clobber this; mount-only so a
+  // later resize doesn't force it back open. Strips the param so a manual close sticks.
+  useEffect(() => {
+    if (!initialPanel || !VIEWS.some((v) => v.id === initialPanel)) return;
+    setSidebarView(initialPanel as SidebarView);
+    setSidebarOpen(true);
+    try { const u = new URL(window.location.href); u.searchParams.delete('panel'); window.history.replaceState(null, '', u.toString()); } catch { /* param stays; harmless */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (mode !== 'desktop') return; // don't let the mobile drawer clobber the desktop pref
     try { localStorage.setItem(HUD_PREF_KEY, hudOpen ? '1' : '0'); } catch { /* private mode */ }

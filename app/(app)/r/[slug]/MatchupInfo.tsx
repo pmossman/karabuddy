@@ -87,7 +87,7 @@ function MatchupPlayer({ player, winners, variant }: { player: any; winners?: st
 }
 
 export function MatchupInfo({
-  replay, matchMeta, installToken, isOwner, anonymize, series, variant, share,
+  replay, matchMeta, installToken, isOwner, anonymize, series, variant, share, seriesSlot, hideCurrentMatchup,
 }: {
   replay: MatchupReplay;
   matchMeta: MatchMeta | null;
@@ -99,6 +99,11 @@ export function MatchupInfo({
   // Desktop tucks the Share control inline beside the players; mobile renders
   // its own in the panel header, so it passes nothing here.
   share?: ReactNode;
+  // B216: the redesign replaces the pill SeriesNav with full per-game summary rows
+  // (seriesSlot) and hides the single current-game matchup (hideCurrentMatchup),
+  // since the current game is one of those rows. Legacy passes neither.
+  seriesSlot?: ReactNode;
+  hideCurrentMatchup?: boolean;
 }) {
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
@@ -122,7 +127,7 @@ export function MatchupInfo({
           canEdit={isOwner}
         />
       </div>
-      {series && <SeriesNav series={series} />}
+      {seriesSlot ?? (series && <SeriesNav series={series} />)}
       {(isOwner || (Array.isArray(replay.labels) && replay.labels.length > 0)) && (
         <LabelsRow
           replaySlug={replay.slug}
@@ -131,14 +136,16 @@ export function MatchupInfo({
           canEdit={isOwner}
         />
       )}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: panel ? 8 : 6, flex: 1, minWidth: 0 }}>
-          <MatchupPlayer player={p1} winners={replay.winners} variant={variant} />
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto', paddingTop: 11 }}>VS</span>
-          <MatchupPlayer player={p2} winners={replay.winners} variant={variant} />
+      {!hideCurrentMatchup && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: panel ? 8 : 6, flex: 1, minWidth: 0 }}>
+            <MatchupPlayer player={p1} winners={replay.winners} variant={variant} />
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#6c7588', flex: '0 0 auto', paddingTop: 11 }}>VS</span>
+            <MatchupPlayer player={p2} winners={replay.winners} variant={variant} />
+          </div>
+          {share}
         </div>
-        {share}
-      </div>
+      )}
     </>
   );
 }
