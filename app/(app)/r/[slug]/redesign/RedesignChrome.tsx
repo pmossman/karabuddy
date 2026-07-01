@@ -70,7 +70,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
   const renderBody = (id: FeatureId): ReactNode => {
-    if (id === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={onJump} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag} />;
+    if (id === 'tags') return tagsFeatureFeed();
     if (id === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
     if (id === 'info') return <MatchupFeature {...matchup} />;
     if (id === 'decks') return <DecksFeature {...decks} />;
@@ -81,7 +81,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const railRight = desktopOpen ? 380 + 14 : 14;
 
   const tagsFeatureFeed = (onJumpDone?: () => void) => (
-    <TagsFeature tags={tags} currentIndex={currentIndex} onJump={(f) => { onJump(f); onJumpDone?.(); }} replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} canTag={canTag} />
+    <TagsFeature tags={tags} currentIndex={currentIndex} onJump={(f) => { onJump(f); onJumpDone?.(); }} />
   );
 
   return (

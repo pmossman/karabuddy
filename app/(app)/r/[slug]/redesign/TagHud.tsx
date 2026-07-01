@@ -196,8 +196,8 @@ function MiniRow({ onDown, active, currentIndex, prev, next, onJump, onExpand }:
     <div style={{ ...GLASS, borderRadius: 999, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 10px', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
       <span data-testid="taghud-drag" onPointerDown={onDown} aria-hidden style={{ flex: '0 0 auto', cursor: 'grab', touchAction: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
       <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: active ? '#eef2f8' : 'rgba(255,255,255,0.55)' }}>{label}</span>
-      {mini('‹', () => prev && onJump(prev.frameIndex), 'Previous tag', !prev)}
-      {mini('›', () => next && onJump(next.frameIndex), 'Next tag', !next)}
+      {mini('«', () => prev && onJump(prev.frameIndex), 'Previous tag', !prev)}
+      {mini('»', () => next && onJump(next.frameIndex), 'Next tag', !next)}
       {mini(<ExpandIcon />, onExpand, 'Expand')}
     </div>
   );
@@ -215,19 +215,23 @@ function ExpandIcon() {
   );
 }
 
+// Tag-to-tag nav — deliberately NOT the single-chevron frame stepper: a double-
+// chevron (jump-to-marker) + the target author's colour dot + a text preview.
 function NavBtn({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag | null; onClick: () => void }) {
-  const arrow = dir === 'prev' ? '‹' : '›';
+  const chev = dir === 'prev' ? '«' : '»';
   const disabled = !tag;
+  const dot = <span style={{ width: 6, height: 6, borderRadius: '50%', flex: '0 0 auto', background: tag ? authorColor(tag.authorName || 'anon') : 'transparent' }} />;
+  const preview = <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tag ? truncate(tag.comment, 12) : 'No tag'}</span>;
   return (
-    <button type="button" onClick={onClick} disabled={disabled} title={tag ? `Frame ${tag.frameIndex + 1}: ${tag.comment}` : undefined}
+    <button type="button" onClick={onClick} disabled={disabled} title={tag ? `Jump to tag on frame ${tag.frameIndex + 1}: ${tag.comment}` : undefined}
       style={{
-        flex: '0 1 auto', maxWidth: '32%', display: 'inline-flex', alignItems: 'center', gap: 4,
-        background: disabled ? 'transparent' : 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)',
-        color: disabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.9)', borderRadius: 999, padding: '6px 10px',
-        fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: disabled ? 'default' : 'pointer',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        flex: '0 1 auto', maxWidth: '34%', display: 'inline-flex', alignItems: 'center', gap: 5,
+        background: disabled ? 'transparent' : 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+        color: disabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '5px 9px',
+        fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit', cursor: disabled ? 'default' : 'pointer', minWidth: 0,
       }}>
-      {dir === 'prev' ? `${arrow} ${tag ? truncate(tag.comment, 12) : ''}` : `${tag ? truncate(tag.comment, 12) : ''} ${arrow}`}
+      {dir === 'prev' ? (<><span aria-hidden style={{ fontWeight: 800, flex: '0 0 auto' }}>{chev}</span>{dot}{preview}</>)
+        : (<>{preview}{dot}<span aria-hidden style={{ fontWeight: 800, flex: '0 0 auto' }}>{chev}</span></>)}
     </button>
   );
 }
