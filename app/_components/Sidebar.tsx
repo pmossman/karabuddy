@@ -101,7 +101,7 @@ export function Sidebar({
             backdropFilter: 'blur(8px)', position: 'relative', zIndex: 50,
           }}
         >
-          <Logo slug={activeTeam?.slug ?? null} />
+          {/* Hamburger sits LEFT of the logo — it opens the left nav. */}
           <button
             type="button"
             aria-label="Menu"
@@ -119,6 +119,7 @@ export function Sidebar({
               <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
+          <Logo slug={activeTeam?.slug ?? null} />
         </div>
 
         {drawerOpen && (

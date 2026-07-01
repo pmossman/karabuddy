@@ -64,6 +64,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const [sidebarView, setSidebarView] = useState<SidebarView>('tags');
   const [sidebarW, setSidebarW] = useState(380);
   const [jumpOpen, setJumpOpen] = useState(false);
+  // Glow the Play (▶) to invite the first play this session; stops once played and
+  // never re-glows (not even when you pause).
+  const [invitePlay, setInvitePlay] = useState(true);
   useEffect(() => { setHudOpen(mode === 'desktop'); setSidebarOpen(false); setJumpOpen(false); }, [mode]);
 
   const desktopDock = mode === 'desktop' && sidebarOpen;
@@ -128,7 +131,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {jumpOpen && !mobileDrawer && (
         <JumpMenu chapters={controls.chapters} currentIndex={currentIndex}
           right={(desktopDock ? sidebarW : 0) + 18}
-          bottom={'calc(max(18px, env(safe-area-inset-bottom, 18px)) + 66px)'}
+          bottom={'calc(max(18px, env(safe-area-inset-bottom, 18px)) + 142px)'}
           onJump={(f) => { onJump(f); setJumpOpen(false); }} onClose={() => setJumpOpen(false)} />
       )}
 
@@ -136,12 +139,12 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           jump-to bubble + a larger Play/Pause FAB (breathes a glow WHILE PLAYING)
           with a small gear OVERLAPPING it — clearly its playback options. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
           <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 7px 1px rgba(77,210,255,0.32)}50%{box-shadow:0 0 17px 5px rgba(77,210,255,0.55)}}'}</style>
-          {/* Jump-to (original bottom-right spot). */}
+          {/* Jump-to — stacked ABOVE the play button. */}
           <button type="button" title="Jump to a moment" aria-label="Jump to a moment" onClick={() => setJumpOpen((v) => !v)}
             style={{
-              width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 7,
+              width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
               background: jumpOpen ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
               color: jumpOpen ? tokens.led.on : 'rgba(255,255,255,0.82)',
               border: `1px solid ${jumpOpen ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
@@ -152,7 +155,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           </button>
           {/* Play + overlapping gear. */}
           <div style={{ position: 'relative' }}>
-            <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={controls.onTogglePlay}
+            <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
               style={{
                 width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
                 background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
@@ -160,13 +163,14 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                 border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
                 boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
                 backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                animation: controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
+                // Glow the ▶ to invite the first play; not while playing, and not after pausing.
+                animation: invitePlay && !controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
             </button>
             <button type="button" title="Playback options" aria-label="Playback options" onClick={() => openSidebar('playback')}
               style={{
-                position: 'absolute', right: -4, bottom: -4, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+                position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
                 background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(22,28,38,0.95)',
                 color: sidebarOpen && sidebarView === 'playback' ? '#06121a' : '#eef2f8',
                 border: `1.5px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.5)'}`,
