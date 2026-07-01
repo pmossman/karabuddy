@@ -46,7 +46,7 @@ const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4f
 // Remembers whether you left the desktop Tag HUD open ('1') or closed ('0').
 const HUD_PREF_KEY = 'kb:redesign:hudOpen';
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag, onOpenSideboard }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -65,6 +65,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   onTagModeChange?: (active: boolean) => void;
   onDockWidthChange?: (w: number) => void;
   canTag: boolean;
+  // Present only on replays with a sideboard swap to show → a persistent rail icon.
+  onOpenSideboard?: () => void;
 }) {
   const [hudOpen, setHudOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -145,6 +147,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     // phantom activation (panel defaults to its Tags view) + the dead click-to-close.
     { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
   ];
+  // Sideboard: only on replays with a swap to show — opens the splash any time, not
+  // just the frame-0 auto-show. It's a transient overlay (no persistent lit state).
+  if (onOpenSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', onClick: onOpenSideboard });
 
   return (
     <>

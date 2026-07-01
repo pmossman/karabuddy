@@ -1120,10 +1120,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               localPlayerId: anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null),
               payloadBlobUrl: replay.payloadBlobUrl,
               replaySlug: replay.slug,
-              // B150: only offer the re-open when there's actually a swap to show.
-              onOpenSideboard: sideboard && sideboardHasChanges ? () => setSideboardOpen(true) : undefined,
-              sideboardFromGame: sideboard?.fromGameNumber ?? null,
             }}
+            // B150: a persistent rail icon (when there's a swap to show) opens the
+            // sideboard splash any time, not just the frame-0 auto-show.
+            onOpenSideboard={sideboard && sideboardHasChanges ? () => setSideboardOpen(true) : undefined}
             controls={{
               playing, onTogglePlay: toggleAutoplay,
               speed, speeds: PLAYBACK_SPEEDS as { label: string; value: number }[], onSetSpeed: setSpeedValue,
