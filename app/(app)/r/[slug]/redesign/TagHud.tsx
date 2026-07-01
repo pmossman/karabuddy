@@ -107,7 +107,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
             Frame {currentIndex + 1}{here.length > 0 ? ` · ${here.length} tag${here.length > 1 ? 's' : ''}` : ''}
           </span>
           <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={() => setMinimized(true)} title="Minimize" aria-label="Minimize"
-            style={{ marginLeft: 'auto', background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 17, lineHeight: 1, padding: '0 2px' }}>⌄</button>
+            style={{ marginLeft: 'auto', background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 20, fontWeight: 700, lineHeight: 1, padding: '0 4px' }}>−</button>
         </div>
 
         {/* Tabs when the frame has multiple comments. */}
@@ -188,9 +188,9 @@ function MiniRow({ onDown, active, currentIndex, prev, next, onJump, onExpand }:
   prev: ViewerTag | null; next: ViewerTag | null; onJump: (f: number) => void; onExpand: () => void;
 }) {
   const label = active ? `${active.authorName || 'Anon'}: ${truncate(active.comment, 30)}` : `Frame ${currentIndex + 1} · no tags`;
-  const mini = (glyph: string, onClick: () => void, title: string, disabled?: boolean) => (
+  const mini = (content: React.ReactNode, onClick: () => void, title: string, disabled?: boolean) => (
     <button type="button" onClick={onClick} disabled={disabled} title={title} aria-label={title}
-      style={{ flex: '0 0 auto', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', color: disabled ? 'rgba(255,255,255,0.3)' : '#eef2f8', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>{glyph}</button>
+      style={{ flex: '0 0 auto', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', color: disabled ? 'rgba(255,255,255,0.3)' : '#eef2f8', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>{content}</button>
   );
   return (
     <div style={{ ...GLASS, borderRadius: 999, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 10px', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
@@ -198,8 +198,20 @@ function MiniRow({ onDown, active, currentIndex, prev, next, onJump, onExpand }:
       <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: active ? '#eef2f8' : 'rgba(255,255,255,0.55)' }}>{label}</span>
       {mini('‹', () => prev && onJump(prev.frameIndex), 'Previous tag', !prev)}
       {mini('›', () => next && onJump(next.frameIndex), 'Next tag', !next)}
-      {mini('⌃', onExpand, 'Expand')}
+      {mini(<ExpandIcon />, onExpand, 'Expand')}
     </div>
+  );
+}
+
+// Diagonal "maximize" arrows — reads unambiguously as expand.
+function ExpandIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
   );
 }
 
