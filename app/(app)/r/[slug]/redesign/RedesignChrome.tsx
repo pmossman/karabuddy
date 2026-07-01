@@ -74,12 +74,14 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
   const openSidebar = (v: SidebarView) => { setSidebarView(v); setSidebarOpen(true); };
-  // Click a feed entry → jump + open the HUD (mobile closes the drawer to reveal the board).
-  const openTagFromFeed = (f: number) => { onJump(f); setHudOpen(true); if (mode === 'mobile') setSidebarOpen(false); };
+  // Jump from a sidebar view; on mobile close the drawer so the board is revealed.
+  const jumpFromSidebar = (f: number) => { onJump(f); if (mode === 'mobile') setSidebarOpen(false); };
+  // Click a tag feed entry → also open the HUD at that frame.
+  const openTagFromFeed = (f: number) => { setHudOpen(true); jumpFromSidebar(f); };
 
   const renderView = (v: SidebarView): ReactNode => {
     if (v === 'tags') return <TagsFeature tags={tags} currentIndex={currentIndex} onJump={openTagFromFeed} />;
-    if (v === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} />;
+    if (v === 'log') return <GameLogFeature messagesByFrame={messagesByFrame} currentIndex={currentIndex} onJump={jumpFromSidebar} />;
     if (v === 'info') return <MatchupFeature {...matchup} />;
     if (v === 'decks') return <DecksFeature {...decks} />;
     if (v === 'playback') return <PlaybackFeature {...controls} />;

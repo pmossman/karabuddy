@@ -24,12 +24,13 @@ function renderMessage(msg: any, color: Map<string, string>): React.ReactNode {
   });
 }
 
-export function GameLogFeature({ messagesByFrame, currentIndex }: {
+export function GameLogFeature({ messagesByFrame, currentIndex, onJump }: {
   messagesByFrame: any[][] | null;
   currentIndex: number;
+  onJump: (frame: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const currentRef = useRef<HTMLDivElement>(null);
+  const currentRef = useRef<HTMLButtonElement>(null);
 
   // Assign a stable color per player id, in first-seen order.
   const colorMap = useMemo(() => {
@@ -69,14 +70,17 @@ export function GameLogFeature({ messagesByFrame, currentIndex }: {
   }
 
   return (
-    <div ref={scrollRef} style={{ height: '100%', overflowY: 'auto', scrollbarGutter: 'stable', padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, lineHeight: 1.45 }}>
+    <div ref={scrollRef} style={{ height: '100%', overflowY: 'auto', scrollbarGutter: 'stable', padding: '12px 12px 24px', display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13, lineHeight: 1.45 }}>
+      <style>{'.kb-log-line{background:transparent;transition:background 120ms}.kb-log-line:hover{background:rgba(255,255,255,0.06)}'}</style>
       {entries.map((e, idx) => {
         const firstCurrent = e.current && (idx === 0 || !entries[idx - 1].current);
         return (
-          <div key={`${e.frame}-${idx}`} ref={firstCurrent ? currentRef : null}
-            style={{ color: e.current ? tokens.color.text : tokens.color.textSecondary, opacity: e.current ? 1 : 0.5, transition: 'opacity 120ms ease' }}>
-            {renderMessage(e.msg, colorMap)}
-          </div>
+          <button key={`${e.frame}-${idx}`} ref={firstCurrent ? currentRef : null} type="button" className="kb-log-line"
+            title={`Jump to frame ${e.frame + 1}`} onClick={() => onJump(e.frame)}
+            style={{ display: 'flex', gap: 9, alignItems: 'baseline', width: '100%', textAlign: 'left', border: 0, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.45, color: e.current ? tokens.color.text : tokens.color.textSecondary, opacity: e.current ? 1 : 0.5, transition: 'opacity 120ms ease' }}>
+            <span aria-hidden style={{ flex: '0 0 auto', minWidth: 20, textAlign: 'right', fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.26)', fontVariantNumeric: 'tabular-nums' }}>{e.frame + 1}</span>
+            <span style={{ flex: '1 1 auto' }}>{renderMessage(e.msg, colorMap)}</span>
+          </button>
         );
       })}
     </div>

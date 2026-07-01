@@ -1091,7 +1091,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               isOwner,
               anonymize,
               series: series ?? null,
-              onOpenResourcing: () => setResourcingOpen(true),
+              // Resourcing report hidden in the redesign (B216) — omit the trigger.
             }}
             decks={{
               decks: decksForView,
