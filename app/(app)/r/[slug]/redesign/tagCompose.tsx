@@ -25,17 +25,17 @@ export function useCreateTag(
   const isMine = (tag: { userId?: string | null; authorToken?: string }) =>
     (!!userId && tag.userId === userId) || (!!token && !!tag.authorToken && tag.authorToken === token);
 
-  const edit = async (id: string, text: string): Promise<boolean> => {
+  const edit = async (id: string, text: string, opts?: TagOpts): Promise<boolean> => {
     const body = text.trim();
     if (!body) return false;
     try {
       const res = await fetch(`/api/replays/${replaySlug}/tags/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Install-Token': token } : {}) },
-        body: JSON.stringify({ comment: body }),
+        body: JSON.stringify({ comment: body, ...mentionsPayload(opts), ...(opts?.teamSlugs !== undefined ? { teamSlugs: opts.teamSlugs } : {}) }),
       });
       const r = await res.json();
       if (!r.ok) { alert(`Failed to edit: ${r.error || 'unknown'}`); return false; }
-      updateTag?.(id, { comment: body });
+      updateTag?.(id, { comment: body, ...(Array.isArray(r.scope) ? { scope: r.scope } : {}) });
       return true;
     } catch { alert('Network error editing tag.'); return false; }
   };
@@ -52,25 +52,34 @@ export function useCreateTag(
     } catch { alert('Network error deleting tag.'); return false; }
   };
 
-  // parentTagId set → a one-level reply (B78): the server anchors it to the
-  // parent's frame + inherits its scope; we append it in that frame too.
-  const create = async (currentIndex: number, text: string, parentTagId?: string): Promise<boolean> => {
+  // opts.parentTagId set → a one-level reply (B78); opts.mentions/teamSlugs carry
+  // the @-mentions + the resolved audience (scope). The server re-clamps scope and
+  // returns the final set.
+  const create = async (currentIndex: number, text: string, opts?: TagOpts): Promise<boolean> => {
     const body = text.trim();
     if (!body) return false;
     const origFrame = toOriginalFrame(currentIndex);
     try {
       const res = await fetch(`/api/replays/${replaySlug}/tags`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Install-Token': token } : {}) },
-        body: JSON.stringify({ installToken: token, authorName, frameIndex: origFrame, comment: body, ...(parentTagId ? { parentTagId } : {}) }),
+        body: JSON.stringify({ installToken: token, authorName, frameIndex: origFrame, comment: body, ...(opts?.parentTagId ? { parentTagId: opts.parentTagId } : {}), ...mentionsPayload(opts), ...(opts?.teamSlugs !== undefined ? { teamSlugs: opts.teamSlugs } : {}) }),
       });
       const r = await res.json();
       if (!r.ok) { alert(`Failed to add tag: ${r.error || 'unknown'}`); return false; }
-      appendTag({ id: r.id, frameIndex: origFrame, authorToken: token, authorName, comment: body, createdAt: new Date().toISOString(), scope: r.scope ?? [], parentTagId: parentTagId ?? null });
+      appendTag({ id: r.id, frameIndex: origFrame, authorToken: token, authorName, comment: body, createdAt: new Date().toISOString(), scope: r.scope ?? opts?.teamSlugs ?? [], parentTagId: opts?.parentTagId ?? null });
       return true;
     } catch { alert('Network error adding tag.'); return false; }
   };
 
   return { signedIn: !!userId, authorName, isMine, create, edit, remove };
+}
+
+export interface TagMentions { userIds: string[]; teamSlugs: string[] }
+export interface TagOpts { parentTagId?: string; mentions?: TagMentions; teamSlugs?: string[] }
+// Only send mentions when there's something to send.
+function mentionsPayload(opts?: TagOpts) {
+  const m = opts?.mentions;
+  return m && (m.userIds.length || m.teamSlugs.length) ? { mentions: m } : {};
 }
 
 // The signed-out gate shared by both compose surfaces (matches the prod CTA).

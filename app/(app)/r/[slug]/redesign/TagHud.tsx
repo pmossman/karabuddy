@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { scopeLabel } from '@/lib/commentScope';
+import { scopeLabel, scopeFromMentions } from '@/lib/commentScope';
+import { MentionInput, type MentionData } from '../MentionInput';
 import type { ViewerTag } from './TagsFeature';
 import { useCreateTag, SignInToTagCta } from './tagCompose';
 
@@ -60,6 +61,20 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   const [editor, setEditor] = useState<Editor>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  // @-mention + scope state for the composer.
+  const [mentionData, setMentionData] = useState<MentionData | null>(null);
+  const [draftMentions, setDraftMentions] = useState<{ userIds: string[]; teamSlugs: string[] }>({ userIds: [], teamSlugs: [] });
+  const [draftScope, setDraftScope] = useState<string[] | null>(null); // null = follow the mentions
+  const memberTeams = useMemo(() => Object.fromEntries((mentionData?.members ?? []).map((m) => [m.userId, m.teamSlugs])) as Record<string, string[]>, [mentionData]);
+  const derivedScope = scopeFromMentions({ armedTeams: armedSlugs, mentionedUserIds: draftMentions.userIds, memberTeams });
+  const effectiveScope = draftScope ?? derivedScope;
+  // Lazily load mention candidates the first time the composer opens.
+  useEffect(() => {
+    if (!editor || mentionData || !canTag) return;
+    let live = true;
+    fetch('/api/me/teams-mention-data').then((r) => r.json()).then((b) => { if (live && b?.ok) setMentionData({ teams: b.teams ?? [], members: b.members ?? [] }); }).catch(() => {});
+    return () => { live = false; };
+  }, [editor, mentionData, canTag]);
   // Minimized → collapse to a slim pill (get it out of the way of the board).
   // Sticky across frames so you can scrub with it tucked.
   const [minimized, setMinimized] = useState(false);
@@ -153,13 +168,18 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     window.addEventListener('pointerup', up);
   };
 
-  const openEditor = (e: Editor, initial = '') => { setEditor(e); setDraft(initial); };
+  const openEditor = (e: Editor, initial = '', scope: string[] | null = null) => {
+    setEditor(e); setDraft(initial); setDraftMentions({ userIds: [], teamSlugs: [] }); setDraftScope(scope);
+  };
+  const addMention = (kind: 'user' | 'team', id: string) => setDraftMentions((m) => kind === 'user'
+    ? { ...m, userIds: [...new Set([...m.userIds, id])] }
+    : { ...m, teamSlugs: [...new Set([...m.teamSlugs, id])] });
   const submit = async () => {
     if (busy || !draft.trim() || !editor) return;
     setBusy(true);
-    const ok = editor.kind === 'edit' ? await edit(editor.id, draft)
-      : editor.kind === 'reply' ? await create(currentIndex, draft, editor.id)
-      : await create(currentIndex, draft);
+    const ok = editor.kind === 'edit' ? await edit(editor.id, draft, { mentions: draftMentions, teamSlugs: effectiveScope })
+      : editor.kind === 'reply' ? await create(currentIndex, draft, { parentTagId: editor.id, mentions: draftMentions }) // reply inherits the parent's scope
+      : await create(currentIndex, draft, { mentions: draftMentions, teamSlugs: effectiveScope });
     setBusy(false);
     if (ok) { setDraft(''); setEditor(null); }
   };
@@ -220,10 +240,20 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
                   <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
                     {editor.kind === 'edit' ? 'Editing your comment' : editor.kind === 'reply' ? `Replying to ${active?.authorName || 'this comment'}` : `Tagging frame ${currentIndex + 1} as ${authorName}`}
                   </div>
-                  <textarea value={draft} autoFocus rows={3} onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(); }}
-                    placeholder={editor.kind === 'reply' ? 'Your reply…' : 'Your note about this moment…'}
-                    style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.35)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: 8, fontSize: 13.5, fontFamily: 'inherit', resize: 'vertical' }} />
+                  <MentionInput value={draft} onChange={setDraft} onMention={addMention} mentionData={mentionData} autoFocus rows={3}
+                    placeholder={editor.kind === 'reply' ? 'Your reply…' : 'Your note about this moment… (@ to mention)'}
+                    onSubmit={submit} onCancel={() => { setEditor(null); setDraft(''); }}
+                    textareaStyle={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.35)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: 8, fontSize: 13.5, fontFamily: 'inherit', resize: 'vertical' }} />
+                  {editor.kind !== 'reply' && armedSlugs.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>Visible to</span>
+                      {(armedTeams ?? []).map((tm) => {
+                        const on = effectiveScope.includes(tm.slug);
+                        return <button key={tm.slug} type="button" onClick={() => setDraftScope((cur) => { const base = cur ?? derivedScope; return on ? base.filter((s) => s !== tm.slug) : [...base, tm.slug]; })} style={scopePill(on)}>{tm.name}</button>;
+                      })}
+                      <button type="button" onClick={() => setDraftScope([])} style={scopePill(effectiveScope.length === 0)}>Just me</button>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button type="button" onClick={() => { setEditor(null); setDraft(''); }} style={ghostBtn}>Cancel</button>
                     <button type="button" onClick={submit} disabled={busy || !draft.trim()} style={{ ...primaryBtn, opacity: busy || !draft.trim() ? 0.5 : 1 }}>{busy ? 'Saving…' : editor.kind === 'reply' ? 'Reply' : 'Save'}</button>
@@ -270,7 +300,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
       <div style={{ pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 999, ...GLASS }}>
         <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
         <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={!canTag || !active} active={editor?.kind === 'reply'} />
-        <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment)} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
+        <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment, active.scope ?? [])} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
         <IconBtn label="Delete" glyph={<TrashIcon />} onClick={() => { if (active && isMine(active) && window.confirm('Delete this comment?')) { if (editor?.kind === 'edit') setEditor(null); remove(active.id); } }} disabled={!active || !isMine(active)} />
       </div>
       </>
@@ -358,3 +388,4 @@ function TrashIcon() {
 
 const ghostBtn: React.CSSProperties = { background: 'transparent', border: 0, color: 'rgba(255,255,255,0.7)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const primaryBtn: React.CSSProperties = { background: 'rgba(77,157,255,0.28)', color: '#dbeafe', border: '1px solid rgba(120,180,255,0.6)', borderRadius: 8, padding: '5px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' };
+const scopePill = (on: boolean): React.CSSProperties => ({ padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', background: on ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.06)', color: on ? '#eaf9ff' : 'rgba(255,255,255,0.6)', border: `1px solid ${on ? tokens.led.on : 'rgba(255,255,255,0.16)'}` });

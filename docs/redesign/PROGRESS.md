@@ -302,9 +302,9 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
   from ViewerShell. Used by the review summary; NOT yet wired into the HUD/feed.
 
 ## Redesign cutover — remaining gaps (post-Reviews)
-- [ ] Wire tag DELETE into the HUD (own comments) — hook + removeTag now exist.
-- [ ] @mentions in the composer (+ scope narrowing) — currently team-scoped comments broadcast to all armed teams.
-- [ ] Per-tag visibility: show/edit a comment's audience ("Visible to X") in the feed/HUD.
-- [ ] "New since last visit" tag markers.
+- [x] Tag DELETE in the HUD (own comments, trash in the actions row).
+- [x] @mentions in the composer (MentionInput) + scope narrowing (scopeFromMentions).
+- [x] Per-tag visibility: shows "Visible to X" (feed + HUD) + a scope selector in the composer (add/edit) to set the audience.
+- [x] "New since last visit" tag markers (POST /viewed → lastViewedAt → NEW pill).
 - [ ] Sideboard splash (Bo3 frame-0 deck-change summary) — decide if needed.
 - DROPPED on purpose: resourcing report.
