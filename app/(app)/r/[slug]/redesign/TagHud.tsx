@@ -25,7 +25,7 @@ const GLASS: React.CSSProperties = {
 
 type Editor = null | { kind: 'add' } | { kind: 'reply'; id: string } | { kind: 'edit'; id: string };
 
-export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, canTag, sidebarW = 0, onClose }: {
+export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, canTag, sidebarW = 0, onClose }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
@@ -33,11 +33,12 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   toOriginalFrame: (i: number) => number;
   appendTag: (t: ViewerTag) => void;
   updateTag: (id: string, patch: Partial<ViewerTag>) => void;
+  removeTag: (id: string) => void;
   canTag: boolean;
   sidebarW?: number;
   onClose: () => void;
 }) {
-  const { signedIn, authorName, isMine, create, edit } = useCreateTag(replaySlug, toOriginalFrame, appendTag, updateTag);
+  const { signedIn, authorName, isMine, create, edit, remove } = useCreateTag(replaySlug, toOriginalFrame, appendTag, updateTag, removeTag);
 
   const top = useMemo(() => tags.filter((t) => !t.parentTagId).sort((a, b) => a.frameIndex - b.frameIndex), [tags]);
   const here = useMemo(() => top.filter((t) => t.frameIndex === currentIndex), [top, currentIndex]);
@@ -262,6 +263,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
         <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
         <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={!canTag || !active} active={editor?.kind === 'reply'} />
         <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment)} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
+        <IconBtn label="Delete" glyph={<TrashIcon />} onClick={() => { if (active && isMine(active) && window.confirm('Delete this comment?')) { if (editor?.kind === 'edit') setEditor(null); remove(active.id); } }} disabled={!active || !isMine(active)} />
       </div>
       </>
       )}
@@ -325,7 +327,7 @@ function SideNav({ dir, tag, onClick }: { dir: 'prev' | 'next'; tag: ViewerTag |
   );
 }
 
-function IconBtn({ label, glyph, onClick, disabled, active }: { label: string; glyph: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
+function IconBtn({ label, glyph, onClick, disabled, active }: { label: string; glyph: React.ReactNode; onClick: () => void; disabled?: boolean; active?: boolean }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label}
       style={{
@@ -333,8 +335,16 @@ function IconBtn({ label, glyph, onClick, disabled, active }: { label: string; g
         background: active ? 'rgba(77,210,255,0.28)' : 'rgba(255,255,255,0.08)', border: `1px solid ${active ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
         color: disabled ? 'rgba(255,255,255,0.3)' : '#eef2f8', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit',
       }}>
-      <span aria-hidden>{glyph}</span>
+      <span aria-hidden style={{ display: 'inline-flex' }}>{glyph}</span>
     </button>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M6 6l1 14h10l1-14" />
+    </svg>
   );
 }
 
