@@ -101,7 +101,9 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     const move = (ev: PointerEvent) => {
       const maxW = Math.min(620, window.innerWidth * 0.94);
       const maxH = window.innerHeight * 0.82;
-      const nw = Math.min(maxW, Math.max(280, ow + (ev.clientX - sx)));
+      // Floor keeps the control bar on one row (capped so it never exceeds the viewport).
+      const minW = Math.min(332, window.innerWidth * 0.92);
+      const nw = Math.min(maxW, Math.max(minW, ow + (ev.clientX - sx)));
       const nh = Math.min(maxH, Math.max(150, oh + (ev.clientY - sy)));
       setSize({ w: nw, h: nh });
       setPos({ x: opx + (nw - ow) / 2, y: opy + (nh - oh) / 2 });
@@ -203,9 +205,9 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           })()}
         </div>
 
-        {/* Control bar: prev · [add][reply][edit][feed] · next. Extra right pad
-            leaves a gutter for the resize grip. */}
-        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px 8px 10px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+        {/* Control bar: prev · [add][reply][edit] · next. Wraps as a safety on very
+            narrow panels; extra right/bottom pad leaves a gutter for the grip. */}
+        <div style={{ flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, rowGap: 8, padding: '8px 22px 12px 10px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
           <NavBtn dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
           <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center', gap: 6 }}>
             <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
@@ -215,11 +217,11 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           <NavBtn dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
         </div>
 
-        {/* Resize grip (bottom-right). */}
+        {/* Resize grip — tucked inside the rounded corner so it isn't clipped. */}
         <div data-no-drag data-testid="taghud-resize" onPointerDown={onResizeDown} title="Resize" aria-label="Resize"
-          style={{ position: 'absolute', right: 3, bottom: 3, width: 16, height: 16, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', cursor: 'nwse-resize', touchAction: 'none', color: 'rgba(255,255,255,0.45)', zIndex: 3 }}>
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" aria-hidden>
-            <line x1="11" y1="4" x2="4" y2="11" /><line x1="11" y1="8" x2="8" y2="11" />
+          style={{ position: 'absolute', right: 7, bottom: 7, width: 14, height: 14, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', cursor: 'nwse-resize', touchAction: 'none', color: 'rgba(255,255,255,0.6)', zIndex: 4 }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
+            <line x1="11" y1="3" x2="3" y2="11" /><line x1="11" y1="7" x2="7" y2="11" />
           </svg>
         </div>
       </div>
