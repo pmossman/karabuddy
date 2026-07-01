@@ -43,6 +43,8 @@ const VIEWS: { id: SidebarView; label: string; icon: ReactNode }[] = [
   { id: 'clips', label: 'Clips', icon: Icon.clips },
 ];
 const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4ff', leader: '#e0c64a', tag: '#4dd2ff', end: '#8aa0b8' };
+// Remembers whether you left the desktop Tag HUD open ('1') or closed ('0').
+const HUD_PREF_KEY = 'kb:redesign:hudOpen';
 
 export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag }: {
   mode: 'desktop' | 'mobile';
@@ -72,7 +74,21 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Glow the Play (▶) to invite the first play this session; stops once played and
   // never re-glows (not even when you pause).
   const [invitePlay, setInvitePlay] = useState(true);
-  useEffect(() => { setHudOpen(mode === 'desktop'); setSidebarOpen(false); setJumpOpen(false); }, [mode]);
+  // The board loads clean: the HUD starts CLOSED and only opens when you engage
+  // tagging (Tags rail icon / a tag in the feed). Your open/close choice is
+  // remembered across reloads (desktop only — mobile always uses the drawer).
+  // Restored in an effect (not a lazy initializer) to stay hydration-safe.
+  useEffect(() => {
+    setSidebarOpen(false); setJumpOpen(false);
+    if (mode !== 'desktop') { setHudOpen(false); return; }
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(HUD_PREF_KEY); } catch { /* private mode */ }
+    setHudOpen(saved === '1'); // default closed when unset
+  }, [mode]);
+  useEffect(() => {
+    if (mode !== 'desktop') return; // don't let the mobile drawer clobber the desktop pref
+    try { localStorage.setItem(HUD_PREF_KEY, hudOpen ? '1' : '0'); } catch { /* private mode */ }
+  }, [hudOpen, mode]);
 
   const desktopDock = mode === 'desktop' && sidebarOpen;
   const mobileDrawer = mode === 'mobile' && sidebarOpen;
@@ -106,9 +122,11 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // sidebar's Clips view.
   const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }[] = [
     { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => setSidebarOpen((v) => !v) },
-    // Tags: when the sidebar is open, switch it to the tags feed; otherwise the
-    // board-visible HUD (the sidebar stays closed).
-    { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen || (sidebarOpen && sidebarView === 'tags'), badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => { if (sidebarOpen) setSidebarView('tags'); else setHudOpen((v) => !v); } },
+    // Tags rail = the board HUD, and ONLY the HUD: lit ⇔ HUD open, click toggles it.
+    // The panel is the sidebar rail's job; the panel's Tags view opens the HUD via a
+    // tag click (openTagFromFeed). Keeping this icon off the panel is what removed the
+    // phantom activation (panel defaults to its Tags view) + the dead click-to-close.
+    { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
   ];
 
   return (
