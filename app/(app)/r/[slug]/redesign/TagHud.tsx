@@ -25,7 +25,7 @@ const GLASS: React.CSSProperties = {
 
 type Editor = null | { kind: 'add' } | { kind: 'reply'; id: string } | { kind: 'edit'; id: string };
 
-export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, canTag, sidebarW = 0 }: {
+export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, canTag, sidebarW = 0, onClose }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
@@ -35,6 +35,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   updateTag: (id: string, patch: Partial<ViewerTag>) => void;
   canTag: boolean;
   sidebarW?: number;
+  onClose: () => void;
 }) {
   const { signedIn, authorName, isMine, create, edit } = useCreateTag(replaySlug, toOriginalFrame, appendTag, updateTag);
 
@@ -179,6 +180,8 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           </button>
           <button type="button" onClick={() => setMinimized(true)} title="Minimize" aria-label="Minimize"
             style={{ background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 20, fontWeight: 700, lineHeight: 1, padding: '0 4px' }}>−</button>
+          <button type="button" onClick={onClose} title="Close tags" aria-label="Close tags"
+            style={{ background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, lineHeight: 1, padding: '0 4px' }}>✕</button>
         </div>
 
         {/* Tabs when the frame has multiple comments. */}

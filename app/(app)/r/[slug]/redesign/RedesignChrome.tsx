@@ -112,6 +112,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           tags={tags} currentIndex={currentIndex} onJump={onJump}
           replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} updateTag={updateTag} canTag={canTag}
           sidebarW={desktopDock ? sidebarW : 0}
+          onClose={() => setHudOpen(false)}
         />
       )}
 
