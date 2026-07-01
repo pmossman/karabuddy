@@ -1120,6 +1120,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               localPlayerId: anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null),
               payloadBlobUrl: replay.payloadBlobUrl,
               replaySlug: replay.slug,
+              // B150: only offer the re-open when there's actually a swap to show.
+              onOpenSideboard: sideboard && sideboardHasChanges ? () => setSideboardOpen(true) : undefined,
+              sideboardFromGame: sideboard?.fromGameNumber ?? null,
             }}
             controls={{
               playing, onTogglePlay: toggleAutoplay,

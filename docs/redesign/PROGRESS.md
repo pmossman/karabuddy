@@ -306,5 +306,5 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
 - [x] @mentions in the composer (MentionInput) + scope narrowing (scopeFromMentions).
 - [x] Per-tag visibility: shows "Visible to X" (feed + HUD) + a scope selector in the composer (add/edit) to set the audience.
 - [x] "New since last visit" tag markers (POST /viewed → lastViewedAt → NEW pill).
-- [ ] Sideboard splash (Bo3 frame-0 deck-change summary) — decide if needed.
+- [x] Sideboard splash: auto-splash at frame 0 already shared (fires in redesign); added a re-open button in the Decks view (only when there's a real swap).
 - DROPPED on purpose: resourcing report.
