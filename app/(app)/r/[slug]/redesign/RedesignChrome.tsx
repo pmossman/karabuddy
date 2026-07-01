@@ -258,12 +258,25 @@ function JumpMenu({ chapters, currentIndex, right, bottom, onJump, onClose }: { 
       <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(255,255,255,0.5)', padding: '6px 10px 4px' }}>Jump to a moment</div>
       {chapters.map((c, i) => {
         const on = i === activeIdx;
+        // Comments read as messages (speech-bubble + tinted, accented row), while
+        // structural markers (rounds, leader plays, start/end) stay plain dots.
+        const isTag = c.kind === 'tag';
         return (
           <button key={`${c.frameIndex}-${i}`} type="button" onClick={() => onJump(c.frameIndex)} data-active={on ? '1' : undefined}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', border: 0,
-              background: on ? 'rgba(77,210,255,0.16)' : 'transparent', color: on ? '#eaf9ff' : 'rgba(255,255,255,0.85)' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: CHAPTER_COLOR[c.kind] ?? '#8aa0b8' }} />
-            <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: on ? 700 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}{c.sublabel ? <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}> · {c.sublabel}</span> : null}</span>
+            style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
+              border: 0, borderLeft: `2px solid ${isTag ? 'rgba(77,210,255,0.7)' : 'transparent'}`,
+              background: on ? 'rgba(77,210,255,0.2)' : isTag ? 'rgba(77,210,255,0.08)' : 'transparent',
+              color: on ? '#eaf9ff' : 'rgba(255,255,255,0.85)' }}>
+            {isTag ? (
+              <span aria-hidden style={{ flex: '0 0 auto', display: 'inline-flex', color: '#4dd2ff' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" /></svg>
+              </span>
+            ) : (
+              <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: CHAPTER_COLOR[c.kind] ?? '#8aa0b8' }} />
+            )}
+            <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: isTag ? 500 : 700, textTransform: isTag ? 'none' : 'uppercase', letterSpacing: isTag ? 0 : '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {isTag ? <>“{c.label}”</> : c.label}{c.sublabel ? <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}> · {c.sublabel}</span> : null}
+            </span>
             <span style={{ flex: '0 0 auto', fontSize: 10.5, color: 'rgba(255,255,255,0.45)' }}>#{c.frameIndex + 1}</span>
           </button>
         );
