@@ -65,27 +65,35 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   const wrapRef = useRef<HTMLDivElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState<{ w: number | null; h: number | null }>({ w: null, h: null });
+  // `animate` gates the size/position CSS transition — ON only for the auto
+  // fit-to-tag change, OFF during manual drag/resize (so those stay 1:1).
+  const [animate, setAnimate] = useState(false);
   const cleanupRef = useRef<(() => void) | null>(null);
-  useEffect(() => () => cleanupRef.current?.(), []);
+  const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { cleanupRef.current?.(); if (animTimer.current) clearTimeout(animTimer.current); }, []);
   const recenter = () => { setPos({ x: 0, y: 0 }); setSize({ w: null, h: null }); };
 
-  // Navigating to a new tag GROWS the panel to fit it if the content would
-  // otherwise be clipped/scroll; a smaller tag leaves the size untouched. Grow
-  // downward (keep the top edge fixed via the centre-anchor offset).
+  // Navigating to a new tag re-fits the panel to the new content — grow OR shrink
+  // — animated so it isn't jarring, keeping the top edge fixed (centre-anchor
+  // offset). Manual drag/resize don't animate (they don't touch active/frame).
   useEffect(() => {
     if (minimized) return;
-    const body = bodyRef.current, bubble = bubbleRef.current;
-    if (!body || !bubble) return;
-    const overflow = body.scrollHeight - body.clientHeight;
-    if (overflow <= 4) return; // fits (or smaller) → no resize
-    const cur = bubble.getBoundingClientRect().height;
-    const newH = Math.min(window.innerHeight * 0.82, cur + overflow);
-    if (newH > cur + 1) {
-      const delta = newH - cur;
-      setSize((s) => ({ w: s.w, h: newH }));
+    const body = bodyRef.current, bubble = bubbleRef.current, content = contentRef.current;
+    if (!body || !bubble || !content) return;
+    const bubbleH = bubble.getBoundingClientRect().height;
+    const chrome = bubbleH - body.clientHeight;      // header + tabs + controls + borders
+    const desiredBody = content.scrollHeight + 24;   // content + body's 12px top/bottom padding
+    const target = Math.min(window.innerHeight * 0.82, Math.max(120, chrome + desiredBody));
+    if (Math.abs(target - bubbleH) > 3) {
+      const delta = target - bubbleH;
+      setAnimate(true);
+      setSize((s) => ({ w: s.w, h: target }));
       setPos((p) => ({ x: p.x, y: p.y + delta / 2 }));
+      if (animTimer.current) clearTimeout(animTimer.current);
+      animTimer.current = setTimeout(() => setAnimate(false), 280);
     }
   }, [active?.id, currentIndex, minimized]);
 
@@ -145,11 +153,11 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none' }}>
+    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none', transition: animate ? 'transform 260ms cubic-bezier(0.22,1,0.36,1)' : undefined }}>
       {minimized ? (
         <MiniRow onDown={onDown} active={active} currentIndex={currentIndex} prev={prev} next={next} onJump={onJump} onExpand={() => setMinimized(false)} />
       ) : (
-      <div ref={bubbleRef} onPointerDown={onDown} style={{ ...GLASS, borderRadius: 20, position: 'relative', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', height: size.h != null ? size.h : undefined, maxHeight: size.h != null ? undefined : '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif', cursor: 'grab' }}>
+      <div ref={bubbleRef} onPointerDown={onDown} style={{ ...GLASS, borderRadius: 20, position: 'relative', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', height: size.h != null ? size.h : undefined, maxHeight: size.h != null ? undefined : '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif', cursor: 'grab', transition: animate ? 'height 260ms cubic-bezier(0.22,1,0.36,1), width 260ms cubic-bezier(0.22,1,0.36,1)' : undefined }}>
         {/* Drag handle (the whole panel chrome drags; this bar is the obvious grip). */}
         <div data-testid="taghud-drag" style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', touchAction: 'none', borderBottom: here.length > 1 ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
           <span aria-hidden style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
@@ -185,6 +193,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
         {/* Body — the active comment (+ replies), or the inline editor, or empty.
             data-no-drag so scrolling/selecting here doesn't move the panel. */}
         <div ref={bodyRef} data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px', cursor: 'auto' }}>
+          <div ref={contentRef}>
           {(() => {
             if (editor) {
               if (!(canTag || editor.kind === 'edit')) return <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', textAlign: 'center' }}>Tagging is for this replay’s owner and their teams.</div>;
@@ -222,6 +231,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
               </div>
             );
           })()}
+          </div>
         </div>
 
         {/* Control bar: prev · [add][reply][edit] · next. Wraps as a safety on very
