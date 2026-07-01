@@ -30,7 +30,7 @@ export function GameLogFeature({ messagesByFrame, currentIndex, onJump }: {
   onJump: (frame: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const currentRef = useRef<HTMLButtonElement>(null);
+  const boundaryRef = useRef<HTMLButtonElement>(null);
 
   // Assign a stable color per player id, in first-seen order.
   const colorMap = useMemo(() => {
@@ -47,23 +47,27 @@ export function GameLogFeature({ messagesByFrame, currentIndex, onJump }: {
     return m;
   }, [messagesByFrame]);
 
+  // The WHOLE log — past, present and future — so you can read/scroll ahead.
   const entries = useMemo(() => {
     if (!messagesByFrame) return [];
-    const out: { frame: number; msg: any; current: boolean }[] = [];
-    const upTo = Math.min(currentIndex, messagesByFrame.length - 1);
-    for (let i = 0; i <= upTo; i++) {
-      for (const msg of messagesByFrame[i] || []) out.push({ frame: i, msg, current: i === currentIndex });
+    const out: { frame: number; msg: any; state: 'past' | 'current' | 'future' }[] = [];
+    for (let i = 0; i < messagesByFrame.length; i++) {
+      const state = i === currentIndex ? 'current' : i < currentIndex ? 'past' : 'future';
+      for (const msg of messagesByFrame[i] || []) out.push({ frame: i, msg, state });
     }
     return out;
   }, [messagesByFrame, currentIndex]);
+  // The first current-or-future line — our scroll anchor (works even when the
+  // current frame itself has no log lines).
+  const boundaryIdx = useMemo(() => entries.findIndex((e) => e.frame >= currentIndex), [entries, currentIndex]);
 
-  // Keep the current frame's lines in view as you scrub.
+  // Keep the playhead line centered as you scrub.
   useEffect(() => {
-    const c = scrollRef.current; if (!c) return;
-    const row = currentRef.current;
-    if (row) { const cr = c.getBoundingClientRect(), rr = row.getBoundingClientRect(); c.scrollTop += (rr.top - cr.top) - c.clientHeight / 2 + rr.height / 2; }
-    else c.scrollTop = c.scrollHeight;
-  }, [entries]);
+    const c = scrollRef.current; const row = boundaryRef.current;
+    if (!c || !row) return;
+    const cr = c.getBoundingClientRect(), rr = row.getBoundingClientRect();
+    c.scrollTop += (rr.top - cr.top) - c.clientHeight / 2 + rr.height / 2;
+  }, [entries, boundaryIdx]);
 
   if (entries.length === 0) {
     return <div style={{ padding: '28px 18px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13 }}>No log entries yet at this frame.</div>;
@@ -73,11 +77,13 @@ export function GameLogFeature({ messagesByFrame, currentIndex, onJump }: {
     <div ref={scrollRef} style={{ height: '100%', overflowY: 'auto', scrollbarGutter: 'stable', padding: '12px 12px 24px', display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13, lineHeight: 1.45 }}>
       <style>{'.kb-log-line{background:transparent;transition:background 120ms}.kb-log-line:hover{background:rgba(255,255,255,0.06)}'}</style>
       {entries.map((e, idx) => {
-        const firstCurrent = e.current && (idx === 0 || !entries[idx - 1].current);
+        const isCurrent = e.state === 'current';
+        // Future is dimmed MORE than the past.
+        const op = isCurrent ? 1 : e.state === 'past' ? 0.5 : 0.26;
         return (
-          <button key={`${e.frame}-${idx}`} ref={firstCurrent ? currentRef : null} type="button" className="kb-log-line"
+          <button key={`${e.frame}-${idx}`} ref={idx === boundaryIdx ? boundaryRef : null} type="button" className="kb-log-line"
             title={`Jump to frame ${e.frame + 1}`} onClick={() => onJump(e.frame)}
-            style={{ display: 'flex', gap: 9, alignItems: 'baseline', width: '100%', textAlign: 'left', border: 0, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.45, color: e.current ? tokens.color.text : tokens.color.textSecondary, opacity: e.current ? 1 : 0.5, transition: 'opacity 120ms ease' }}>
+            style={{ display: 'flex', gap: 9, alignItems: 'baseline', width: '100%', textAlign: 'left', border: 0, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.45, color: isCurrent ? tokens.color.text : tokens.color.textSecondary, opacity: op, transition: 'opacity 120ms ease' }}>
             <span aria-hidden style={{ flex: '0 0 auto', minWidth: 20, textAlign: 'right', fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.26)', fontVariantNumeric: 'tabular-nums' }}>{e.frame + 1}</span>
             <span style={{ flex: '1 1 auto' }}>{renderMessage(e.msg, colorMap)}</span>
           </button>
