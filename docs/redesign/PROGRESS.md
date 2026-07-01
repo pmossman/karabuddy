@@ -192,3 +192,21 @@ Mobile tag UX evolved from the full-screen list into a board-visible "Tag Mode":
 Files: redesign/TagReadMode.tsx, tagCompose.tsx (shared compose hook+CTA),
 RedesignChrome.tsx, TagsFeature.tsx, ReplayViewer.tsx. Branch only; not shipped.
 OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
+
+---
+### Log: 2026-06-30 — glassy Tag HUD + frosted rail (Parker's iOS direction)
+- **TagHud.tsx**: glassy/translucent iOS-style bubble centred on the BOARD (both
+  sizes) = the PRIMARY current-frame tag surface. Shows the frame's tag(s)+replies,
+  minimal controls (add / reply via parentTagId / prev-next tag with shortened
+  preview), board reads through it. Centres on the board region on desktop
+  (shifted by the sidebar width).
+- **Feed** = desktop docked sidebar (TagsFeature, all tags, current highlighted +
+  distance-fade) / mobile full-page takeover via the HUD's ≣ button.
+- **Rail**: frosted-glass buttons + minimal stroke SVG icons (tag/list/chevrons/
+  cards) replacing skeuomorphic emoji.
+- Compose gate: anonymized viewers see a note, can't tag (UI only; B218 filed on
+  main for server enforcement).
+- Retired TagReadMode (top-anchored draggable bubble) in favour of the HUD.
+- Shots: hud-tag-desktop / hud-tag-mobile (comment in glass), hud2-mobile (rail).
+- OPEN/consider: a very long comment makes the centred glass tall (scrollable +
+  translucent mitigates); consider a collapse/expand or a max-lines "more".
