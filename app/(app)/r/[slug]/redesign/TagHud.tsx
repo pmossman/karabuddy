@@ -61,12 +61,20 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   const activeIdx = Math.min(tab, Math.max(0, here.length - 1));
   const active = here[activeIdx] || null;
 
-  // Draggable (window listeners + clamp so it can't leave the viewport).
+  // Draggable (from anywhere on the panel chrome) + resizable. Window listeners so
+  // the pointer can leave the panel; clamp so it can't be flung off-screen.
   const wrapRef = useRef<HTMLDivElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [size, setSize] = useState<{ w: number | null; h: number | null }>({ w: null, h: null });
   const cleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => () => cleanupRef.current?.(), []);
+  const recenter = () => { setPos({ x: 0, y: 0 }); setSize({ w: null, h: null }); };
+
   const onDown = (e: React.PointerEvent) => {
+    // Drag from anywhere EXCEPT interactive bits and the scrollable body (marked
+    // data-no-drag) — so controls, the textarea, and reading/scrolling all work.
+    if ((e.target as HTMLElement).closest('button, a, textarea, input, select, [data-no-drag]')) return;
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
     e.preventDefault();
@@ -76,6 +84,28 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
       const dx = Math.min(Math.max(ev.clientX - sx, m - rect.left), (vw - m) - rect.right);
       const dy = Math.min(Math.max(ev.clientY - sy, m - rect.top), (vh - keepBottom) - rect.top);
       setPos({ x: ox + dx, y: oy + dy });
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
+    cleanupRef.current = up;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  // Resize from the bottom-right grip. The panel is centre-anchored, so to keep the
+  // top-left corner put while the grip follows the pointer we shift the centre by
+  // half the size delta.
+  const onResizeDown = (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const rect = bubbleRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX, sy = e.clientY, ow = rect.width, oh = rect.height, opx = pos.x, opy = pos.y;
+    const move = (ev: PointerEvent) => {
+      const maxW = Math.min(620, window.innerWidth * 0.94);
+      const maxH = window.innerHeight * 0.82;
+      const nw = Math.min(maxW, Math.max(280, ow + (ev.clientX - sx)));
+      const nh = Math.min(maxH, Math.max(150, oh + (ev.clientY - sy)));
+      setSize({ w: nw, h: nh });
+      setPos({ x: opx + (nw - ow) / 2, y: opy + (nh - oh) / 2 });
     };
     const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
     cleanupRef.current = up;
@@ -95,19 +125,25 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: 'min(420px, 90vw)', pointerEvents: 'none' }}>
+    <div ref={wrapRef} style={{ position: 'fixed', top: '50%', left: '50%', transform: `translate(calc(-50% - ${sidebarW / 2}px + ${pos.x}px), calc(-50% + ${pos.y}px))`, zIndex: 130, width: size.w != null ? size.w : 'min(420px, 90vw)', pointerEvents: 'none' }}>
       {minimized ? (
         <MiniRow onDown={onDown} active={active} currentIndex={currentIndex} prev={prev} next={next} onJump={onJump} onExpand={() => setMinimized(false)} />
       ) : (
-      <div style={{ ...GLASS, borderRadius: 20, pointerEvents: 'auto', display: 'flex', flexDirection: 'column', maxHeight: '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif' }}>
-        {/* Drag handle. */}
-        <div data-testid="taghud-drag" onPointerDown={onDown} style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'grab', touchAction: 'none', borderBottom: here.length > 1 ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
+      <div ref={bubbleRef} onPointerDown={onDown} style={{ ...GLASS, borderRadius: 20, position: 'relative', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', height: size.h != null ? size.h : undefined, maxHeight: size.h != null ? undefined : '56vh', overflow: 'hidden', color: '#eef2f8', fontFamily: 'var(--font-barlow), sans-serif', cursor: 'grab' }}>
+        {/* Drag handle (the whole panel chrome drags; this bar is the obvious grip). */}
+        <div data-testid="taghud-drag" style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', touchAction: 'none', borderBottom: here.length > 1 ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
           <span aria-hidden style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>⠿</span>
           <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255,255,255,0.6)' }}>
             Frame {currentIndex + 1}{here.length > 0 ? ` · ${here.length} tag${here.length > 1 ? 's' : ''}` : ''}
           </span>
-          <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={() => setMinimized(true)} title="Minimize" aria-label="Minimize"
-            style={{ marginLeft: 'auto', background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 20, fontWeight: 700, lineHeight: 1, padding: '0 4px' }}>−</button>
+          <button type="button" onClick={recenter} title="Re-center & reset size" aria-label="Re-center"
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', padding: '0 4px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
+              <circle cx="12" cy="12" r="3.2" /><line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
+            </svg>
+          </button>
+          <button type="button" onClick={() => setMinimized(true)} title="Minimize" aria-label="Minimize"
+            style={{ background: 'transparent', border: 0, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 20, fontWeight: 700, lineHeight: 1, padding: '0 4px' }}>−</button>
         </div>
 
         {/* Tabs when the frame has multiple comments. */}
@@ -126,8 +162,9 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           </div>
         )}
 
-        {/* Body — the active comment (+ replies), or the inline editor, or empty. */}
-        <div style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px' }}>
+        {/* Body — the active comment (+ replies), or the inline editor, or empty.
+            data-no-drag so scrolling/selecting here doesn't move the panel. */}
+        <div data-no-drag style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '12px 16px', cursor: 'auto' }}>
           {(() => {
             if (editor) {
               if (!(canTag || editor.kind === 'edit')) return <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', textAlign: 'center' }}>Tagging is for this replay’s owner and their teams.</div>;
@@ -164,8 +201,9 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           })()}
         </div>
 
-        {/* Control bar: prev · [add][reply][edit][feed] · next. */}
-        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+        {/* Control bar: prev · [add][reply][edit][feed] · next. Extra right pad
+            leaves a gutter for the resize grip. */}
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px 8px 10px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
           <NavBtn dir="prev" tag={prev} onClick={() => prev && onJump(prev.frameIndex)} />
           <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center', gap: 6 }}>
             <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
@@ -174,6 +212,14 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
             {onOpenFeed && <IconBtn label="All tags" glyph="≣" onClick={onOpenFeed} />}
           </div>
           <NavBtn dir="next" tag={next} onClick={() => next && onJump(next.frameIndex)} />
+        </div>
+
+        {/* Resize grip (bottom-right). */}
+        <div data-no-drag data-testid="taghud-resize" onPointerDown={onResizeDown} title="Resize" aria-label="Resize"
+          style={{ position: 'absolute', right: 3, bottom: 3, width: 16, height: 16, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', cursor: 'nwse-resize', touchAction: 'none', color: 'rgba(255,255,255,0.45)', zIndex: 3 }}>
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" aria-hidden>
+            <line x1="11" y1="4" x2="4" y2="11" /><line x1="11" y1="8" x2="8" y2="11" />
+          </svg>
         </div>
       </div>
       )}
