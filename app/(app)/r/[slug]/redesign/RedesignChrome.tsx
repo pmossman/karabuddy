@@ -16,12 +16,14 @@ import { TagHud } from './TagHud';
 // the Tags feature fully; the other bubbles are placeholders for the same rail.
 
 type FeatureId = 'tags' | 'log' | 'info' | 'decks';
-interface FeatureDef { id: FeatureId; label: string; icon: string; soon?: boolean }
+interface FeatureDef { id: FeatureId; label: string; icon: ReactNode; soon?: boolean }
+// Minimal line icons (glassy/iOS feel) instead of skeuomorphic emoji.
+const S = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 const FEATURES: FeatureDef[] = [
-  { id: 'tags', label: 'Tags', icon: '🏷' },
-  { id: 'log', label: 'Game log', icon: '📜' },
-  { id: 'info', label: 'Matchup', icon: '⚔' },
-  { id: 'decks', label: 'Decks', icon: '🃏' },
+  { id: 'tags', label: 'Tags', icon: (<svg {...S}><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none" /></svg>) },
+  { id: 'log', label: 'Game log', icon: (<svg {...S}><line x1="8" y1="7" x2="20" y2="7" /><line x1="8" y1="12" x2="20" y2="12" /><line x1="8" y1="17" x2="15" y2="17" /><circle cx="4.5" cy="7" r="0.6" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="0.6" fill="currentColor" stroke="none" /><circle cx="4.5" cy="17" r="0.6" fill="currentColor" stroke="none" /></svg>) },
+  { id: 'info', label: 'Matchup', icon: (<svg {...S}><polyline points="10 6 5 12 10 18" /><polyline points="14 6 19 12 14 18" /></svg>) },
+  { id: 'decks', label: 'Decks', icon: (<svg {...S}><rect x="3" y="7" width="12" height="14" rx="2" /><rect x="9" y="3" width="12" height="14" rx="2" /></svg>) },
 ];
 
 export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, messagesByFrame, matchup, decks, onTagModeChange, onDockWidthChange, canTag }: {
@@ -127,14 +129,17 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                 onClick={() => { if (!f.soon) setOpen((cur) => (cur === f.id ? null : f.id)); }}
                 style={{
                   position: 'relative',
-                  width: 46, height: 46, borderRadius: '50%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+                  width: 44, height: 44, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: f.soon ? 'default' : 'pointer', fontFamily: 'inherit',
-                  background: isOpen ? 'rgba(77,210,255,0.22)' : 'rgba(17,20,26,0.85)',
-                  border: `1px solid ${isOpen ? tokens.led.on : tokens.color.borderStrong}`,
-                  boxShadow: isOpen ? tokens.led.ringGlow : '0 2px 8px rgba(0,0,0,0.4)',
+                  // Frosted glass — translucent + blur, cyan when active.
+                  background: isOpen ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
+                  color: isOpen ? tokens.led.on : 'rgba(255,255,255,0.82)',
+                  border: `1px solid ${isOpen ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
+                  boxShadow: isOpen ? tokens.led.ringGlow : '0 2px 10px rgba(0,0,0,0.35)',
                   opacity: f.soon ? 0.38 : 1,
-                  backdropFilter: 'blur(4px)',
+                  backdropFilter: 'blur(16px) saturate(1.4)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
                 }}>
                 <span aria-hidden>{f.icon}</span>
                 {badge != null && (
