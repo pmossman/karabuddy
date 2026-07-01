@@ -15,11 +15,26 @@ import { useCreateTag } from './tagCompose';
 interface TeamStatus {
   teamSlug: string;
   teamName: string;
+  requestedAt: string | null;
   reviewers: { userId: string; name: string | null; reviewedAt: string }[];
   reviewerCount: number;
   viewerReviewed: boolean;
   viewerCommented: boolean;
 }
+
+// Compact relative time ("3d ago"), falling back to an absolute date past a week.
+// title carries the exact timestamp.
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const s = Math.max(0, (Date.now() - then) / 1000);
+  if (s < 60) return 'just now';
+  const m = s / 60; if (m < 60) return `${Math.floor(m)}m ago`;
+  const h = m / 60; if (h < 24) return `${Math.floor(h)}h ago`;
+  const d = h / 24; if (d < 7) return `${Math.floor(d)}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function fullTime(iso: string): string { const t = new Date(iso); return Number.isNaN(t.getTime()) ? '' : t.toLocaleString(); }
 
 export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, updateTag, removeTag, isOwner }: {
   replaySlug: string;
@@ -36,6 +51,11 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  // Owner-only: their teams + which this replay is shared with / can be shared to,
+  // so requesting a review lives HERE (not off in the Share view). Review is a
+  // subset of shares, so requesting a not-yet-shared team shares it first.
+  const [ownerTeams, setOwnerTeams] = useState<{ slug: string; name: string; shared: boolean; shareable: boolean }[]>([]);
+  const [reqPending, setReqPending] = useState<Set<string>>(new Set());
 
   // Refetch on mount + whenever the viewer's own comment set changes, so the
   // "can finish" gate flips as soon as they leave a comment.
@@ -43,7 +63,36 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
   const load = useCallback(async () => {
     try { const res = await fetch(`/api/replays/${replaySlug}/review-status`); const b = await res.json(); if (b.ok) setRows(b.data || []); } catch { /* stays hidden */ }
   }, [replaySlug]);
+  const loadOwnerTeams = useCallback(async () => {
+    if (!isOwner) return;
+    try {
+      const res = await fetch(`/api/replays/${replaySlug}/team-shares`); const b = await res.json();
+      if (!b.ok) return;
+      const sharedSlugs = new Set((b.shares || []).map((s: { teamSlug: string }) => s.teamSlug));
+      setOwnerTeams((b.ownerTeams || []).map((t: { slug: string; name: string; shareable: boolean }) => ({ slug: t.slug, name: t.name, shared: sharedSlugs.has(t.slug), shareable: t.shareable })));
+    } catch { /* leave request UI hidden */ }
+  }, [replaySlug, isOwner]);
   useEffect(() => { load(); }, [load, myCount]);
+  useEffect(() => { loadOwnerTeams(); }, [loadOwnerTeams]);
+
+  // Owner: request a review from a team (sharing it first if needed — you can't
+  // review what you can't see), or cancel an open request.
+  const setRequest = async (team: { slug: string; shared: boolean }, requested: boolean) => {
+    if (reqPending.has(team.slug)) return;
+    setReqPending((p) => new Set(p).add(team.slug));
+    try {
+      if (requested && !team.shared) {
+        const sr = await fetch(`/api/replays/${replaySlug}/team-shares`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamSlug: team.slug }) });
+        const sb = await sr.json();
+        if (!sb.ok) { alert(`Could not share with team: ${sb.error || 'unknown'}`); return; }
+      }
+      const rr = await fetch(`/api/replays/${replaySlug}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamSlug: team.slug, requested }) });
+      const rb = await rr.json();
+      if (!rb.ok) { alert(`Could not ${requested ? 'request' : 'cancel'} review: ${rb.error || 'unknown'}`); return; }
+      await Promise.all([load(), loadOwnerTeams()]);
+    } catch { alert('Network error updating the review request.'); }
+    finally { setReqPending((p) => { const n = new Set(p); n.delete(team.slug); return n; }); }
+  };
 
   const commentsFor = (teamSlug: string) =>
     tags.filter((t) => !t.parentTagId && isMine(t) && (t.scope ?? []).includes(teamSlug)).sort((a, b) => a.frameIndex - b.frameIndex);
@@ -61,9 +110,12 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
   };
 
   if (rows == null) return <div style={{ padding: '24px 16px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13 }}>Loading…</div>;
-  if (rows.length === 0) return (
+
+  const requestedSlugs = new Set(rows.map((r) => r.teamSlug));
+  const candidates = ownerTeams.filter((t) => !requestedSlugs.has(t.slug));
+  if (rows.length === 0 && candidates.length === 0) return (
     <div style={{ padding: '24px 16px', textAlign: 'center', color: tokens.color.textMuted, fontSize: 13, lineHeight: 1.5 }}>
-      No reviews requested on this replay.{isOwner ? ' Request one from a team in the Share view.' : ''}
+      {isOwner ? 'No reviews yet — share this replay with a team to request one.' : 'No reviews requested on this replay.'}
     </div>
   );
 
@@ -79,7 +131,21 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
               <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: tokens.color.textSecondary }}>{t.teamName}</span>
               <span style={{ fontSize: 11, color: t.reviewerCount > 0 ? '#7fd97f' : tokens.color.textMuted }}>{t.reviewerCount > 0 ? `reviewed by ${t.reviewerCount}` : 'no reviews yet'}</span>
             </div>
-            {t.reviewerCount > 0 && <div style={{ fontSize: 11.5, color: tokens.color.textMuted }}>{t.reviewers.map((r) => r.name || 'someone').join(', ')}</div>}
+            {t.requestedAt && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: tokens.color.textFaint }} title={fullTime(t.requestedAt)}>Requested {timeAgo(t.requestedAt)}</span>
+                {isOwner && <button type="button" disabled={reqPending.has(t.teamSlug)} onClick={() => setRequest({ slug: t.teamSlug, shared: true }, false)} style={{ ...linkBtn, color: '#ff8a7a', opacity: reqPending.has(t.teamSlug) ? 0.5 : 1 }}>Cancel request</button>}
+              </div>
+            )}
+            {t.reviewerCount > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {t.reviewers.map((r) => (
+                  <div key={r.userId} style={{ fontSize: 11.5, color: tokens.color.textMuted }} title={fullTime(r.reviewedAt)}>
+                    <span aria-hidden style={{ color: '#7fd97f' }}>✓</span> {r.name || 'someone'} · reviewed {timeAgo(r.reviewedAt)}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {!open ? (
               <button type="button" disabled={!canFinish} onClick={() => canFinish && setFinishing(t.teamSlug)} title={canFinish ? undefined : 'Leave a comment scoped to this team first'}
@@ -125,6 +191,32 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
           </div>
         );
       })}
+
+      {isOwner && candidates.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: rows.length > 0 ? 6 : 0 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: tokens.color.textMuted }}>Request a review</span>
+          {candidates.map((tm) => {
+            const busy = reqPending.has(tm.slug);
+            return (
+              <div key={tm.slug} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, border: `1px solid ${tokens.color.border}`, borderRadius: 10, padding: '9px 12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: tokens.color.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tm.name}</span>
+                  <span style={{ fontSize: 10.5, color: tokens.color.textFaint }}>{tm.shareable ? (tm.shared ? 'shared with this team' : 'will share this replay') : 'private team — can’t share this replay'}</span>
+                </div>
+                <button type="button" disabled={busy || !tm.shareable} onClick={() => setRequest(tm, true)}
+                  title={tm.shareable ? undefined : 'A private team can only review replays uploaded with its key'}
+                  style={{ flex: '0 0 auto', padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                    cursor: busy || !tm.shareable ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
+                    background: tm.shareable ? 'rgba(77,210,255,0.14)' : 'transparent',
+                    border: `1px solid ${tm.shareable ? tokens.led.on : 'rgba(160,168,184,0.22)'}`,
+                    color: tm.shareable ? '#eaf9ff' : tokens.color.textMuted }}>
+                  {busy ? 'Requesting…' : 'Request review'}
+                </button>
+              </div>
+            );
+          })}
+        </section>
+      )}
     </div>
   );
 }

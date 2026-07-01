@@ -25,7 +25,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 
   // Open requests for this replay among the viewer's teams.
   const requests = await db
-    .select({ teamSlug: replayTeamShares.teamSlug, teamName: teams.name })
+    .select({ teamSlug: replayTeamShares.teamSlug, teamName: teams.name, requestedAt: replayTeamShares.reviewRequestedAt })
     .from(replayTeamShares)
     .leftJoin(teams, eq(teams.slug, replayTeamShares.teamSlug))
     .where(and(
@@ -41,6 +41,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     return {
       teamSlug: r.teamSlug,
       teamName: r.teamName ?? r.teamSlug,
+      requestedAt: r.requestedAt ? r.requestedAt.toISOString() : null,
       reviewers: marks.map((m) => ({ userId: m.userId, name: m.name, reviewedAt: m.reviewedAt })),
       reviewerCount: marks.length,
       viewerReviewed: marks.some((m) => m.userId === userId),
