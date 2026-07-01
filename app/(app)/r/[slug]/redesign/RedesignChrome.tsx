@@ -128,23 +128,35 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           onJump={(f) => { onJump(f); setJumpOpen(false); }} onClose={() => setJumpOpen(false)} />
       )}
 
-      {/* Play/Pause — a larger standalone FAB near its pre-redesign home (bottom,
-          tracking the dock), a bit bigger than the rail icons. */}
+      {/* Bottom-right transport cluster (its pre-redesign home, dock-aware): a
+          small gear that opens Playback options + a larger Play/Pause FAB that
+          breathes a subtle glow WHILE PLAYING (static once paused). */}
       {!mobileDrawer && (
-        <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={controls.onTogglePlay}
-          style={{
-            position: 'fixed', zIndex: 121,
-            bottom: 'max(18px, env(safe-area-inset-bottom, 18px))',
-            right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`,
-            width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
-            background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
-            color: controls.playing ? tokens.led.on : '#eef2f8',
-            border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
-            boxShadow: controls.playing ? tokens.led.ringGlow : '0 3px 16px rgba(0,0,0,0.45)',
-            backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-          }}>
-          <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
-        </button>
+        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 7px 1px rgba(77,210,255,0.32)}50%{box-shadow:0 0 17px 5px rgba(77,210,255,0.55)}}'}</style>
+          <button type="button" title="Playback options" aria-label="Playback options" onClick={() => openSidebar('playback')}
+            style={{
+              width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+              background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.2)' : 'rgba(255,255,255,0.07)',
+              color: sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.82)',
+              border: `1px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.35)', backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+            }}>
+            <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.82)' }}>{Icon.gear}</span>
+          </button>
+          <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={controls.onTogglePlay}
+            style={{
+              width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+              background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
+              color: controls.playing ? tokens.led.on : '#eef2f8',
+              border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
+              boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
+              backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+              animation: controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
+            }}>
+            <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
+          </button>
+        </div>
       )}
 
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
