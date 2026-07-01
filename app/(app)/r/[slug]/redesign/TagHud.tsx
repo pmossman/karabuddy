@@ -69,18 +69,18 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState<{ w: number | null; h: number | null }>({ w: null, h: null });
   const cleanupRef = useRef<(() => void) | null>(null);
-  useEffect(() => () => cleanupRef.current?.(), []);
-  // Kill any lingering fit-transition so manual resize / recenter are instant.
-  const killTransition = () => { if (bubbleRef.current) bubbleRef.current.style.transition = 'none'; };
-  const recenter = () => { killTransition(); setPos({ x: 0, y: 0 }); setSize({ w: null, h: null }); };
+  const animRef = useRef<Animation | null>(null);
+  useEffect(() => () => { cleanupRef.current?.(); animRef.current?.cancel(); }, []);
+  const stopAnim = () => animRef.current?.cancel();
+  const recenter = () => { stopAnim(); setPos({ x: 0, y: 0 }); setSize({ w: null, h: null }); };
 
-  // Navigating to a new tag re-fits the panel to the new content (grow OR shrink),
-  // animated. Driven IMPERATIVELY (pin height → force reflow → transition to the
-  // target) so it fires regardless of React's render timing — the CSS-transition-
-  // via-state approach kept snapping. Grows/shrinks CENTRED (the centre-anchor
-  // handles the reposition as the height animates), so no transform animation is
-  // needed. Keyed on the active tag's identity so autoplay through untagged frames
-  // doesn't churn.
+  // Navigating to a new tag re-fits the panel to the new content (grow OR shrink).
+  // We ALWAYS pin an explicit height (measured from the content, which sits in an
+  // unconstrained ref so its natural height is available even while the panel is
+  // still the old size) — otherwise auto-height snaps to the new content before we
+  // can measure a "from". The resize is animated with the Web Animations API
+  // (immune to React re-render timing + works in Firefox); grows/shrinks CENTRED so
+  // the centre-anchor repositions during the height animation.
   useEffect(() => {
     if (minimized) return;
     const bubble = bubbleRef.current, body = bodyRef.current, content = contentRef.current;
@@ -88,16 +88,11 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     const fromH = bubble.getBoundingClientRect().height;
     const chrome = fromH - body.clientHeight;        // header + tabs + controls + borders
     const toH = Math.min(window.innerHeight * 0.82, Math.max(120, chrome + content.scrollHeight + 24));
-    if (Math.abs(toH - fromH) <= 3) return;
-    bubble.style.transition = 'none';
-    bubble.style.height = `${fromH}px`;
-    void bubble.offsetHeight;                        // reflow → fromH is the baseline
-    bubble.style.transition = 'height 280ms cubic-bezier(0.22, 1, 0.36, 1)';
-    bubble.style.height = `${toH}px`;
-    const clear = () => { bubble.style.transition = 'none'; bubble.removeEventListener('transitionend', clear); };
-    bubble.addEventListener('transitionend', clear);
-    setSize((s) => ({ w: s.w, h: toH }));            // persist for future renders
-    return () => bubble.removeEventListener('transitionend', clear);
+    setSize((s) => ({ w: s.w, h: toH }));            // keep it explicit so the next nav has a real "from"
+    if (Math.abs(toH - fromH) > 3) {
+      stopAnim();
+      animRef.current = bubble.animate([{ height: `${fromH}px` }, { height: `${toH}px` }], { duration: 280, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    }
   }, [active?.id, minimized]);
 
   const onDown = (e: React.PointerEvent) => {
@@ -127,7 +122,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     e.preventDefault(); e.stopPropagation();
     const rect = bubbleRef.current?.getBoundingClientRect();
     if (!rect) return;
-    killTransition(); // grip resize is 1:1, not animated
+    stopAnim(); // grip resize is 1:1, not animated
     const sx = e.clientX, sy = e.clientY, ow = rect.width, oh = rect.height, opx = pos.x, opy = pos.y;
     const move = (ev: PointerEvent) => {
       const maxW = Math.min(620, window.innerWidth * 0.94);
