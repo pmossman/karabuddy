@@ -207,16 +207,23 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
             }}>
             <span aria-hidden>{Icon.jump}</span>
           </button>
-          {/* Double-sided (POV) controls beside Play — a horizontal pair so the
-              column doesn't grow (mobile landscape is height-starved). Flip is a
-              momentary action (fires the curtain, never lit); reveal-hands is a
-              toggle, lit while on. Only on double-sided replays. */}
+          {/* Double-sided (POV) controls beside Play — grouped in a labelled glass
+              rect so it's clear WHY they appear (only on double-sided replays).
+              Flip is a momentary action (fires the curtain, never lit);
+              reveal-hands is a toggle, lit while on. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {controls.canFlip && (
-              <>
-                <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} />
-                <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} />
-              </>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '7px 10px 9px', borderRadius: 16,
+                background: 'rgba(16,20,28,0.4)', border: '1px solid rgba(255,255,255,0.12)',
+                backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+              }}>
+                <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap' }}>Double-sided</span>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} />
+                  <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} />
+                </div>
+              </div>
             )}
           {/* Play + overlapping gear. */}
           <div style={{ position: 'relative' }}>
