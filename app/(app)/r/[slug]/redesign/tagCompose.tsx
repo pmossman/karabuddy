@@ -10,6 +10,19 @@ import type { ViewerTag } from './TagsFeature';
 // list, the HUD, and the feed all post the same way + share the signed-out gate.
 // Optimistically appends/updates in ORIGINAL frame space (the viewer remaps to
 // the collapsed timeline) — mirrors the legacy TagSidebar.submitTag.
+// The viewer's identity for tag ownership: signed-in user id and/or the browser's
+// install token. A tag is "mine" (editable/deletable) if either matches. Shared by
+// the compose hook and the read-only surfaces (feed NEW-badges, scope labels).
+export function useTagIdentity() {
+  const { data: session } = useSession();
+  const userId = (session?.user as { id?: string } | undefined)?.id || null;
+  const authorName = session?.user?.name || 'You';
+  const [token] = useState(() => (typeof window !== 'undefined' ? getOrCreateInstallToken() : ''));
+  const isMine = (tag: { userId?: string | null; authorToken?: string }) =>
+    (!!userId && tag.userId === userId) || (!!token && !!tag.authorToken && tag.authorToken === token);
+  return { userId, authorName, token, isMine };
+}
+
 export function useCreateTag(
   replaySlug: string,
   toOriginalFrame: (i: number) => number,
@@ -17,13 +30,7 @@ export function useCreateTag(
   updateTag?: (id: string, patch: Partial<ViewerTag>) => void,
   removeTag?: (id: string) => void,
 ) {
-  const { data: session } = useSession();
-  const userId = (session?.user as { id?: string } | undefined)?.id || null;
-  const authorName = session?.user?.name || 'You';
-  const [token] = useState(() => (typeof window !== 'undefined' ? getOrCreateInstallToken() : ''));
-  // A tag is the viewer's own (editable) if it matches their account or token.
-  const isMine = (tag: { userId?: string | null; authorToken?: string }) =>
-    (!!userId && tag.userId === userId) || (!!token && !!tag.authorToken && tag.authorToken === token);
+  const { userId, authorName, token, isMine } = useTagIdentity();
 
   const edit = async (id: string, text: string, opts?: TagOpts): Promise<boolean> => {
     const body = text.trim();

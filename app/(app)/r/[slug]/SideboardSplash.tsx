@@ -2,6 +2,7 @@
 
 import React, { useLayoutEffect, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
+import { GLASS } from './redesign/ui';
 import type { SideboardChanges, SideboardChange, SideboardPlayerChanges } from '@/lib/sideboardDiff';
 
 // B150: sideboard splash — what each player swapped vs the PREVIOUS game in this
@@ -31,14 +32,6 @@ const STACK_OFF = 7;           // px each stacked copy is offset up + right
 const STACK_MAX = 2;
 const RESERVE = STACK_OFF * STACK_MAX;
 
-// Glassy panel — matches the redesign HUD (translucent + blur) instead of an opaque card.
-const GLASS: React.CSSProperties = {
-  background: 'rgba(16, 20, 28, 0.55)',
-  backdropFilter: 'blur(20px) saturate(1.4)',
-  WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
-  border: '1px solid rgba(255,255,255,0.14)',
-  boxShadow: '0 12px 44px rgba(0,0,0,0.5)',
-};
 
 interface PlayerCounts { inN: number; outN: number }
 

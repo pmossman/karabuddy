@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { scopeLabel, scopeFromMentions } from '@/lib/commentScope';
 import { MentionInput, type MentionData } from '../MentionInput';
-import type { ViewerTag } from './TagsFeature';
+import { authorColor, type ViewerTag } from './TagsFeature';
 import { useCreateTag, SignInToTagCta } from './tagCompose';
+import { GLASS, NewBadge } from './ui';
 
 // B216 redesign — the Tag HUD: a glassy, iOS-style bubble floating over the board
 // showing the CURRENT frame's tag(s). Draggable (clamped on-screen). When a frame
@@ -14,16 +15,6 @@ import { useCreateTag, SignInToTagCta } from './tagCompose';
 // a shortened preview. The full feed lives in the sidebar / a full-page takeover.
 
 const truncate = (s: string, n = 22) => { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
-const COLORS = ['#4dd2ff', '#6bd968', '#e0c64a', '#ff8a7a', '#c08bff', '#5db4ff', '#ff9f4d'];
-function authorColor(name: string): string { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0; return COLORS[Math.abs(h) % COLORS.length]; }
-
-const GLASS: React.CSSProperties = {
-  background: 'rgba(16, 20, 28, 0.55)',
-  backdropFilter: 'blur(20px) saturate(1.4)',
-  WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
-  border: '1px solid rgba(255,255,255,0.14)',
-  boxShadow: '0 12px 44px rgba(0,0,0,0.5)',
-};
 
 type Editor = null | { kind: 'add' } | { kind: 'reply'; id: string } | { kind: 'edit'; id: string };
 
@@ -267,7 +258,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: authorColor(active.authorName || 'anon') }} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: authorColor(active.authorName || 'anon') }}>{active.authorName || 'Anonymous'}</span>
-                  {isNew(active) && <span aria-hidden style={{ background: 'rgba(86,199,255,0.18)', border: '1px solid rgba(86,199,255,0.5)', color: '#8fd6ff', borderRadius: 999, padding: '0 6px', fontSize: 9, fontWeight: 800, letterSpacing: '0.05em' }}>NEW</span>}
+                  {isNew(active) && <NewBadge />}
                 </div>
                 <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgba(255,255,255,0.92)' }}>{active.comment}</div>
                 {isMine(active) && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>Visible to {scopeLabel(active.scope ?? [], armedSlugs, teamNames)}</div>}

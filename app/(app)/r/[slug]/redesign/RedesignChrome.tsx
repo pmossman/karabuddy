@@ -14,6 +14,7 @@ import { ClipsFeature } from './ClipsFeature';
 import { ReviewsFeature } from './ReviewsFeature';
 import { TagHud } from './TagHud';
 import { Icon } from './icons';
+import { PULSE_KEYFRAMES } from './ui';
 import { type ClipSummary } from '../ClipsList';
 
 // B216 redesign — the unified viewer chrome (gated behind ?redesign=1).
@@ -158,6 +159,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
   return (
     <>
+      <style>{PULSE_KEYFRAMES}</style>
       {showHud && (
         <TagHud
           tags={tags} currentIndex={currentIndex} onJump={onJump}
@@ -194,19 +196,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           with a small gear OVERLAPPING it — clearly its playback options. */}
       {!mobileDrawer && (
         <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
-          <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 7px 1px rgba(77,210,255,0.32)}50%{box-shadow:0 0 17px 5px rgba(77,210,255,0.55)}}'}</style>
           {/* Jump-to — stacked ABOVE the play button. */}
-          <button type="button" title="Jump to a moment" aria-label="Jump to a moment" onClick={() => setJumpOpen((v) => !v)}
-            style={{
-              width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
-              background: jumpOpen ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
-              color: jumpOpen ? tokens.led.on : 'rgba(255,255,255,0.82)',
-              border: `1px solid ${jumpOpen ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
-              boxShadow: jumpOpen ? tokens.led.ringGlow : '0 2px 10px rgba(0,0,0,0.35)',
-              backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-            }}>
-            <span aria-hidden>{Icon.jump}</span>
-          </button>
+          <RailBtn icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
           {/* Double-sided (POV) controls beside Play — grouped in a labelled glass
               rect so it's clear WHY they appear (only on double-sided replays).
               Flip is a momentary action (fires the curtain, never lit);
@@ -258,7 +249,6 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
       {!mobileDrawer && (
         <div style={{ position: 'fixed', top: 'calc(var(--kb-header-h, 46px) + 14px)', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
-          <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 7px 1px rgba(77,210,255,0.32)}50%{box-shadow:0 0 17px 5px rgba(77,210,255,0.55)}}'}</style>
           {railItems.map((it, i) => (
             <div key={it.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
               {/* subtle divider between the sidebar toggle (whole-replay) and Tags
