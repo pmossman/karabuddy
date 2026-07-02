@@ -93,24 +93,33 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       return q.get('panel') ?? (q.get('finishReview') ? 'reviews' : null);
     } catch { return null; }
   });
+  // The deep-linked view stays "pending" until the user takes over the sidebar —
+  // the [mode] effect below re-runs when useMediaQuery settles desktop→mobile just
+  // after mount, and its close-on-crossing would otherwise clobber the deep-link
+  // (the panel opened, then instantly closed on phones).
+  const pendingPanelRef = useRef<SidebarView | null>(
+    initialPanel && VIEWS.some((v) => v.id === initialPanel) ? (initialPanel as SidebarView) : null,
+  );
+  // Any USER open/close takes ownership: consume the pending deep-link so a later
+  // breakpoint crossing doesn't resurrect it.
+  const userSetSidebar = (open: boolean) => { pendingPanelRef.current = null; setSidebarOpen(open); };
   // The board loads clean: the HUD starts CLOSED and only opens when you engage
   // tagging (Tags rail icon / a tag in the feed). Your open/close choice is
   // remembered across reloads (desktop only — mobile always uses the drawer).
+  // A pending deep-link wins over the default-closed sidebar (and survives the
+  // initial desktop→mobile mode settle, which re-runs this effect).
   useEffect(() => {
-    setSidebarOpen(false); setJumpOpen(false);
+    setJumpOpen(false);
+    if (pendingPanelRef.current) { setSidebarView(pendingPanelRef.current); setSidebarOpen(true); }
+    else setSidebarOpen(false);
     if (mode !== 'desktop') { setHudOpen(false); return; }
     let saved: string | null = null;
     try { saved = localStorage.getItem(HUD_PREF_KEY); } catch { /* private mode */ }
     setHudOpen(saved === '1'); // default closed when unset
   }, [mode]);
-  // Deep-link: open the sidebar straight to ?panel=<view> ONCE on mount (used by the
-  // series rows so hopping between games lands on the same panel). Declared after the
-  // mode effect so its setSidebarOpen(false) doesn't clobber this; mount-only so a
-  // later resize doesn't force it back open. Strips the param so a manual close sticks.
+  // Strip the ?panel param once so a copied URL is clean and a manual close sticks.
   useEffect(() => {
-    if (!initialPanel || !VIEWS.some((v) => v.id === initialPanel)) return;
-    setSidebarView(initialPanel as SidebarView);
-    setSidebarOpen(true);
+    if (!initialPanel) return;
     try { const u = new URL(window.location.href); u.searchParams.delete('panel'); window.history.replaceState(null, '', u.toString()); } catch { /* param stays; harmless */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -125,9 +134,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   useEffect(() => { onDockWidthChange?.(desktopDock ? sidebarW : 0); }, [desktopDock, sidebarW, onDockWidthChange]);
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
-  const openSidebar = (v: SidebarView) => { setSidebarView(v); setSidebarOpen(true); };
+  const openSidebar = (v: SidebarView) => { pendingPanelRef.current = null; setSidebarView(v); setSidebarOpen(true); };
   // Jump from a sidebar view; on mobile close the drawer so the board is revealed.
-  const jumpFromSidebar = (f: number) => { onJump(f); if (mode === 'mobile') setSidebarOpen(false); };
+  const jumpFromSidebar = (f: number) => { onJump(f); if (mode === 'mobile') userSetSidebar(false); };
   // Click a tag feed entry → also open the HUD at that frame.
   const openTagFromFeed = (f: number) => { setHudOpen(true); jumpFromSidebar(f); };
 
@@ -149,7 +158,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Play / gear / jump-to live in the bottom-right cluster; Clip lives in the
   // sidebar's Clips view.
   const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void }[] = [
-    { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => setSidebarOpen((v) => !v) },
+    { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => userSetSidebar(!sidebarOpen) },
     // Tags rail = the board HUD, and ONLY the HUD: lit ⇔ HUD open, click toggles it.
     // The panel is the sidebar rail's job; the panel's Tags view opens the HUD via a
     // tag click (openTagFromFeed). Keeping this icon off the panel is what removed the
@@ -179,7 +188,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
         <FeaturePanel
           open mode={mode} title={activeView.label} icon={activeView.icon} hideHeader
           width={sidebarW} onWidthChange={setSidebarW} resizable={mode === 'desktop'}
-          onClose={() => setSidebarOpen(false)}
+          onClose={() => userSetSidebar(false)}
           toolbar={<ViewSelector value={sidebarView} onChange={setSidebarView} />}
         >
           {renderView(sidebarView)}
@@ -234,7 +243,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
             </button>
-            <button type="button" title="Playback options" aria-label="Playback options" onClick={() => { if (sidebarOpen) setSidebarOpen(false); else openSidebar('playback'); }}
+            <button type="button" title="Playback options" aria-label="Playback options" onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }}
               style={{
                 position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
                 background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(22,28,38,0.95)',
