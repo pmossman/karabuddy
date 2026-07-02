@@ -41,7 +41,9 @@ test('series: Matchup panel shows Game-N title + per-game rows; browser chips ea
   // view survives the jump and the current/link roles flip.
   await page.getByTestId('series-game-2').click();
   await page.waitForURL(new RegExp(`/r/${g2.slug}`));
-  await expect(page.getByText(/— Game 2/).first()).toBeVisible();
+  // Scope into the panel — Next's route announcer echoes the page title (which
+  // contains "— Game 2") page-wide, so an unscoped getByText can pass vacuously.
+  await expect(page.getByRole('complementary').getByText(/— Game 2/).first()).toBeVisible();
   await expect(page.getByRole('complementary').locator('[aria-current="page"]')).toContainText('Game 2');
   await expect(page.getByTestId('series-game-1')).toBeVisible();
 

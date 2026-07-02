@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type ComponentProps } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { type Chapter } from '@/lib/replayChapters';
 import { FeaturePanel } from './FeaturePanel';
@@ -88,13 +89,13 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // not re-read in the effect — otherwise Strict Mode's double-invoked effect strips
   // the param on the first pass and the second pass sees none and closes the panel.
   // (ReviewsFeature reads + strips finishReview itself to auto-expand the team.)
-  const [initialPanel] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const q = new URLSearchParams(window.location.search);
-      return q.get('panel') ?? (q.get('finishReview') ? 'reviews' : null);
-    } catch { return null; }
-  });
+  // Read via useSearchParams, NOT window.location: on a client-side navigation
+  // (series hop, team Reviews tab) the render happens before the URL commits, so a
+  // window read sees the PREVIOUS page's search and the deep-link is lost.
+  const searchParams = useSearchParams();
+  const [initialPanel] = useState<string | null>(
+    () => searchParams.get('panel') ?? (searchParams.get('finishReview') ? 'reviews' : null),
+  );
   // The deep-linked view stays "pending" until the user takes over the sidebar —
   // the [mode] effect below re-runs when useMediaQuery settles desktop→mobile just
   // after mount, and its close-on-crossing would otherwise clobber the deep-link

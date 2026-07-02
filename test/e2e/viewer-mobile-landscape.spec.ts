@@ -107,7 +107,7 @@ test('mobile: matchup starts hidden; rail Sidebar + the Matchup chip reveal it',
   await page.getByRole('dialog').getByRole('button', { name: 'Matchup', exact: true }).click();
   const drawer = page.getByRole('dialog', { name: 'Matchup' });
   await expect(drawer).toBeVisible();
-  await expect(drawer.getByText('VS', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('VS', { exact: true }).first()).toBeVisible();
   await expect(drawer.getByText('MobUser').first()).toBeVisible();
   await expect(drawer.getByText('OppMob').first()).toBeVisible();
 });
@@ -156,7 +156,7 @@ test('mobile: one panel — the view chips swap content within the same drawer (
   await expect(page.getByRole('dialog')).toHaveCount(1);
   await expect(page.getByRole('dialog', { name: 'Matchup' })).toBeVisible();
   await expect(dialogs.getByText('No tags on this replay yet.')).toHaveCount(0);
-  await expect(dialogs.getByText('VS', { exact: true })).toBeVisible();
+  await expect(dialogs.getByText('VS', { exact: true }).first()).toBeVisible();
 });
 
 test('matchup view exposes the title-edit pencil — owner only', async ({ page, request }) => {
@@ -282,12 +282,17 @@ test('mobile portrait: the drawer is a full-screen-ish overlay (no split sheets)
   await expect(drawer).toBeVisible();
 
   // One right-anchored drawer covering (nearly) the whole viewport — the old
-  // top/bottom split-sheet geometry is gone.
-  const box = await drawer.boundingBox();
+  // top/bottom split-sheet geometry is gone. Poll: the drawer slides in over
+  // ~220ms (kb-drawer-in), so an immediate boundingBox catches it mid-flight.
   const vp = page.viewportSize();
-  expect(box && vp && box.width >= vp.width * 0.85).toBe(true); // min(440px, 92vw)
-  expect(box && vp && box.height >= vp.height * 0.95).toBe(true); // top:0..bottom:0
-  expect(box && vp && Math.abs(box.x + box.width - vp.width) < 5).toBe(true);
+  await expect.poll(async () => {
+    const box = await drawer.boundingBox();
+    if (!box || !vp) return 'no-box';
+    if (box.width < vp.width * 0.85) return `narrow:${box.width}`; // min(440px, 92vw)
+    if (box.height < vp.height * 0.95) return `short:${box.height}`; // top:0..bottom:0
+    if (Math.abs(box.x + box.width - vp.width) >= 5) return `off-right:${box.x + box.width}`;
+    return 'ok';
+  }).toBe('ok');
 
   // Board chrome is covered while open; closing reveals it again.
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toHaveCount(0);

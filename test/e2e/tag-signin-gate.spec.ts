@@ -26,11 +26,13 @@ test('signed-out viewer cannot open the tag composer (tagging is sign-in gated)'
   await page.goto(`/r/${slug}`);
   await expect(page.getByTestId('board')).toHaveAttribute('data-frames', '1');
 
-  // Open the Tag HUD — the compose controls are there, but locked for anon.
+  // Open the Tag HUD — Add stays clickable for the signed-out viewer, but opens
+  // the sign-in CTA (the prod affordance) instead of the composer.
   await page.getByRole('button', { name: 'Tags', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Add tag' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Reply' })).toBeDisabled();
-  // No composer ever opens for a signed-out viewer.
+  await page.getByRole('button', { name: 'Add tag' }).click();
+  await expect(page.getByTestId('tag-signin-gate')).toBeVisible();
+  await expect(page.getByTestId('tag-signin-cta')).toHaveAttribute('href', new RegExp(`/signin\\?callbackUrl=.*${slug}`));
+  // The real composer never opens for a signed-out viewer.
   await expect(page.locator('textarea')).toHaveCount(0);
 });
 

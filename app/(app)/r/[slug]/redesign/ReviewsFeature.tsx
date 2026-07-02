@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { ViewerTag } from './TagsFeature';
 import { useCreateTag } from './tagCompose';
@@ -55,10 +56,9 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
   // auto-expands that team's summary once its status loads (only if the viewer can
   // actually finish), then strips the param so a manual close sticks. Captured
   // once — Strict Mode re-runs would otherwise see the stripped URL.
-  const [finishTarget] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try { return new URLSearchParams(window.location.search).get('finishReview'); } catch { return null; }
-  });
+  // useSearchParams (not window.location): correct during client-side navs.
+  const searchParams = useSearchParams();
+  const [finishTarget] = useState<string | null>(() => searchParams.get('finishReview'));
   const autoOpenedRef = useRef(false);
   // Owner-only: their teams + which this replay is shared with / can be shared to,
   // so requesting a review lives HERE (not off in the Share view). Review is a
