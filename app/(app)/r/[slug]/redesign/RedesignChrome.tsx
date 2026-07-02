@@ -46,7 +46,7 @@ const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4f
 // Remembers whether you left the desktop Tag HUD open ('1') or closed ('0').
 const HUD_PREF_KEY = 'kb:redesign:hudOpen';
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag, onOpenSideboard }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag, onOpenSideboard, sideboardOpen }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -67,6 +67,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   canTag: boolean;
   // Present only on replays with a sideboard swap to show → a persistent rail icon.
   onOpenSideboard?: () => void;
+  sideboardOpen?: boolean; // the splash's open state → rail icon lights blue while open
 }) {
   const [hudOpen, setHudOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -76,6 +77,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Glow the Play (▶) to invite the first play this session; stops once played and
   // never re-glows (not even when you pause).
   const [invitePlay, setInvitePlay] = useState(true);
+  // Glow the sideboard rail icon to draw attention until it's opened once this session.
+  const [sideboardSeen, setSideboardSeen] = useState(false);
+  useEffect(() => { if (sideboardOpen) setSideboardSeen(true); }, [sideboardOpen]);
   // Deep-link view captured ONCE (?panel=<view>). Read via a lazy initializer, not
   // re-read in the effect — otherwise Strict Mode's double-invoked effect strips the
   // param on the first pass and the second pass sees none and closes the panel.
@@ -139,7 +143,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Top-right rail: the sidebar toggle (top corner) + Tags (the messages HUD).
   // Play / gear / jump-to live in the bottom-right cluster; Clip lives in the
   // sidebar's Clips view.
-  const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }[] = [
+  const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void }[] = [
     { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => setSidebarOpen((v) => !v) },
     // Tags rail = the board HUD, and ONLY the HUD: lit ⇔ HUD open, click toggles it.
     // The panel is the sidebar rail's job; the panel's Tags view opens the HUD via a
@@ -147,9 +151,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     // phantom activation (panel defaults to its Tags view) + the dead click-to-close.
     { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
   ];
-  // Sideboard: only on replays with a swap to show — opens the splash any time, not
-  // just the frame-0 auto-show. It's a transient overlay (no persistent lit state).
-  if (onOpenSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', onClick: onOpenSideboard });
+  // Sideboard: only on replays with a swap to show — opens the splash any time. Lights
+  // blue while the splash is open, and glows until first opened to draw attention.
+  if (onOpenSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', active: !!sideboardOpen, glow: !sideboardSeen && !sideboardOpen, onClick: onOpenSideboard });
 
   return (
     <>
@@ -234,6 +238,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
       {!mobileDrawer && (
         <div style={{ position: 'fixed', top: 'calc(var(--kb-header-h, 46px) + 14px)', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
+          <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 7px 1px rgba(77,210,255,0.32)}50%{box-shadow:0 0 17px 5px rgba(77,210,255,0.55)}}'}</style>
           {railItems.map((it, i) => (
             <div key={it.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
               {/* subtle divider between the sidebar toggle (whole-replay) and Tags
@@ -248,7 +253,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   );
 }
 
-function RailBtn({ icon, label, active, badge, onClick }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void }) {
+function RailBtn({ icon, label, active, badge, glow, onClick }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void }) {
   return (
     <button type="button" title={label} aria-label={label} onClick={onClick}
       style={{
@@ -256,8 +261,9 @@ function RailBtn({ icon, label, active, badge, onClick }: { icon: ReactNode; lab
         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
         background: active ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
         color: active ? tokens.led.on : 'rgba(255,255,255,0.82)',
-        border: `1px solid ${active ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
+        border: `1px solid ${active || glow ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
         boxShadow: active ? tokens.led.ringGlow : '0 2px 10px rgba(0,0,0,0.35)',
+        animation: glow ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
         backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
       }}>
       <span aria-hidden>{icon}</span>

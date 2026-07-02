@@ -549,15 +549,15 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   useEffect(() => { if (!atEnd) setSummaryDismissed(false); }, [atEnd]);
   const showSummary = atEnd && !summaryDismissed && endStats != null;
 
-  // B150: sideboard splash — auto-shown at frame 0 of a post-sideboard game (a
-  // game with swaps vs the previous one), re-shown on returning to frame 0, and
-  // openable on demand from the "⇄ Sideboard" button. Mirrors the summary model.
+  // B150: sideboard splash. Legacy auto-shows it at frame 0 of a post-sideboard game
+  // (re-shown on returning to frame 0). B216: the redesign does NOT auto-open — it's
+  // click-only via the glowing rail icon — so the board loads clean.
   const sideboardHasChanges = !!sideboard && sideboard.players.some((p) => p.changed);
   const [sideboardDismissed, setSideboardDismissed] = useState(false);
   const [sideboardOpen, setSideboardOpen] = useState(false);
   const atStart = currentIndex === 0;
   useEffect(() => { if (!atStart) setSideboardDismissed(false); }, [atStart]);
-  const showSideboard = !!sideboard && (sideboardOpen || (atStart && sideboardHasChanges && !sideboardDismissed));
+  const showSideboard = !!sideboard && (sideboardOpen || (!redesign && atStart && sideboardHasChanges && !sideboardDismissed));
 
   // B104: how long action-playback should dwell on each frame before advancing
   // — longer for frames with an attack, so the lunge→death→reflow choreography
@@ -1122,8 +1122,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               replaySlug: replay.slug,
             }}
             // B150: a persistent rail icon (when there's a swap to show) opens the
-            // sideboard splash any time, not just the frame-0 auto-show.
+            // sideboard splash any time; it glows until first opened, and lights blue
+            // while open (sideboardOpen).
             onOpenSideboard={sideboard && sideboardHasChanges ? () => setSideboardOpen(true) : undefined}
+            sideboardOpen={sideboardOpen}
             controls={{
               playing, onTogglePlay: toggleAutoplay,
               speed, speeds: PLAYBACK_SPEEDS as { label: string; value: number }[], onSetSpeed: setSpeedValue,
