@@ -308,3 +308,20 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
 - [x] "New since last visit" tag markers (POST /viewed → lastViewedAt → NEW pill).
 - [x] Sideboard splash: auto-splash at frame 0 already shared (fires in redesign); added a re-open button in the Decks view (only when there's a real swap).
 - DROPPED on purpose: resourcing report.
+
+---
+### Log: 2026-07-02 — RELEASE PREP: cutover + cleanup
+- DRY pass: redesign/ui.tsx (GLASS / PULSE_KEYFRAMES / NewBadge), useTagIdentity in
+  tagCompose, authorColor single-sourced, jump bubble reuses RailBtn.
+- CUTOVER: ?redesign=1 gate removed — RedesignChrome IS the viewer chrome. Deleted:
+  TagSidebar, MobileLandscapePanels, JumpToMenu, ClipBubble, PovBubble, SharePopover,
+  ReviewStatusHeader, FinishReviewModal, ResourcingModal, DecksModal, SeriesNav
+  (types → seriesTypes.ts), useDragSize. FrameNavOverlay = two frosted chevrons only.
+  MatchupInfo lost its dead 'sidebar' variant. ShareWithTeam keeps BOTH variants
+  (row = /replays RowActions; glass = viewer Share view).
+- Ported at cutover: ?finishReview deep-link (team Reviews tab → viewer) now opens
+  the Reviews view + auto-expands the team; ShareFeature gained "Copy link to this
+  moment" (B113 share-moment survived its dead callers).
+- Test hooks: board sentinel (data-frame/-frames), tag-signin-gate/-cta,
+  tag-new-badge, viewer-finish-review-<team>, pov-controls/flip-button/reveal-toggle.
+- E2E rewrite to redesign selectors in progress (47 of 165 broke on the legacy UI).
