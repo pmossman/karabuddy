@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { scopeLabel, scopeFromMentions } from '@/lib/commentScope';
-import { MentionInput, type MentionData } from '../MentionInput';
+import { MentionInput, MentionedComment, type MentionData } from '../MentionInput';
 import { authorColor, type ViewerTag } from './TagsFeature';
 import { useCreateTag, SignInToTagCta } from './tagCompose';
 import { GLASS, NewBadge } from './ui';
@@ -260,12 +260,12 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
                   <span style={{ fontSize: 12, fontWeight: 700, color: authorColor(active.authorName || 'anon') }}>{active.authorName || 'Anonymous'}</span>
                   {isNew(active) && <NewBadge />}
                 </div>
-                <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgba(255,255,255,0.92)' }}>{active.comment}</div>
+                <div style={{ fontSize: 14.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgba(255,255,255,0.92)' }}><MentionedComment text={active.comment} /></div>
                 {isMine(active) && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>Visible to {scopeLabel(active.scope ?? [], armedSlugs, teamNames)}</div>}
                 {(replies.get(active.id) ?? []).map((r) => (
                   <div key={r.id} style={{ marginLeft: 8, paddingLeft: 9, borderLeft: `2px solid ${authorColor(r.authorName || 'anon')}`, marginTop: 2 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: authorColor(r.authorName || 'anon') }}>{r.authorName || 'Anonymous'}: </span>
-                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{r.comment}</span>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}><MentionedComment text={r.comment} /></span>
                   </div>
                 ))}
               </div>
@@ -289,8 +289,10 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
 
       {/* Add / reply / edit — a glass control row BELOW the rectangle. */}
       <div style={{ pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 999, ...GLASS }}>
-        <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag} active={editor?.kind === 'add'} />
-        <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={!canTag || !active} active={editor?.kind === 'reply'} />
+        {/* Signed OUT stays enabled — opening the composer shows the sign-in CTA
+            (the prod affordance); signed-in-but-anonymized viewers stay disabled. */}
+        <IconBtn label="Add tag" glyph="＋" onClick={() => openEditor({ kind: 'add' })} disabled={!canTag && signedIn} active={editor?.kind === 'add'} />
+        <IconBtn label="Reply" glyph="↩" onClick={() => active && openEditor({ kind: 'reply', id: active.id })} disabled={(!canTag && signedIn) || !active} active={editor?.kind === 'reply'} />
         <IconBtn label="Edit" glyph="✎" onClick={() => active && openEditor({ kind: 'edit', id: active.id }, active.comment, active.scope ?? [])} disabled={!active || !isMine(active)} active={editor?.kind === 'edit'} />
         <IconBtn label="Delete" glyph={<TrashIcon />} onClick={() => { if (active && isMine(active) && window.confirm('Delete this comment?')) { if (editor?.kind === 'edit') setEditor(null); remove(active.id); } }} disabled={!active || !isMine(active)} />
       </div>

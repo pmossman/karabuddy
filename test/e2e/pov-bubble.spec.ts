@@ -4,7 +4,8 @@ import { signInAsTestUser, createTeam, generateInvite, uploadReplay, claimInstal
 
 // B128 v2: double-sided replays show BOTH hands face up (the other recording's
 // unmasked hand + resources merged into the board) — no auto board flipping.
-// The split capsule holds the hands-up toggle (default ON) + the manual Flip.
+// B216: the controls live in a labelled "Double-sided" glass group next to the
+// Play FAB — the hands-up toggle (default ON) + the manual Flip.
 
 test('single-sided replay: no double-sided controls', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'SoloViewer' });
@@ -14,7 +15,9 @@ test('single-sided replay: no double-sided controls', async ({ page, request }) 
   });
   await claimInstallToken(page, installToken);
   await page.goto(`/r/${slug}`);
-  await expect(page.getByText(/Frame 1/)).toBeVisible(); // viewer loaded
+  // Chrome mounted + payload decoded (the board sentinel reports frame count).
+  await expect(page.getByRole('button', { name: 'Sidebar' })).toBeVisible();
+  await expect(page.getByTestId('board')).toHaveAttribute('data-frames', /^[1-9]\d*$/);
   await expect(page.getByTestId('pov-controls')).toHaveCount(0);
 
   // …and no "both POVs" badge in the browser.
@@ -59,21 +62,23 @@ test('double-sided: hands-up on by default, reveals the hidden hand; manual flip
   await ctx2.close();
 
   await page.goto(`/r/${slug}`);
+  // The labelled glass group next to the Play FAB (double-sided replays only).
   const controls = page.getByTestId('pov-controls');
   await expect(controls).toBeVisible();
+  await expect(controls).toContainText(/Double-sided/i);
 
   // Hands-up defaults ON; B's hand card (visible only in B's own recording)
   // appears on A's board once the alt payload lands + merges. The fixture's
-  // hidden opponent hand is empty, so the revealed card is the proof.
-  await expect(page.getByTestId('reveal-toggle')).toHaveAttribute('aria-pressed', 'true');
+  // hidden opponent hand is empty, so the revealed card is the proof (the
+  // reveal-toggle button exposes no aria-pressed — the board effect IS the
+  // assertion).
   await expect(page.locator('[data-card-uuid="card-1"]')).toHaveCount(2, { timeout: 5000 }); // own + revealed
 
   // Toggle off → the revealed card disappears again.
   await page.getByTestId('reveal-toggle').click();
-  await expect(page.getByTestId('reveal-toggle')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('[data-card-uuid="card-1"]')).toHaveCount(1);
 
-  // Manual flip → snappy curtain, lands in B's seat (flip button title tracks
+  // Manual flip → snappy curtain, lands in B's seat (flip button label tracks
   // whose recording is shown).
   await expect(page.getByTestId('flip-button')).toHaveAttribute('title', /viewing UserA/);
   await page.getByTestId('flip-button').click();

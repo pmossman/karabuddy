@@ -26,13 +26,14 @@ test('owner can rename their replay + add labels', async ({ page, request }) => 
   });
   expect(patchRes.ok()).toBe(true);
 
-  await page.goto(`/r/${slug}`);
+  // B216: the title + labels moved into the panel's Matchup view — deep-link
+  // it open with ?panel=info.
+  await page.goto(`/r/${slug}?panel=info`);
+  await expect(page.getByTestId('board')).toHaveAttribute('data-frames', '1');
   await expect(page.getByText('Tournament Game 3')).toBeVisible();
-  // Label chip appears in the sidebar header; use .first() since the
-  // viewer also renders the label-text potentially in EditReplayMeta's
-  // input default value (it's a button that says "Edit title + labels"
-  // so no input is rendered until clicked, but we play it safe).
-  await expect(page.getByText('tournament').first()).toBeVisible();
+  // Label pill (testid'd — plain getByText('tournament') would also match
+  // "Tournament Game 3" case-insensitively).
+  await expect(page.getByTestId('label-pill').filter({ hasText: 'tournament' })).toBeVisible();
 });
 
 test('tag CRUD: add, edit, delete', async ({ page, request }) => {
@@ -48,7 +49,11 @@ test('tag CRUD: add, edit, delete', async ({ page, request }) => {
   const { id: tagId } = await addRes.json();
   expect(addRes.ok()).toBe(true);
 
-  await page.goto(`/r/${slug}`);
+  // B216: tags render in the panel's Tags feed (?panel=tags). The chrome
+  // strips the panel param after opening, so re-navigate (not reload) between
+  // steps.
+  await page.goto(`/r/${slug}?panel=tags`);
+  await expect(page.getByTestId('board')).toHaveAttribute('data-frames', '1');
   await expect(page.getByText('first tag')).toBeVisible();
 
   const editRes = await page.request.patch(`/api/replays/${slug}/tags/${tagId}`, {
@@ -56,7 +61,7 @@ test('tag CRUD: add, edit, delete', async ({ page, request }) => {
     headers: { 'X-Install-Token': installToken },
   });
   expect(editRes.ok()).toBe(true);
-  await page.reload();
+  await page.goto(`/r/${slug}?panel=tags`);
   await expect(page.getByText('edited tag')).toBeVisible();
   await expect(page.getByText('first tag')).not.toBeVisible();
 
@@ -64,15 +69,20 @@ test('tag CRUD: add, edit, delete', async ({ page, request }) => {
     headers: { 'X-Install-Token': installToken },
   });
   expect(delRes.ok()).toBe(true);
-  await page.reload();
+  await page.goto(`/r/${slug}?panel=tags`);
+  await expect(page.getByText('No tags on this replay yet.')).toBeVisible();
   await expect(page.getByText('edited tag')).not.toBeVisible();
 });
 
 test('frame deeplink: ?f=N lands on that frame', async ({ page, request }) => {
+  // Two distinct board positions so landing on frame 2 is observable.
   const { slug } = await uploadReplay(request, {
     local: { username: 'P1' },
     opponent: { username: 'P2' },
+    extraGamestatePatches: [{ phase: 'B' }],
   });
-  await page.goto(`/r/${slug}?f=1`);
-  await expect(page.getByText(/Frame 1 \/ 1/)).toBeVisible();
+  await page.goto(`/r/${slug}?f=2`);
+  const board = page.getByTestId('board');
+  await expect(board).toHaveAttribute('data-frames', '2');
+  await expect(board).toHaveAttribute('data-frame', '2');
 });

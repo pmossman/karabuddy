@@ -47,7 +47,7 @@ const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4f
 // Remembers whether you left the desktop Tag HUD open ('1') or closed ('0').
 const HUD_PREF_KEY = 'kb:redesign:hudOpen';
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onDockWidthChange, canTag, onToggleSideboard, sideboardOpen }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onDockWidthChange, canTag, onToggleSideboard, sideboardOpen, onArmedTeamsChange }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -69,6 +69,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // that toggles the splash (click while open closes it).
   onToggleSideboard?: () => void;
   sideboardOpen?: boolean; // the splash's open state → rail icon lights blue while open
+  // B168: live armed-teams sync from the Share view back up to the viewer.
+  onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
 }) {
   const [hudOpen, setHudOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -147,7 +149,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     if (v === 'info') return <MatchupFeature {...matchup} />;
     if (v === 'decks') return <DecksFeature {...decks} />;
     if (v === 'playback') return <PlaybackFeature {...controls} />;
-    if (v === 'share') return <ShareFeature replaySlug={replaySlug} installToken={controls.installToken} isOwner={controls.isOwner} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} />;
+    if (v === 'share') return <ShareFeature replaySlug={replaySlug} installToken={controls.installToken} isOwner={controls.isOwner} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} onArmedTeamsChange={onArmedTeamsChange} />;
     return <ClipsFeature clips={controls.clips} onCreate={controls.onOpenClip} canCreate={canTag} />;
   };
   const activeView = VIEWS.find((v) => v.id === sidebarView)!;

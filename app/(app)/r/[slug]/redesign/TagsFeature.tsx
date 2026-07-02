@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { scopeLabel } from '@/lib/commentScope';
+import { MentionedComment } from '../MentionInput';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { useTagIdentity } from './tagCompose';
 import { NewBadge } from './ui';
@@ -86,12 +87,12 @@ export function TagsFeature({ tags, currentIndex, onJump, armedTeams = [], lastV
               {isNew(t) && <NewBadge />}
               <span style={{ marginLeft: 'auto', flex: '0 0 auto', fontSize: 10.5, fontWeight: 700, color: isCurrent ? tokens.color.accent : tokens.color.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Frame {t.frameIndex + 1}</span>
             </div>
-            <div style={{ fontSize: 13, lineHeight: 1.4, color: tokens.color.text, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{t.comment || '(no text)'}</div>
+            <div style={{ fontSize: 13, lineHeight: 1.4, color: tokens.color.text, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{t.comment ? <MentionedComment text={t.comment} /> : '(no text)'}</div>
             {isMine(t) && <div style={{ fontSize: 10, color: tokens.color.textFaint }}>Visible to {scopeLabel(t.scope ?? [], armedSlugs, teamNames)}</div>}
             {replies.map((r) => (
               <div key={r.id} style={{ display: 'flex', gap: 5, fontSize: 11.5, color: tokens.color.textSecondary, paddingLeft: 4 }}>
                 <span aria-hidden style={{ color: tokens.color.textMuted }}>↳</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><b style={{ color: '#cdd4df', fontWeight: 700 }}>{r.authorName || 'Anon'}:</b> {r.comment}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><b style={{ color: '#cdd4df', fontWeight: 700 }}>{r.authorName || 'Anon'}:</b> <MentionedComment text={r.comment} /></span>
               </div>
             ))}
           </button>

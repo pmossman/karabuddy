@@ -45,10 +45,13 @@ test("mention surfaces in mentioned user's inbox", async ({ page, browser, reque
   // teaser — first() is enough to prove the inbox rendered the entry.
   await expect(pageB.getByText('Mentioner').first()).toBeVisible();
 
-  // Click the mention → lands on the replay viewer at frame 1.
+  // Click the mention → lands on the replay viewer at frame 1 (B216: the
+  // board sentinel replaces the old "Frame 1 / 1" counter text).
   await pageB.getByText(/Hey.*Mentionee.*look at this/).click();
   await pageB.waitForURL(/\/r\/[a-z0-9]+/);
-  await expect(pageB.getByText(/Frame 1 \/ 1/)).toBeVisible();
+  const board = pageB.getByTestId('board');
+  await expect(board).toHaveAttribute('data-frames', '1');
+  await expect(board).toHaveAttribute('data-frame', '1');
 
   await ctxB.close();
 });

@@ -3,14 +3,16 @@ import { randomUUID } from 'node:crypto';
 import { signInAsTestUser, createTeam, generateInvite, uploadReplay, claimInstallToken } from './helpers';
 
 // B194: the "Finish review" flow. The owner requests a team review; a teammate
-// leaves a team-scoped comment, then completes the review through a summary modal
-// of their comments — reachable two ways, both landing in the SAME modal:
-//   1. inside the viewer's Review panel ("Finish review →"), and
-//   2. from the team Reviews tab, which deep-links into the viewer (?finishReview)
-//      and auto-opens the modal.
-// Submitting marks it done (per-user, durable) and flips the header to "You
-// reviewed". (The requester DM fires best-effort server-side; gated off in tests —
-// no bot token + not a prod deploy, so nothing leaves.)
+// leaves a team-scoped comment, then completes the review through a summary of
+// their comments. B216: the summary is an INLINE expansion on the team's card in
+// the viewer's Reviews panel (no modal) — reachable two ways, both landing on
+// the SAME expanded summary:
+//   1. inside the viewer: rail "Sidebar" → Reviews view → "Finish review →", and
+//   2. from the team Reviews tab, which deep-links into the viewer
+//      (?finishReview=<team>) and auto-opens the panel + expands that team.
+// Submitting marks it done (per-user, durable) and flips the button to "Update
+// review →". (The requester DM fires best-effort server-side; gated off in
+// tests — no bot token + not a prod deploy, so nothing leaves.)
 
 // Owner requests review on a shared replay; a teammate comments. Returns the
 // teammate's page (signed in, on the team) + the replay/team slugs.
@@ -37,7 +39,7 @@ async function seedRequestedReview(page: Page, browser: import('@playwright/test
   expect(reqRes.ok(), `request review failed: ${reqRes.status()}`).toBe(true);
 
   // Teammate leaves a team-scoped comment (their claimed token attributes the
-  // userId, so it's "their" comment in both the gate and the modal).
+  // userId, so it's "their" comment in both the gate and the summary).
   const mateToken = `kbx_${randomUUID()}`;
   await claimInstallToken(page2, mateToken);
   const tagRes = await page2.request.post(`/api/replays/${slug}/tags`, {
@@ -48,33 +50,37 @@ async function seedRequestedReview(page: Page, browser: import('@playwright/test
   return { teamSlug, slug, page2, ctx2 };
 }
 
-test('teammate finishes then updates a review from the viewer Review panel', async ({ page, browser, request }) => {
+test('teammate finishes then updates a review from the viewer Reviews panel', async ({ page, browser, request }) => {
   const { teamSlug, slug, page2, ctx2 } = await seedRequestedReview(page, browser, request);
 
   await page2.goto(`/r/${slug}`);
-  await page2.getByRole('button', { name: /^Tags/ }).click();
+  // B216 chrome: open the sidebar panel, then pick the Reviews view chip.
+  await page2.getByRole('button', { name: 'Sidebar' }).click();
+  await page2.getByRole('button', { name: 'Reviews', exact: true }).click();
   const finishBtn = page2.getByTestId(`viewer-finish-review-${teamSlug}`);
   await expect(finishBtn).toContainText('Finish review');
   await expect(finishBtn).toBeEnabled();
   await finishBtn.click();
 
-  const modal = page2.getByRole('dialog', { name: /Finish review for Finish Squad/ });
-  await expect(modal).toBeVisible();
-  await expect(modal).toContainText('1 comment');
-  await expect(modal).toContainText('overextended into the sweep');
-  await modal.getByRole('button', { name: 'Submit review' }).click();
+  // Inline summary expands on the team card (B216 — no modal): the reviewer's
+  // team-scoped comments + a single Submit.
+  await expect(page2.getByText(/1 comment for Finish Squad/)).toBeVisible();
+  await expect(page2.getByText('overextended into the sweep')).toBeVisible();
+  await page2.getByRole('button', { name: 'Submit review', exact: true }).click();
 
-  // B195: no "undo" — the button now offers an UPDATE (re-opens the summary +
-  // re-notifies the requester).
-  await expect(modal).toBeHidden();
+  // B195: no "undo" — the summary collapses and the button now offers an UPDATE
+  // (re-opens the summary + re-notifies the requester).
+  await expect(page2.getByRole('button', { name: 'Submit review', exact: true })).toHaveCount(0);
   await expect(finishBtn).toContainText('Update review');
 
-  // Re-open in update mode and re-submit.
+  // Re-open in update mode and re-submit. The expanded submit reads exactly
+  // "Update review" (the collapsed button carries the "→").
   await finishBtn.click();
-  const updateModal = page2.getByRole('dialog', { name: /Update review for Finish Squad/ });
-  await expect(updateModal).toBeVisible();
-  await updateModal.getByRole('button', { name: 'Update review' }).click();
-  await expect(updateModal).toBeHidden();
+  const updateSubmit = page2.getByRole('button', { name: 'Update review', exact: true });
+  await expect(updateSubmit).toBeVisible();
+  await expect(page2.getByText('overextended into the sweep')).toBeVisible();
+  await updateSubmit.click();
+  await expect(page2.getByRole('button', { name: 'Update review', exact: true })).toHaveCount(0);
   await expect(finishBtn).toContainText('Update review');
 
   await ctx2.close();
@@ -88,14 +94,14 @@ test('Reviews-tab "Finish review →" deep-links into the viewer and auto-opens 
   await expect(queueBtn).toContainText('Finish review');
   await queueBtn.click();
 
-  // Lands on the viewer with the summary modal already open (from ?finishReview).
+  // Lands on the viewer with the Reviews panel open AND the team's summary
+  // already expanded (from ?finishReview).
   await page2.waitForURL(new RegExp(`/r/${slug}`));
-  const modal = page2.getByRole('dialog', { name: /Finish review for Finish Squad/ });
-  await expect(modal).toBeVisible();
-  await expect(modal).toContainText('overextended into the sweep');
-  await modal.getByRole('button', { name: 'Submit review' }).click();
+  await expect(page2.getByText(/1 comment for Finish Squad/)).toBeVisible();
+  await expect(page2.getByText('overextended into the sweep')).toBeVisible();
+  await page2.getByRole('button', { name: 'Submit review', exact: true }).click();
 
-  await expect(modal).toBeHidden();
+  await expect(page2.getByRole('button', { name: 'Submit review', exact: true })).toHaveCount(0);
   await expect(page2.getByTestId(`viewer-finish-review-${teamSlug}`)).toContainText('Update review');
 
   await ctx2.close();
@@ -103,9 +109,10 @@ test('Reviews-tab "Finish review →" deep-links into the viewer and auto-opens 
 
 test('mobile: Reviews-tab "Finish review →" deep-link still opens the summary (drawer starts closed)', async ({ page, browser, request }) => {
   const { teamSlug, slug, page2, ctx2 } = await seedRequestedReview(page, browser, request);
-  // Phone-sized: the viewer's review drawer starts CLOSED here, so TagSidebar —
-  // which owns the ?finishReview auto-open — only mounts if the deep-link forces
-  // the drawer open. Regression guard for "Finish review does nothing on mobile".
+  // Phone-sized: the viewer's panel is a slide-out DRAWER that starts CLOSED, so
+  // the ?finishReview deep-link must force it open to the Reviews view (and the
+  // open must survive the desktop→mobile media-query settle just after mount).
+  // Regression guard for "Finish review does nothing on mobile".
   await page2.setViewportSize({ width: 390, height: 844 });
 
   await page2.goto(`/teams/${teamSlug}?tab=review`);
@@ -114,15 +121,17 @@ test('mobile: Reviews-tab "Finish review →" deep-link still opens the summary 
   await queueBtn.click();
 
   await page2.waitForURL(new RegExp(`/r/${slug}`));
-  const modal = page2.getByRole('dialog', { name: /Finish review for Finish Squad/ });
-  await expect(modal).toBeVisible();
-  await expect(modal).toContainText('overextended into the sweep');
-  // Click Submit too — Playwright's actionability fails if the modal is obscured
-  // (z-index occlusion that toBeVisible wouldn't catch), so this exercises the
-  // whole mobile path, not just "is it in the DOM".
-  await modal.getByRole('button', { name: 'Submit review' }).click();
-  await expect(modal).toBeHidden();
-  await expect(page2.getByTestId(`viewer-finish-review-${teamSlug}`)).toContainText('Update review');
+  // The mobile FeaturePanel is a real dialog (role=dialog, labelled by its view).
+  const drawer = page2.getByRole('dialog', { name: 'Reviews' });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText(/1 comment for Finish Squad/)).toBeVisible();
+  await expect(drawer.getByText('overextended into the sweep')).toBeVisible();
+  // Click Submit too — Playwright's actionability fails if the drawer is
+  // obscured (z-index occlusion that toBeVisible wouldn't catch), so this
+  // exercises the whole mobile path, not just "is it in the DOM".
+  await drawer.getByRole('button', { name: 'Submit review', exact: true }).click();
+  await expect(drawer.getByRole('button', { name: 'Submit review', exact: true })).toHaveCount(0);
+  await expect(drawer.getByTestId(`viewer-finish-review-${teamSlug}`)).toContainText('Update review');
 
   await ctx2.close();
 });

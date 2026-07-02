@@ -1018,6 +1018,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               onRevealHandsChange: setRevealHands,
             }}
             onDockWidthChange={setRedesignDockW}
+            onArmedTeamsChange={setArmedTeams}
             canTag={!anonymize}
           />
       </KaraBuddyThemeProvider>

@@ -215,11 +215,12 @@ test('upload applies armed shares and scopes lifted in-game tags', async ({ page
   expect(b).not.toContain('alpha note');
 });
 
-// --- Web comment-form scope chip (TagSidebar). Proves the chip renders for
-// a replay shared with 2+ of my teams, and that narrowing via the chip
-// sends teamSlugs so the comment is withheld from the deselected team. B71.
+// --- Web comment-form scope pills (B216: the Tag HUD composer). Proves the
+// pills render for a replay shared with 2+ of my teams, and that narrowing
+// via the pills sends teamSlugs so the comment is withheld from the
+// deselected team. B71.
 
-test('web comment form: scope chip narrows a comment to one team', async ({ page, request }) => {
+test('web comment form: scope pills narrow a comment to one team', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'ChipUser', email: 'chip@example.com' });
   const { slug: teamA } = await createTeam(page, 'Chip Alpha');
   const { slug: teamB } = await createTeam(page, 'Chip Bravo');
@@ -233,20 +234,21 @@ test('web comment form: scope chip narrows a comment to one team', async ({ page
   }
 
   await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /^Tags/ }).click(); // B149: untagged → opens on Game log
-  await page.getByRole('button', { name: '+ Tag this frame' }).click();
+  await expect(page.getByTestId('board')).toHaveAttribute('data-frames', '1');
+  // B216: compose lives in the floating Tag HUD — the rail "Tags" button opens it.
+  await page.getByRole('button', { name: 'Tags', exact: true }).click();
+  await page.getByRole('button', { name: 'Add tag' }).click();
 
-  // Chip appears (2 teams armed) and defaults to "All 2 teams".
-  await expect(page.getByTestId('scope-chip')).toBeVisible();
-  await expect(page.getByTestId('scope-chip-label')).toHaveText(/All 2 teams/);
-
-  // Expand, deselect Bravo → narrows to Alpha.
-  await page.getByTestId('scope-chip-toggle').click();
-  await page.getByRole('checkbox', { name: 'Chip Bravo' }).uncheck();
-  await expect(page.getByTestId('scope-chip-label')).toHaveText(/Chip Alpha only/);
+  // Scope pills appear once the armed teams load (2 teams shared) — both are
+  // ON by default (broadcast). Deselect Bravo → narrows to Alpha.
+  await expect(page.getByRole('button', { name: 'Chip Bravo', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Chip Bravo', exact: true }).click();
 
   await page.getByPlaceholder(/Your note about this moment/).fill('chip-narrowed to alpha');
-  await page.getByText('Save tag').click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  // The saved comment's readout reflects the narrowed audience.
+  await expect(page.getByText('Visible to Chip Alpha only')).toBeVisible();
 
   // Alpha sees it; Bravo does not.
   const comments = async (slug: string) => {
@@ -272,17 +274,21 @@ test('web comment form: a saved comment immediately shows its team audience (not
   });
 
   await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /^Tags/ }).click();
-  await page.getByRole('button', { name: '+ Tag this frame' }).click();
+  await expect(page.getByTestId('board')).toHaveAttribute('data-frames', '1');
+  await page.getByRole('button', { name: 'Tags', exact: true }).click();
+  await page.getByRole('button', { name: 'Add tag' }).click();
 
-  // Leave the scope at its default (the shared team), then save.
+  // Wait for the armed team's scope pill (the HUD always sends an explicit
+  // teamSlugs — submitting before the armed teams load would post personal),
+  // leave the scope at its default (the shared team), then save.
+  await expect(page.getByRole('button', { name: 'Lone Star Destroyers', exact: true })).toBeVisible();
   await page.getByPlaceholder(/Your note about this moment/).fill('team-shared by default');
-  await page.getByText('Save tag').click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // The new comment's readout reflects the team it was actually saved to —
   // NOT "Just me".
-  await expect(page.getByText('Visible to: Lone Star Destroyers').first()).toBeVisible();
-  await expect(page.getByText('Visible to: Just me')).toHaveCount(0);
+  await expect(page.getByText('Visible to Lone Star Destroyers').first()).toBeVisible();
+  await expect(page.getByText('Visible to Just me')).toHaveCount(0);
 });
 
 // --- Editing an existing tag's scope (viewer). PATCH /tags/[id] honours
@@ -332,7 +338,7 @@ test('editing a tag can move its team scope (and GET returns current scope)', as
   expect(await scopeOf()).toEqual([teamB]);
 });
 
-test('viewer: a tag shows its scope and can be re-scoped via the edit chip', async ({ page, request }) => {
+test('viewer: a tag shows its scope and can be re-scoped via the HUD editor', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'UiEditor', email: 'uieditor@example.com' });
   const { slug: teamA } = await createTeam(page, 'UiEdit Alpha');
   const { slug: teamB } = await createTeam(page, 'UiEdit Bravo');
@@ -348,15 +354,23 @@ test('viewer: a tag shows its scope and can be re-scoped via the edit chip', asy
   });
 
   await page.goto(`/r/${r.slug}`);
-  // The tag row shows its current audience.
-  await expect(page.getByText('Visible to: UiEdit Alpha only').first()).toBeVisible();
+  await expect(page.getByTestId('board')).toHaveAttribute('data-frames', '1');
+  // B216: open the Tag HUD — the tag on this frame shows with its current
+  // audience (the "only" wording also proves the armed teams have loaded, so
+  // the edit pills below will prefill correctly).
+  await page.getByRole('button', { name: 'Tags', exact: true }).click();
+  await expect(page.getByText('ui rescope me')).toBeVisible();
+  await expect(page.getByText('Visible to UiEdit Alpha only')).toBeVisible();
 
-  // Edit it → chip → switch to Bravo → save.
-  await page.getByTitle('Edit this tag').first().click();
-  await page.getByTestId('scope-chip-toggle').click();
-  await page.getByRole('checkbox', { name: 'UiEdit Bravo' }).check();
-  await page.getByRole('checkbox', { name: 'UiEdit Alpha' }).uncheck();
+  // Edit it → the scope pills prefill with the tag's audience → switch to
+  // Bravo → save.
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByRole('button', { name: 'UiEdit Bravo', exact: true }).click(); // select Bravo
+  await page.getByRole('button', { name: 'UiEdit Alpha', exact: true }).click(); // deselect Alpha
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  // The readout tracks the server-resolved scope returned by the PATCH.
+  await expect(page.getByText('Visible to UiEdit Bravo only')).toBeVisible();
 
   const comments = async (slug: string) => {
     const res = await page.request.get(`/api/teams/${slug}/discussion`);

@@ -4,9 +4,11 @@ import { signInAsTestUser, uploadReplay, claimInstallToken } from './helpers';
 // B65: opponent's deck tab surfaces cards we OBSERVED them play during
 // the match — leader+base + every card that hit their visible zones,
 // since karabast masks the full decklist. Helps "what did they actually
-// run?" reviews without exposing hidden hand contents.
+// run?" reviews without exposing hidden hand contents. B216: the in-viewer
+// decks live in the sidebar panel's Decks view (?panel=decks), which renders
+// the same shared <DecksTabs> the old modal did.
 
-test('opponent tab in decks modal shows "Seen during play" + cards', async ({ page, request }) => {
+test('opponent tab in decks panel shows "Seen during play" + cards', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'SeenView', email: 'sv@example.com' });
   const localId = 'sv-l-' + Math.random().toString(36).slice(2, 8);
   const oppId = 'sv-o-' + Math.random().toString(36).slice(2, 8);
@@ -40,16 +42,14 @@ test('opponent tab in decks modal shows "Seen during play" + cards', async ({ pa
   });
   await claimInstallToken(page, r.installToken);
 
-  await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /View decks/i }).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('tab', { name: /Opp/i }).click();
+  await page.goto(`/r/${r.slug}?panel=decks`);
+  await page.getByRole('tab', { name: /Opp/i }).click();
 
   // Section heading + each observed card by id.
-  await expect(dialog.getByRole('heading', { name: /Seen during play/i })).toBeVisible();
-  await expect(dialog.getByTitle(/ASH_050/)).toBeVisible();
-  await expect(dialog.getByTitle(/ASH_060/)).toBeVisible();
-  await expect(dialog.getByTitle(/JTL_100/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Seen during play/i })).toBeVisible();
+  await expect(page.getByTitle(/ASH_050/)).toBeVisible();
+  await expect(page.getByTitle(/ASH_060/)).toBeVisible();
+  await expect(page.getByTitle(/JTL_100/)).toBeVisible();
 });
 
 test('local-player tab does not show "Seen during play" (we already have the full deck)', async ({ page, request }) => {
@@ -73,16 +73,17 @@ test('local-player tab does not show "Seen during play" (we already have the ful
   });
   await claimInstallToken(page, r.installToken);
 
-  await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /View decks/i }).click();
-  const dialog = page.getByRole('dialog');
-  // Default tab is local player — no Seen-during-play heading visible.
-  await expect(dialog.getByRole('heading', { name: /Seen during play/i })).toHaveCount(0);
+  await page.goto(`/r/${r.slug}?panel=decks`);
+  // Default tab is the local player — their full deck renders, and no
+  // Seen-during-play heading is visible.
+  await expect(page.getByRole('tab', { name: /LocalOnly/i, selected: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Main deck/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Seen during play/i })).toHaveCount(0);
 });
 
-// B65b: the standalone deck PAGE is now the same tabbed experience as the modal
-// (shared <DecksTabs>), and surfaces opponents' "Seen during play" by decoding
-// the payload blob server-side (the viewer reuses its client frames).
+// B65b: the standalone deck PAGE is the same tabbed experience as the viewer's
+// Decks panel (shared <DecksTabs>), and surfaces opponents' "Seen during play"
+// by decoding the payload blob (the viewer reuses the same client-side decode).
 test('deck PAGE: tabbed per-player + opponent tab shows server-decoded "Seen during play"', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'PageSeen', email: 'pgsn@example.com' });
   const localId = 'pgsn-l-' + Math.random().toString(36).slice(2, 8);
@@ -119,7 +120,7 @@ test('deck PAGE: tabbed per-player + opponent tab shows server-decoded "Seen dur
 
   // Land directly on the opponent's per-player deck page.
   await page.goto(`/r/${r.slug}/deck/${oppId}`);
-  // Same tabbed experience as the modal — both players' tabs present.
+  // Same tabbed experience as the viewer panel — both players' tabs present.
   await expect(page.getByRole('tab', { name: /PageSeen/i })).toBeVisible();
   await expect(page.getByRole('tab', { name: /Opp/i })).toBeVisible();
   // Opponent (initial) tab surfaces the server-decoded "seen during play" cards.
@@ -147,11 +148,11 @@ test('opponent tab with no observed cards: section either hidden or empty-state'
   });
   await claimInstallToken(page, r.installToken);
 
-  await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /View decks/i }).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('tab', { name: /OppNoSeen/i }).click();
-  // No cards = no "Seen during play" heading (matches "deferring section
-  // until there's something to show" pattern from B61 Discussion empty).
-  await expect(dialog.getByRole('heading', { name: /Seen during play/i })).toHaveCount(0);
+  await page.goto(`/r/${r.slug}?panel=decks`);
+  await page.getByRole('tab', { name: /OppNoSeen/i }).click();
+  // The opponent tab rendered (masked-list notice shows) but no cards = no
+  // "Seen during play" heading (matches "deferring section until there's
+  // something to show" pattern from B61 Discussion empty).
+  await expect(page.getByText(/Full list not available/i)).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Seen during play/i })).toHaveCount(0);
 });

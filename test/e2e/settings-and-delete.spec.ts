@@ -11,9 +11,10 @@ test('owner can delete their replay (and viewer 404s after)', async ({ page, req
     opponent: { username: 'V' },
   });
 
-  // Viewer loads before delete.
+  // Viewer loads before delete (B216: the board sentinel replaces the old
+  // "Frame 1 / 1" counter text).
   await page.goto(`/r/${slug}`);
-  await expect(page.getByText(/Frame 1 \/ 1/)).toBeVisible();
+  await expect(page.getByTestId('board')).toHaveAttribute('data-frames', '1');
 
   // Delete via API (mirrors the UI delete button, which hits the same endpoint).
   const del = await page.request.delete(`/api/replays/${slug}`, {

@@ -55,7 +55,7 @@ test('upload extracts winner from final gamestate; GET /api/replays/[slug] retur
   expect(body.data.winners).toEqual([localId]);
 });
 
-test('viewer header shows green W next to winning player + red L on the loser', async ({ page, request }) => {
+test('viewer Matchup panel shows green W next to winning player + red L on the loser', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'Wviewer', email: 'wv@example.com' });
   const localId = 'wv-l-' + Math.random().toString(36).slice(2, 8);
   const oppId = 'wv-o-' + Math.random().toString(36).slice(2, 8);
@@ -66,7 +66,9 @@ test('viewer header shows green W next to winning player + red L on the loser', 
   });
   await claimInstallToken(page, r.installToken);
 
-  await page.goto(`/r/${r.slug}`);
+  // B216: the badges render next to the player names in the Matchup view
+  // (?panel=info) — the old always-on viewer header is gone.
+  await page.goto(`/r/${r.slug}?panel=info`);
   // Winner badge attached to the local player; loser badge on opponent.
   const winnerBadge = page.getByTestId('result-badge-W').first();
   const loserBadge = page.getByTestId('result-badge-L').first();
@@ -182,7 +184,10 @@ test('replay with no winner data: no badges rendered', async ({ page, request })
     // omit `winners` — pre-game-end snapshot / disconnect / abandon
   });
   await claimInstallToken(page, r.installToken);
-  await page.goto(`/r/${r.slug}`);
+  // B216: badges live in the Matchup view — open it so the absence assertion
+  // is meaningful (with the panel closed there'd be no badge anywhere anyway).
+  await page.goto(`/r/${r.slug}?panel=info`);
+  await expect(page.getByText('VS', { exact: true })).toBeVisible(); // matchup rendered
   await expect(page.getByTestId('result-badge-W')).toHaveCount(0);
   await expect(page.getByTestId('result-badge-L')).toHaveCount(0);
 });

@@ -27,9 +27,10 @@ test('request → comment-gated review → durable (does not vanish)', async ({ 
     shareTeamSlugs: [teamSlug],
   });
 
-  // Owner requests review from the Share popover on the viewer.
-  await page.goto(`/r/${slug}`);
-  await page.getByTitle('Share', { exact: true }).click();
+  // Owner requests review from the viewer's Share view (B216: the sidebar
+  // panel's Share view replaced the old Share popover; the review star lives on
+  // the shared team's row there).
+  await page.goto(`/r/${slug}?panel=share`);
   const requestBtn = page.getByTestId(`request-review-${teamSlug}`);
   await expect(requestBtn).toContainText('Request team review');
   await requestBtn.click();

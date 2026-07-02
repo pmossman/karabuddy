@@ -8,12 +8,15 @@ import { useShareMoment } from '../MatchupInfo';
 // B216 redesign — the Share sidebar view: copy the replay link (or a link to the
 // CURRENT moment, which unfurls into that board state — B113), and (owner only)
 // the team-share / public-visibility controls, reusing the existing ShareWithTeam.
-export function ShareFeature({ replaySlug, installToken, isOwner, currentIndex, toOriginalFrame }: {
+export function ShareFeature({ replaySlug, installToken, isOwner, currentIndex, toOriginalFrame, onArmedTeamsChange }: {
   replaySlug: string;
   installToken: string;
   isOwner: boolean;
   currentIndex: number;
   toOriginalFrame: (i: number) => number;
+  // Reports the LIVE shared set upward so the composer's scope pills track
+  // same-session share changes (B168) instead of the page-load snapshot.
+  onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -33,7 +36,7 @@ export function ShareFeature({ replaySlug, installToken, isOwner, currentIndex, 
       {isOwner ? (
         // The glass variant renders its own "Share with team" / "Private teams" /
         // "Public" section headers — no outer "Sharing" label needed.
-        <ShareWithTeam replaySlug={replaySlug} installToken={installToken} variant="glass" />
+        <ShareWithTeam replaySlug={replaySlug} installToken={installToken} variant="glass" onArmedTeamsChange={onArmedTeamsChange} />
       ) : (
         <div style={{ fontSize: 12.5, color: tokens.color.textMuted, lineHeight: 1.5 }}>Only the replay’s owner can change who it’s shared with.</div>
       )}

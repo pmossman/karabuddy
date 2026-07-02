@@ -108,10 +108,10 @@ test('unknown slug or unknown playerId → 404', async ({ page }) => {
   expect(res?.status()).toBe(404);
 });
 
-// B64: in-viewer decks moved from an in-sidebar disclosure to a large
-// modal with per-player tabs.
+// B64→B216: in-viewer decks live in the sidebar panel's Decks view (the old
+// "View decks" modal is gone; the panel renders the same shared <DecksTabs>).
 
-test('viewer: "View decks" button opens a modal (no in-sidebar disclosure)', async ({ page, request }) => {
+test('viewer: Decks view opens in the sidebar panel (no modal)', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'ModalOpener', email: 'mo@example.com' });
   const localId = 'mo-local-' + Math.random().toString(36).slice(2, 8);
   const r = await uploadReplay(request, {
@@ -131,15 +131,15 @@ test('viewer: "View decks" button opens a modal (no in-sidebar disclosure)', asy
   await claimInstallToken(page, r.installToken);
 
   await page.goto(`/r/${r.slug}`);
-  // No collapsed "Decks ▶" disclosure in the sidebar anymore.
-  await expect(page.getByRole('button', { name: /^Decks$/ })).toHaveCount(0);
-
-  // Open the modal.
-  await page.getByRole('button', { name: /View decks/i }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  // Drive the real path: rail "Sidebar" opens the panel, the "Decks" view chip
+  // switches to the tabbed deck view — rendered inline, not as a dialog.
+  await page.getByRole('button', { name: 'Sidebar' }).click();
+  await page.getByRole('button', { name: 'Decks', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /ModalOpener/i })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('decks modal: tabs per player; switching tab swaps the displayed deck', async ({ page, request }) => {
+test('decks panel: tabs per player; switching tab swaps the displayed deck', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'TabSwitcher', email: 'ts@example.com' });
   const localId = 'ts-local-' + Math.random().toString(36).slice(2, 8);
   const oppId = 'ts-opp-' + Math.random().toString(36).slice(2, 8);
@@ -167,18 +167,16 @@ test('decks modal: tabs per player; switching tab swaps the displayed deck', asy
   });
   await claimInstallToken(page, r.installToken);
 
-  await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /View decks/i }).click();
-  const dialog = page.getByRole('dialog');
+  await page.goto(`/r/${r.slug}?panel=decks`);
 
   // Default tab is the local player ("You").
-  await expect(dialog.getByRole('tab', { name: /TabSwitcher/i, selected: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /TabSwitcher/i, selected: true })).toBeVisible();
   // Opponent tab is present but not selected; clicking it switches the body.
-  await dialog.getByRole('tab', { name: /OppPlayer/i }).click();
-  await expect(dialog.getByText(/Full list not available/i)).toBeVisible();
+  await page.getByRole('tab', { name: /OppPlayer/i }).click();
+  await expect(page.getByText(/Full list not available/i)).toBeVisible();
 });
 
-test('decks modal: "View full page →" link points to per-player deck route', async ({ page, request }) => {
+test('decks panel: "View full page →" link points to per-player deck route', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'FullPager', email: 'fp@example.com' });
   const localId = 'fp-local-' + Math.random().toString(36).slice(2, 8);
   const r = await uploadReplay(request, {
@@ -196,13 +194,12 @@ test('decks modal: "View full page →" link points to per-player deck route', a
   });
   await claimInstallToken(page, r.installToken);
 
-  await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /View decks/i }).click();
-  const link = page.getByRole('dialog').getByRole('link', { name: /View full page/i });
+  await page.goto(`/r/${r.slug}?panel=decks`);
+  const link = page.getByRole('link', { name: /View full page/i });
   await expect(link).toHaveAttribute('href', `/r/${r.slug}/deck/${localId}`);
 });
 
-test('decks modal: closes on Escape', async ({ page, request }) => {
+test('decks panel: the ✕ button closes it', async ({ page, request }) => {
   await signInAsTestUser(page, { name: 'EscClose', email: 'ec@example.com' });
   const localId = 'ec-local-' + Math.random().toString(36).slice(2, 8);
   const r = await uploadReplay(request, {
@@ -220,9 +217,11 @@ test('decks modal: closes on Escape', async ({ page, request }) => {
   });
   await claimInstallToken(page, r.installToken);
 
-  await page.goto(`/r/${r.slug}`);
-  await page.getByRole('button', { name: /View decks/i }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.goto(`/r/${r.slug}?panel=decks`);
+  await expect(page.getByRole('tablist')).toBeVisible();
+  // The panel has no Escape handler (unlike the old modal) — the ✕ in the
+  // panel's corner (aria-label "Close") dismisses it.
+  await page.getByRole('complementary').getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('tablist')).toHaveCount(0);
+  await expect(page.getByRole('complementary')).toHaveCount(0);
 });

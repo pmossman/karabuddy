@@ -26,7 +26,10 @@ test('viewer collapses undone + board-static frames', async ({ page }) => {
 
   await page.goto(`/r/${r.slug}`);
 
-  // 6 recorded frames collapse to 3 distinct board positions.
-  const counter = page.getByTestId('frame-counter');
-  await expect(counter).toHaveText('Frame 1 / 3');
+  // 6 recorded frames collapse to 3 distinct board positions. B216: the board
+  // sentinel carries the collapsed timeline (data-frame = current, 1-based;
+  // data-frames = total collapsed frames).
+  const board = page.getByTestId('board');
+  await expect(board).toHaveAttribute('data-frames', '3');
+  await expect(board).toHaveAttribute('data-frame', '1');
 });
