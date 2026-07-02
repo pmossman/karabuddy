@@ -45,3 +45,10 @@ html.kb-viewer-mobile header[data-kb-header] {
 @media (max-width: 480px) {
     .kb-rm-names { display: none !important; }
 }
+
+/* B216 mobile: the viewer's right-edge rail lives in the same gutter as the
+   board's Initiative badge (whose vertical spot flips with the token holder) —
+   nudge the badge inboard on phones so the two never stack. */
+html.kb-viewer-mobile .kb-initiative {
+    right: 58px !important;
+}

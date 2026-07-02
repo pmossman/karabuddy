@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { type Chapter } from '@/lib/replayChapters';
 import { FeaturePanel } from './FeaturePanel';
@@ -73,6 +74,11 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // B168: live armed-teams sync from the Share view back up to the viewer.
   onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
 }) {
+  // Phone-landscape: the right edge is too short for a vertical rail (it collides
+  // with the chevron + the play pocket), but the top-right corner is empty — the
+  // rail lies horizontal there instead.
+  const landscape = useMediaQuery('(orientation: landscape)');
+  const railRow = mode === 'mobile' && landscape;
   const [hudOpen, setHudOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarView, setSidebarView] = useState<SidebarView>('tags');
@@ -160,7 +166,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Top-right rail: the sidebar toggle (top corner) + Tags (the messages HUD).
   // Play / gear / jump-to live in the bottom-right cluster; Clip lives in the
   // sidebar's Clips view.
-  const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void }[] = [
+  const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void; testId?: string }[] = [
     { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => userSetSidebar(!sidebarOpen) },
     // Tags rail = the board HUD, and ONLY the HUD: lit ⇔ HUD open, click toggles it.
     // The panel is the sidebar rail's job; the panel's Tags view opens the HUD via a
@@ -171,6 +177,13 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Sideboard: only on replays with a swap to show — toggles the splash (open ⇄
   // close). Lights blue while open, and glows until first opened to draw attention.
   if (onToggleSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', active: !!sideboardOpen, glow: !sideboardSeen && !sideboardOpen, onClick: onToggleSideboard });
+  // MOBILE: the double-sided pair lives in the rail (the right gutter is empty at
+  // mid-height) instead of the labelled group beside Play — that group sat right
+  // on top of the player's hand fan on phones. Desktop keeps the labelled group.
+  if (mode === 'mobile' && controls.canFlip) {
+    railItems.push({ key: 'flip', icon: Icon.flip, label: `Flip seat — viewing ${controls.viewLabel}`, onClick: controls.onFlip, testId: 'flip-button' });
+    railItems.push({ key: 'reveal', icon: Icon.eye, label: 'Both hands face up', active: controls.revealHands, onClick: () => controls.onRevealHandsChange(!controls.revealHands), testId: 'reveal-toggle' });
+  }
 
   return (
     <>
@@ -218,7 +231,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               Flip is a momentary action (fires the curtain, never lit);
               reveal-hands is a toggle, lit while on. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {controls.canFlip && (
+            {mode === 'desktop' && controls.canFlip && (
               <div data-testid="pov-controls" style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '7px 10px 9px', borderRadius: 16,
                 background: 'rgba(16,20,28,0.4)', border: '1px solid rgba(255,255,255,0.12)',
@@ -263,13 +276,17 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', top: 'calc(var(--kb-header-h, 46px) + 14px)', right: railRight, zIndex: 120, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
-          {railItems.map((it, i) => (
-            <div key={it.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
-              {/* subtle divider between the sidebar toggle (whole-replay) and Tags
-                  (current-frame). */}
-              {it.key === 'tags' && <div style={{ width: 26, height: 1, background: 'rgba(255,255,255,0.14)', margin: '0 9px' }} />}
-              <RailBtn {...it} />
+        <div style={{ position: 'fixed', top: railRow ? 'calc(var(--kb-header-h, 0px) + 10px)' : 'calc(var(--kb-header-h, 46px) + 14px)', right: railRow ? 'max(12px, env(safe-area-inset-right, 12px))' : railRight, zIndex: 120, display: 'flex', flexDirection: railRow ? 'row' : 'column', gap: mode === 'mobile' ? 8 : 10, alignItems: railRow ? 'center' : 'flex-end' }}>
+          {railItems.map(({ key, ...it }) => (
+            <div key={key} style={{ display: 'flex', flexDirection: railRow ? 'row' : 'column', alignItems: 'center', gap: mode === 'mobile' ? 8 : 10 }}>
+              {/* subtle dividers: sidebar (whole-replay) | Tags (current-frame) |
+                  the mobile double-sided pair. */}
+              {(key === 'tags' || key === 'flip') && (
+                <div style={railRow
+                  ? { width: 1, height: 26, background: 'rgba(255,255,255,0.14)', margin: '9px 0' }
+                  : { width: 26, height: 1, background: 'rgba(255,255,255,0.14)', margin: '0 9px' }} />
+              )}
+              <RailBtn {...it} size={mode === 'mobile' ? 38 : 44} />
             </div>
           ))}
         </div>
@@ -278,11 +295,11 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   );
 }
 
-function RailBtn({ icon, label, active, badge, glow, onClick, testId }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void; testId?: string }) {
+function RailBtn({ icon, label, active, badge, glow, onClick, testId, size = 44 }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void; testId?: string; size?: number }) {
   return (
     <button type="button" title={label} aria-label={label} aria-pressed={active} onClick={onClick} data-testid={testId}
       style={{
-        position: 'relative', width: 44, height: 44, borderRadius: '50%',
+        position: 'relative', width: size, height: size, borderRadius: '50%',
         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
         background: active ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
         color: active ? tokens.led.on : 'rgba(255,255,255,0.82)',

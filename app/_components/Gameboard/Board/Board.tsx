@@ -295,7 +295,7 @@ const Board: React.FC<IBoardProps> = ({
                     <Box sx={styles.rightColumnBorderLeft} />
                     <Box sx={styles.rightColumnBorderCenter} />
                     <Box sx={styles.rightColumnBorderRight} />
-                    <Box sx={styles.initiativeWrapper}>
+                    <Box sx={styles.initiativeWrapper} className="kb-initiative">
                         <Typography variant={'h4'}>Initiative</Typography>
                     </Box>
                 </Box>
