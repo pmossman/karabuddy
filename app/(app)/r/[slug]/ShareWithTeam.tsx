@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { ConfirmDialog } from '@/app/_components/Confirm';
-import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, shareSectionLabel } from '@/app/_components/shareControls';
+import { LedToggle } from '@/app/_components/LedToggle';
+import { tokens } from '@/app/_theme/karabuddyTokens';
+import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, InfoDot, PUBLIC_INFO, shareSectionLabel } from '@/app/_components/shareControls';
 
 // B55b: replay-owner UI for sharing a replay explicitly with one or more
 // of their teams. Lives inside the existing Share popover in TagSidebar.
@@ -19,6 +21,7 @@ export function ShareWithTeam({
   replaySlug,
   installToken,
   onArmedTeamsChange,
+  variant = 'row',
 }: {
   replaySlug: string;
   installToken: string;
@@ -26,6 +29,10 @@ export function ShareWithTeam({
   // owner's teams) so the comment scope chip tracks in-session share changes
   // instead of the page-load snapshot. Called on load + after every toggle.
   onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
+  // 'row' = the legacy cockpit rows (TagSidebar popover). 'glass' = the B216
+  // redesign look: glassy row cards, inline LED toggles, and unshareable private
+  // teams demoted to a faded section with a tap-for-why ⓘ.
+  variant?: 'row' | 'glass';
 }) {
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error' | 'unauth'>('loading');
   const [shares, setShares] = useState<Set<string>>(new Set());
@@ -47,6 +54,9 @@ export function ShareWithTeam({
   // Pending un-share awaiting confirmation (only set when it would untag
   // comments from the team).
   const [confirm, setConfirm] = useState<{ slug: string; name: string; count: number } | null>(null);
+  // Glass variant: tap-to-reveal ⓘ state for the Public + private-teams sections.
+  const [pubInfo, setPubInfo] = useState(false);
+  const [privInfo, setPrivInfo] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,7 +218,21 @@ export function ShareWithTeam({
 
   // B133: the Public section renders for owners with zero teams too — public
   // sharing doesn't require team membership.
-  const publicSection = (
+  const publicSection = variant === 'glass' ? (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={glassLabel}>Public</span>
+        <InfoDot open={pubInfo} onClick={() => setPubInfo((v) => !v)} label="About public replays" />
+      </div>
+      {pubInfo && <div style={glassNote}>{PUBLIC_INFO}</div>}
+      <div style={glassRow}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <LedToggle variant="inline" checked={isPublic} onChange={togglePublic} label="Public replay" disabled={publicPending} />
+        </div>
+        {isPublic && <span aria-hidden style={glassStatus}>Public</span>}
+      </div>
+    </section>
+  ) : (
     <PublicShareSection checked={isPublic} onChange={togglePublic} disabled={publicPending} />
   );
 
@@ -223,6 +247,86 @@ export function ShareWithTeam({
       </div>
     );
   }
+
+  if (variant === 'glass') {
+    // Unshareable-here teams (never already shared — the POST would reject them)
+    // are demoted to a faded strip at the bottom instead of full noisy rows.
+    const isLocked = (t: { slug: string; shareable?: boolean }) => t.shareable === false && !shares.has(t.slug);
+    const openTeams = teams.filter((t) => !isLocked(t));
+    const lockedTeams = teams.filter(isLocked);
+    // Why they're locked: a plaintext replay can't enter a private team; an
+    // encrypted one can ONLY go to its own private team.
+    const lockedTitle = encrypted ? 'Other teams' : 'Private teams';
+    const lockedReason = encrypted
+      ? 'This encrypted replay can only be shared with its private team, so your other teams can’t receive it.'
+      : 'This replay was uploaded without encryption, so it can’t be added to a private team. Recordings made with a private team’s key can.';
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={glassLabel}>Share with team</span>
+          {openTeams.length === 0 && (
+            <div style={{ fontSize: 12.5, color: tokens.color.textMuted, fontStyle: 'italic' }}>No teams this replay can be shared with.</div>
+          )}
+          {openTeams.map((t) => {
+            const isShared = shares.has(t.slug);
+            return (
+              <div key={t.slug} style={glassRow}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <LedToggle variant="inline" checked={isShared} onChange={() => requestToggle(t.slug)} label={t.name} disabled={pending.has(t.slug)} />
+                  </div>
+                  {isShared && <span aria-hidden style={glassStatus}>Sharing</span>}
+                </div>
+                {isShared && (
+                  <ReviewStar
+                    on={reviewTeams.has(t.slug)}
+                    onToggle={() => toggleReview(t.slug)}
+                    disabled={reviewPending.has(t.slug)}
+                    labelOn="In review queue — click to remove"
+                    labelOff="Request team review"
+                    testId={`request-review-${t.slug}`}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </section>
+        {lockedTeams.length > 0 && (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={glassLabel}>{lockedTitle}</span>
+              <InfoDot open={privInfo} onClick={() => setPrivInfo((v) => !v)} label="Why can’t this replay be shared with these teams?" />
+            </div>
+            {privInfo && <div style={glassNote}>{lockedReason}</div>}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, opacity: 0.5 }}>
+              {lockedTeams.map((t) => (
+                <span key={t.slug} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 600, color: tokens.color.textSecondary, border: `1px solid ${tokens.color.border}`, background: 'rgba(255,255,255,0.03)' }}>
+                  <span aria-hidden style={{ fontSize: 10 }}>🔒</span>{t.name}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+        {publicSection}
+        {confirm && (
+          <ConfirmDialog
+            open
+            title={`Un-share from ${confirm.name}?`}
+            message={
+              `This removes the replay from ${confirm.name}'s browser. ${confirm.count} ${confirm.count === 1 ? 'comment is' : 'comments are'} scoped to ` +
+              `${confirm.name} and will be untagged from the team — they stay on the replay but ` +
+              `won't appear in ${confirm.name}'s discussion anymore.`
+            }
+            confirmLabel="Un-share"
+            destructive
+            onCancel={() => setConfirm(null)}
+            onConfirm={() => { const slug = confirm.slug; setConfirm(null); applyToggle(slug); }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={shareSectionLabel}>Share with team</div>
@@ -280,3 +384,9 @@ export function ShareWithTeam({
     </div>
   );
 }
+
+// B216 glass-variant styles — match the redesign panel (Reviews/series rows).
+const glassLabel: CSSProperties = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: tokens.color.textMuted };
+const glassRow: CSSProperties = { border: `1px solid ${tokens.color.border}`, borderRadius: 10, background: 'rgba(255,255,255,0.02)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 };
+const glassNote: CSSProperties = { fontSize: 12, color: tokens.color.textMuted, lineHeight: 1.5 };
+const glassStatus: CSSProperties = { flex: '0 0 auto', fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: tokens.led.on };

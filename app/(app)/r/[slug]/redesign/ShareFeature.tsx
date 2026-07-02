@@ -18,10 +18,9 @@ export function ShareFeature({ replaySlug, installToken, isOwner }: { replaySlug
         {copied ? '✓ Link copied' : 'Copy replay link'}
       </button>
       {isOwner ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: tokens.color.textMuted }}>Sharing</span>
-          <ShareWithTeam replaySlug={replaySlug} installToken={installToken} />
-        </div>
+        // The glass variant renders its own "Share with team" / "Private teams" /
+        // "Public" section headers — no outer "Sharing" label needed.
+        <ShareWithTeam replaySlug={replaySlug} installToken={installToken} variant="glass" />
       ) : (
         <div style={{ fontSize: 12.5, color: tokens.color.textMuted, lineHeight: 1.5 }}>Only the replay’s owner can change who it’s shared with.</div>
       )}
