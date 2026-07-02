@@ -277,7 +277,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
 function RailBtn({ icon, label, active, badge, glow, onClick, testId }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void; testId?: string }) {
   return (
-    <button type="button" title={label} aria-label={label} onClick={onClick} data-testid={testId}
+    <button type="button" title={label} aria-label={label} aria-pressed={active} onClick={onClick} data-testid={testId}
       style={{
         position: 'relative', width: 44, height: 44, borderRadius: '50%',
         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
