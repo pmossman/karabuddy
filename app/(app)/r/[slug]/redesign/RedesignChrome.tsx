@@ -177,13 +177,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Sideboard: only on replays with a swap to show — toggles the splash (open ⇄
   // close). Lights blue while open, and glows until first opened to draw attention.
   if (onToggleSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', active: !!sideboardOpen, glow: !sideboardSeen && !sideboardOpen, onClick: onToggleSideboard });
-  // MOBILE: the double-sided pair lives in the rail (the right gutter is empty at
-  // mid-height) instead of the labelled group beside Play — that group sat right
-  // on top of the player's hand fan on phones. Desktop keeps the labelled group.
-  if (mode === 'mobile' && controls.canFlip) {
-    railItems.push({ key: 'flip', icon: Icon.flip, label: `Flip seat — viewing ${controls.viewLabel}`, onClick: controls.onFlip, testId: 'flip-button' });
-    railItems.push({ key: 'reveal', icon: Icon.eye, label: 'Both hands face up', active: controls.revealHands, onClick: () => controls.onRevealHandsChange(!controls.revealHands), testId: 'reveal-toggle' });
-  }
+
 
   return (
     <>
@@ -276,19 +270,33 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', top: railRow ? 'calc(var(--kb-header-h, 0px) + 10px)' : 'calc(var(--kb-header-h, 46px) + 14px)', right: railRow ? 'max(12px, env(safe-area-inset-right, 12px))' : railRight, zIndex: 120, display: 'flex', flexDirection: railRow ? 'row' : 'column', gap: mode === 'mobile' ? 8 : 10, alignItems: railRow ? 'center' : 'flex-end' }}>
+        <div style={{ position: 'fixed', top: railRow ? 'calc(var(--kb-header-h, 0px) + 10px)' : 'calc(var(--kb-header-h, 46px) + 14px)', right: railRow ? 'max(12px, env(safe-area-inset-right, 12px))' : railRight, zIndex: 120, display: 'flex', flexDirection: railRow ? 'row' : 'column', gap: mode === 'mobile' ? 8 : 10, alignItems: 'center' }}>
           {railItems.map(({ key, ...it }) => (
             <div key={key} style={{ display: 'flex', flexDirection: railRow ? 'row' : 'column', alignItems: 'center', gap: mode === 'mobile' ? 8 : 10 }}>
-              {/* subtle dividers: sidebar (whole-replay) | Tags (current-frame) |
-                  the mobile double-sided pair. */}
-              {(key === 'tags' || key === 'flip') && (
+              {/* subtle divider between the sidebar toggle (whole-replay) and Tags
+                  (current-frame). No side margins — a wider divider box would
+                  re-centre its wrapper and knock the icons out of column. */}
+              {key === 'tags' && (
                 <div style={railRow
-                  ? { width: 1, height: 26, background: 'rgba(255,255,255,0.14)', margin: '9px 0' }
-                  : { width: 26, height: 1, background: 'rgba(255,255,255,0.14)', margin: '0 9px' }} />
+                  ? { width: 1, height: 26, background: 'rgba(255,255,255,0.14)' }
+                  : { width: 26, height: 1, background: 'rgba(255,255,255,0.14)' }} />
               )}
               <RailBtn {...it} size={mode === 'mobile' ? 38 : 44} />
             </div>
           ))}
+          {/* MOBILE double-sided pair — a subtle capsule marks them as one unit
+              (the labelled DOUBLE-SIDED group lives beside Play on desktop; on
+              phones that spot sits on the hand fan, so the pair rides the rail). */}
+          {mode === 'mobile' && controls.canFlip && (
+            <div data-testid="pov-controls" style={{
+              display: 'flex', flexDirection: railRow ? 'row' : 'column', alignItems: 'center', gap: 6,
+              padding: 4, borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(16,20,28,0.35)',
+              backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+            }}>
+              <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} testId="flip-button" size={34} />
+              <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} testId="reveal-toggle" size={34} />
+            </div>
+          )}
         </div>
       )}
     </>
