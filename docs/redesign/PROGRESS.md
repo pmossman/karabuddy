@@ -325,3 +325,18 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
 - Test hooks: board sentinel (data-frame/-frames), tag-signin-gate/-cta,
   tag-new-badge, viewer-finish-review-<team>, pov-controls/flip-button/reveal-toggle.
 - E2E rewrite to redesign selectors in progress (47 of 165 broke on the legacy UI).
+
+### 2026-07-02 (later) — release prep COMPLETE
+- E2E suite fully rewritten to the redesign chrome and GREEN: 163/163 (plus 520
+  unit + 294 api). Three cutover regressions the rewrite surfaced were fixed:
+  sign-in CTA unreachable (gate ordering), armed-teams live sync disconnected
+  (onArmedTeamsChange re-threaded), mention pills missing in the viewer.
+- Deep-links (?panel / ?finishReview) now read useSearchParams — window.location
+  during render loses the params on client-side navs (series hop, team Reviews tab).
+- RailBtn exposes aria-pressed.
+- REMAINING (Parker eyeball / decisions, none blocking):
+  - mobile: rail icons collide with the board "Initiative" badge (top-right)
+  - mobile: DOUBLE-SIDED group overlaps the bottom hand fan
+  - dedupe request-review control (Share vs Reviews)
+  - review "last updated" timestamp (needs write-path change: markReviewed is
+    onConflictDoNothing)
