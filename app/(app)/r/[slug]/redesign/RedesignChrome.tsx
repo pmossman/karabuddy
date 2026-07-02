@@ -207,6 +207,17 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
             }}>
             <span aria-hidden>{Icon.jump}</span>
           </button>
+          {/* Double-sided (POV) controls beside Play — a horizontal pair so the
+              column doesn't grow (mobile landscape is height-starved). Flip is a
+              momentary action (fires the curtain, never lit); reveal-hands is a
+              toggle, lit while on. Only on double-sided replays. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {controls.canFlip && (
+              <>
+                <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} />
+                <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} />
+              </>
+            )}
           {/* Play + overlapping gear. */}
           <div style={{ position: 'relative' }}>
             <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
@@ -232,6 +243,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.66)' }}>{Icon.gear}</span>
             </button>
+          </div>
           </div>
         </div>
       )}

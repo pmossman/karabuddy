@@ -12,6 +12,8 @@ export const Icon: Record<string, ReactNode> = {
   matchup: svg(<><polyline points="10 6 5 12 10 18" /><polyline points="14 6 19 12 14 18" /></>),
   decks: svg(<><rect x="3" y="7" width="12" height="14" rx="2" /><rect x="9" y="3" width="12" height="14" rx="2" /></>),
   sideboard: svg(<><rect x="2" y="2" width="8.5" height="11" rx="1.4" /><rect x="13.5" y="11" width="8.5" height="11" rx="1.4" /><path d="M14.5 6.5l2.2 2.2-2.2 2.2" /><path d="M9.5 17.5l-2.2-2.2 2.2-2.2" /></>), // two cards swapping (diagonal + circular chevrons)
+  flip: svg(<><path d="M8 20V5" /><path d="M4.5 8.5 8 5l3.5 3.5" /><path d="M16 4v15" /><path d="M12.5 15.5 16 19l3.5-3.5" /></>), // vertical swap — the board mirrors top/bottom
+  eye: svg(<><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" /><circle cx="12" cy="12" r="2.8" /></>),
   play: svg(<polygon points="7 4 20 12 7 20" />, { fill: true }),
   pause: svg(<><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></>, { fill: true }),
   jump: svg(<><path d="M12 21.5s-6.5-5.6-6.5-10.5a6.5 6.5 0 1 1 13 0c0 4.9-6.5 10.5-6.5 10.5Z" /><circle cx="12" cy="11" r="2.3" /></>), // map-pin — the original jump-to glyph
