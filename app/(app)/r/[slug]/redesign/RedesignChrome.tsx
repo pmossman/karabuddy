@@ -81,12 +81,17 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Glow the sideboard rail icon to draw attention until it's opened once this session.
   const [sideboardSeen, setSideboardSeen] = useState(false);
   useEffect(() => { if (sideboardOpen) setSideboardSeen(true); }, [sideboardOpen]);
-  // Deep-link view captured ONCE (?panel=<view>). Read via a lazy initializer, not
-  // re-read in the effect — otherwise Strict Mode's double-invoked effect strips the
-  // param on the first pass and the second pass sees none and closes the panel.
+  // Deep-link view captured ONCE (?panel=<view>; ?finishReview=<team> implies the
+  // Reviews view — B194, from the team Reviews tab). Read via a lazy initializer,
+  // not re-read in the effect — otherwise Strict Mode's double-invoked effect strips
+  // the param on the first pass and the second pass sees none and closes the panel.
+  // (ReviewsFeature reads + strips finishReview itself to auto-expand the team.)
   const [initialPanel] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
-    try { return new URLSearchParams(window.location.search).get('panel'); } catch { return null; }
+    try {
+      const q = new URLSearchParams(window.location.search);
+      return q.get('panel') ?? (q.get('finishReview') ? 'reviews' : null);
+    } catch { return null; }
   });
   // The board loads clean: the HUD starts CLOSED and only opens when you engage
   // tagging (Tags rail icon / a tag in the feed). Your open/close choice is
@@ -202,15 +207,15 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               reveal-hands is a toggle, lit while on. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {controls.canFlip && (
-              <div style={{
+              <div data-testid="pov-controls" style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '7px 10px 9px', borderRadius: 16,
                 background: 'rgba(16,20,28,0.4)', border: '1px solid rgba(255,255,255,0.12)',
                 backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
               }}>
                 <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap' }}>Double-sided</span>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} />
-                  <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} />
+                  <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} testId="flip-button" />
+                  <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} testId="reveal-toggle" />
                 </div>
               </div>
             )}
@@ -261,9 +266,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   );
 }
 
-function RailBtn({ icon, label, active, badge, glow, onClick }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void }) {
+function RailBtn({ icon, label, active, badge, glow, onClick, testId }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void; testId?: string }) {
   return (
-    <button type="button" title={label} aria-label={label} onClick={onClick}
+    <button type="button" title={label} aria-label={label} onClick={onClick} data-testid={testId}
       style={{
         position: 'relative', width: 44, height: 44, borderRadius: '50%',
         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',

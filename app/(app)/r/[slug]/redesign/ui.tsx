@@ -22,7 +22,7 @@ export const PULSE_KEYFRAMES =
 // "New since your last visit" pill (feed + HUD).
 export function NewBadge() {
   return (
-    <span aria-hidden style={{ flex: '0 0 auto', background: 'rgba(86,199,255,0.18)', border: '1px solid rgba(86,199,255,0.5)', color: '#8fd6ff', borderRadius: 999, padding: '0 6px', fontSize: 9, fontWeight: 800, letterSpacing: '0.05em' }}>
+    <span aria-hidden data-testid="tag-new-badge" style={{ flex: '0 0 auto', background: 'rgba(86,199,255,0.18)', border: '1px solid rgba(86,199,255,0.5)', color: '#8fd6ff', borderRadius: 999, padding: '0 6px', fontSize: 9, fontWeight: 800, letterSpacing: '0.05em' }}>
       NEW
     </span>
   );

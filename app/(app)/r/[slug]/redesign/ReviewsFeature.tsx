@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { ViewerTag } from './TagsFeature';
 import { useCreateTag } from './tagCompose';
@@ -51,6 +51,15 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  // B194 deep-link (team Reviews tab → "Finish review →"): ?finishReview=<team>
+  // auto-expands that team's summary once its status loads (only if the viewer can
+  // actually finish), then strips the param so a manual close sticks. Captured
+  // once — Strict Mode re-runs would otherwise see the stripped URL.
+  const [finishTarget] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try { return new URLSearchParams(window.location.search).get('finishReview'); } catch { return null; }
+  });
+  const autoOpenedRef = useRef(false);
   // Owner-only: their teams + which this replay is shared with / can be shared to,
   // so requesting a review lives HERE (not off in the Share view). Review is a
   // subset of shares, so requesting a not-yet-shared team shares it first.
@@ -74,6 +83,15 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
   }, [replaySlug, isOwner]);
   useEffect(() => { load(); }, [load, myCount]);
   useEffect(() => { loadOwnerTeams(); }, [loadOwnerTeams]);
+  useEffect(() => {
+    if (autoOpenedRef.current || !finishTarget || rows == null) return;
+    const row = rows.find((t) => t.teamSlug === finishTarget);
+    if (row && (row.viewerCommented || row.viewerReviewed)) {
+      autoOpenedRef.current = true;
+      setFinishing(row.teamSlug);
+      try { const u = new URL(window.location.href); u.searchParams.delete('finishReview'); window.history.replaceState(null, '', u.toString()); } catch { /* param stays; harmless */ }
+    }
+  }, [rows, finishTarget]);
 
   // Owner: request a review from a team (sharing it first if needed — you can't
   // review what you can't see), or cancel an open request.
@@ -149,6 +167,7 @@ export function ReviewsFeature({ replaySlug, tags, onJump, toOriginalFrame, upda
 
             {!open ? (
               <button type="button" disabled={!canFinish} onClick={() => canFinish && setFinishing(t.teamSlug)} title={canFinish ? undefined : 'Leave a comment scoped to this team first'}
+                data-testid={`viewer-finish-review-${t.teamSlug}`}
                 style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 8, cursor: canFinish ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
                   background: !canFinish ? 'transparent' : 'rgba(107,217,104,0.12)', border: `1px solid ${!canFinish ? 'rgba(160,168,184,0.22)' : 'rgba(107,217,104,0.5)'}`, color: !canFinish ? tokens.color.textMuted : '#8fe08a' }}>
                 {t.viewerReviewed ? 'Update review →' : canFinish ? 'Finish review →' : 'Comment to review'}

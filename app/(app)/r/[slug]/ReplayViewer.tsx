@@ -904,7 +904,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       {/* Gameboard fills the row; RedesignChrome's docked panel overlays on the
           right (fixed position), with the chevrons offset past it. */}
-      <div ref={boardRef} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+      {/* data-frame/-frames: a stable machine-readable "viewer is at frame N of M"
+          sentinel for tests (1-based, collapsed timeline) — no visual footprint. */}
+      <div ref={boardRef} data-testid="board" data-frame={currentIndex + 1} data-frames={frames?.length ?? 0} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
         {frames ? (
           <>
             <Gameboard />

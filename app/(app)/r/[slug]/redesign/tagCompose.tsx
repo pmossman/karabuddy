@@ -92,10 +92,10 @@ function mentionsPayload(opts?: TagOpts) {
 // The signed-out gate shared by both compose surfaces (matches the prod CTA).
 export function SignInToTagCta({ replaySlug, compact }: { replaySlug: string; compact?: boolean }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: compact ? 10 : 12, background: tokens.color.primarySoft, border: '1px solid rgba(77,157,255,0.3)', borderRadius: 8, textAlign: 'center' }}>
+    <div data-testid="tag-signin-gate" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: compact ? 10 : 12, background: tokens.color.primarySoft, border: '1px solid rgba(77,157,255,0.3)', borderRadius: 8, textAlign: 'center' }}>
       <span style={{ fontSize: 12.5, fontWeight: 700, color: '#cfe3ff' }}>Sign in to tag this replay</span>
       {!compact && <span style={{ fontSize: 11, color: tokens.color.textSecondary, lineHeight: 1.4 }}>Tags are tied to your account so they count and can be submitted as a review.</span>}
-      <a href={`/signin?callbackUrl=${encodeURIComponent(`/r/${replaySlug}`)}`}
+      <a data-testid="tag-signin-cta" href={`/signin?callbackUrl=${encodeURIComponent(`/r/${replaySlug}`)}`}
         style={{ alignSelf: 'center', background: 'rgba(77,157,255,0.16)', color: '#9fc4ff', border: '1px solid rgba(77,157,255,0.45)', borderRadius: 6, padding: '6px 16px', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>Sign in →</a>
     </div>
   );
