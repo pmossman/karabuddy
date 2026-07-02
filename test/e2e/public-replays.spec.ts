@@ -42,9 +42,14 @@ test('publish → signed-out visitors see redacted comments, the public tab, and
   await expect(anon.getByText('Reviewer 1').first()).toBeVisible();
   await expect(anon.getByText('SecretFriend')).toHaveCount(0);
 
-  // Public tab, signed out: the replay is listed, players anonymized.
-  await anon.goto('/replays?tab=public');
-  await expect(anon.getByTestId('replay-cell').first()).toBeVisible();
+  // Public tab, signed out: the replay is listed, players anonymized. The list
+  // is cached (B213) with stale-while-revalidate semantics — the FIRST read after
+  // publishing may serve the pre-publish copy and refresh in the background — so
+  // poll with a reload rather than asserting the first paint.
+  await expect(async () => {
+    await anon.goto('/replays?tab=public');
+    await expect(anon.getByTestId('replay-cell').first()).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15000 });
   await expect(anon.getByText(/Player1 vs Player2/).first()).toBeVisible();
   await expect(anon.getByText('PubOwner')).toHaveCount(0);
 

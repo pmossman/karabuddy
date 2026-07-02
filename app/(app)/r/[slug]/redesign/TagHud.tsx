@@ -224,8 +224,11 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
           <div ref={contentRef}>
           {(() => {
             if (editor) {
-              if (!(canTag || editor.kind === 'edit')) return <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', textAlign: 'center' }}>Tagging is for this replay’s owner and their teams.</div>;
+              // Sign-in first: it's the fix for most "can't tag" cases (a session is
+              // how entitlement is granted). Only a SIGNED-IN unentitled viewer gets
+              // the owner/teams explanation.
               if (!signedIn && editor.kind !== 'edit') return <SignInToTagCta replaySlug={replaySlug} compact />;
+              if (!(canTag || editor.kind === 'edit')) return <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', textAlign: 'center' }}>Tagging is for this replay’s owner and their teams.</div>;
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
