@@ -238,7 +238,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                 </div>
               </div>
             )}
-          {/* Play + overlapping gear. */}
+          {/* Play + (desktop) overlapping gear. On phones the gear barnacle broke
+              the circle language + was a 24px target — Playback lives behind the
+              Sidebar → Playback chip there instead. */}
           <div style={{ position: 'relative' }}>
             <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
               style={{
@@ -253,6 +255,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
             </button>
+            {mode === 'desktop' && (
             <button type="button" title="Playback options" aria-label="Playback options" onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }}
               style={{
                 position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
@@ -263,6 +266,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.66)' }}>{Icon.gear}</span>
             </button>
+            )}
           </div>
           </div>
         </div>
