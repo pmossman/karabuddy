@@ -44,7 +44,7 @@ export function DeckBlock({ deck, isLocal, fullPageHref, seenCards }: { deck: Us
   const hasFullDeck = Array.isArray(deck.deck) && deck.deck.length > 0;
   const totalMain = hasFullDeck ? sumCounts(deck.deck!) : null;
   const totalSide = deck.sideboard ? sumCounts(deck.sideboard) : 0;
-  // Opponent decks have no full list (karabast masks it). When DecksModal passes
+  // Opponent decks have no full list (karabast masks it). When the caller passes
   // the "seen during play" cards, render THOSE as the main grid so the opponent
   // view uses the exact same fit-to-screen solver + 2-column layout as your deck.
   const showSeen = !hasFullDeck && Array.isArray(seenCards) && seenCards.length > 0;

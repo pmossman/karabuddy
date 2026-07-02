@@ -17,7 +17,7 @@ import { Icon } from './icons';
 import { PULSE_KEYFRAMES } from './ui';
 import { type ClipSummary } from '../ClipsList';
 
-// B216 redesign — the unified viewer chrome (gated behind ?redesign=1).
+// B216 redesign — the unified viewer chrome.
 // Conceptual split (Parker): the RAIL = current-frame actions (tags · play/pause ·
 // jump-to · clip · sidebar toggle); the SIDEBAR = whole-replay views behind a view
 // selector (tag feed · game log · matchup · decks · playback · share · clips).
@@ -47,7 +47,7 @@ const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4f
 // Remembers whether you left the desktop Tag HUD open ('1') or closed ('0').
 const HUD_PREF_KEY = 'kb:redesign:hudOpen';
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag, onToggleSideboard, sideboardOpen }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onDockWidthChange, canTag, onToggleSideboard, sideboardOpen }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -63,7 +63,6 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   matchup: ComponentProps<typeof MatchupFeature>;
   decks: ComponentProps<typeof DecksFeature>;
   controls: ViewerControls;
-  onTagModeChange?: (active: boolean) => void;
   onDockWidthChange?: (w: number) => void;
   canTag: boolean;
   // Present only on replays with a sideboard swap to show → a persistent rail icon
@@ -118,7 +117,6 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   const desktopDock = mode === 'desktop' && sidebarOpen;
   const mobileDrawer = mode === 'mobile' && sidebarOpen;
   const showHud = hudOpen && !mobileDrawer; // the mobile drawer covers the HUD
-  useEffect(() => { onTagModeChange?.(hudOpen); }, [hudOpen, onTagModeChange]);
   useEffect(() => { onDockWidthChange?.(desktopDock ? sidebarW : 0); }, [desktopDock, sidebarW, onDockWidthChange]);
   const tagCountHere = tags.filter((t) => !t.parentTagId && t.frameIndex === currentIndex).length;
 
@@ -135,7 +133,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     if (v === 'info') return <MatchupFeature {...matchup} />;
     if (v === 'decks') return <DecksFeature {...decks} />;
     if (v === 'playback') return <PlaybackFeature {...controls} />;
-    if (v === 'share') return <ShareFeature replaySlug={replaySlug} installToken={controls.installToken} isOwner={controls.isOwner} />;
+    if (v === 'share') return <ShareFeature replaySlug={replaySlug} installToken={controls.installToken} isOwner={controls.isOwner} currentIndex={currentIndex} toOriginalFrame={toOriginalFrame} />;
     return <ClipsFeature clips={controls.clips} onCreate={controls.onOpenClip} canCreate={canTag} />;
   };
   const activeView = VIEWS.find((v) => v.id === sidebarView)!;

@@ -6,10 +6,10 @@ import { LedToggle } from '@/app/_components/LedToggle';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ReviewStar, ToggleNote, TeamShareRow, PublicShareSection, InfoDot, PUBLIC_INFO, shareSectionLabel } from '@/app/_components/shareControls';
 
-// B55b: replay-owner UI for sharing a replay explicitly with one or more
-// of their teams. Lives inside the existing Share popover in TagSidebar.
-// Renders nothing if the owner has zero teams (no-op state) — the user
-// can join/create teams from /teams.
+// B55b: replay-owner UI for sharing a replay explicitly with one or more of
+// their teams. Rendered by the viewer's Share view (glass) and the /replays row
+// actions (row). Renders nothing if the owner has zero teams (no-op state) —
+// the user can join/create teams from /teams.
 //
 // Server-side rules enforced by /api/replays/[slug]/team-shares:
 //   - GET returns existing shares + the owner's teams (so we can show
@@ -29,9 +29,9 @@ export function ShareWithTeam({
   // owner's teams) so the comment scope chip tracks in-session share changes
   // instead of the page-load snapshot. Called on load + after every toggle.
   onArmedTeamsChange?: (teams: { slug: string; name: string }[]) => void;
-  // 'row' = the legacy cockpit rows (TagSidebar popover). 'glass' = the B216
-  // redesign look: glassy row cards, inline LED toggles, and unshareable private
-  // teams demoted to a faded section with a tap-for-why ⓘ.
+  // 'row' = the compact cockpit rows (/replays row actions). 'glass' = the
+  // viewer's Share view: glassy row cards, inline LED toggles, and unshareable
+  // private teams demoted to a faded section with a tap-for-why ⓘ.
   variant?: 'row' | 'glass';
 }) {
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error' | 'unauth'>('loading');

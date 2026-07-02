@@ -34,7 +34,7 @@ const LEADER_SQ = 40;   // leader-deploy thumbnail size (square, cropped to the 
 const LEADER_GAP = 5;   // min gap between adjacent leader thumbnails
 const LEADER_SQ_TOP = -(LEADER_SQ + 18); // thumbnail top, relative to track top
 
-// Same color language as the Jump-to navigator (JumpToMenu) so the seek-bar
+// Same color language as the Jump-to navigator so the seek-bar
 // markers read identically: rounds blue, leader deploys gold, tags green.
 const KIND_COLOR: Record<ChapterKind, string> = {
   start: '#8b93a5',

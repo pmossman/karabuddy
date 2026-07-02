@@ -12,8 +12,6 @@ import { computeActionStops, nextActionStop } from './actionStops';
 import { EndGameSummary } from './EndGameSummary';
 import { SideboardSplash } from './SideboardSplash';
 import { computeEndGameStats } from '@/lib/endGameStats';
-import { JumpToMenu } from './JumpToMenu';
-import { PovBubble } from './PovBubble';
 import { revealHiddenHand } from './revealHands';
 import { computeChapters, type Chapter } from '@/lib/replayChapters';
 import { anonymizeFrames, anonByIdFromPlayers, anonByIdFromFrames, anonymizeDecks } from '@/lib/anonymizeReplay';
@@ -23,19 +21,14 @@ import { getCompanionInfo, extensionPresent, loadedTeamKeyIds, resolvePrivateRep
 import { useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { mapFrameIndex } from '@/lib/replaySignature';
-import { TagSidebar } from './TagSidebar';
-import { StepModeOverlay, MobileControlsFab, MatchupPanel } from './MobileLandscapePanels';
-import type { SeriesInfo } from './SeriesNav';
+import type { SeriesInfo } from './seriesTypes';
 import type { SideboardChanges } from '@/lib/sideboardDiff';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
-import { ResourcingModal } from './ResourcingModal';
-import { ClipBubble } from './ClipBubble';
 import type { ClipSummary } from './ClipsList';
 import { ClipBuilder } from './ClipBuilder';
 import { FrameNavOverlay } from './FrameNavOverlay';
 import type { OpponentHistory } from './redesign/MatchupHistory';
-import { RedesignChrome } from './redesign/RedesignChrome'; // B216: ?redesign=1 viewer chrome
-import { useDragSize } from './useDragSize';
+import { RedesignChrome } from './redesign/RedesignChrome'; // B216: the viewer chrome
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSession } from 'next-auth/react';
 import { getOrCreateInstallToken } from '@/lib/installToken';
@@ -159,18 +152,6 @@ function payloadTagsToRows(payloadTags: any, replaySlug: string): TagRow[] {
     }));
 }
 
-// B100: matchup-info FAB glyph — a simple info circle, distinct from the ☰
-// review toggle so the two mobile buttons read as different actions.
-function InfoIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <line x1="12" y1="11" x2="12" y2="16" />
-      <line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
-  );
-}
-
 function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtension, series, sideboard, opponentHistory, publicComments }: Props) {
   const { setGameState, setConnectedPlayer } = useGame();
   // B170 / ADR 0010: for an encrypted replay, resolve the access tier (capability
@@ -256,13 +237,6 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // Shared autoplay stepping engine (playback.ts) — same cadence as the clip
   // reel. Created lazily in startAutoplay; closures read live refs.
   const autoplayStepperRef = useRef<DwellStepper | null>(null);
-  // B121: pulse the Play button to cue first-time viewers; cleared the first
-  // time they press play, remembered across visits. Initialized in an effect
-  // (not the useState initializer) to avoid an SSR/hydration mismatch.
-  const [pulsePlay, setPulsePlay] = useState(false);
-  useEffect(() => {
-    try { if (!window.localStorage.getItem('karabuddy:hasPlayedReplay')) setPulsePlay(true); } catch {}
-  }, []);
   const [speed, setSpeed] = useState<number>(PLAYBACK_SPEED_DEFAULT);
   const speedRef = useRef(PLAYBACK_SPEED_DEFAULT);
   useEffect(() => {
@@ -293,34 +267,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // desktop chrome regardless of window width (until they shrink past 900px,
   // at which point mobile mode is the more usable layout anyway).
   const isMobile = useMediaQuery('(max-width: 900px), (pointer: coarse)');
-  // B66: landscape-vs-portrait split. Mobile landscape gets a left
-  // matchup panel + the step-mode overlay, freeing the right drawer to
-  // be slim (tags/log only). Portrait splits TOP/BOTTOM instead.
-  const isLandscape = useMediaQuery('(orientation: landscape)');
-  const mobileLandscape = isMobile && isLandscape;
-  const mobilePortrait = isMobile && !isLandscape;
-  // B100: two independent mobile panels, two FABs. `reviewOpen` is the
-  // log/tags drawer (the old single `drawerOpen` — still the docked sidebar
-  // on desktop, open by default there, closed on mobile so the first paint
-  // shows the full gameboard). `matchupOpen` is the matchup info panel, which
-  // exists only on mobile and starts collapsed (rarely needed mid-replay).
-  // On mobile the two are mutually exclusive — they're top/bottom (or
-  // left/right) sheets that would otherwise sandwich the board, which was the
-  // "total mess" of the old shared-state model. Desktop ignores matchupOpen.
-  const [reviewOpen, setReviewOpenRaw] = useState(false);
-  const [matchupOpen, setMatchupOpen] = useState(false);
-  // B216 (exploratory): `?redesign=1` swaps the TagSidebar + mobile sheets for
-  // the unified feature-bubble chrome. Client-only read (avoids SSR mismatch).
-  const [redesign, setRedesign] = useState(false);
-  useEffect(() => { try { setRedesign(new URLSearchParams(window.location.search).get('redesign') === '1'); } catch { /* noop */ } }, []);
-  // B216: Tag Mode owns tag-to-tag nav (its preview chips), so hide the board's
-  // duplicate tag-jump buttons while it's active.
-  const [tagMode, setTagMode] = useState(false);
-  // B216: width of the redesign's docked desktop panel (0 = closed), so the
-  // board chevrons/playback clear it instead of the old TagSidebar.
+  // B216: width of the docked desktop panel (0 = closed), so the board chevrons
+  // clear it.
   const [redesignDockW, setRedesignDockW] = useState(0);
-  // B101: per-game resourcing report (analyzed client-side from decoded frames).
-  const [resourcingOpen, setResourcingOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
   // B138: clips that already exist on this replay → the Clip control gains a
   // picker. Public list (link-accessible like the replay); refetched after the
@@ -334,68 +283,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     } catch { /* non-fatal */ }
   }, [replay.slug]);
   useEffect(() => { refetchClips(); }, [refetchClips]);
-  const userTouchedDrawerRef = useRef(false);
-  useEffect(() => {
-    if (userTouchedDrawerRef.current) return;
-    setReviewOpenRaw(!isMobile);
-  }, [isMobile]);
-  const setReviewOpen = useCallback((next: boolean) => {
-    userTouchedDrawerRef.current = true;
-    setReviewOpenRaw(next);
-    if (next) setMatchupOpen(false); // mobile: opening review closes matchup
-  }, []);
-  const openMatchup = useCallback((next: boolean) => {
-    setMatchupOpen(next);
-    if (next) setReviewOpenRaw(false); // mobile: opening matchup closes review
-  }, []);
-  // Keep the drawerOpen name for the props passed down (desktop sidebar +
-  // overlays still reason about "is the review panel open").
-  const drawerOpen = reviewOpen;
-  // B66b: lifted from TagSidebar so FrameNavOverlay's right-chevron
-  // offset can track the actual desktop sidebar width (was hardcoded to
-  // the mobile drawer width, making it float in dead space).
-  const [sidebarWidth, setSidebarWidth] = useState<number>(360);
 
-  // B100: the mobile review-sheet drag size lives HERE (not in TagSidebar) so
-  // the live height/width drives three things at once as you drag: the sheet
-  // itself, the frame-nav chevrons (they ride up/inward with the sheet edge so
-  // they're never buried under it), and the FABs + step pill (they sit just
-  // outside the sheet edge instead of overlaying it). Portrait → height
-  // (bottom sheet, grabber on its TOP edge → drag up grows, grow:-1).
-  // Landscape → width (right sheet, grabber on its LEFT edge → drag left grows,
-  // grow:-1). Computed unconditionally (hook rule); consumed only on mobile.
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
-  // Cap the sheet by RESERVING a fixed minimum board size rather than a % of
-  // the viewport — past ~0.9vh the board (and the controls floating above it)
-  // got squished into a sliver. Reserving 240px of board height / 340px of
-  // board width keeps it readable on any phone.
-  const reviewDrag = useDragSize({
-    axis: mobilePortrait ? 'y' : 'x',
-    grow: -1,
-    initial: mobilePortrait ? Math.round(vh * 0.55) : Math.min(380, Math.round(vw * 0.5)),
-    min: mobilePortrait ? 160 : 260,
-    max: mobilePortrait ? Math.max(200, vh - 240) : Math.max(280, vw - 340),
-    // Persist per orientation so a tall portrait sheet / wide landscape sheet
-    // is remembered across reloads (no re-dragging each visit).
-    storageKey: mobilePortrait ? 'karabuddy:reviewSheetH' : 'karabuddy:reviewSheetW',
-  });
-
-  // B198: the matchup panel's drag size ALSO lives here (mirrors reviewDrag) so
-  // the frame-nav chevrons can drop below the (top) panel's bottom edge in
-  // portrait and ride it as it's dragged. Same config the panel used internally.
-  const matchupDrag = useDragSize({
-    axis: mobilePortrait ? 'y' : 'x',
-    grow: 1,
-    initial: mobilePortrait ? Math.round(vh * 0.42) : Math.min(300, Math.round(vw * 0.6)),
-    min: mobilePortrait ? 140 : 200,
-    max: mobilePortrait ? Math.max(200, vh - 240) : Math.max(260, vw - 340),
-    storageKey: mobilePortrait ? 'karabuddy:matchupSheetH' : 'karabuddy:matchupSheetW',
-  });
-
-  // B66e: ownership resolved here so both TagSidebar (desktop) AND
-  // MatchupPanel (mobile) can show owner-only affordances from the
-  // same source of truth.
+  // B66e: ownership resolved here so every chrome surface shows owner-only
+  // affordances from the same source of truth.
   const { data: session } = useSession();
   const sessionUserId: string | null = (session?.user?.id as string | undefined) || null;
   const [installToken, setInstallToken] = useState('');
@@ -549,15 +439,11 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   useEffect(() => { if (!atEnd) setSummaryDismissed(false); }, [atEnd]);
   const showSummary = atEnd && !summaryDismissed && endStats != null;
 
-  // B150: sideboard splash. Legacy auto-shows it at frame 0 of a post-sideboard game
-  // (re-shown on returning to frame 0). B216: the redesign does NOT auto-open — it's
-  // click-only via the glowing rail icon — so the board loads clean.
+  // B150/B216: the sideboard splash never auto-opens — it's click-only via the
+  // glowing rail icon (shown only when there's a swap), so the board loads clean.
   const sideboardHasChanges = !!sideboard && sideboard.players.some((p) => p.changed);
-  const [sideboardDismissed, setSideboardDismissed] = useState(false);
   const [sideboardOpen, setSideboardOpen] = useState(false);
-  const atStart = currentIndex === 0;
-  useEffect(() => { if (!atStart) setSideboardDismissed(false); }, [atStart]);
-  const showSideboard = !!sideboard && (sideboardOpen || (!redesign && atStart && sideboardHasChanges && !sideboardDismissed));
+  const showSideboard = !!sideboard && sideboardOpen;
 
   // B104: how long action-playback should dwell on each frame before advancing
   // — longer for frames with an attack, so the lunge→death→reflow choreography
@@ -614,7 +500,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     if (!anonymize) return d;
     // B122: anonymized viewers (non-uploader, non-teammate) don't get full
     // decklists — keep leader/base for the card thumbnails, drop the deck +
-    // sideboard lists and the deck name. The DecksModal shows the "seen during
+    // sideboard lists and the deck name. The Decks view shows the "seen during
     // play" cards (derived from frames) instead.
     const anon = anonymizeDecks(d as any, anonByIdFromPlayers(replay.players as any[]));
     if (!anon) return null;
@@ -704,9 +590,6 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     if (pos >= frames.length - 1) { pos = 0; setCurrentIndex(0); }
     playingRef.current = true;
     setPlaying(true);
-    // B121: they've now used Play — stop the first-time pulse for good.
-    setPulsePlay(false);
-    try { window.localStorage.setItem('karabuddy:hasPlayedReplay', '1'); } catch {}
     // Shared stepping engine — identical cadence to the clip reel (playback.ts).
     // `animate` off → flat tick; on → per-frame choreography dwell. Stops at the
     // last frame (no loop). Closures read live refs, so flips/speed take effect.
@@ -729,9 +612,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     if (playingRef.current) stopAutoplay(); else startAutoplay();
   }, [startAutoplay, stopAutoplay]);
 
-  // B13: jump to the previous/next tagged frame. Lifted out of TagSidebar so
-  // the keydown handler below can invoke it for `[` / `]` without DOM
-  // querying; TagSidebar's prev/next-tag buttons now call this via prop.
+  // B13: jump to the previous/next tagged frame — the `[` / `]` shortcuts (the
+  // Tag HUD's prev/next ears do their own adjacent-tag lookup).
   const jumpToAdjacentTag = useCallback((dir: 1 | -1) => {
     const sorted = displayTags.map((t) => t.frameIndex).sort((a, b) => a - b);
     const target =
@@ -993,14 +875,6 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // Stop the auto-play timer on unmount so it can't fire into a dead component.
   useEffect(() => () => stopAutoplay(), [stopAutoplay]);
 
-  const playerUsernames = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of (replay.players as any[]) || []) {
-      if (p?.username && !/^anonymous\s/i.test(p.username)) set.add(p.username);
-    }
-    return set;
-  }, [replay.players]);
-
   if (loadError) {
     return (
       <div style={{ padding: 32, color: '#ff6b6b', fontFamily: 'var(--font-barlow), sans-serif' }}>
@@ -1028,10 +902,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           no global header). Renders nothing for extension users / once dismissed. */}
       <InstallExtensionCta variant="banner" alreadyLinked={hasLinkedExtension} />
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      {/* B66b: gameboard first, sidebar second — sidebar now lives on
-          the RIGHT (matches mobile drawer anchor). When the desktop
-          sidebar is closed, TagSidebar unmounts its <aside>, so the
-          gameboard's flex:1 reclaims the full width. */}
+      {/* Gameboard fills the row; RedesignChrome's docked panel overlays on the
+          right (fixed position), with the chevrons offset past it. */}
       <div ref={boardRef} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
         {frames ? (
           <>
@@ -1060,7 +932,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 sideboard={sideboard}
                 currentGameNumber={series?.current ?? null}
                 localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
-                onClose={() => { setSideboardOpen(false); setSideboardDismissed(true); }}
+                onClose={() => setSideboardOpen(false)}
               />
             )}
             {/* B128: the flip curtain — a snappy dip to black over ONLY the
@@ -1087,11 +959,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         )}
       </div>
       {/* The viewer is wrapped in the gameboard's ThemeContextProvider (for
-          the board); re-assert the KaraBuddy theme over the sidebar so its
+          the board); re-assert the KaraBuddy theme over the chrome so its
           MUI controls match the chrome instead of the gameboard's default
-          MUI theme. TagSidebar uses no gameboard contexts, only the theme. */}
-      {redesign && (
-        <KaraBuddyThemeProvider>
+          MUI theme. */}
+      <KaraBuddyThemeProvider>
           <RedesignChrome
             mode={isMobile ? 'mobile' : 'desktop'}
             tags={displayTags as any}
@@ -1144,62 +1015,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               revealHands,
               onRevealHandsChange: setRevealHands,
             }}
-            onTagModeChange={setTagMode}
             onDockWidthChange={setRedesignDockW}
             canTag={!anonymize}
           />
-        </KaraBuddyThemeProvider>
-      )}
-      {!redesign && (
-      <KaraBuddyThemeProvider>
-      <TagSidebar
-        replay={replay}
-        frames={frames}
-        currentIndex={currentIndex}
-        lastTransition={lastTransition}
-        onStep={step}
-        onJump={jumpTo}
-        onJumpToAdjacentTag={jumpToAdjacentTag}
-        tags={displayTags}
-        setTags={setTagState}
-        toOriginalFrame={collapsedToOriginal}
-        playerUsernames={playerUsernames}
-        mode={mode}
-        setMode={setMode}
-        messagesByFrame={activeDecoded?.messagesByFrame || null}
-        drawerOpen={drawerOpen}
-        setDrawerOpen={setReviewOpen}
-        isMobile={isMobile}
-        reviewSize={reviewDrag.size}
-        reviewDragging={reviewDrag.dragging}
-        reviewHandleProps={reviewDrag.handleProps}
-        mobileLandscape={mobileLandscape}
-        mobilePortrait={mobilePortrait}
-        sidebarWidth={sidebarWidth}
-        setSidebarWidth={setSidebarWidth}
-        // B42: prefer DB columns (replay.match / replay.decks) since they're
-        // already populated server-side; fall back to decoder.meta if a
-        // historical replay only has them embedded in the blob.
-        matchMeta={replay.match ?? activeDecoded?.meta.match ?? null}
-        decks={decksForView}
-        localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
-        armedTeams={armedTeams}
-        onArmedTeamsChange={setArmedTeams}
-        onOpenResourcing={() => setResourcingOpen(true)}
-        onOpenSideboard={sideboard ? () => setSideboardOpen(true) : undefined}
-        anonymize={anonymize}
-        series={series ?? null}
-        clips={clips}
-      />
       </KaraBuddyThemeProvider>
-      )}
-      <ResourcingModal
-        open={resourcingOpen}
-        onClose={() => setResourcingOpen(false)}
-        frames={frames}
-        localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
-        onJump={setCurrentIndex}
-      />
       {/* B136: clip trim builder — its own independent board over the viewer. */}
       {displayFrames && displayFrames.length > 1 && (
         <ClipBuilder
@@ -1215,252 +1034,17 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           onCreated={refetchClips}
         />
       )}
-      {(() => {
-        // B100: chevron + FAB geometry, derived from the LIVE review-sheet
-        // size so everything rides with the sheet as you drag it.
-        //   • Portrait review open → chevrons centre in the board band ABOVE
-        //     the bottom sheet (drag taller → they rise). FABs + step pill lift
-        //     to just above the sheet's top edge.
-        //   • A RIGHT-anchored sheet (desktop docked sidebar OR mobile-landscape
-        //     review) pushes the right chevron + FABs inward past its left edge.
-        const edgeR = 'max(8px, env(safe-area-inset-right, 8px))';
-        const edgeB = 'max(12px, env(safe-area-inset-bottom, 12px))';
-        // B216: in redesign mode the docked panel is RedesignChrome's (380px, with
-        // its own open state), not the old TagSidebar — position against THAT.
-        const drawerOpenEff = redesign ? redesignDockW > 0 : drawerOpen;
-        const sidebarWidthEff = redesign ? redesignDockW : sidebarWidth;
-        const rightSheetOpen = drawerOpenEff && (!isMobile || mobileLandscape);
-        const rightSheetW = isMobile ? `${reviewDrag.size}px` : `${sidebarWidthEff}px`;
-        const chevRight = rightSheetOpen ? `calc(${rightSheetW} + 8px)` : 'max(8px, env(safe-area-inset-left, 8px))';
-        const portraitLift = mobilePortrait && drawerOpen;
-        const fabRight = mobileLandscape && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeR;
-        // B198: in portrait, when the matchup panel is open the chevrons HUG just
-        // below its bottom edge (12px gap + 42px = half the 84px chevron → 54px to
-        // its centre) and ride it as it's dragged — clamp()'d so they never rise
-        // above the viewport centre (short panel) nor drop so low they collide with
-        // the bottom control bubbles (192px reserve) or the review sheet if that's
-        // open too. Review-sheet-only keeps the prior behaviour (centre the band
-        // above the sheet).
-        const portraitMatchupOpen = mobilePortrait && matchupOpen;
-        const navFloor = portraitLift ? `100vh - ${reviewDrag.size}px - 54px` : '100vh - 192px';
-        const navVerticalCenter = portraitMatchupOpen
-          ? `clamp(50vh, var(--kb-header-h, 0px) + 8px + ${matchupDrag.size}px + 54px, ${navFloor})`
-          : portraitLift
-            ? `calc((100vh - ${reviewDrag.size}px) / 2)`
-            : '50%';
-        return (
-          <>
-            <FrameNavOverlay
-              leftOffset="max(8px, env(safe-area-inset-left, 8px))"
-              rightOffset={chevRight}
-              verticalCenter={navVerticalCenter}
-              dragging={reviewDrag.dragging || matchupDrag.dragging}
-              onStep={step}
-              canPrev={currentIndex > 0}
-              canNext={!!frames && currentIndex < frames.length - 1}
-              // Desktop only: faint keyboard hint adjacent to each chevron.
-              // B216: dropped in redesign (read as redundant) + frosted styling.
-              showKeyboardHint={!isMobile && !redesign}
-              glassy={redesign}
-              // B132: jump to the previous/next annotated frame — companion
-              // buttons under the chevrons, shown only when tags exist.
-              onJumpTag={jumpToAdjacentTag}
-              canPrevTag={displayTags.some((t) => t.frameIndex < currentIndex)}
-              canNextTag={displayTags.some((t) => t.frameIndex > currentIndex)}
-              showTagJump={displayTags.length > 0 && !tagMode && !redesign}
-            />
-            {/* B66b/B100: desktop step/playback controls as an inline pill that
-                tracks the docked sidebar (shifts left past it). On MOBILE the
-                same controls collapse into a bubble FAB (below) so they don't
-                sprawl across the cramped bottom edge. */}
-            {!isMobile && !redesign && (
-              <StepModeOverlay
-                mode={mode}
-                setMode={setMode}
-                animate={animate}
-                onToggleAnimate={toggleAnimate}
-                playing={playing}
-                onTogglePlay={toggleAutoplay}
-                speed={speed}
-                speeds={PLAYBACK_SPEEDS as { label: string; value: number }[]}
-                onSetSpeed={setSpeedValue}
-                landscape
-                drawerOpen={drawerOpenEff}
-                drawerWidth={`${sidebarWidthEff}px`}
-                dragging={reviewDrag.dragging}
-                pulse={pulsePlay}
-              />
-            )}
-            {/* B104: mobile playback-controls bubble. A round FAB in the
-                bottom-right cluster (left of the ☰ review FAB) that opens a
-                small panel with play/pause, speed, step-mode + animate —
-                mirroring the ☰/ⓘ bubble pattern. Lifts above the portrait
-                sheet using the same offsets as its neighbours. */}
-            {isMobile && !redesign && (
-              <MobileControlsFab
-                mode={mode}
-                setMode={setMode}
-                animate={animate}
-                onToggleAnimate={toggleAnimate}
-                playing={playing}
-                onTogglePlay={toggleAutoplay}
-                speed={speed}
-                speeds={PLAYBACK_SPEEDS as { label: string; value: number }[]}
-                onSetSpeed={setSpeedValue}
-                bottom={portraitLift ? `calc(${reviewDrag.size}px + 12px)` : edgeB}
-                right={`calc(${fabRight} + 50px)`}
-                dragging={reviewDrag.dragging}
-                pulse={pulsePlay}
-              />
-            )}
-            {/* B100/B104: matchup info FAB moves to the TOP on mobile so it
-                points at where its panel slides in (and clears the bottom
-                playback cluster). Anchored to the same edge as the panel:
-                TOP-RIGHT in portrait (panel drops from the top), TOP-LEFT in
-                landscape (panel slides from the left — and the right edge is
-                where the review sheet's × close lives, so top-right would
-                collide with it). */}
-            {!redesign && isMobile && (
-              <button
-                type="button"
-                onClick={() => openMatchup(!matchupOpen)}
-                aria-label={matchupOpen ? 'Hide matchup info' : 'Show matchup info'}
-                title={matchupOpen ? 'Hide matchup' : 'Matchup info'}
-                style={{
-                  position: 'fixed',
-                  top: 'max(10px, env(safe-area-inset-top, 10px))',
-                  ...(mobileLandscape
-                    ? { left: 'max(10px, env(safe-area-inset-left, 10px))' }
-                    : { right: 'max(10px, env(safe-area-inset-right, 10px))' }),
-                  zIndex: 90,
-                  width: 38,
-                  height: 38,
-                  background: matchupOpen ? 'rgba(77, 157, 255, 0.32)' : 'rgba(36, 48, 68, 0.85)',
-                  color: '#d6e7ff',
-                  border: '1px solid rgba(77, 157, 255, 0.4)',
-                  borderRadius: '50%',
-                  padding: 0,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backdropFilter: 'blur(6px)',
-                  transition: 'background 160ms ease',
-                }}
-              >
-                <InfoIcon />
-              </button>
-            )}
-            {/* B106: "jump to a moment" navigator — stacked directly ABOVE the
-                ☰ review FAB so it joins the bottom-right control cluster. Tracks
-                the same right offset the ☰ uses (shifts past the docked desktop
-                sidebar / mobile-landscape sheet) and rides up with the portrait
-                sheet, sitting one FAB-height (38 + 8 gap) above it. */}
-            {(() => {
-              const menuEdgeR = 'max(12px, env(safe-area-inset-right, 12px))';
-              const menuRight = !isMobile
-                ? (drawerOpen ? `calc(${sidebarWidth}px + 12px)` : menuEdgeR)
-                : (mobileLandscape && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : menuEdgeR);
-              const menuBottom = mobilePortrait && drawerOpen ? `calc(${reviewDrag.size}px + 12px)` : edgeB;
-              return (
-                <>
-                  {!redesign && (
-                  <JumpToMenu
-                    chapters={chapters}
-                    currentIndex={currentIndex}
-                    onJump={jumpTo}
-                    bottom={`calc(${menuBottom} + 46px)`}
-                    right={menuRight}
-                  />
-                  )}
-                  {/* B136: Clip FAB. Desktop → a labeled "Clip" pill at the
-                      board's top-right (below the header; bottom-right was
-                      crowded). Mobile → a compact scissors bubble on the SAME row
-                      as the ⓘ matchup button, one FAB-width toward the interior
-                      (B199: left of ⓘ in portrait / right of it in landscape,
-                      where ⓘ hugs the left edge) rather than stacked below it. */}
-                  {!redesign && (isMobile ? (
-                    <ClipBubble
-                      onClick={() => setClipOpen(true)}
-                      compact
-                      top="max(10px, env(safe-area-inset-top, 10px))"
-                      {...(mobileLandscape
-                        ? { left: 'calc(max(10px, env(safe-area-inset-left, 10px)) + 46px)' }
-                        : { right: 'calc(max(10px, env(safe-area-inset-right, 10px)) + 46px)' })}
-                    />
-                  ) : (
-                    <ClipBubble
-                      onClick={() => setClipOpen(true)}
-                      top="calc(var(--kb-header-h, 0px) + max(10px, env(safe-area-inset-top, 10px)))"
-                      right={menuRight}
-                    />
-                  ))}
-                  {/* B128: double-sided split control (hands-up toggle + flip)
-                      — only when both teammates' recordings exist. Sits LEFT of
-                      the Jump-to-moment bubble on the same row (38px FAB + 8px
-                      gap), tracking the same offsets. */}
-                  {canFlip && !redesign && (
-                    <PovBubble
-                      viewLabel={viewingHandle}
-                      onFlip={flipPov}
-                      revealHands={revealHands}
-                      onRevealHandsChange={setRevealHands}
-                      bottom={`calc(${menuBottom} + 46px)`}
-                      right={`calc(${menuRight} + 46px)`}
-                    />
-                  )}
-                </>
-              );
-            })()}
-          </>
-        );
-      })()}
-      {/* B100: mobile backdrop — closes whichever sheet is open. The two FABs
-          (☰ review in TagSidebar so it can track the desktop sidebar, ⓘ
-          matchup in the overlay block above) sit just outside the open sheet
-          rather than over it. */}
-      {!redesign && isMobile && (matchupOpen || reviewOpen) && (
-        <div
-          onClick={() => { setMatchupOpen(false); setReviewOpen(false); }}
-          aria-hidden="true"
-          style={{
-            position: 'fixed',
-            inset: 'var(--kb-header-h, 0px) 0 0 0',
-            zIndex: 75,
-            background: 'rgba(0, 0, 0, 0.45)',
-            animation: 'kb-fade-in 220ms ease',
-          }}
-        />
-      )}
-      {/* B66/B100: mobile matchup panel. Anchored LEFT in landscape, TOP in
-          portrait. Opened by the dedicated ⓘ FAB (no longer shares the ☰
-          tags trigger). Collapsed by default. */}
-      {!redesign && isMobile && (
-        <MatchupPanel
-          open={matchupOpen}
-          onClose={() => setMatchupOpen(false)}
-          anchor={isLandscape ? 'left' : 'top'}
-          dragSize={matchupDrag.size}
-          dragging={matchupDrag.dragging}
-          dragHandleProps={matchupDrag.handleProps}
-          replay={replay}
-          matchMeta={replay.match ?? activeDecoded?.meta.match ?? null}
-          decks={decksForView}
-          localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
-          frames={frames}
-          currentIndex={currentIndex}
-          toOriginalFrame={collapsedToOriginal}
-          installToken={installToken}
-          isOwner={isOwner}
-          anonymize={anonymize}
-          series={series ?? null}
-          clips={clips}
-          onOpenResourcing={() => setResourcingOpen(true)}
-          onOpenSideboard={sideboard ? () => setSideboardOpen(true) : undefined}
-          onArmedTeamsChange={setArmedTeams}
-        />
-      )}
+      {/* Frame chevrons — the only geometry they dodge is RedesignChrome's docked
+          desktop panel (redesignDockW; 0 when closed / on mobile, where the drawer
+          covers the board instead). */}
+      <FrameNavOverlay
+        leftOffset="max(8px, env(safe-area-inset-left, 8px))"
+        rightOffset={redesignDockW > 0 ? `calc(${redesignDockW}px + 8px)` : 'max(8px, env(safe-area-inset-left, 8px))'}
+        verticalCenter="50%"
+        onStep={step}
+        canPrev={currentIndex > 0}
+        canNext={!!frames && currentIndex < frames.length - 1}
+      />
       </div>
     </div>
   );

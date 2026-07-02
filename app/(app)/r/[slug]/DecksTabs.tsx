@@ -6,7 +6,7 @@ import { type DecksByUserId, type DeckCardRef, decodeReplay, extractSeenCards } 
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { DeckBlock } from './Decks';
 
-// Shared tabbed per-player deck viewer — the body of the in-viewer DecksModal,
+// Shared tabbed per-player deck viewer — the body of the in-viewer Decks view,
 // ALSO used full-page at /r/[slug]/deck/[playerId]. Tabs switch players; the
 // opponent tab renders its "seen during play" cards (decoded client-side from
 // the viewer's frames in the modal, server-side on the page) as the main grid,
