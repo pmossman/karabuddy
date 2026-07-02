@@ -219,14 +219,10 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {!mobileDrawer && (
         <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
           {/* Jump-to — stacked ABOVE the play button. */}
-          {/* Mobile: playback settings as a standalone circle atop the pocket
-              column (rarest action farthest from the thumb) — the desktop gear
-              rides Play's corner instead. */}
-          {mode === 'mobile' && (
-            <RailBtn size={38} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
-              onClick={() => { if (sidebarOpen && sidebarView === 'playback') userSetSidebar(false); else openSidebar('playback'); }} />
-          )}
-          <RailBtn size={mode === 'mobile' ? 38 : undefined} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
+          {/* Jump sits above the play row with a little extra air. */}
+          <div style={{ marginBottom: 4 }}>
+            <RailBtn size={mode === 'mobile' ? 38 : undefined} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
+          </div>
           {/* Double-sided (POV) controls beside Play — grouped in a labelled glass
               rect so it's clear WHY they appear (only on double-sided replays).
               Flip is a momentary action (fires the curtain, never lit);
@@ -245,9 +241,12 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                 </div>
               </div>
             )}
-          {/* Play + (desktop) overlapping gear. On phones the gear barnacle broke
-              the circle language + was a 24px target — Playback lives behind the
-              Sidebar → Playback chip there instead. */}
+          {/* Mobile: the gear is a standalone circle BESIDE Play (same row). */}
+          {mode === 'mobile' && (
+            <RailBtn size={38} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
+              onClick={() => { if (sidebarOpen && sidebarView === 'playback') userSetSidebar(false); else openSidebar('playback'); }} />
+          )}
+          {/* Play + (desktop) overlapping mini-gear. */}
           <div style={{ position: 'relative' }}>
             <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
               style={{
