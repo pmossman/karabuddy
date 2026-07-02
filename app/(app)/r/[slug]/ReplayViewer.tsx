@@ -1121,10 +1121,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
               payloadBlobUrl: replay.payloadBlobUrl,
               replaySlug: replay.slug,
             }}
-            // B150: a persistent rail icon (when there's a swap to show) opens the
-            // sideboard splash any time; it glows until first opened, and lights blue
-            // while open (sideboardOpen).
-            onOpenSideboard={sideboard && sideboardHasChanges ? () => setSideboardOpen(true) : undefined}
+            // B150: a persistent rail icon (when there's a swap to show) TOGGLES the
+            // sideboard splash; it glows until first opened, and lights blue while
+            // open (sideboardOpen).
+            onToggleSideboard={sideboard && sideboardHasChanges ? () => setSideboardOpen((v) => !v) : undefined}
             sideboardOpen={sideboardOpen}
             controls={{
               playing, onTogglePlay: toggleAutoplay,

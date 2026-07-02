@@ -46,7 +46,7 @@ const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4f
 // Remembers whether you left the desktop Tag HUD open ('1') or closed ('0').
 const HUD_PREF_KEY = 'kb:redesign:hudOpen';
 
-export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag, onOpenSideboard, sideboardOpen }: {
+export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onTagModeChange, onDockWidthChange, canTag, onToggleSideboard, sideboardOpen }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
   currentIndex: number;
@@ -65,8 +65,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   onTagModeChange?: (active: boolean) => void;
   onDockWidthChange?: (w: number) => void;
   canTag: boolean;
-  // Present only on replays with a sideboard swap to show → a persistent rail icon.
-  onOpenSideboard?: () => void;
+  // Present only on replays with a sideboard swap to show → a persistent rail icon
+  // that toggles the splash (click while open closes it).
+  onToggleSideboard?: () => void;
   sideboardOpen?: boolean; // the splash's open state → rail icon lights blue while open
 }) {
   const [hudOpen, setHudOpen] = useState(false);
@@ -151,9 +152,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     // phantom activation (panel defaults to its Tags view) + the dead click-to-close.
     { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
   ];
-  // Sideboard: only on replays with a swap to show — opens the splash any time. Lights
-  // blue while the splash is open, and glows until first opened to draw attention.
-  if (onOpenSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', active: !!sideboardOpen, glow: !sideboardSeen && !sideboardOpen, onClick: onOpenSideboard });
+  // Sideboard: only on replays with a swap to show — toggles the splash (open ⇄
+  // close). Lights blue while open, and glows until first opened to draw attention.
+  if (onToggleSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', active: !!sideboardOpen, glow: !sideboardSeen && !sideboardOpen, onClick: onToggleSideboard });
 
   return (
     <>
