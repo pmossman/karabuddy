@@ -219,7 +219,14 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {!mobileDrawer && (
         <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
           {/* Jump-to — stacked ABOVE the play button. */}
-          <RailBtn icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
+          {/* Mobile: playback settings as a standalone circle atop the pocket
+              column (rarest action farthest from the thumb) — the desktop gear
+              rides Play's corner instead. */}
+          {mode === 'mobile' && (
+            <RailBtn size={38} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
+              onClick={() => { if (sidebarOpen && sidebarView === 'playback') userSetSidebar(false); else openSidebar('playback'); }} />
+          )}
+          <RailBtn size={mode === 'mobile' ? 38 : undefined} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
           {/* Double-sided (POV) controls beside Play — grouped in a labelled glass
               rect so it's clear WHY they appear (only on double-sided replays).
               Flip is a momentary action (fires the curtain, never lit);

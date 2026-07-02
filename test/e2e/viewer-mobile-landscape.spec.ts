@@ -6,7 +6,7 @@ import { signInAsTestUser, uploadReplay, claimInstallToken } from './helpers';
 //     feature panel) and "Tags" (toggles the floating Tag HUD).
 //   - bottom-right transport cluster: "Jump to a moment" bubble + a big
 //     Play/Pause FAB (aria-label flips "Play"/"Pause") with a small gear
-//     (desktop-only gear was dropped from phones — Playback rides the panel).
+//     plus a standalone gear circle (Playback view) atop the pocket column.
 //   - ONE FeaturePanel hosting all whole-replay views behind a chip selector
 //     (Tags / Reviews / Log / Matchup / Decks / Playback / Share / Clips).
 //     Desktop → a right-docked <aside> (role=complementary); mobile → a
@@ -69,12 +69,12 @@ test('mobile: transport cluster is usable with the panel closed — Play↔Pause
     const r = await loadReplay(page, request);
     await openViewer(page, r.slug);
 
-    // Panel closed by default; the transport cluster renders WITHOUT the gear
-    // barnacle (mobile drops it — Playback lives behind Sidebar → Playback).
+    // Panel closed by default; the transport cluster renders with the gear as a
+    // STANDALONE circle in the pocket column (no barnacle on Play).
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const play = page.getByRole('button', { name: 'Play', exact: true });
     await expect(play).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Playback options' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Playback options' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Jump to a moment' })).toBeVisible();
 
     // One-tap play: the FAB's label flips to Pause while playing, and back.
@@ -84,9 +84,8 @@ test('mobile: transport cluster is usable with the panel closed — Play↔Pause
     await pause.click();
     await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
 
-    // Playback view via the panel chips.
-    await page.getByRole('button', { name: 'Sidebar' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Playback', exact: true }).click();
+    // The gear opens the panel straight to the Playback view.
+    await page.getByRole('button', { name: 'Playback options' }).click();
     const drawer = page.getByRole('dialog', { name: 'Playback' });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText('Speed', { exact: true })).toBeVisible();
@@ -245,8 +244,7 @@ test('mobile: playback view exposes Speed + Step-by controls (landscape + portra
     const r = await loadReplay(page, request);
     await openViewer(page, r.slug);
 
-    await page.getByRole('button', { name: 'Sidebar' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Playback', exact: true }).click();
+    await page.getByRole('button', { name: 'Playback options' }).click();
     const drawer = page.getByRole('dialog', { name: 'Playback' });
     await expect(drawer).toBeVisible();
     // Literal speed multipliers (relative to the retuned 1× baseline).
