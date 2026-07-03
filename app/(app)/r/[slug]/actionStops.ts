@@ -13,11 +13,60 @@
 // log-text matching) and works for both players (the opponent's piles are
 // masked but still counted). A plain play shrinks the hand, so it doesn't
 // trip the hand-grew check (and it's already an active-player boundary anyway).
-// Pure + unit-tested.
+//
+// Setup decisions (B217): the setup phase is two karabast "all-player prompts"
+// (mulligan, then resource). karabast sets NO isActionPhaseActivePlayer during
+// it, so the active-change rule never fires there; and a mulligan DECISION moves
+// no pile counts (a "keep" changes nothing; a "mulligan" redraws 6→6). So
+// neither rule above catches a mulligan or a resourcing decision — stepping by
+// action used to blow straight through them. We detect those straight from the
+// game log (authoritative server text), one stop per decision, so each is its
+// own beat. Matched against the messages NEWLY added on a frame (vs. the prior
+// frame) so a cumulative log doesn't re-trip on every later frame — same
+// delta approach as the undo-collapse detector. Pure + unit-tested.
 
 function pileLen(player: any, zone: string): number {
   const list = player?.cardPiles?.[zone];
   return Array.isArray(list) ? list.length : 0;
+}
+
+// Setup/decision log markers (exact karabast server text):
+//   MulliganPrompt → "{p} will mulligan" / "{p} will keep their hand"
+//   ResourcePrompt → "{p} has resourced N card(s) from hand" /
+//                    "{p} has not resourced any cards"
+// (The resource marker also fires on each regroup's resourcing — harmless: that
+// frame is already a pile-growth stop, and adding the same index is a no-op.)
+const DECISION_RE =
+  /\bwill mulligan\b|\bwill keep their hand\b|\bhas resourced\b|\bhas not resourced any cards\b/i;
+
+// Every string anywhere inside a log entry (string parts, {type:'player',name},
+// nested alert text). Depth-capped — log entries are tiny.
+function collectStrings(v: any, out: string[], depth = 0): void {
+  if (depth > 6 || v == null) return;
+  if (typeof v === 'string') out.push(v);
+  else if (Array.isArray(v)) for (const x of v) collectStrings(x, out, depth + 1);
+  else if (typeof v === 'object') for (const k of Object.keys(v)) collectStrings(v[k], out, depth + 1);
+}
+
+function frameMessages(frame: any): any[] {
+  const msgs = frame?.state?.newMessages;
+  return Array.isArray(msgs) ? msgs : [];
+}
+
+// A frame is a decision stop when its NEWLY-added log lines (present here, absent
+// on the prior frame — keyed by stable serialization) include a mulligan or
+// resourcing decision.
+function hasNewDecision(frame: any, prevFrame: any): boolean {
+  const cur = frameMessages(frame);
+  if (cur.length === 0) return false;
+  const prevKeys = new Set(frameMessages(prevFrame).map((m) => JSON.stringify(m)));
+  for (const m of cur) {
+    if (prevKeys.has(JSON.stringify(m))) continue;
+    const parts: string[] = [];
+    collectStrings(m, parts);
+    if (DECISION_RE.test(parts.join(' '))) return true;
+  }
+  return false;
 }
 
 export function computeActionStops(
@@ -27,6 +76,9 @@ export function computeActionStops(
   if (!frames || frames.length === 0) return [];
   const stops = new Set<number>([0, frames.length - 1]);
   for (let i = 1; i < frames.length; i++) {
+    // Setup mulligan/resource decisions — no active flip, no pile growth ("keep"),
+    // so detect them from the game log (B217).
+    if (hasNewDecision(frames[i], frames[i - 1])) { stops.add(i); continue; }
     if (activeByFrame && activeByFrame[i] !== activeByFrame[i - 1]) { stops.add(i); continue; }
     const cur = frames[i]?.state?.players;
     const prev = frames[i - 1]?.state?.players;

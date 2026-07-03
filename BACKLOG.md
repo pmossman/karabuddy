@@ -13,6 +13,13 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B218] Enforce tag-compose entitlement server-side (anonymized viewers can't comment)
+
+- **Why:** a viewer who isn't the owner / a teammate / on a team the replay is shared with is "anonymized" — they can't SEE tags (privacy), but they can currently still POST them, creating orphan personal comments that only the owner sees (and the author never sees again). The B216 redesign added a **UI-only** gate (compose hidden for anonymized viewers), but the API still accepts these POSTs.
+- **Tension (decide):** this collides with the B131 "share my replay for feedback" flow, where a non-teammate reviewer comments and the OWNER sees it. Options: (b) block non-entitled POSTs everywhere (removes anonymous feedback), or (c) allow comments only on replays that are **public** or **explicitly shared** with the viewer (blocks the random-slug orphan case but keeps intended-reviewer feedback). Leaning (c).
+- **Acceptance:** `POST /api/replays/[slug]/tags` rejects (or the redesign UI + server agree on) comments from viewers with no entitlement per the chosen policy; the extension's in-game tagging (recorder = owner) is unaffected; the B131 owner-sees-anonymous-feedback path is either preserved (option c) or intentionally removed (option b) with docs/CTA updated. Add a test for the chosen rule.
+- **Refs:** B216 (UI gate `canTag={!anonymize}` in `redesign/TagsFeature.tsx` + the Tag HUD); `app/api/replays/[slug]/tags/route.ts` (POST); `lib/tagScope.tagVisibleToViewer`; B131 (owner sees all); B133 (public redacted).
+
 ### [B216] Replay viewer redesign — unified feature-bubble system (mobile ⟷ desktop parity)
 
 - **Why:** the viewer is cluttered, and the tag area on mobile is a cramped, tiny scrollable strip — you can't read more than one tag at a time (see refs). Desktop is fine (companion drawer to the right of the board) but mobile is a separate, worse view-model. We maintain two divergent layouts.
@@ -85,6 +92,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 ## In Progress
 
 ## Done
+
+### [B217] Step-by-action stops on setup mulligan + resourcing decisions
+_completed: 2026-06-30 by claude_
+Stepping by action blew straight through the setup phase: karabast's mulligan + resource steps are "all-player prompts" that set NO `isActionPhaseActivePlayer` (so the active-change rule never fires), and a mulligan DECISION moves no pile counts (a "keep" changes nothing; a "mulligan" redraws 6→6), so neither the active-change nor the pile-growth rule in `computeActionStops` caught them — the resourcing decision post-mulligan got skipped. Added a log-driven rule: a frame is a stop when its NEWLY-added game-log lines (delta vs the prior frame, robust to a cumulative log — same approach as the undo detector) include a mulligan decision (`will mulligan` / `will keep their hand`) or a resourcing decision (`has resourced` / `has not resourced any cards`), matched against authoritative forceteki server text. `actionStops.ts` + tests.
 
 ### [B210] Concept-duplication audit + canonical-components guardrails
 _completed: 2026-06-29 by claude_
