@@ -36,8 +36,19 @@ function pileLen(player: any, zone: string): number {
 //                    "{p} has not resourced any cards"
 // (The resource marker also fires on each regroup's resourcing — harmless: that
 // frame is already a pile-growth stop, and adding the same index is a no-op.)
+//
+// Action DECLARATIONS (B221): after "{p} claims initiative and passes", the
+// opponent takes every remaining action of the phase and karabast keeps
+// isActionPhaseActivePlayer on them the whole time — the active-flip rule sees
+// no boundary, so one step blew through play + attack + … to the regroup draw
+// (Lostrian's r_n5zhum f=77). Each action declared in the log is its own beat:
+// "{p} plays {card}" / "{p} attacks {target} with {unit}" / the claim itself.
+// Deliberately NOT "uses" — ability lines are sub-steps of the action they
+// resolve (shield attaches, reveals…), animated as part of that action's beat.
+// In normal alternating play these frames are already active-flip stops; the
+// Set makes the re-add a no-op.
 const DECISION_RE =
-  /\bwill mulligan\b|\bwill keep their hand\b|\bhas resourced\b|\bhas not resourced any cards\b/i;
+  /\bwill mulligan\b|\bwill keep their hand\b|\bhas resourced\b|\bhas not resourced any cards\b|\bplays\b|\battacks\b|\bclaims initiative\b/i;
 
 // Every string anywhere inside a log entry (string parts, {type:'player',name},
 // nested alert text). Depth-capped — log entries are tiny.
@@ -53,9 +64,9 @@ function frameMessages(frame: any): any[] {
   return Array.isArray(msgs) ? msgs : [];
 }
 
-// A frame is a decision stop when its NEWLY-added log lines (present here, absent
-// on the prior frame — keyed by stable serialization) include a mulligan or
-// resourcing decision.
+// A frame is a log-derived stop when its NEWLY-added lines (present here, absent
+// on the prior frame — keyed by stable serialization) include a setup decision
+// or an action declaration.
 function hasNewDecision(frame: any, prevFrame: any): boolean {
   const cur = frameMessages(frame);
   if (cur.length === 0) return false;
