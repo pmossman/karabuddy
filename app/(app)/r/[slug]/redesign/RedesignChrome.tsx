@@ -95,9 +95,6 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Glow the Play (▶) to invite the first play this session; stops once played and
   // never re-glows (not even when you pause).
   const [invitePlay, setInvitePlay] = useState(true);
-  // Glow the sideboard rail icon to draw attention until it's opened once this session.
-  const [sideboardSeen, setSideboardSeen] = useState(false);
-  useEffect(() => { if (sideboardOpen) setSideboardSeen(true); }, [sideboardOpen]);
   // Deep-link view captured ONCE (?panel=<view>; ?finishReview=<team> implies the
   // Reviews view — B194, from the team Reviews tab). Read via a lazy initializer,
   // not re-read in the effect — otherwise Strict Mode's double-invoked effect strips
@@ -185,7 +182,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // Top-right rail: the sidebar toggle (top corner) + Tags (the messages HUD).
   // Play / gear / jump-to live in the bottom-right cluster; Clip lives in the
   // sidebar's Clips view.
-  const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void; testId?: string }[] = [
+  const railItems: { key: string; icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void; testId?: string }[] = [
     { key: 'sidebar', icon: Icon.sidebar, label: 'Sidebar', active: sidebarOpen, onClick: () => userSetSidebar(!sidebarOpen) },
     // Tags rail = the board HUD, and ONLY the HUD: lit ⇔ HUD open, click toggles it.
     // The panel is the sidebar rail's job; the panel's Tags view opens the HUD via a
@@ -194,8 +191,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
     { key: 'tags', icon: Icon.messages, label: 'Tags', active: hudOpen, badge: tagCountHere > 0 ? tagCountHere : null, onClick: () => setHudOpen((v) => !v) },
   ];
   // Sideboard: only on replays with a swap to show — toggles the splash (open ⇄
-  // close). Lights blue while open, and glows until first opened to draw attention.
-  if (onToggleSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', active: !!sideboardOpen, glow: !sideboardSeen && !sideboardOpen, onClick: onToggleSideboard });
+  // close); lights blue while open.
+  if (onToggleSideboard) railItems.push({ key: 'sideboard', icon: Icon.sideboard, label: 'Sideboard changes', active: !!sideboardOpen, onClick: onToggleSideboard });
 
 
   return (
@@ -236,7 +233,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           gear (a stock rail icon), then the big Play FAB (breathes a glow until
           the first play). Same on both breakpoints. */}
       {!mobileDrawer && (
-        <div style={{ ...chromeColumn, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', gap: 12 }}>
+        <div style={railRow
+          ? { position: 'fixed', right: chromeRight, bottom: 'max(14px, env(safe-area-inset-bottom, 14px))', zIndex: 120, height: PLAY_SIZE, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12 }
+          : { ...chromeColumn, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', gap: 12 }}>
           <RailBtn size={railSize} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
           <RailBtn size={railSize} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
             onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }} />
@@ -294,7 +293,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   );
 }
 
-function RailBtn({ icon, label, active, badge, glow, onClick, testId, size = 44 }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; glow?: boolean; onClick: () => void; testId?: string; size?: number }) {
+function RailBtn({ icon, label, active, badge, onClick, testId, size = 44 }: { icon: ReactNode; label: string; active?: boolean; badge?: number | null; onClick: () => void; testId?: string; size?: number }) {
   return (
     <button type="button" title={label} aria-label={label} aria-pressed={active} onClick={onClick} data-testid={testId}
       style={{
@@ -302,9 +301,8 @@ function RailBtn({ icon, label, active, badge, glow, onClick, testId, size = 44 
         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
         background: active ? 'rgba(77,210,255,0.22)' : 'rgba(255,255,255,0.07)',
         color: active ? tokens.led.on : 'rgba(255,255,255,0.82)',
-        border: `1px solid ${active || glow ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
+        border: `1px solid ${active ? tokens.led.on : 'rgba(255,255,255,0.16)'}`,
         boxShadow: active ? tokens.led.ringGlow : '0 2px 10px rgba(0,0,0,0.35)',
-        animation: glow ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
         backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
       }}>
       <span aria-hidden>{icon}</span>
