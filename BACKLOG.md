@@ -13,6 +13,13 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+### [B220] Extension: non-destructive finalize — phantom-winner lock truncates replays
+
+- **Why:** the secondary truncation cause from the B219 diagnosis (3/14 truncated replays, incl. the user-reported r_9wxwfn): karabast sets a transient `winners` on non-terminal events (opponent disconnect/PlayerLeft, timeout, rolled-back win — forceteki `Game.endGame`), and karabast explicitly supports continuing play after game end. `looksLikeGameEnd` treats any `winners` as terminal → `download('auto')` finalizes, sets `finalizedGameId`, and the recorder PERMANENTLY drops every later frame for that gameId (`03-recorder.js` post-finalize guard). Evidence: final captured frame had opponent base at 6/30 (no possible win), no "has won the game" log message, game demonstrably continued.
+- **What:** make finalize non-destructive — still upload the finalize snapshot on a game-end signal (prompt saves stay), but keep the buffer + periodic timer alive and keep appending frames for the same gameId; re-finalize only if the recording actually GREW (new non-empty patches) since the last finalize, so true post-game static/lobby states don't thrash uploads (the original reason the lock exists — see the finalizedGameId comment). Server side already copes: stale guard + B120 merge let the longer recording win. The B219 `diag` (lastGamestateAtMs vs durationMs) will show how often this fires in the wild.
+- **Acceptance:** a recording that hits a transient `winners` then continues captures to the REAL end (extend the karabast-sim fixture/scenario: winners mid-game → more frames → bigger final upload); post-game lobby/cleanup states still don't re-finalize or double-toast; forward-contract + recorder tests green.
+- **Refs:** B219 diagnosis (23-replay prod audit), `extension/replays/03-recorder.js` (`finalizedGameId`, `scheduleAutoDownload`, `download`), `extension/replays/02-decoder.js` (`looksLikeGameEnd`), forceteki `Game.endGame` / `GameEndReason`, scripts/karabast-sim/.
+
 ### [B218] Enforce tag-compose entitlement server-side (anonymized viewers can't comment)
 
 - **Why:** a viewer who isn't the owner / a teammate / on a team the replay is shared with is "anonymized" — they can't SEE tags (privacy), but they can currently still POST them, creating orphan personal comments that only the owner sees (and the author never sees again). The B216 redesign added a **UI-only** gate (compose hidden for anonymized viewers), but the API still accepts these POSTs.
@@ -92,6 +99,10 @@ A new chat can be bootstrapped with the prompt at `scripts/continuation-extensio
 ## In Progress
 
 ## Done
+
+### [B219] Extension: transport-agnostic capture — replays truncate on socket.io polling fallback
+_completed: 2026-07-02 by claude_
+Diagnosed from 23 prod replays of a reporting user: 61% truncated, all single contiguous recordings stopping mid-game. Root cause (11/14): karabast's socket.io uses default `['polling','websocket']` transports + auto-reconnect, so a mid-game reconnect falls back to HTTP long-polling — invisible to the recorder's WebSocket-only proxy. Shipped in ext 1.2.0: polling capture (XHR+fetch wrap, observe-only; `\x1e`-batched EIO4 parser in 02-decoder; WS proxy path kept byte-identical), content-free transport `diag` in every payload (dedup-preserved through the B120 merge), and the `karabast-sim` validation harness (`npm run sim:karabast`, scripts/karabast-sim/ — anonymized real game over fake WS+polling, auto PASS/FAIL). Live-verified with a real unpacked extension via CDP-driven Chrome for Testing: all scenarios green incl. the WS-drop→polling production case, upload → local viewer, server-side merge. Secondary cause (3/14, phantom-winner finalize-lock) split to B220. Post-CWS-approval: bump `KARABUDDY_EXT_LATEST`.
 
 ### [B217] Step-by-action stops on setup mulligan + resourcing decisions
 _completed: 2026-06-30 by claude_

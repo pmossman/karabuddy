@@ -89,6 +89,31 @@
     // fallback (both hands visible) can still flag a spectated game.
     let spectatorParam = null;
 
+    // B219: transport diagnostics. karabast's socket.io (Game.context) uses the
+    // default ['polling','websocket'] transports + auto-reconnect, so a mid-game
+    // reconnect can fall back to HTTP long-polling — which the window.WebSocket
+    // proxy can't see. We now ALSO capture polling (below); `diag` records the
+    // transport lifecycle so a truncated replay self-explains (did the WS close,
+    // did we fall back to polling, when did the last gamestate actually arrive).
+    // Embedded in the upload payload + preserved through the server slice-merge.
+    const DIAG_MAX_EVENTS = 60;
+    const diag = { wsOpen: 0, wsClose: 0, wsErr: 0, pollIn: 0, transport: null, lastGamestateAtMs: 0, events: [] };
+    const logDiag = (type, extra) => {
+        try {
+            const e = { t: Date.now() - recordingStart, type };
+            if (extra) Object.assign(e, extra);
+            diag.events.push(e);
+            if (diag.events.length > DIAG_MAX_EVENTS) diag.events.splice(0, diag.events.length - DIAG_MAX_EVENTS);
+            NS.dlog?.(`[karabuddy] transport ${type}`, extra || '');
+        } catch {}
+    };
+    const resetDiag = () => {
+        diag.wsOpen = diag.wsClose = diag.wsErr = diag.pollIn = 0;
+        diag.transport = null;
+        diag.lastGamestateAtMs = 0;
+        diag.events.length = 0;
+    };
+
     const resetRecording = () => {
         recording.length = 0;
         tags.length = 0;
@@ -104,6 +129,7 @@
         // gamestate freezes a fresh snapshot. latestLobbyState is preserved —
         // karabast may have already pushed it before the new match starts.
         matchLobbySnapshot = null;
+        resetDiag();
         stopPeriodicUploads();
         // Note: currentKarabuddyUrl intentionally NOT cleared here — keeps
         // the "Open on karabuddy" link visible after a match finalizes
@@ -277,6 +303,9 @@
             if (incomingId) currentGameId = incomingId;
 
             const t = Date.now() - recordingStart;
+            // B219: "last time we heard ANY gamestate" (even a no-op dup) — a
+            // large gap between this and finalize means the socket went silent.
+            diag.lastGamestateAtMs = t;
             const norm = d.normalizeGamestate(structuredClone(original));
             // B105 fallback: the socket URL didn't say spectator=false AND
             // karabast is sending us BOTH players' hands — the unmasked view
@@ -361,7 +390,16 @@
                 strippedPerPlayer: [...d.PLAYER_NOISE]
             },
             events: recording,
-            tags: tags.slice()
+            tags: tags.slice(),
+            // B219: transport diagnostics (content-free — counts + timings +
+            // short-URL/close-code events). Lets a truncated replay explain why
+            // capture stopped (WS close → polling fallback → silence).
+            diag: {
+                wsOpen: diag.wsOpen, wsClose: diag.wsClose, wsErr: diag.wsErr,
+                pollIn: diag.pollIn, transport: diag.transport,
+                lastGamestateAtMs: diag.lastGamestateAtMs, durationMs,
+                events: diag.events.slice(),
+            },
         };
     };
     const buildPayloadText = (reason, durationMs, actionCount) =>
@@ -661,18 +699,51 @@
 
     // ----- attachInterceptor(ws): wire a real WebSocket up to the recorder. -----
     const attachInterceptor = (ws) => {
+        logDiag('ws-construct');
+        ws.addEventListener('open', () => { diag.wsOpen++; diag.transport = 'websocket'; logDiag('ws-open'); });
         ws.addEventListener('message', (e) => {
             const frame = D().parseEngineIoFrame(e.data);
             if (frame) record('in', frame);
         });
-        ws.addEventListener('close', flushOnSocketClose);
-        ws.addEventListener('error', flushOnSocketClose);
+        // B219: a mid-game WS close is the moment capture is at risk — if
+        // karabast reconnects over polling, only the polling interceptor below
+        // keeps us alive. Log the close (+ code) so a truncated replay shows it.
+        ws.addEventListener('close', (e) => { diag.wsClose++; logDiag('ws-close', { code: e?.code }); flushOnSocketClose(); });
+        ws.addEventListener('error', () => { diag.wsErr++; logDiag('ws-error'); flushOnSocketClose(); });
         const origSend = ws.send.bind(ws);
         ws.send = function (data) {
             const frame = D().parseEngineIoFrame(data);
             if (frame) record('out', frame);
             return origSend(data);
         };
+    };
+
+    // B219: karabast's socket.io endpoint (any transport) carries the engine.io
+    // handshake params (EIO=/transport=). Used to spot the POLLING transport's
+    // XHR/fetch calls (transport=websocket is handled by the proxy below).
+    const isKarabastSocketIo = (url) =>
+        typeof url === 'string' && /karabast/.test(url) && /[?&](EIO=|transport=)/.test(url);
+    // B105 (polling copy): same spectator-param sniff as the WebSocket proxy
+    // below. Deliberately DUPLICATED rather than shared — the WS construct block
+    // is the proven, critical capture path and stays byte-identical; the polling
+    // path carries its own copy so adding it can't perturb the WS path.
+    const readSpectatorParamFromUrl = (url) => {
+        if (/[?&]spectator=true(?:&|$)/i.test(url) || /spectator%3Dtrue/i.test(url)) spectatorParam = true;
+        else if (/[?&]spectator=false(?:&|$)/i.test(url) || /spectator%3Dfalse/i.test(url)) spectatorParam = false;
+    };
+    // B219: feed a polling-transport HTTP body's engine.io packets through the
+    // same record() path as WS frames. Duplicate gamestates (e.g. one seen over
+    // both transports during an upgrade) diff to an empty patch and self-drop.
+    const ingestPollingBody = (text, url) => {
+        try {
+            readSpectatorParamFromUrl(url);
+            const frames = D().parseEngineIoPollingPayload(text);
+            if (frames.length) {
+                diag.pollIn++;
+                if (diag.transport !== 'polling') { diag.transport = 'polling'; logDiag('poll-active'); }
+            }
+            for (const f of frames) record('in', f);
+        } catch {}
     };
 
     // Install the WebSocket Proxy at module-load time so we catch karabast's
@@ -707,6 +778,56 @@
             return ws;
         }
     });
+
+    // B219: capture the engine.io POLLING transport too. socket.io (Game.context)
+    // uses the default ['polling','websocket'] transports + auto-reconnect, so a
+    // mid-game reconnect starts on HTTP long-polling and upgrades to WebSocket —
+    // if that upgrade is slow or fails (flaky net, proxy, karabast's inactivity
+    // disconnect), gamestates keep arriving over polling, invisible to the WS
+    // proxy above. That silent gap is the #1 cause of replays cut off before the
+    // real end. We wrap XHR (engine.io-client's polling transport) + fetch
+    // (belt-and-suspenders) to read those bodies. Observe-only: always call the
+    // originals; a parse failure can never affect karabast's own traffic. Guarded
+    // so a re-injected content script doesn't double-wrap.
+    if (!window.__karabuddyPollPatched) {
+        window.__karabuddyPollPatched = true;
+        const xhrOpen = XMLHttpRequest.prototype.open;
+        const xhrSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function (method, url) {
+            try { this.__kbPollUrl = isKarabastSocketIo(url) ? url : null; } catch {}
+            return xhrOpen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function () {
+            try {
+                if (this.__kbPollUrl) {
+                    this.addEventListener('load', () => {
+                        try {
+                            // responseText throws for arraybuffer/blob types — guard.
+                            if (this.status >= 200 && this.status < 300 &&
+                                (this.responseType === '' || this.responseType === 'text')) {
+                                ingestPollingBody(this.responseText, this.__kbPollUrl);
+                            }
+                        } catch {}
+                    });
+                }
+            } catch {}
+            return xhrSend.apply(this, arguments);
+        };
+        const origFetch = window.fetch;
+        if (typeof origFetch === 'function') {
+            window.fetch = function (input) {
+                let url = null;
+                try { url = typeof input === 'string' ? input : (input && input.url); } catch {}
+                const p = origFetch.apply(this, arguments);
+                try {
+                    if (isKarabastSocketIo(url)) {
+                        p.then((resp) => { resp.clone().text().then((t) => ingestPollingBody(t, url)).catch(() => {}); }).catch(() => {});
+                    }
+                } catch {}
+                return p;
+            };
+        }
+    }
 
     // Best-effort upload on tab close / navigation away (B29). Covers the
     // window between periodic snapshots — without this, closing the tab
@@ -754,6 +875,10 @@
         // karabuddy.com URL of the most recent successful upload for the
         // current recording session. Returns null until uploadReplay resolves
         // with a slug, and is cleared again when a new recording starts.
-        getCurrentKarabuddyUrl: () => currentKarabuddyUrl
+        getCurrentKarabuddyUrl: () => currentKarabuddyUrl,
+        // B219: snapshot of the transport diagnostics — read by the local
+        // karabast-sim validation harness (and handy in a live DevTools
+        // console) to see which transport is feeding the recorder.
+        getDiag: () => ({ ...diag, events: diag.events.slice() })
     };
 })();

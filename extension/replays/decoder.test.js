@@ -142,3 +142,32 @@ describe('analyzeRecording (B75 — per-player upload threshold)', () => {
     expect(r.minPlayerActions).toBe(1);
   });
 });
+
+describe('parseEngineIoPollingPayload (B219 — capture the polling transport)', () => {
+  // A socket.io v4 event frame is "42" + JSON array. engine.io v4 polling
+  // batches packets with the \x1e record separator.
+  const gs = (id) => `42["gamestate",{"id":"${id}","players":{}}]`;
+
+  it('extracts each gamestate event from a \\x1e-batched polling body', () => {
+    const body = [gs('g1'), gs('g2')].join('\x1e');
+    const frames = D.parseEngineIoPollingPayload(body);
+    expect(frames.map((f) => f.event)).toEqual(['gamestate', 'gamestate']);
+    expect(frames[0].args[0].id).toBe('g1');
+    expect(frames[1].args[0].id).toBe('g2');
+  });
+
+  it('drops non-message packets (ping/pong/handshake) and keeps events', () => {
+    // '2'/'3' = engine.io ping/pong, '0{...}' = open handshake — all non-message.
+    const body = ['2', gs('g1'), '3', '0{"sid":"x"}'].join('\x1e');
+    const frames = D.parseEngineIoPollingPayload(body);
+    expect(frames).toHaveLength(1);
+    expect(frames[0].args[0].id).toBe('g1');
+  });
+
+  it('parses a single unbatched packet and tolerates empty/garbage input', () => {
+    expect(D.parseEngineIoPollingPayload(gs('solo'))[0].args[0].id).toBe('solo');
+    expect(D.parseEngineIoPollingPayload('')).toEqual([]);
+    expect(D.parseEngineIoPollingPayload('not-a-frame')).toEqual([]);
+    expect(D.parseEngineIoPollingPayload(null)).toEqual([]);
+  });
+});
