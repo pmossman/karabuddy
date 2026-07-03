@@ -2,8 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-// Remembers a manual grip-resize of the Tag HUD across visits.
+// Remembers a manual grip-resize / drag of the Tag HUD across visits.
 const SIZE_KEY = 'kb:redesign:hudSize';
+const POS_KEY = 'kb:redesign:hudPos';
+
+// Default spot: a bit up-left of centre on desktop (clear of the bases/leaders
+// column — where Parker kept dragging it anyway). Mobile stays centred: there's
+// no spare gutter, and the drawer covers the HUD when open regardless.
+function defaultPos(mobile: boolean): { x: number; y: number } {
+  if (mobile || typeof window === 'undefined') return { x: 0, y: 0 };
+  return { x: -Math.min(240, window.innerWidth * 0.17), y: -Math.min(150, window.innerHeight * 0.14) };
+}
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { scopeLabel, scopeFromMentions } from '@/lib/commentScope';
 import { MentionInput, MentionedComment, type MentionData } from '../MentionInput';
@@ -21,7 +30,7 @@ const truncate = (s: string, n = 22) => { const t = (s || '').replace(/\s+/g, ' 
 
 type Editor = null | { kind: 'add' } | { kind: 'reply'; id: string } | { kind: 'edit'; id: string };
 
-export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, canTag, sidebarW = 0, onClose, armedTeams, lastViewedAt }: {
+export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, canTag, sidebarW = 0, mobile = false, onClose, armedTeams, lastViewedAt }: {
   tags: ViewerTag[];
   currentIndex: number;
   onJump: (frame: number) => void;
@@ -32,6 +41,7 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   removeTag: (id: string) => void;
   canTag: boolean;
   sidebarW?: number;
+  mobile?: boolean;
   onClose: () => void;
   armedTeams?: { slug: string; name: string }[];
   lastViewedAt?: string | null;
@@ -83,7 +93,20 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   const bubbleRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+  // Dragged position is remembered across visits (desktop; mobile stays put at
+  // centre). Clamped on restore so a stale spot can't strand it off-screen.
+  const [pos, setPos] = useState(() => {
+    const dflt = defaultPos(mobile);
+    if (mobile || typeof window === 'undefined') return dflt;
+    try {
+      const raw = localStorage.getItem(POS_KEY);
+      if (!raw) return dflt;
+      const v = JSON.parse(raw) as { x?: number; y?: number };
+      if (typeof v.x !== 'number' || typeof v.y !== 'number') return dflt;
+      const mx = window.innerWidth / 2 - 60, my = window.innerHeight / 2 - 80;
+      return { x: Math.max(-mx, Math.min(mx, v.x)), y: Math.max(-my, Math.min(my, v.y)) };
+    } catch { return dflt; }
+  });
   // A manual grip-resize is remembered (Lostrian was re-growing the panel for
   // every tag). The remembered height also FLOORS the auto-fit below, so tag
   // navigation never shrinks the panel under what the user asked for.
@@ -104,9 +127,9 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
   useEffect(() => () => { cleanupRef.current?.(); animRef.current?.cancel(); }, []);
   const stopAnim = () => animRef.current?.cancel();
   const recenter = () => {
-    stopAnim(); setPos({ x: 0, y: 0 }); setSize({ w: null, h: null });
+    stopAnim(); setPos(defaultPos(mobile)); setSize({ w: null, h: null });
     userHRef.current = null;
-    try { localStorage.removeItem(SIZE_KEY); } catch { /* private mode */ }
+    try { localStorage.removeItem(SIZE_KEY); localStorage.removeItem(POS_KEY); } catch { /* private mode */ }
   };
 
   // Navigating to a new tag re-fits the panel to the new content (grow OR shrink).
@@ -145,13 +168,18 @@ export function TagHud({ tags, currentIndex, onJump, replaySlug, toOriginalFrame
     if (!rect) return;
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY, ox = pos.x, oy = pos.y, m = 8, keepBottom = 90;
+    let nx = ox, ny = oy;
     const move = (ev: PointerEvent) => {
       const vw = window.innerWidth, vh = window.innerHeight;
       const dx = Math.min(Math.max(ev.clientX - sx, m - rect.left), (vw - m) - rect.right);
       const dy = Math.min(Math.max(ev.clientY - sy, m - rect.top), (vh - keepBottom) - rect.top);
-      setPos({ x: ox + dx, y: oy + dy });
+      nx = ox + dx; ny = oy + dy;
+      setPos({ x: nx, y: ny });
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null; };
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cleanupRef.current = null;
+      if (!mobile) try { localStorage.setItem(POS_KEY, JSON.stringify({ x: nx, y: ny })); } catch { /* private mode */ }
+    };
     cleanupRef.current = up;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);

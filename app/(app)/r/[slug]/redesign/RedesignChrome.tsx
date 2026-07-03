@@ -206,6 +206,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       <style>{PULSE_KEYFRAMES}</style>
       {showHud && (
         <TagHud
+          mobile={mode === 'mobile'}
           tags={tags} currentIndex={currentIndex} onJump={onJump}
           replaySlug={replaySlug} toOriginalFrame={toOriginalFrame} appendTag={appendTag} updateTag={updateTag} removeTag={removeTag} canTag={canTag}
           armedTeams={armedTeams} lastViewedAt={lastViewedAt}
