@@ -14,8 +14,8 @@ export const GLASS: CSSProperties = {
   boxShadow: '0 12px 44px rgba(0,0,0,0.5)',
 };
 
-// The attention pulse shared by the Play invite + the sideboard rail glow.
-// Inject once per mounted chrome (a duplicate definition is harmless but noisy).
+// The first-play invite pulse on the Play FAB. Inject once per mounted chrome
+// (a second definition of the same name would silently win by source order).
 export const PULSE_KEYFRAMES =
   '@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 7px 1px rgba(77,210,255,0.32)}50%{box-shadow:0 0 17px 5px rgba(77,210,255,0.55)}}';
 

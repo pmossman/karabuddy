@@ -19,12 +19,18 @@ import { Icon } from './icons';
 import { PULSE_KEYFRAMES } from './ui';
 import { type ClipSummary } from '../ClipsList';
 
-// B216 redesign — the unified viewer chrome.
-// Conceptual split (Parker): the RAIL = current-frame actions (tags · play/pause ·
-// jump-to · clip · sidebar toggle); the SIDEBAR = whole-replay views behind a view
-// selector (tag feed · game log · matchup · decks · playback · share · clips).
-// Sidebar = a resizable dock on desktop, a slide-out drawer on mobile. The Tag HUD
-// is an independent overlay. Same model drives both screen sizes.
+// B216 redesign — the unified viewer chrome. One design on both breakpoints
+// (differences must be functional — Parker's rule):
+// - top-right RAIL: sidebar toggle · Tags HUD toggle · sideboard (when relevant) ·
+//   the double-sided capsule (flip/reveal, when canFlip). Vertical column;
+//   phone-landscape lays it horizontally (row-reverse, so Sidebar hugs its edge).
+// - bottom-right POCKET: jump-to · playback gear · the big Play FAB (the single
+//   oversized control). Horizontal along the bottom in phone-landscape.
+// - SIDEBAR panel: whole-replay views behind a view selector (tags · reviews ·
+//   log · matchup · decks · playback · share · clips); dock on desktop, drawer
+//   on mobile. The Tag HUD is an independent overlay.
+// Layout contract: every small icon is a RailBtn at railSize; both right-edge
+// clusters share chromeColumn, and the frame chevrons derive the same axis.
 
 export interface ViewerControls extends PlaybackControls {
   chapters: Chapter[];

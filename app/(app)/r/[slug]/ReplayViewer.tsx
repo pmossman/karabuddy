@@ -896,8 +896,6 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--kb-header-h, 0px))', overflow: 'hidden' }}>
-      {/* B121: pulse keyframes for the first-time Play cue. */}
-      <style>{'@keyframes kb-play-pulse{0%,100%{box-shadow:0 0 0 0 rgba(77,210,255,0)}50%{box-shadow:0 0 16px 4px rgba(77,210,255,0.75)}}'}</style>
       {/* B121: onboarding CTA for visitors without the extension (the viewer has
           no global header). Renders nothing for extension users / once dismissed. */}
       <InstallExtensionCta variant="banner" alreadyLinked={hasLinkedExtension} />

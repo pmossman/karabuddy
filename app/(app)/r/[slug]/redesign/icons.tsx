@@ -7,7 +7,6 @@ const svg = (children: ReactNode, opts?: { fill?: boolean }): ReactNode => (
 );
 
 export const Icon: Record<string, ReactNode> = {
-  tag: svg(<><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none" /></>),
   log: svg(<><line x1="8" y1="7" x2="20" y2="7" /><line x1="8" y1="12" x2="20" y2="12" /><line x1="8" y1="17" x2="15" y2="17" /><circle cx="4.5" cy="7" r="0.6" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="0.6" fill="currentColor" stroke="none" /><circle cx="4.5" cy="17" r="0.6" fill="currentColor" stroke="none" /></>),
   matchup: svg(<><polyline points="10 6 5 12 10 18" /><polyline points="14 6 19 12 14 18" /></>),
   decks: svg(<><rect x="3" y="7" width="12" height="14" rx="2" /><rect x="9" y="3" width="12" height="14" rx="2" /></>),
