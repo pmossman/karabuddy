@@ -906,7 +906,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           right (fixed position), with the chevrons offset past it. */}
       {/* data-frame/-frames: a stable machine-readable "viewer is at frame N of M"
           sentinel for tests (1-based, collapsed timeline) — no visual footprint. */}
-      <div ref={boardRef} data-testid="board" data-frame={currentIndex + 1} data-frames={frames?.length ?? 0} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+      {/* zIndex: 0 makes the board a stacking context, so gameboard-internal
+          z-indexes can't escape above the fixed chrome (they were pointer-
+          intercepting the corner controls; MUI portals to <body> are unaffected). */}
+      <div ref={boardRef} data-testid="board" data-frame={currentIndex + 1} data-frames={frames?.length ?? 0} style={{ flex: 1, position: 'relative', minWidth: 0, zIndex: 0 }}>
         {frames ? (
           <>
             <Gameboard />
