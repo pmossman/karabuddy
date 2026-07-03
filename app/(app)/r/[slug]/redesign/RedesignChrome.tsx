@@ -213,47 +213,27 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           onJump={(f) => { onJump(f); setJumpOpen(false); }} onClose={() => setJumpOpen(false)} />
       )}
 
-      {/* Bottom-right transport cluster (its pre-redesign home, dock-aware): the
-          jump-to bubble + a larger Play/Pause FAB (breathes a glow WHILE PLAYING)
-          with a small gear OVERLAPPING it — clearly its playback options. */}
+      {/* Bottom-right transport pocket — a plain centred column: Jump, then the
+          gear (a stock rail icon), then the big Play FAB (breathes a glow until
+          the first play). Same on both breakpoints. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
-          {/* Jump-to — stacked ABOVE the play button. */}
-          {/* Jump sits above the play row with a little extra air. */}
-          <div style={{ marginBottom: 4 }}>
-            <RailBtn size={mode === 'mobile' ? 38 : undefined} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
-          </div>
-          {/* Double-sided (POV) controls beside Play — grouped in a labelled glass
-              rect so it's clear WHY they appear (only on double-sided replays).
-              Flip is a momentary action (fires the curtain, never lit);
-              reveal-hands is a toggle, lit while on. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* Play + the mini-gear nestled diagonally off its corner — no overlap:
-              Play sits slightly up-left (and a touch smaller) so the gear owns the
-              corner beside it. */}
-          <div style={{ position: 'relative' }}>
-            <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
-              style={{
-                width: 52, height: 52, margin: '0 18px 18px 0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
-                position: 'relative', zIndex: 1,
-                background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
-                color: controls.playing ? tokens.led.on : '#eef2f8',
-                border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
-                boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
-                backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                // Glow the ▶ to invite the first play; not while playing, and not after pausing.
-                animation: invitePlay && !controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
-              }}>
-              <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
-            </button>
-            {/* A plain RailBtn so its border/active treatment can't drift from
-                the other icons; the wrapper only places it in the freed corner. */}
-            <div style={{ position: 'absolute', right: 0, bottom: 0 }}>
-              <RailBtn size={28} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
-                onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }} />
-            </div>
-          </div>
-          </div>
+        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <RailBtn size={mode === 'mobile' ? 38 : 44} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
+          <RailBtn size={mode === 'mobile' ? 38 : 44} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
+            onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }} />
+          <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
+            style={{
+              width: 58, height: 58, padding: 0, boxSizing: 'border-box', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+              background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
+              color: controls.playing ? tokens.led.on : '#eef2f8',
+              border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
+              boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
+              backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+              // Glow the ▶ to invite the first play; not while playing, and not after pausing.
+              animation: invitePlay && !controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
+            }}>
+            <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
+          </button>
         </div>
       )}
 
