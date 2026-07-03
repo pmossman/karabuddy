@@ -74,7 +74,7 @@ test('mobile: transport cluster is usable with the panel closed — Play↔Pause
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const play = page.getByRole('button', { name: 'Play', exact: true });
     await expect(play).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Playback options' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Playback options' })).toBeVisible(); // tucked behind Play
     await expect(page.getByRole('button', { name: 'Jump to a moment' })).toBeVisible();
 
     // One-tap play: the FAB's label flips to Pause while playing, and back.
@@ -84,8 +84,9 @@ test('mobile: transport cluster is usable with the panel closed — Play↔Pause
     await pause.click();
     await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
 
-    // The gear opens the panel straight to the Playback view.
-    await page.getByRole('button', { name: 'Playback options' }).click();
+    // The gear opens the panel straight to the Playback view. It's tucked BEHIND
+    // Play's bottom-right corner, so click its exposed crescent (centre is covered).
+    await page.getByRole('button', { name: 'Playback options' }).click({ position: { x: 30, y: 30 } });
     const drawer = page.getByRole('dialog', { name: 'Playback' });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText('Speed', { exact: true })).toBeVisible();
@@ -244,7 +245,7 @@ test('mobile: playback view exposes Speed + Step-by controls (landscape + portra
     const r = await loadReplay(page, request);
     await openViewer(page, r.slug);
 
-    await page.getByRole('button', { name: 'Playback options' }).click();
+    await page.getByRole('button', { name: 'Playback options' }).click({ position: { x: 30, y: 30 } });
     const drawer = page.getByRole('dialog', { name: 'Playback' });
     await expect(drawer).toBeVisible();
     // Literal speed multipliers (relative to the retuned 1× baseline).
