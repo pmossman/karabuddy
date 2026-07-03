@@ -241,11 +241,13 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                 </div>
               </div>
             )}
-          {/* Play + the mini-gear riding its corner (both breakpoints). */}
+          {/* Play + the mini-gear nestled diagonally off its corner — no overlap:
+              Play sits slightly up-left (and a touch smaller) so the gear owns the
+              corner beside it. */}
           <div style={{ position: 'relative' }}>
             <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
               style={{
-                width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+                width: 52, height: 52, margin: '0 18px 18px 0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
                 position: 'relative', zIndex: 1,
                 background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
                 color: controls.playing ? tokens.led.on : '#eef2f8',
@@ -259,7 +261,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
             </button>
             <button type="button" title="Playback options" aria-label="Playback options" onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }}
               style={{
-                position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+                position: 'absolute', right: 0, bottom: 0, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
                 // Light glass (matches the rail bubbles) — the old near-opaque navy
                 // read as a black blob riding the Play button.
                 background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(255,255,255,0.16)',
