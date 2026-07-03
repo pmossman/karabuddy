@@ -161,7 +161,19 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   };
   const activeView = VIEWS.find((v) => v.id === sidebarView)!;
 
-  const railRight = desktopDock ? sidebarW + 14 : 14;
+  // ===== Chrome layout contract =====
+  // Every small round icon (rail, jump, gear, capsule) is a RailBtn at ONE size
+  // per breakpoint, and both right-edge columns (top rail + bottom pocket) share
+  // ONE fixed-width, centre-aligned container — so all icon centres are forced
+  // onto a single vertical axis structurally. Play is the ONLY special case
+  // (bigger; its centre sits on the same axis because the column centres it).
+  const railSize = mode === 'mobile' ? 38 : 44;
+  const PLAY_SIZE = 58;
+  const chromeRight = `calc(${desktopDock ? sidebarW : 0}px + max(14px, env(safe-area-inset-right, 14px)))`;
+  const chromeColumn: React.CSSProperties = {
+    position: 'fixed', right: chromeRight, width: PLAY_SIZE, zIndex: 120,
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+  };
 
   // Top-right rail: the sidebar toggle (top corner) + Tags (the messages HUD).
   // Play / gear / jump-to live in the bottom-right cluster; Clip lives in the
@@ -217,13 +229,13 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
           gear (a stock rail icon), then the big Play FAB (breathes a glow until
           the first play). Same on both breakpoints. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', zIndex: 121, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', right: `calc(${desktopDock ? sidebarW : 0}px + max(18px, env(safe-area-inset-right, 18px)))`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <RailBtn size={mode === 'mobile' ? 38 : 44} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
-          <RailBtn size={mode === 'mobile' ? 38 : 44} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
+        <div style={{ ...chromeColumn, bottom: 'max(18px, env(safe-area-inset-bottom, 18px))', gap: 12 }}>
+          <RailBtn size={railSize} icon={Icon.jump} label="Jump to a moment" active={jumpOpen} onClick={() => setJumpOpen((v) => !v)} />
+          <RailBtn size={railSize} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
             onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }} />
           <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
             style={{
-              width: 58, height: 58, padding: 0, boxSizing: 'border-box', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
+              width: PLAY_SIZE, height: PLAY_SIZE, padding: 0, boxSizing: 'border-box', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
               background: controls.playing ? 'rgba(77,210,255,0.24)' : 'rgba(255,255,255,0.09)',
               color: controls.playing ? tokens.led.on : '#eef2f8',
               border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
@@ -239,7 +251,9 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
 
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
       {!mobileDrawer && (
-        <div style={{ position: 'fixed', top: railRow ? 'calc(var(--kb-header-h, 0px) + 10px)' : 'calc(var(--kb-header-h, 46px) + 14px)', right: railRow ? 'max(12px, env(safe-area-inset-right, 12px))' : railRight, zIndex: 120, display: 'flex', flexDirection: railRow ? 'row' : 'column', gap: mode === 'mobile' ? 8 : 10, alignItems: 'center' }}>
+        <div style={railRow
+          ? { position: 'fixed', top: 'calc(var(--kb-header-h, 0px) + 10px)', right: 'max(12px, env(safe-area-inset-right, 12px))', zIndex: 120, display: 'flex', flexDirection: 'row', gap: 8, alignItems: 'center' }
+          : { ...chromeColumn, top: 'calc(var(--kb-header-h, 46px) + 14px)', gap: mode === 'mobile' ? 8 : 10 }}>
           {railItems.map(({ key, ...it }) => (
             <div key={key} style={{ display: 'flex', flexDirection: railRow ? 'row' : 'column', alignItems: 'center', gap: mode === 'mobile' ? 8 : 10 }}>
               {/* subtle divider between the sidebar toggle (whole-replay) and Tags
@@ -250,7 +264,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                   ? { width: 1, height: 26, background: 'rgba(255,255,255,0.14)' }
                   : { width: 26, height: 1, background: 'rgba(255,255,255,0.14)' }} />
               )}
-              <RailBtn {...it} size={mode === 'mobile' ? 38 : 44} />
+              <RailBtn {...it} size={railSize} />
             </div>
           ))}
           {/* Double-sided pair — a subtle capsule marks them as one unit, riding
@@ -263,8 +277,8 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               padding: 4, borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(16,20,28,0.35)',
               backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
             }}>
-              <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} testId="flip-button" size={mode === 'mobile' ? 34 : 40} />
-              <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} testId="reveal-toggle" size={mode === 'mobile' ? 34 : 40} />
+              <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} testId="flip-button" size={railSize} />
+              <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} testId="reveal-toggle" size={railSize} />
             </div>
           )}
         </div>
