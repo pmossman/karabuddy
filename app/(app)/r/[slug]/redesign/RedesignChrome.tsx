@@ -258,10 +258,12 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
       {/* The rail — current-frame actions. Hidden while the mobile drawer is open. */}
       {!mobileDrawer && (
         <div style={railRow
-          ? { position: 'fixed', top: 'calc(var(--kb-header-h, 0px) + 10px)', right: 'max(12px, env(safe-area-inset-right, 12px))', zIndex: 120, display: 'flex', flexDirection: 'row', gap: 8, alignItems: 'center' }
+          // row-REVERSE: the source order (sidebar first) then renders the Sidebar
+          // toggle nearest the right edge — the edge its panel slides from.
+          ? { position: 'fixed', top: 'calc(var(--kb-header-h, 0px) + 10px)', right: 'max(12px, env(safe-area-inset-right, 12px))', zIndex: 120, display: 'flex', flexDirection: 'row-reverse', gap: 8, alignItems: 'center' }
           : { ...chromeColumn, top: 'calc(var(--kb-header-h, 46px) + 14px)', gap: mode === 'mobile' ? 8 : 10 }}>
           {railItems.map(({ key, ...it }) => (
-            <div key={key} style={{ display: 'flex', flexDirection: railRow ? 'row' : 'column', alignItems: 'center', gap: mode === 'mobile' ? 8 : 10 }}>
+            <div key={key} style={{ display: 'flex', flexDirection: railRow ? 'row-reverse' : 'column', alignItems: 'center', gap: mode === 'mobile' ? 8 : 10 }}>
               {/* subtle divider between the sidebar toggle (whole-replay) and Tags
                   (current-frame). No side margins — a wider divider box would
                   re-centre its wrapper and knock the icons out of column. */}
