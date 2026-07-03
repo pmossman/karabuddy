@@ -7,6 +7,9 @@ import { useRef, useState } from 'react';
 // breakpoint, pinned at vertical centre. The only geometry they react to is the
 // docked desktop panel (the parent computes rightOffset from its width). Tag
 // nav lives in the Tag HUD (plus the `[` / `]` shortcuts), not here.
+// Exported so ReplayViewer can centre the chevrons on the chrome axis.
+export const CHEVRON_W = 36;
+
 export function FrameNavOverlay({
   leftOffset,
   rightOffset,
@@ -80,7 +83,7 @@ function ChevronButton({
         top: verticalCenter,
         transform: `translateY(-50%) translateX(${pressed ? nudge : 0}px)`,
         zIndex: 90,
-        width: 36,
+        width: CHEVRON_W,
         height: 84,
         background: pressed ? 'rgba(77, 210, 255, 0.32)' : 'rgba(255,255,255,0.07)',
         color: disabled ? '#4a4e56' : '#d6e7ff',

@@ -49,6 +49,14 @@ const CHAPTER_COLOR: Record<string, string> = { start: '#8aa0b8', round: '#5db4f
 // Remembers whether you left the desktop Tag HUD open ('1') or closed ('0').
 const HUD_PREF_KEY = 'kb:redesign:hudOpen';
 
+// ===== Chrome layout contract (shared) =====
+// The right-edge chrome sits on ONE vertical axis: edge padding CHROME_EDGE_PX
+// (grown by the safe-area inset) + half of PLAY_SIZE, the widest control. Anything
+// that wants to sit on the axis (the frame chevrons, via ReplayViewer) derives its
+// offset from these SAME constants — alignment by construction, not arithmetic.
+export const CHROME_EDGE_PX = 14;
+export const PLAY_SIZE = 58;
+
 export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, toOriginalFrame, appendTag, updateTag, removeTag, armedTeams, lastViewedAt, messagesByFrame, matchup, decks, controls, onDockWidthChange, canTag, onToggleSideboard, sideboardOpen, onArmedTeamsChange }: {
   mode: 'desktop' | 'mobile';
   tags: ViewerTag[];
@@ -168,8 +176,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
   // onto a single vertical axis structurally. Play is the ONLY special case
   // (bigger; its centre sits on the same axis because the column centres it).
   const railSize = mode === 'mobile' ? 38 : 44;
-  const PLAY_SIZE = 58;
-  const chromeRight = `calc(${desktopDock ? sidebarW : 0}px + max(14px, env(safe-area-inset-right, 14px)))`;
+  const chromeRight = `calc(${desktopDock ? sidebarW : 0}px + max(${CHROME_EDGE_PX}px, env(safe-area-inset-right, ${CHROME_EDGE_PX}px)))`;
   const chromeColumn: React.CSSProperties = {
     position: 'fixed', right: chromeRight, width: PLAY_SIZE, zIndex: 120,
     display: 'flex', flexDirection: 'column', alignItems: 'center',

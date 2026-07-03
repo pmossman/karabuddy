@@ -26,9 +26,9 @@ import type { SideboardChanges } from '@/lib/sideboardDiff';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import type { ClipSummary } from './ClipsList';
 import { ClipBuilder } from './ClipBuilder';
-import { FrameNavOverlay } from './FrameNavOverlay';
+import { FrameNavOverlay, CHEVRON_W } from './FrameNavOverlay';
 import type { OpponentHistory } from './redesign/MatchupHistory';
-import { RedesignChrome } from './redesign/RedesignChrome'; // B216: the viewer chrome
+import { RedesignChrome, CHROME_EDGE_PX, PLAY_SIZE } from './redesign/RedesignChrome'; // B216: the viewer chrome
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSession } from 'next-auth/react';
 import { getOrCreateInstallToken } from '@/lib/installToken';
@@ -1040,12 +1040,12 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
           onCreated={refetchClips}
         />
       )}
-      {/* Frame chevrons — the only geometry they dodge is RedesignChrome's docked
-          desktop panel (redesignDockW; 0 when closed / on mobile, where the drawer
-          covers the board instead). */}
+      {/* Frame chevrons — centred on the SAME vertical axis as the rail/pocket
+          icons (offsets derived from the shared chrome layout constants, so they
+          can't drift); the right one also dodges the docked panel (redesignDockW). */}
       <FrameNavOverlay
-        leftOffset="max(8px, env(safe-area-inset-left, 8px))"
-        rightOffset={redesignDockW > 0 ? `calc(${redesignDockW}px + 8px)` : 'max(8px, env(safe-area-inset-left, 8px))'}
+        leftOffset={`calc(max(${CHROME_EDGE_PX}px, env(safe-area-inset-left, ${CHROME_EDGE_PX}px)) + ${(PLAY_SIZE - CHEVRON_W) / 2}px)`}
+        rightOffset={`calc(${redesignDockW}px + max(${CHROME_EDGE_PX}px, env(safe-area-inset-right, ${CHROME_EDGE_PX}px)) + ${(PLAY_SIZE - CHEVRON_W) / 2}px)`}
         verticalCenter="50%"
         onStep={step}
         canPrev={currentIndex > 0}
