@@ -241,41 +241,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                 </div>
               </div>
             )}
-          {/* Mobile: transport as ONE VERTICAL pill hugging the right-edge gutter
-              (a horizontal pill reached left into the hand fan): gear on top, Play
-              as the dominant bottom segment at the very corner. Full-size tap
-              targets; the pill breathes the first-play invite. Desktop keeps the
-              round FAB + corner mini-gear below. */}
-          {mode === 'mobile' ? (
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'stretch', borderRadius: 999, overflow: 'hidden',
-              border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
-              background: 'rgba(16,20,28,0.55)', boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
-              backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-              animation: invitePlay && !controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
-            }}>
-              <button type="button" title="Playback options" aria-label="Playback options"
-                onClick={() => { if (sidebarOpen && sidebarView === 'playback') userSetSidebar(false); else openSidebar('playback'); }}
-                style={{
-                  width: 48, height: 44, padding: 0, border: 0, cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.24)' : 'transparent',
-                  color: sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.8)',
-                }}>
-                <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.85)' }}>{Icon.gear}</span>
-              </button>
-              <div aria-hidden style={{ height: 1, background: 'rgba(255,255,255,0.16)', margin: '0 9px' }} />
-              <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
-                style={{
-                  width: 48, height: 56, padding: 0, border: 0, cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: controls.playing ? 'rgba(77,210,255,0.24)' : 'transparent',
-                  color: controls.playing ? tokens.led.on : '#eef2f8',
-                }}>
-                <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.25)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
-              </button>
-            </div>
-          ) : (
+          {/* Play + the mini-gear riding its corner (both breakpoints). */}
           <div style={{ position: 'relative' }}>
             <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
               style={{
@@ -291,20 +257,19 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
             </button>
-            {mode === 'desktop' && (
             <button type="button" title="Playback options" aria-label="Playback options" onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }}
               style={{
                 position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
-                background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(22,28,38,0.95)',
+                // Light glass (matches the rail bubbles) — the old near-opaque navy
+                // read as a black blob riding the Play button.
+                background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(255,255,255,0.16)',
                 color: sidebarOpen && sidebarView === 'playback' ? '#06121a' : '#eef2f8',
-                border: `1.5px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.5)'}`,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                border: `1.5px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.55)'}`,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px) saturate(1.4)', WebkitBackdropFilter: 'blur(12px) saturate(1.4)',
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.66)' }}>{Icon.gear}</span>
             </button>
-            )}
           </div>
-          )}
           </div>
         </div>
       )}

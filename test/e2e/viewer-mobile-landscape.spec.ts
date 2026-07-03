@@ -74,7 +74,7 @@ test('mobile: transport cluster is usable with the panel closed — Play↔Pause
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const play = page.getByRole('button', { name: 'Play', exact: true });
     await expect(play).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Playback options' })).toBeVisible(); // pill's right segment
+    await expect(page.getByRole('button', { name: 'Playback options' })).toBeVisible(); // mini-gear on Play's corner
     await expect(page.getByRole('button', { name: 'Jump to a moment' })).toBeVisible();
 
     // One-tap play: the FAB's label flips to Pause while playing, and back.
@@ -84,7 +84,7 @@ test('mobile: transport cluster is usable with the panel closed — Play↔Pause
     await pause.click();
     await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
 
-    // The gear (the pill's right segment) opens the panel straight to Playback.
+    // The mini-gear on Play's corner opens the panel straight to Playback.
     await page.getByRole('button', { name: 'Playback options' }).click();
     const drawer = page.getByRole('dialog', { name: 'Playback' });
     await expect(drawer).toBeVisible();
