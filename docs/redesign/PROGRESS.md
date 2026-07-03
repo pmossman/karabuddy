@@ -340,3 +340,10 @@ OPEN: desktop adopt the same single-frame floating model? tablet docked mode?
   - dedupe request-review control (Share vs Reviews)
   - review "last updated" timestamp (needs write-path change: markReviewed is
     onConflictDoNothing)
+
+### 2026-07-03 — SHIPPED 🚀
+B216 shipped to prod: main c2c7a51..5724f6b, deploy run 28634433551 green (test →
+smoke → vercel --prod, 6m11s). The redesign IS the viewer. Post-ship follow-ups
+live in the backlog conventions: request-review dedupe (Share vs Reviews), review
+"last updated" timestamp (markReviewed onConflictDoNothing), B218 (server-side
+tag-compose entitlement, filed on main).
