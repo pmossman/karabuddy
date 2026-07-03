@@ -241,24 +241,41 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
                 </div>
               </div>
             )}
-          {/* Play + the gear: desktop = mini-gear IN FRONT of Play's corner;
-              mobile = a gear TUCKED BEHIND Play's bottom-right, peeking toward
-              the screen corner (Play stays the unbroken primary circle). */}
-          <div style={{ position: 'relative' }}>
-            {mode === 'mobile' && (
+          {/* Mobile: transport as ONE pill — Play (dominant left segment) + the
+              gear attached to its right behind a hairline divider. Full-size tap
+              targets, no overlap tricks; the whole pill breathes the first-play
+              invite. Desktop keeps the round FAB + corner mini-gear below. */}
+          {mode === 'mobile' ? (
+            <div style={{
+              display: 'flex', alignItems: 'stretch', borderRadius: 999, overflow: 'hidden',
+              border: `1px solid ${controls.playing ? tokens.led.on : 'rgba(255,255,255,0.2)'}`,
+              background: 'rgba(16,20,28,0.55)', boxShadow: '0 3px 16px rgba(0,0,0,0.45)',
+              backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+              animation: invitePlay && !controls.playing ? 'kb-play-pulse 1.9s ease-in-out infinite' : undefined,
+            }}>
+              <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
+                style={{
+                  width: 62, height: 48, padding: 0, border: 0, cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: controls.playing ? 'rgba(77,210,255,0.24)' : 'transparent',
+                  color: controls.playing ? tokens.led.on : '#eef2f8',
+                }}>
+                <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.25)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
+              </button>
+              <div aria-hidden style={{ width: 1, background: 'rgba(255,255,255,0.16)', margin: '9px 0' }} />
               <button type="button" title="Playback options" aria-label="Playback options"
                 onClick={() => { if (sidebarOpen && sidebarView === 'playback') userSetSidebar(false); else openSidebar('playback'); }}
                 style={{
-                  position: 'absolute', right: -17, bottom: -13, width: 36, height: 36, padding: 0, boxSizing: 'border-box', zIndex: 0,
-                  borderRadius: '50%', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', cursor: 'pointer', fontFamily: 'inherit',
-                  background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.28)' : 'rgba(30,38,52,0.95)',
-                  color: sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.85)',
-                  border: `1px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.25)'}`,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                  width: 48, height: 48, padding: 0, border: 0, cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.24)' : 'transparent',
+                  color: sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.8)',
                 }}>
-                <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.72)', margin: '0 4px 4px 0' }}>{Icon.gear}</span>
+                <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.85)' }}>{Icon.gear}</span>
               </button>
-            )}
+            </div>
+          ) : (
+          <div style={{ position: 'relative' }}>
             <button type="button" title={controls.playing ? 'Pause' : 'Play'} aria-label={controls.playing ? 'Pause' : 'Play'} onClick={() => { setInvitePlay(false); controls.onTogglePlay(); }}
               style={{
                 width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
@@ -286,6 +303,7 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
             </button>
             )}
           </div>
+          )}
           </div>
         </div>
       )}
