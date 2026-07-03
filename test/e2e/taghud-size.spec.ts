@@ -121,9 +121,15 @@ test('HUD remembers a manual resize across visits', async ({ page, request }) =>
   await page.mouse.up();
   const grown = (await bubble.boundingBox())!;
 
-  // Fresh visit → the HUD comes back at the remembered size (±2px).
+  // Fresh visit → the HUD comes back at the remembered size (±2px). Poll: the
+  // height ANIMATES to the remembered value as the panel opens (CI is slow
+  // enough to catch the tween mid-flight; a snapshot read 82px short there).
   await openHudComposer(page, slug);
-  const restored = (await bubble.boundingBox())!;
-  expect(Math.abs(restored.width - grown.width)).toBeLessThanOrEqual(2);
-  expect(Math.abs(restored.height - grown.height)).toBeLessThanOrEqual(2);
+  await expect
+    .poll(async () => {
+      const r = await bubble.boundingBox();
+      if (!r) return 1e9;
+      return Math.max(Math.abs(r.width - grown.width), Math.abs(r.height - grown.height));
+    }, { timeout: 5000 })
+    .toBeLessThanOrEqual(2);
 });
