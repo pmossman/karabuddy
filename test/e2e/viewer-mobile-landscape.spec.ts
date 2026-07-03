@@ -85,8 +85,9 @@ test('mobile: transport cluster is usable with the panel closed — Play↔Pause
     await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
 
     // The gear opens the panel straight to the Playback view. It's tucked BEHIND
-    // Play's bottom-right corner, so click its exposed crescent (centre is covered).
-    await page.getByRole('button', { name: 'Playback options' }).click({ position: { x: 30, y: 30 } });
+    // Play's bottom-right corner — (24,23) is the exposed crescent's sweet spot
+    // (8px inside the gear's circle, 15px outside Play's).
+    await page.getByRole('button', { name: 'Playback options' }).click({ position: { x: 24, y: 23 } });
     const drawer = page.getByRole('dialog', { name: 'Playback' });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText('Speed', { exact: true })).toBeVisible();
@@ -245,7 +246,7 @@ test('mobile: playback view exposes Speed + Step-by controls (landscape + portra
     const r = await loadReplay(page, request);
     await openViewer(page, r.slug);
 
-    await page.getByRole('button', { name: 'Playback options' }).click({ position: { x: 30, y: 30 } });
+    await page.getByRole('button', { name: 'Playback options' }).click({ position: { x: 24, y: 23 } });
     const drawer = page.getByRole('dialog', { name: 'Playback' });
     await expect(drawer).toBeVisible();
     // Literal speed multipliers (relative to the retuned 1× baseline).
