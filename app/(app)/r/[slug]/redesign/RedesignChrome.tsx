@@ -228,19 +228,6 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               Flip is a momentary action (fires the curtain, never lit);
               reveal-hands is a toggle, lit while on. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {mode === 'desktop' && controls.canFlip && (
-              <div data-testid="pov-controls" style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '7px 10px 9px', borderRadius: 16,
-                background: 'rgba(16,20,28,0.4)', border: '1px solid rgba(255,255,255,0.12)',
-                backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-              }}>
-                <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap' }}>Double-sided</span>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} testId="flip-button" />
-                  <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} testId="reveal-toggle" />
-                </div>
-              </div>
-            )}
           {/* Play + the mini-gear nestled diagonally off its corner — no overlap:
               Play sits slightly up-left (and a touch smaller) so the gear owns the
               corner beside it. */}
@@ -259,18 +246,12 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               }}>
               <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(1.35)' }}>{controls.playing ? Icon.pause : Icon.play}</span>
             </button>
-            <button type="button" title="Playback options" aria-label="Playback options" onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }}
-              style={{
-                position: 'absolute', right: 0, bottom: 0, width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit',
-                // Light glass (matches the rail bubbles) — the old near-opaque navy
-                // read as a black blob riding the Play button.
-                background: sidebarOpen && sidebarView === 'playback' ? 'rgba(77,210,255,0.9)' : 'rgba(255,255,255,0.16)',
-                color: sidebarOpen && sidebarView === 'playback' ? '#06121a' : '#eef2f8',
-                border: `1.5px solid ${sidebarOpen && sidebarView === 'playback' ? tokens.led.on : 'rgba(255,255,255,0.55)'}`,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px) saturate(1.4)', WebkitBackdropFilter: 'blur(12px) saturate(1.4)',
-              }}>
-              <span aria-hidden style={{ display: 'inline-flex', transform: 'scale(0.66)' }}>{Icon.gear}</span>
-            </button>
+            {/* A plain RailBtn so its border/active treatment can't drift from
+                the other icons; the wrapper only places it in the freed corner. */}
+            <div style={{ position: 'absolute', right: 0, bottom: 0 }}>
+              <RailBtn size={28} icon={Icon.gear} label="Playback options" active={sidebarOpen && sidebarView === 'playback'}
+                onClick={() => { if (sidebarOpen) userSetSidebar(false); else openSidebar('playback'); }} />
+            </div>
           </div>
           </div>
         </div>
@@ -292,17 +273,18 @@ export function RedesignChrome({ mode, tags, currentIndex, onJump, replaySlug, t
               <RailBtn {...it} size={mode === 'mobile' ? 38 : 44} />
             </div>
           ))}
-          {/* MOBILE double-sided pair — a subtle capsule marks them as one unit
-              (the labelled DOUBLE-SIDED group lives beside Play on desktop; on
-              phones that spot sits on the hand fan, so the pair rides the rail). */}
-          {mode === 'mobile' && controls.canFlip && (
+          {/* Double-sided pair — a subtle capsule marks them as one unit, riding
+              the rail on BOTH breakpoints (a bulkier labelled group beside Play
+              sat on the hand fan; keep mobile/desktop identical unless a
+              difference is functional). */}
+          {controls.canFlip && (
             <div data-testid="pov-controls" style={{
               display: 'flex', flexDirection: railRow ? 'row' : 'column', alignItems: 'center', gap: 6,
               padding: 4, borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(16,20,28,0.35)',
               backdropFilter: 'blur(16px) saturate(1.4)', WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
             }}>
-              <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} testId="flip-button" size={34} />
-              <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} testId="reveal-toggle" size={34} />
+              <RailBtn icon={Icon.flip} label={`Flip seat — viewing ${controls.viewLabel}`} onClick={controls.onFlip} testId="flip-button" size={mode === 'mobile' ? 34 : 40} />
+              <RailBtn icon={Icon.eye} label="Both hands face up" active={controls.revealHands} onClick={() => controls.onRevealHandsChange(!controls.revealHands)} testId="reveal-toggle" size={mode === 'mobile' ? 34 : 40} />
             </div>
           )}
         </div>

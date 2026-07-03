@@ -4,7 +4,7 @@ import { signInAsTestUser, createTeam, generateInvite, uploadReplay, claimInstal
 
 // B128 v2: double-sided replays show BOTH hands face up (the other recording's
 // unmasked hand + resources merged into the board) — no auto board flipping.
-// B216: the controls live in a labelled "Double-sided" glass group next to the
+// B216: the controls live in a glass capsule on the rail, next to the
 // Play FAB — the hands-up toggle (default ON) + the manual Flip.
 
 test('single-sided replay: no double-sided controls', async ({ page, request }) => {
@@ -65,7 +65,7 @@ test('double-sided: hands-up on by default, reveals the hidden hand; manual flip
   // The labelled glass group next to the Play FAB (double-sided replays only).
   const controls = page.getByTestId('pov-controls');
   await expect(controls).toBeVisible();
-  await expect(controls).toContainText(/Double-sided/i);
+  // The pair is a capsule in the rail (no text label — the grouping IS the cue).
 
   // Hands-up defaults ON; B's hand card (visible only in B's own recording)
   // appears on A's board once the alt payload lands + merges. The fixture's
