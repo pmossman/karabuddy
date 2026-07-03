@@ -86,3 +86,27 @@ test('frame deeplink: ?f=N lands on that frame', async ({ page, request }) => {
   await expect(board).toHaveAttribute('data-frames', '2');
   await expect(board).toHaveAttribute('data-frame', '2');
 });
+
+test('my replays: no 100-row cap — full library behind Show more', async ({ page, request }) => {
+  test.setTimeout(120_000); // 101 uploads
+  await signInAsTestUser(page, { name: 'Prolific Recorder' });
+  const { installToken } = await uploadReplay(request, {
+    local: { username: 'Prolific' },
+    opponent: { username: 'Opp0' },
+  });
+  // 100 more with the SAME identity → 101 total (one past the old server cap).
+  for (let i = 1; i <= 100; i++) {
+    await uploadReplay(request, { installToken, local: { username: 'Prolific' }, opponent: { username: `Opp${i}` } });
+  }
+  await claimInstallToken(page, installToken);
+
+  await page.goto('/replays?tab=mine');
+  // pageSize=60 → "41 more" proves all 101 were fetched (the old .limit(100)
+  // would leave exactly 40 behind the fold and drop the oldest replay entirely).
+  const more = page.getByRole('button', { name: 'Show more (41 more)' });
+  await expect(more).toBeVisible({ timeout: 10_000 });
+  await more.click();
+  await expect(page.getByRole('button', { name: /Show more/ })).toHaveCount(0);
+  // The oldest replay (past the old cap) is reachable.
+  await expect(page.getByText(/Opp0\b/).first()).toBeVisible();
+});

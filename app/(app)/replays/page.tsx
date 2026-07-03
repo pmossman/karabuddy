@@ -72,7 +72,10 @@ async function MyReplays({ userId }: { userId: string }) {
   const db = getDb();
   const { slugs: mineSlugs } = await recordedReplaySlugs(userId);
 
-  // One ordered+limited fetch over the union (apply the limit ONCE, post-union).
+  // One ordered fetch over the union — NO row cap: the library must show
+  // everything (a .limit(100) here silently hid older replays). Render cost is
+  // contained client-side by ReplayFilters' pageSize (Load more), same as the
+  // team replays list.
   const rows = mineSlugs.length > 0
     ? await db
         .select({ replay: replays, ownerName: users.name })
@@ -80,7 +83,6 @@ async function MyReplays({ userId }: { userId: string }) {
         .leftJoin(users, eq(users.id, replays.userId))
         .where(inArray(replays.slug, mineSlugs))
         .orderBy(desc(replays.createdAt))
-        .limit(100)
     : [];
 
   const slugs = rows.map((r) => r.replay.slug);
@@ -151,6 +153,7 @@ async function MyReplays({ userId }: { userId: string }) {
       canManage
       showShareTabs
       myTeams={myTeams}
+      pageSize={60}
       emptyState={<MineEmpty />}
     />
   );
