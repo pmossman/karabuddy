@@ -195,6 +195,23 @@
         }
     };
 
+    // B219: engine.io POLLING transport batches several packets into one HTTP
+    // body, joined by the record separator (\x1e) in Engine.IO protocol v4
+    // (socket.io-client 4.x / engine.io-client 6.x — karabast's version). Each
+    // batched packet is a normal engine.io packet, so split and reuse
+    // parseEngineIoFrame per packet (non-message packets — handshake/ping/pong —
+    // parse to null and drop out). Lets the recorder capture gamestates that
+    // arrive over polling after a mid-game reconnect falls back off WebSocket.
+    const parseEngineIoPollingPayload = (text) => {
+        if (typeof text !== 'string' || text.length === 0) return [];
+        const out = [];
+        for (const packet of text.split('\x1e')) {
+            const frame = parseEngineIoFrame(packet);
+            if (frame) out.push(frame);
+        }
+        return out;
+    };
+
     const looksLikeGameEnd = (state) => {
         if (!state || typeof state !== 'object') return false;
         return Boolean(
@@ -555,6 +572,7 @@
         looksLikeSpectatorView,
         analyzeRecording,
         parseEngineIoFrame,
+        parseEngineIoPollingPayload,
         looksLikeGameEnd,
         sanitizeFilenamePart,
         isAnonymousUsername,

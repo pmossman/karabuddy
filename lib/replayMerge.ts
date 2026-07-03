@@ -103,6 +103,31 @@ export function mergeSlices(payloads: any[]): any | null {
   for (const p of payloads) decks = mergeDecks(decks, p.decks);
   const durationMs = Math.max(0, ...payloads.map((p) => Number(p.durationMs) || 0));
 
+  // B219: preserve transport diagnostics across the merge so a merged (long-game)
+  // replay still explains why capture stopped. Sum counts, union the event logs
+  // in time order (capped), keep the latest transport + last-gamestate timing.
+  const diagParts = payloads.map((p) => p.diag).filter((d) => d && typeof d === 'object');
+  const diag = diagParts.length === 0 ? undefined : {
+    wsOpen: diagParts.reduce((s, d) => s + (Number(d.wsOpen) || 0), 0),
+    wsClose: diagParts.reduce((s, d) => s + (Number(d.wsClose) || 0), 0),
+    wsErr: diagParts.reduce((s, d) => s + (Number(d.wsErr) || 0), 0),
+    pollIn: diagParts.reduce((s, d) => s + (Number(d.pollIn) || 0), 0),
+    transport: diagParts.map((d) => d.transport).filter(Boolean).pop() ?? null,
+    lastGamestateAtMs: Math.max(0, ...diagParts.map((d) => Number(d.lastGamestateAtMs) || 0)),
+    durationMs,
+    events: (() => {
+      // Union in time order, deduped by identity: two snapshots from the SAME
+      // recorder (socket-close flush + finalize) both carry the same lifecycle
+      // events — without dedup every ws-open/ws-close would double.
+      const seen = new Set<string>();
+      return diagParts
+        .flatMap((d) => (Array.isArray(d.events) ? d.events : []))
+        .sort((a, b) => (Number(a?.t) || 0) - (Number(b?.t) || 0))
+        .filter((e) => { const k = JSON.stringify(e); if (seen.has(k)) return false; seen.add(k); return true; })
+        .slice(-80);
+    })(),
+  };
+
   // Tags: union by id; remap each tag's frameIndex via its stamped key.
   const tagById = new Map<string, any>();
   for (const p of payloads) {
@@ -127,6 +152,7 @@ export function mergeSlices(payloads: any[]): any | null {
     decks,
     events,
     tags: [...tagById.values()],
+    ...(diag ? { diag } : {}),
   };
 }
 

@@ -1,0 +1,228 @@
+<!doctype html>
+<!-- B219: karabast-sim harness. Served by server.mjs at http://localhost:4517.
+     This page shares the MAIN world with the extension's replays/* content
+     scripts, so it drives fake game traffic through the REAL interception
+     paths and asserts directly against window.__KaraBuddy.replays.Recorder. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>karabast-sim — KaraBuddy extension validation</title>
+<style>
+  body { background:#0b0e14; color:#dbe2ef; font:14px/1.5 ui-monospace,Menlo,monospace; max-width:860px; margin:24px auto; padding:0 16px; }
+  h1 { font-size:18px; color:#4dd2ff; }
+  .row { display:flex; gap:10px; align-items:center; margin:6px 0; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#555; flex:none; }
+  .dot.ok { background:#2ecc71; } .dot.bad { background:#e74c3c; } .dot.warn { background:#f1c40f; }
+  button { background:#14324a; color:#4dd2ff; border:1px solid #2a5d80; border-radius:6px; padding:10px 14px; font:inherit; cursor:pointer; margin:4px 6px 4px 0; }
+  button:disabled { opacity:.4; cursor:default; }
+  table { border-collapse:collapse; margin:10px 0; width:100%; }
+  td,th { border:1px solid #223; padding:4px 8px; text-align:left; font-size:13px; }
+  .pass { color:#2ecc71; } .fail { color:#e74c3c; font-weight:bold; }
+  #log { background:#080a10; border:1px solid #223; padding:8px; height:180px; overflow-y:auto; white-space:pre-wrap; font-size:12px; }
+  .hint { color:#8a93a6; font-size:12px; }
+  a { color:#4dd2ff; }
+</style>
+</head>
+<body>
+<h1>karabast-sim — extension transport validation (B219)</h1>
+
+<div class="row"><div id="d-ext" class="dot"></div><span id="s-ext">extension: checking…</span></div>
+<div class="row"><div id="d-kb" class="dot"></div><span id="s-kb">karabuddy dev server: checking…</span></div>
+<div class="row"><div id="d-rec" class="dot"></div><span id="s-rec">recorder: idle</span></div>
+
+<p>
+  <button id="btnA">Scenario A — full game over POLLING</button>
+  <button id="btnB">Scenario B — WS drop mid-game → polling fallback</button>
+  <button id="btnC">Scenario C — spectator guard (should NOT record)</button>
+</p>
+<p class="hint">A validates the new polling capture end-to-end (capture → finalize → upload → viewer link).
+B is the production bug scenario: karabast yanks the WebSocket mid-game and the stream falls back to polling — before B219 this silently truncated the replay.
+C confirms the polling path respects spectator mode. Each run uses a fresh game id; rerun freely.</p>
+
+<table id="results" style="display:none">
+  <thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div class="row" id="replayRow" style="display:none">↳ uploaded replay: <a id="replayLink" target="_blank"></a> <span class="hint">(open it — decodes in your redesigned viewer)</span></div>
+
+<div id="log"></div>
+
+<script>
+const R = () => window.__KaraBuddy?.replays?.Recorder;
+const $ = (id) => document.getElementById(id);
+const log = (m) => { $('log').textContent += m + '\n'; $('log').scrollTop = 1e9; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let FRAMES = 0;
+
+// ---- status bar ----
+async function refreshStatus() {
+  const ext = !!R();
+  $('d-ext').className = 'dot ' + (ext ? 'ok' : 'bad');
+  $('s-ext').textContent = ext
+    ? 'extension: injected ✓ (recorder API present)'
+    : 'extension: NOT detected — load unpacked (chrome://extensions) with the localhost:4517 dev host, then reload this page';
+  try {
+    const st = await (await fetch('/karabuddy-status')).json();
+    $('d-kb').className = 'dot ' + (st.up ? 'ok' : 'warn');
+    $('s-kb').textContent = st.up
+      ? `karabuddy dev server: up ✓ (${st.endpoint})`
+      : `karabuddy dev server: DOWN at ${st.endpoint} — uploads will fail (npm run dev). Capture checks still run.`;
+  } catch {}
+  const r = R();
+  if (r) {
+    const len = r.getRecordingLength?.() ?? 0;
+    const d = r.getDiag?.() || {};
+    $('d-rec').className = 'dot ' + (len > 0 ? 'ok' : '');
+    $('s-rec').textContent = `recorder: ${len} events | game ${r.getCurrentGameId?.() || '—'} | transport ${d.transport || '—'} | poll batches ${d.pollIn || 0} | ws open/close ${d.wsOpen || 0}/${d.wsClose || 0}`;
+  }
+}
+setInterval(refreshStatus, 400);
+fetch('/frames').then((r) => r.json()).then((j) => { FRAMES = j.frames; log(`fixture: ${FRAMES} frames`); });
+
+// ---- assertion plumbing ----
+function report(rows) {
+  const tb = $('results').querySelector('tbody');
+  tb.innerHTML = '';
+  $('results').style.display = '';
+  let allPass = true;
+  for (const [name, ok, detail] of rows) {
+    allPass = allPass && ok;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${name}</td><td class="${ok ? 'pass' : 'fail'}">${ok ? 'PASS' : 'FAIL'}</td><td>${detail}</td>`;
+    tb.appendChild(tr);
+  }
+  log(allPass ? '=== ALL CHECKS PASSED ===' : '=== FAILURES — see table ===');
+}
+
+// Track the recorder DURING a run: finalize resets the buffer + diag, so we
+// keep the maximum length and the last meaningful diag snapshot ourselves.
+function makeTracker() {
+  const t = { maxLen: 0, diag: {}, timer: 0 };
+  t.timer = setInterval(() => {
+    const r = R(); if (!r) return;
+    t.maxLen = Math.max(t.maxLen, r.getRecordingLength?.() ?? 0);
+    const d = r.getDiag?.();
+    if (d && (d.pollIn || d.wsOpen || d.wsClose || (d.events || []).length)) t.diag = d;
+  }, 120);
+  t.stop = () => clearInterval(t.timer);
+  return t;
+}
+async function waitForUpload(timeoutMs) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    const url = R()?.getCurrentKarabuddyUrl?.();
+    if (url) return url;
+    await sleep(300);
+  }
+  return null;
+}
+async function uploadChecks(url) {
+  const rows = [];
+  rows.push(['finalize upload succeeded', !!url, url || 'no upload URL after finalize (dev server down / endpoint not pinned?)']);
+  if (url) {
+    // The upload result's url is RELATIVE (`/r/<slug>`) — string-inspection
+    // can't tell prod from local. An absolute non-localhost URL is a definite
+    // prod leak; otherwise ask the sim server whether the slug exists on the
+    // LOCAL dev server (a prod-minted slug won't).
+    if (/^https?:/.test(url) && !url.startsWith('http://localhost')) {
+      rows.push(['upload went to LOCAL dev server', false,
+        `went to ${url} — endpoint NOT pinned! Set karabuddyEndpoint (see instructions) and DELETE that stray replay.`]);
+    } else {
+      const slug = url.split('/').pop();
+      const chk = await (await fetch(`/karabuddy-check?slug=${slug}`)).json();
+      rows.push(['upload landed on LOCAL dev server', chk.found,
+        chk.found ? `${chk.endpoint}/r/${slug} exists` : `${chk.endpoint}/r/${slug} NOT found — did it go to prod? (endpoint not pinned)`]);
+    }
+    $('replayRow').style.display = '';
+    const abs = /^https?:/.test(url) ? url : `http://localhost:3001${url}`;
+    $('replayLink').href = abs; $('replayLink').textContent = abs;
+  }
+  return rows;
+}
+function setBusy(b) { for (const id of ['btnA', 'btnB', 'btnC']) $(id).disabled = b; }
+
+// ---- transports (page-side drivers) ----
+// XHR polling — the transport engine.io-client actually uses.
+const xhrPoll = (url) => new Promise((res, rej) => {
+  const x = new XMLHttpRequest();
+  x.open('GET', url); x.onload = () => res(); x.onerror = rej; x.send();
+});
+const pollUrl = (game, from, count, spectator) =>
+  `/karabast/poll?EIO=4&transport=polling&spectator=${spectator}&game=${game}&from=${from}&count=${count}`;
+
+// ---- scenarios ----
+$('btnA').onclick = async () => {
+  setBusy(true); $('replayRow').style.display = 'none';
+  const game = 'sim-A-' + Math.random().toString(36).slice(2, 8);
+  log(`\n[A] polling-only game ${game}`);
+  const tr = makeTracker();
+  try {
+    for (let from = 0; from < FRAMES; from += 6) {
+      await xhrPoll(pollUrl(game, from, 6, 'false'));
+      await sleep(160);
+    }
+    log('[A] all frames sent — waiting for finalize + upload…');
+    const url = await waitForUpload(15000);
+    tr.stop();
+    report([
+      [`captured all ${FRAMES} frames (polling/XHR)`, tr.maxLen === FRAMES, `recorded ${tr.maxLen}/${FRAMES}`],
+      ['diag saw polling transport', tr.diag.transport === 'polling' && tr.diag.pollIn > 0, `transport=${tr.diag.transport} pollIn=${tr.diag.pollIn}`],
+      ...(await uploadChecks(url)),
+    ]);
+  } catch (e) { tr.stop(); log('[A] ERROR ' + e); }
+  setBusy(false);
+};
+
+$('btnB').onclick = async () => {
+  setBusy(true); $('replayRow').style.display = 'none';
+  const game = 'sim-B-' + Math.random().toString(36).slice(2, 8);
+  const cut = Math.floor(FRAMES / 2);
+  // Real reconnect semantics: karabast pushes the CURRENT full state on
+  // reconnect (it never rewinds history), so the polling stream starts by
+  // re-sending the last state WS delivered — an identical re-push, which the
+  // recorder must diff to an empty patch and skip — then continues forward.
+  log(`\n[B] WS frames 0..${cut - 1}, abrupt drop, then polling re-pushes current (${cut - 1}) + continues ${cut}..${FRAMES - 1} — game ${game}`);
+  const tr = makeTracker();
+  try {
+    const ws = new WebSocket(`ws://localhost:4517/karabast/ws?EIO=4&transport=websocket&spectator=false&game=${game}&from=0&to=${cut}&intervalMs=100&drop=1`);
+    await new Promise((res) => { ws.onclose = res; ws.onerror = () => {}; });
+    log(`[B] WS dropped by server (captured so far: ${R()?.getRecordingLength?.() ?? '?'}) — falling back to polling via fetch`);
+    for (let from = cut - 1; from < FRAMES; from += 6) {
+      await fetch(pollUrl(game, from, 6, 'false')); // fetch on purpose: covers the fetch wrapper (A covers XHR)
+      await sleep(160);
+    }
+    log('[B] all frames sent — waiting for finalize + upload…');
+    const url = await waitForUpload(15000);
+    tr.stop();
+    const ev = (tr.diag.events || []).map((e) => e.type);
+    report([
+      [`captured all ${FRAMES} frames across WS→polling`, tr.maxLen === FRAMES, `recorded ${tr.maxLen}/${FRAMES}`],
+      ['identical reconnect re-push deduped (no extra frame)', tr.maxLen <= FRAMES, `recorded ${tr.maxLen} (the re-pushed current state must diff to an empty patch)`],
+      ['diag saw the WS drop', tr.diag.wsClose >= 1 || tr.diag.wsErr >= 1, `wsClose=${tr.diag.wsClose} wsErr=${tr.diag.wsErr} events=[${ev}]`],
+      ['diag saw the polling fallback', ev.includes('poll-active') && tr.diag.pollIn > 0, `pollIn=${tr.diag.pollIn}`],
+      ...(await uploadChecks(url)),
+    ]);
+  } catch (e) { tr.stop(); log('[B] ERROR ' + e); }
+  setBusy(false);
+};
+
+$('btnC').onclick = async () => {
+  setBusy(true); $('replayRow').style.display = 'none';
+  const game = 'sim-C-' + Math.random().toString(36).slice(2, 8);
+  log(`\n[C] spectator=true polling — recorder must stay silent — game ${game}`);
+  const before = R()?.getRecordingLength?.() ?? 0;
+  try {
+    for (let from = 0; from < 12; from += 6) {
+      await xhrPoll(pollUrl(game, from, 6, 'true'));
+      await sleep(120);
+    }
+    await sleep(500);
+    const after = R()?.getRecordingLength?.() ?? 0;
+    report([['spectated frames NOT recorded', after === before, `events before=${before} after=${after}`]]);
+    log('[C] note: spectator flag resets on the next spectator=false URL (A/B do this)');
+  } catch (e) { log('[C] ERROR ' + e); }
+  setBusy(false);
+};
+</script>
+</body>
+</html>

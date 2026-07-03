@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "KaraBuddy",
-    "version": "1.1.1",
-    "version_name": "1.1.1",
+    "version": "1.2.0",
+    "version_name": "1.2.0",
     "description": "Records your karabast.net matches automatically and lets you tag key moments. Watch replays on karabuddy.app.",
     "icons": {
         "128": "icons/128.png"
@@ -33,7 +33,8 @@
     "content_scripts": [
         {
             "matches": [
-                "https://karabast.net/*"
+                "https://karabast.net/*",
+                "http://localhost:4517/*"
             ],
             "js": [
                 "replays/00-comment-scope.js",
@@ -52,7 +53,8 @@
         },
         {
             "matches": [
-                "https://karabast.net/*"
+                "https://karabast.net/*",
+                "http://localhost:4517/*"
             ],
             "js": [
                 "content.js"
