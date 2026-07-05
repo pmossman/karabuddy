@@ -445,31 +445,54 @@ export function OpeningStage({
       {stage === 'reveal' && detail.reveal && compact && !revealMin && (
         <div
           data-testid="opening-reveal-overlay"
-          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.88)', overflowY: 'auto', padding: '46px 12px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+          // Light scrim only — the board behind should stay readable.
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.55)', overflowY: 'auto', padding: '12px 12px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
         >
-          <button
-            type="button"
-            data-testid="opening-reveal-minimize"
-            aria-label="Show the board"
-            onClick={() => setRevealMin(true)}
-            style={{ position: 'fixed', top: 10, right: 12, zIndex: 91, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(13,16,22,0.9)', border: '1px solid #2e333c', borderRadius: 999, color: '#a0a8b8', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6" /></svg>
-            Board
-          </button>
-          <div style={{ width: 'min(560px, 100%)' }}>{revealPanel}</div>
+          <div style={{ position: 'relative', width: 'min(560px, 100%)' }}>
+            <button
+              type="button"
+              data-testid="opening-reveal-minimize"
+              aria-label="Minimize"
+              onClick={() => setRevealMin(true)}
+              style={{ position: 'absolute', top: 10, right: 10, zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'rgba(13,16,22,0.9)', border: '1px solid #2e333c', borderRadius: 7, color: '#a0a8b8', cursor: 'pointer' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
+            </button>
+            {revealPanel}
+          </div>
         </div>
       )}
       {stage === 'reveal' && detail.reveal && compact && revealMin && (
-        <button
-          type="button"
-          data-testid="opening-reveal-expand"
-          onClick={() => setRevealMin(false)}
-          style={{ position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 90, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'rgba(13,16,22,0.94)', border: '1px solid #4d9dff', borderRadius: 999, color: '#cfe6ff', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 6px 22px rgba(0,0,0,0.55)' }}
+        <div
+          data-testid="opening-reveal-summary"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 90, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'rgba(13,16,22,0.96)', borderBottom: '1px solid #2e333c' }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 15l-6-6-6 6" /></svg>
-          Reveal
-        </button>
+          {(() => {
+            const eff = practice ?? detail.myResponse;
+            const agreed = eff ? eff.decision === detail.reveal!.decision : null;
+            return (
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <strong style={{ color: '#e6ebf2' }}>
+                  {detail.reveal!.recorder.name ?? 'They'} {detail.reveal!.decision === 'keep' ? 'kept' : 'mulliganed'}
+                </strong>
+                {eff && (
+                  <span style={{ color: agreed ? '#6bd968' : '#ff7b72' }}>
+                    {' '}— you said {eff.decision} {agreed ? '✓' : '✗'}
+                  </span>
+                )}
+              </span>
+            );
+          })()}
+          <button
+            type="button"
+            data-testid="opening-reveal-expand"
+            aria-label="Expand"
+            onClick={() => setRevealMin(false)}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'rgba(13,16,22,0.9)', border: '1px solid #2e333c', borderRadius: 7, color: '#a0a8b8', cursor: 'pointer', flexShrink: 0 }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
+          </button>
+        </div>
       )}
       {watching && detail.reveal && (
         <OpeningWatchModal

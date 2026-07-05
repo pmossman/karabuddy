@@ -271,9 +271,12 @@ test('mobile: the two-phase flow works at 390px, footer reclaimed', async ({ pag
   await expect(page2.getByTestId('opening-reveal-overlay')).toBeVisible();
   await page2.getByTestId('opening-reveal-minimize').click();
   await expect(page2.getByTestId('opening-reveal-overlay')).toHaveCount(0);
+  // Minimized = a slim summary row (the verdict at a glance) + expand.
+  await expect(page2.getByTestId('opening-reveal-summary')).toContainText('MobOwner kept');
   await expect(page2.getByTestId('opening-stage')).toBeVisible();
   await page2.getByTestId('opening-reveal-expand').click();
   await expect(page2.getByTestId('opening-reveal-overlay')).toBeVisible();
+  await expect(page2.getByTestId('opening-reveal-summary')).toHaveCount(0);
   await page2.getByTestId('opening-next').click();
   await expect(page2.getByTestId('opening-summary')).toBeVisible();
 
