@@ -212,6 +212,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // a Reset — on this view and the history view alike.
   await page2.getByTestId('opening-filter-reset').click();
   await expect(page2.getByTestId('opening-filter-deck')).toContainText('Any leader');
+  await page2.getByTestId('filter-memory-recent').click(); // the compact Recent menu
   await expect(page2.getByTestId('filter-memory-chip')).toContainText('Own Leader');
   await page2.getByTestId('filter-memory-chip').click();
   await expect(page2.getByTestId('opening-filter-deck')).toContainText('Own Leader');

@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { LedToggle } from '@/app/_components/LedToggle';
-import { useFilterMemory, FilterMemoryChips } from '@/app/_components/filterMemory';
+import { useFilterMemory, FilterMemoryMenu } from '@/app/_components/filterMemory';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
@@ -403,7 +403,7 @@ export function TeamOpenings({
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{filterControls}</div>
-        <FilterMemoryChips history={filterMemory.history} onApply={applyFilters} />
+        <FilterMemoryMenu history={filterMemory.history} onApply={applyFilters} />
         {rows.length === 0 ? (
           <EmptyState icon="🃏">Nothing graded matches these filters.</EmptyState>
         ) : (
@@ -442,7 +442,7 @@ export function TeamOpenings({
       >
         <div style={{ fontSize: 15, fontWeight: 800, color: '#e6ebf2' }}>Set up your session</div>
         {filterControls}
-        <FilterMemoryChips history={filterMemory.history} onApply={applyFilters} />
+        <FilterMemoryMenu history={filterMemory.history} onApply={applyFilters} />
         {teammate !== ALL && (
           <span style={{ fontSize: 11.5, color: '#6c7588' }}>
             Coaching mode — identities visible.
