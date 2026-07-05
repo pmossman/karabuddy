@@ -18,6 +18,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { LedToggle } from '@/app/_components/LedToggle';
+import { DateRangeSelect } from '@/app/_components/DateRangeSelect';
+import { inDateRange, dateRangeLabel } from '@/lib/dateRange';
 import { useFilterMemory, FilterMemoryMenu } from '@/app/_components/filterMemory';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -121,7 +123,7 @@ export function TeamOpenings({
 
   const filtered = useMemo(() => {
     if (!items) return [];
-    const cutoff = since === ALL ? null : Date.now() - Number(since) * 24 * 60 * 60 * 1000;
+
     return items.filter(
       (i) =>
         (deck === ALL || leaderName(i.ownLeader) === deck) &&
@@ -129,7 +131,7 @@ export function TeamOpenings({
         (vs === ALL || leaderName(i.oppLeader) === vs) &&
         (vsBase === ALL || i.oppBaseKind?.key === vsBase) &&
         (format === ALL || i.format === format) &&
-        (cutoff === null || new Date(i.createdAt).getTime() >= cutoff),
+        (since === ALL || inDateRange(i.createdAt, since)),
     );
   }, [items, deck, base, vs, vsBase, format, since]);
 
@@ -153,7 +155,7 @@ export function TeamOpenings({
     if (vsBase !== ALL) parts.push(`vs ${vsBase}`);
     if (teammate !== ALL) parts.push(members.find((m) => m.userId === teammate)?.name ?? 'teammate');
     if (format !== ALL) parts.push(format);
-    if (since !== ALL) parts.push(`${since}d`);
+    if (since !== ALL) parts.push(dateRangeLabel(since));
     return parts.join(' · ');
   };
 
@@ -352,12 +354,7 @@ export function TeamOpenings({
           ariaLabel="Filter by format"
           options={[[ALL, 'Any format'], ...formatOptions.map((f): [string, string] => [f, f])]}
         />
-        <Select
-          value={since}
-          onChange={setSince}
-          ariaLabel="Filter by recency"
-          options={[[ALL, 'Any time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']]}
-        />
+        <DateRangeSelect value={since === ALL ? '' : since} onChange={(v) => setSince(v || ALL)} ariaLabel="Filter by date" testId="opening-filter-date" />
         {anyFilter && (
           <button
             type="button"

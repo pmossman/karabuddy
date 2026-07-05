@@ -23,6 +23,8 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
+import { DateRangeSelect } from '@/app/_components/DateRangeSelect';
+import { inDateRange, dateRangeLabel } from '@/lib/dateRange';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
 
@@ -112,13 +114,6 @@ const OP_VERB: Record<string, string> = {
   delete: 'deleted', publish: 'made public', unpublish: 'made unlisted', share: 'shared', unshare: 'unshared',
   'label-add': 'labeled', 'label-remove': 'unlabeled', 'review-request': 'review requested', 'review-cancel': 'review cancelled',
 };
-
-const SINCE_OPTIONS = [
-  { value: '', label: 'All time' },
-  { value: '7d', label: 'Past 7 days' },
-  { value: '30d', label: 'Past 30 days' },
-  { value: '90d', label: 'Past 90 days' },
-];
 
 function parseView(raw: string | null): ViewMode {
   if (raw === 'by-leader' || raw === 'by-member' || raw === 'timeline') return raw;
@@ -276,11 +271,7 @@ export function ReplayFilters({
       if (myBase && r.ownBaseKind?.key !== myBase) return false;
       if (vsBase && r.oppBaseKind?.key !== vsBase) return false;
       if (uploadedBy && r.ownerName !== uploadedBy) return false;
-      if (since) {
-        const days = parseInt(since.replace('d', ''), 10);
-        const cutoff = Date.now() - days * 86_400_000;
-        if (new Date(r.createdAt).getTime() < cutoff) return false;
-      }
+      if (since && !inDateRange(r.createdAt, since)) return false;
       if (format && r.match?.gameFormat !== format) return false;
       if (mode && r.match?.gamesToWinMode !== mode) return false;
       if (label) {
@@ -398,7 +389,7 @@ export function ReplayFilters({
   if (myBase) activeChips.push({ key: 'mbase', label: `Base: ${ownBases.find((o) => o.value === myBase)?.label ?? myBase}`, onClear: () => setMyBase('') });
   if (vsBase) activeChips.push({ key: 'obase', label: `Vs base: ${oppBases.find((o) => o.value === vsBase)?.label ?? vsBase}`, onClear: () => setVsBase('') });
   if (uploadedBy) activeChips.push({ key: 'by', label: `By: ${uploadedBy}`, onClear: () => setUploadedBy('') });
-  if (since) activeChips.push({ key: 'since', label: SINCE_OPTIONS.find((s) => s.value === since)?.label || since, onClear: () => setSince('') });
+  if (since) activeChips.push({ key: 'since', label: dateRangeLabel(since), onClear: () => setSince('') });
   if (format) activeChips.push({ key: 'fmt', label: FORMAT_LABEL[format] || format, onClear: () => setFormat('') });
   if (mode) activeChips.push({ key: 'mode', label: MODE_LABEL[mode] || mode, onClear: () => setMode('') });
   if (label) activeChips.push({ key: 'label', label: `#${label}`, onClear: () => setLabel('') });
@@ -1687,8 +1678,7 @@ function FilterControls({
         </Field>
       )}
       <Field orientation="column" label="Date">
-        <Select size="sm" style={replaySelectStyle}
-          value={since} onChange={setSince} options={SINCE_OPTIONS.map((s) => [s.value, s.label] as const)} />
+        <DateRangeSelect value={since} onChange={setSince} ariaLabel="Filter by date" testId="replay-filter-date" fullWidth />
       </Field>
       <Field orientation="column" label="Format">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"

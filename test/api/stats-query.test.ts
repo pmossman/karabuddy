@@ -25,6 +25,7 @@ async function seedMatch(opts: {
   p1: { leader: string; won: boolean; base?: string; rating?: { available: number; wasted: number; forced?: number; underspend?: number; deadCards?: number; countedRounds?: number } };
   p2: { leader: string; won: boolean; base?: string };
   shareTeam?: string;
+  createdAt?: Date; // match date — for the time-window tests
   // card events to attach: each entry can repeat (copies) to prove the
   // distinct (game,side,card) collapse.
   events?: Array<{ side: 'p1' | 'p2'; cardId: string; event: string; copies?: number }>;
@@ -36,7 +37,7 @@ async function seedMatch(opts: {
     slug, gameId: opts.gameId, userId: opts.userId ?? null, ownerToken: 'kbx_' + id(),
     players: [], payloadBlobUrl: 'memory://x', durationMs: 1,
   });
-  await db.insert(matches).values({ gameId: opts.gameId, replaySlug: slug, format, result: 'decisive' });
+  await db.insert(matches).values({ gameId: opts.gameId, replaySlug: slug, format, result: 'decisive', ...(opts.createdAt ? { createdAt: opts.createdAt } : {}) });
   await db.insert(matchPlayers).values([
     { gameId: opts.gameId, playerId: 'p1', leader: opts.p1.leader, base: opts.p1.base ?? null, opponentLeader: opts.p2.leader, opponentBase: opts.p2.base ?? null, won: opts.p1.won, isRecorder: true, format,
       resourceAvailable: opts.p1.rating?.available ?? null, resourceWasted: opts.p1.rating?.wasted ?? null, resourceForced: opts.p1.rating?.forced ?? null,
@@ -359,6 +360,26 @@ describe('B194 drill-in producers', () => {
     const asOpp = await getEntityReplays({ scope: scope(), leader: 'L1' });
     expect(asOpp.find((r) => r.gameId === 'd5')).toBeUndefined();
   });
+  it('time window (from/to over matches.createdAt) filters aggregation', async () => {
+    const scope = { kind: 'personal' as const, userId: userA };
+    await seedMatch({ gameId: id(), userId: userA, createdAt: new Date('2026-05-10T00:00:00Z'), p1: { leader: 'MAY_L', won: true }, p2: { leader: 'X', won: false } });
+    await seedMatch({ gameId: id(), userId: userA, createdAt: new Date('2026-06-20T00:00:00Z'), p1: { leader: 'JUN_L', won: true }, p2: { leader: 'X', won: false } });
+
+    const all = await getLeaderStats({ scope, minGames: 1 });
+    expect(all.find((r) => r.leader === 'MAY_L')).toBeTruthy();
+    expect(all.find((r) => r.leader === 'JUN_L')).toBeTruthy();
+
+    // A June window drops the May game.
+    const june = await getLeaderStats({ scope, from: new Date('2026-06-01T00:00:00Z'), to: new Date('2026-06-30T23:59:59Z'), minGames: 1 });
+    expect(june.find((r) => r.leader === 'MAY_L')).toBeUndefined();
+    expect(june.find((r) => r.leader === 'JUN_L')).toBeTruthy();
+
+    // An open-ended "since June 1" also excludes May.
+    const since = await getLeaderStats({ scope, from: new Date('2026-06-01T00:00:00Z'), minGames: 1 });
+    expect(since.find((r) => r.leader === 'MAY_L')).toBeUndefined();
+    expect(since.find((r) => r.leader === 'JUN_L')).toBeTruthy();
+  });
+
 });
 
 // B195 matchup drill-in: card-level stats + replays scoped to a specific matchup

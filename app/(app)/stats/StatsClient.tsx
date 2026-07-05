@@ -6,6 +6,8 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/statsView';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
+import { DateRangeSelect } from '@/app/_components/DateRangeSelect';
+import { dateRangeLabel } from '@/lib/dateRange';
 import { LeaderSelect } from '@/app/_components/LeaderSelect';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
@@ -53,6 +55,7 @@ export function StatsClient({
 }) {
   const [view, setView] = useState<View>('leaders');
   const [format, setFormat] = useState<string>('');
+  const [range, setRange] = useState<string>(''); // lib/dateRange grammar
   const [event, setEvent] = useState<CardEvent>('played');
   const [leaderCtx, setLeaderCtx] = useState<string>(''); // deck context for the Cards view
   const [baseSel, setBaseSel] = useState<string>(''); // base-identity key: ''=all | base:<id> | asp:<aspect>
@@ -88,10 +91,11 @@ export function StatsClient({
   const scopeQs = useMemo(() => {
     const p = new URLSearchParams({ scope });
     if (format) p.set('format', format);
+    if (range) p.set('range', range);
     if (scope === 'team' && teamSlug) p.set('team', teamSlug);
     if (scope === 'team') p.set('games', teamGames);
     return p;
-  }, [scope, format, teamSlug, teamGames]);
+  }, [scope, format, range, teamSlug, teamGames]);
 
   // Drill-in focus is URL-addressable (shareable, back-button friendly): `leader`
   // = the focused leader cardId, `lbase` = an optional deck key (base:<id> | asp:<aspect>),
@@ -272,13 +276,14 @@ export function StatsClient({
     const c: { key: string; label: string; onClear: () => void }[] = [];
     if (scope === 'team' && teamGames !== 'internal') c.push({ key: 'g', label: teamGames === 'external' ? 'vs Outsiders' : 'All games', onClear: () => setTeamGames('internal') });
     if (format) c.push({ key: 'f', label: FORMATS.find((f) => f[0] === format)?.[1] || format, onClear: () => setFormat('') });
+    if (range) c.push({ key: 'range', label: dateRangeLabel(range), onClear: () => setRange('') });
     if (view === 'leaders' && leaderGroup === 'deck') c.push({ key: 'grp', label: 'By leader + base', onClear: () => setLeaderGroup('leader') });
     if (view === 'cards' && leaderCtx) c.push({ key: 'deck', label: nm(leaderCtx), onClear: () => setLeaderCtx('') });
     if (view === 'cards' && event !== 'played') c.push({ key: 'ev', label: EVENTS.find((e) => e[0] === event)?.[1] || event, onClear: () => setEvent('played') });
     if (view === 'cards' && cardSearch.trim()) c.push({ key: 'q', label: `“${cardSearch.trim()}”`, onClear: () => setCardSearch('') });
     if (minGames > 1) c.push({ key: 'min', label: `Min ${minGames} games`, onClear: () => setMinGames(1) });
     return c;
-  }, [scope, teamGames, format, view, leaderGroup, leaderCtx, event, cardSearch, minGames, names]);
+  }, [scope, teamGames, format, range, view, leaderGroup, leaderCtx, event, cardSearch, minGames, names]);
 
   return (
     <div style={embedded
@@ -347,6 +352,7 @@ export function StatsClient({
             <Field orientation="row" label="Games"><Segmented options={[['internal', 'Internal'], ['external', 'vs Outsiders'], ['all', 'All']]} value={teamGames} onChange={(v) => setTeamGames(v as 'internal' | 'external' | 'all')} /></Field>
           )}
           <Field orientation="row" label="Format"><Select value={format} onChange={setFormat} options={FORMATS} /></Field>
+          <Field orientation="row" label="Date"><DateRangeSelect value={range} onChange={setRange} ariaLabel="Filter by date" testId="stats-filter-date" /></Field>
 
           {view === 'leaders' && (
             <Field orientation="row" label="Group"><Segmented options={[['leader', 'By leader'], ['deck', 'By leader + base']]} value={leaderGroup} onChange={(v) => setLeaderGroup(v as 'leader' | 'deck')} /></Field>

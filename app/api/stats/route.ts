@@ -5,6 +5,7 @@ import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
 import { teamGameIds } from '@/lib/teamSurface';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, getEntityReplays, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
+import { dateRangeBounds } from '@/lib/dateRange';
 import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
@@ -32,6 +33,7 @@ interface StatsKey {
   teamSlug: string | null;
   games: string;
   format: string | null;
+  range: string; // lib/dateRange grammar ('' | '30d' | 'from..to')
   byBase: boolean;
   event: CardEventKind;
   leader: string | null;
@@ -50,7 +52,8 @@ const computeStats = cachedRead(
       const restrictGameIds = k.games === 'external' ? sets.external : k.games === 'all' ? [...sets.internal, ...sets.external] : sets.internal;
       scope = { kind: 'team', teamSlug: k.teamSlug!, restrictGameIds, internalGameIds: sets.internal };
     }
-    const opts = { scope, format: k.format, minGames: 1 };
+    const { from, to } = dateRangeBounds(k.range);
+    const opts = { scope, format: k.format, from, to, minGames: 1 };
     switch (k.type) {
       // Leader lens accepts a self-side leader/deck filter (drill-in: one leader's
       // record vs each opponent). The deck-vs-deck matrix (byBase) stays unfiltered.
@@ -102,6 +105,7 @@ export async function GET(req: Request) {
 
   const data = await computeStats({
     type, scopeKind, userId: userId ?? null, teamSlug, games, format,
+    range: url.searchParams.get('range') || '',
     byBase: url.searchParams.get('byBase') === '1',
     event,
     leader: url.searchParams.get('leader') || null,
