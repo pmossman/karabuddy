@@ -39,6 +39,13 @@ export interface SerializedReplayRow {
   viewerPlayerId: string | null;
   ownLeader: LeaderRef | null;
   oppLeader: LeaderRef | null;
+  ownBase: LeaderRef | null;
+  oppBase: LeaderRef | null;
+  // Base FUNCTIONAL identity (lib/baseIdentity) — attached by the batched
+  // attachBaseKinds post-pass on surfaces with base filters. What base
+  // filters key on (vanilla/force-pair groups), never raw names.
+  ownBaseKind?: { key: string; label: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null } | null;
+  oppBaseKind?: { key: string; label: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null } | null;
   // B116: stable across a Bo3's games (the lobby persists); drives series
   // grouping in the browser. Null on pre-B42 / quick rows without a lobby.
   lobbyId: string | null;
@@ -102,6 +109,8 @@ export function serializeReplayRow(
     viewerPlayerId: vid ?? null,
     ownLeader: own?.leader ?? null,
     oppLeader: opp?.leader ?? null,
+    ownBase: own?.base ?? null,
+    oppBase: opp?.base ?? null,
     lobbyId: (match && typeof match.lobbyId === 'string' && match.lobbyId) ? match.lobbyId : null,
     encrypted: !!replay.encrypted,
     teamKeyId: replay.teamKeyId ?? null,

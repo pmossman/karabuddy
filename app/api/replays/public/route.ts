@@ -3,6 +3,7 @@ import { desc, isNotNull, count, inArray, and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, tags } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
+import { attachBaseKinds } from '@/lib/baseIdentity';
 import { gameIdsWithSibling } from '@/lib/doubleSided';
 import { anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { orderPlayersOwnerFirst } from '@/lib/players';
@@ -49,7 +50,7 @@ const getPublic = cachedRead(
     for (const c of countRows) commentCountBySlug.set(c.replaySlug, Number(c.n));
   }
 
-  const data = rows.map((replay) =>
+  const data = await attachBaseKinds(rows.map((replay) =>
     // userId nulled: no uploader account ids on a stranger-facing surface.
     // Anonymize AFTER owner-first ordering so Player1 = the uploader's side,
     // matching the labels the anonymized viewer shows.
@@ -59,7 +60,7 @@ const getPublic = cachedRead(
       commentCount: commentCountBySlug.get(replay.slug) ?? 0,
       doubleSided: dsGames.has(replay.gameId),
     }),
-  );
+  ));
   return data;
   },
   ['public-replays-v1'],

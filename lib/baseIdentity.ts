@@ -103,3 +103,24 @@ export async function resolveBaseIdentities(
   }
   return out;
 }
+
+// Post-pass for serialized replay rows: one batched resolve for every base in
+// the list, then attach ownBaseKind/oppBaseKind in place. Call where a
+// base-filterable surface assembles its rows.
+export async function attachBaseKinds<T extends { ownBase?: any; oppBase?: any; ownBaseKind?: any; oppBaseKind?: any }>(
+  rows: T[],
+): Promise<T[]> {
+  const refs = rows.flatMap((r) => [r.ownBase, r.oppBase]).filter(Boolean);
+  const ids = await resolveBaseIdentities(refs);
+  const kindOf = (base: any) => {
+    if (!base?.set || base?.number == null) return null;
+    const n = Number(base.number);
+    const id = `${base.set}_${Number.isFinite(n) ? String(n).padStart(3, '0') : String(base.number)}`;
+    return ids.get(id) ?? null;
+  };
+  for (const r of rows) {
+    r.ownBaseKind = kindOf(r.ownBase);
+    r.oppBaseKind = kindOf(r.oppBase);
+  }
+  return rows;
+}

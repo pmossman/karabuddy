@@ -74,6 +74,10 @@ interface Row {
   viewerPlayerId?: string | null;
   ownLeader?: { name?: string | null; set?: string | null; number?: number | null } | null;
   oppLeader?: { name?: string | null; set?: string | null; number?: number | null } | null;
+  // Base FUNCTIONAL identity (lib/baseIdentity) — the base filters key on
+  // this, never raw names: vanilla/force-pair bases group, unique stay unique.
+  ownBaseKind?: { key: string; label: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null } | null;
+  oppBaseKind?: { key: string; label: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null } | null;
   // B116: stable across a Bo3's games — drives series grouping. Null = singleton.
   lobbyId?: string | null;
   // B128: both players' recordings exist — the viewer can show both hands
@@ -172,6 +176,8 @@ export function ReplayFilters({
   // username filters. `by` = which team member uploaded (team grid only).
   const [myLeader, setMyLeader] = useState(() => searchParams.get('mine') || '');
   const [vsLeader, setVsLeader] = useState(() => searchParams.get('vs') || '');
+  const [myBase, setMyBase] = useState(() => searchParams.get('mbase') || '');
+  const [vsBase, setVsBase] = useState(() => searchParams.get('obase') || '');
   const [uploadedBy, setUploadedBy] = useState(() => searchParams.get('by') || '');
   const [since, setSince] = useState(() => searchParams.get('since') || '');
   const [format, setFormat] = useState(() => searchParams.get('format') || '');
@@ -189,7 +195,7 @@ export function ReplayFilters({
   // filters still show as removable chips when collapsed. Auto-open if the URL
   // arrives with filters applied (deep-link) so they're immediately visible.
   const [filtersOpen, setFiltersOpen] = useState(() =>
-    ['mine', 'vs', 'by', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
+    ['mine', 'vs', 'mbase', 'obase', 'by', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
   );
 
   // Bulk multi-select state. `removed` is the optimistic post-op hide (deleted
@@ -215,6 +221,8 @@ export function ReplayFilters({
     if (showShareTabs) setOrDelete('share', tab === 'all' ? '' : tab);
     setOrDelete('mine', myLeader);
     setOrDelete('vs', vsLeader);
+    setOrDelete('mbase', myBase);
+    setOrDelete('obase', vsBase);
     setOrDelete('by', uploadedBy);
     setOrDelete('since', since);
     setOrDelete('format', format);
@@ -226,12 +234,14 @@ export function ReplayFilters({
     if (next !== searchParams.toString()) {
       router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
     }
-  }, [showShareTabs, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result, view, pathname, router, searchParams]);
+  }, [showShareTabs, tab, myLeader, vsLeader, myBase, vsBase, uploadedBy, since, format, mode, label, result, view, pathname, router, searchParams]);
 
   // B116: leader options split by perspective — leaders the viewer/uploader
   // played (`ownLeader`) vs leaders faced (`oppLeader`).
   const ownLeaders = useMemo(() => leaderSelectOptions(rows, (r) => r.ownLeader), [rows]);
   const oppLeaders = useMemo(() => leaderSelectOptions(rows, (r) => r.oppLeader), [rows]);
+  const ownBases = useMemo(() => baseKindSelectOptions(rows, (r) => r.ownBaseKind), [rows]);
+  const oppBases = useMemo(() => baseKindSelectOptions(rows, (r) => r.oppBaseKind), [rows]);
 
   // B116: uploader options for the team grid's "Uploaded by" filter.
   const uploaders = useMemo(() => {
@@ -263,6 +273,8 @@ export function ReplayFilters({
       if (tab === 'unlisted' && isShared(r)) return false;
       if (myLeader && r.ownLeader?.name !== myLeader) return false;
       if (vsLeader && r.oppLeader?.name !== vsLeader) return false;
+      if (myBase && r.ownBaseKind?.key !== myBase) return false;
+      if (vsBase && r.oppBaseKind?.key !== vsBase) return false;
       if (uploadedBy && r.ownerName !== uploadedBy) return false;
       if (since) {
         const days = parseInt(since.replace('d', ''), 10);
@@ -383,6 +395,8 @@ export function ReplayFilters({
   const activeChips: { key: string; label: string; onClear: () => void }[] = [];
   if (myLeader) activeChips.push({ key: 'mine', label: `My leader: ${myLeader}`, onClear: () => setMyLeader('') });
   if (vsLeader) activeChips.push({ key: 'vs', label: `Vs: ${vsLeader}`, onClear: () => setVsLeader('') });
+  if (myBase) activeChips.push({ key: 'mbase', label: `Base: ${ownBases.find((o) => o.value === myBase)?.label ?? myBase}`, onClear: () => setMyBase('') });
+  if (vsBase) activeChips.push({ key: 'obase', label: `Vs base: ${oppBases.find((o) => o.value === vsBase)?.label ?? vsBase}`, onClear: () => setVsBase('') });
   if (uploadedBy) activeChips.push({ key: 'by', label: `By: ${uploadedBy}`, onClear: () => setUploadedBy('') });
   if (since) activeChips.push({ key: 'since', label: SINCE_OPTIONS.find((s) => s.value === since)?.label || since, onClear: () => setSince('') });
   if (format) activeChips.push({ key: 'fmt', label: FORMAT_LABEL[format] || format, onClear: () => setFormat('') });
@@ -462,6 +476,8 @@ export function ReplayFilters({
         <FilterControls
           myLeader={myLeader} setMyLeader={setMyLeader} ownLeaders={ownLeaders}
           vsLeader={vsLeader} setVsLeader={setVsLeader} oppLeaders={oppLeaders}
+          myBase={myBase} setMyBase={setMyBase} ownBases={ownBases}
+          vsBase={vsBase} setVsBase={setVsBase} oppBases={oppBases}
           uploadedBy={uploadedBy} setUploadedBy={setUploadedBy} uploaders={uploaders}
           showUploaderFilter={showUploaderFilter}
           since={since} setSince={setSince}
@@ -1619,6 +1635,8 @@ function ViewSwitcher({ view, setView, showMember = false }: { view: ViewMode; s
 function FilterControls({
   myLeader, setMyLeader, ownLeaders,
   vsLeader, setVsLeader, oppLeaders,
+  myBase, setMyBase, ownBases,
+  vsBase, setVsBase, oppBases,
   uploadedBy, setUploadedBy, uploaders, showUploaderFilter,
   since, setSince,
   format, setFormat,
@@ -1628,6 +1646,8 @@ function FilterControls({
 }: {
   myLeader: string; setMyLeader: (v: string) => void; ownLeaders: LeaderSelectOption[];
   vsLeader: string; setVsLeader: (v: string) => void; oppLeaders: LeaderSelectOption[];
+  myBase: string; setMyBase: (v: string) => void; ownBases: LeaderSelectOption[];
+  vsBase: string; setVsBase: (v: string) => void; oppBases: LeaderSelectOption[];
   uploadedBy: string; setUploadedBy: (v: string) => void; uploaders: string[]; showUploaderFilter: boolean;
   since: string; setSince: (v: string) => void;
   format: string; setFormat: (v: string) => void;
@@ -1653,6 +1673,12 @@ function FilterControls({
       </Field>
       <Field orientation="column" label="Opponent leader">
         <LeaderSelect value={vsLeader} onChange={setVsLeader} options={oppLeaders} anyLabel="Any" anyValue="" ariaLabel="Filter by opponent leader" fullWidth />
+      </Field>
+      <Field orientation="column" label="My base">
+        <LeaderSelect value={myBase} onChange={setMyBase} options={ownBases} anyLabel="Any" anyValue="" ariaLabel="Filter by my base" fullWidth />
+      </Field>
+      <Field orientation="column" label="Opponent base">
+        <LeaderSelect value={vsBase} onChange={setVsBase} options={oppBases} anyLabel="Any" anyValue="" ariaLabel="Filter by opponent base" fullWidth />
       </Field>
       {showUploaderFilter && (
         <Field orientation="column" label="Uploaded by">
@@ -1698,6 +1724,19 @@ function NoMatchesEmpty() {
 // to the old local `selectStyle`: radius 4 (not 6), tighter 6px 8px padding,
 // suppressed focus outline, and no 220px maxWidth cap.
 const replaySelectStyle: React.CSSProperties = { borderRadius: 4, padding: '6px 8px', outline: 'none', maxWidth: 'none' };
+
+// Base options keyed on FUNCTIONAL identity (lib/baseIdentity): vanilla and
+// force-pair groups collapse to one option with the aspect icon.
+function baseKindSelectOptions<T>(rows: T[], pick: (r: T) => any): LeaderSelectOption[] {
+  const byKey = new Map<string, LeaderSelectOption>();
+  for (const r of rows) {
+    const k = pick(r);
+    if (k?.key && !byKey.has(k.key)) {
+      byKey.set(k.key, { value: k.key, label: k.label, art: k.art, artIsLeader: false, iconAspect: k.iconAspect });
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
 
 // Unique leaders (by name) with a representative art ref — options for the
 // shared <LeaderSelect> art picker.
