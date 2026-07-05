@@ -120,14 +120,15 @@ export function OpeningStage({
 
   const submit = useCallback(async () => {
     if (!detail || myMulligan === null || picks.length !== 2 || submitting) return;
+    const sourceHand = myMulligan === 'keep' ? detail.dealtHand : detail.keptHand;
     if (practicing) {
-      setPractice({ decision: myMulligan, resourced: picks.map((i) => detail.keptHand[i].id) });
+      setPractice({ decision: myMulligan, resourced: picks.map((i) => sourceHand[i].id) });
       setStage('reveal');
       return;
     }
     setSubmitting(true);
     try {
-      const resourced = picks.map((i) => detail.keptHand[i].id);
+      const resourced = picks.map((i) => sourceHand[i].id);
       const res = await fetch(`/api/replays/${replaySlug}/opening`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -180,17 +181,41 @@ export function OpeningStage({
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!detail) return <Loading label="Dealing the hand…" />;
 
-  const hand = stage === 'mulligan' ? detail.dealtHand : detail.keptHand;
+  // Stage 2 follows the USER'S decision, not the recorder's — a keep answers
+  // from the dealt hand (even if the recorder mulliganed: those picks are
+  // the discussion data), a mulligan answers from the recorder's redraw
+  // (the only one that exists; == dealt when the recorder kept). Nothing is
+  // revealed until the picks land. The reveal shows the recorder's world.
+  const hand =
+    stage === 'mulligan' ? detail.dealtHand
+    : stage === 'resource' ? (myMulligan === 'keep' ? detail.dealtHand : detail.keptHand)
+    : detail.keptHand;
   // Reveal: the DIFF is painted straight onto the hand (multiset-safe index
   // assignment — duplicate copies are interchangeable): green = you both
   // resourced it, red = only they did, gray = only you did. The owner has no
   // answer of their own, so their recorded picks get the plain cyan highlight.
   const verdictByIdx = new Map<number, 'match' | 'theirs' | 'mine'>();
+  const keptWorldPickIdx = new Set<number>(); // MY picks on the kept-world (fork) hand
   const theirPickIdx = new Set<number>();
   if (stage === 'reveal' && detail.reveal) {
     const theirs = detail.reveal.resourced.map((c) => c.id);
     const effective = practice ?? detail.myResponse;
-    if (effective) {
+    // Incomparable fork: I kept (picked from the dealt hand), they mulliganed
+    // (picked from the redraw) — two different hands, no pick-vs-pick diff.
+    const incomparable = !!effective && effective.decision === 'keep' && detail.reveal.decision === 'mulligan';
+    if (effective && incomparable) {
+      // Their picks light the live (redraw) hand; mine light the kept world.
+      const remaining = [...theirs];
+      detail.keptHand.forEach((c, i) => {
+        const at = remaining.indexOf(c.id);
+        if (at >= 0) { remaining.splice(at, 1); verdictByIdx.set(i, 'theirs'); }
+      });
+      const minePool = [...effective.resourced];
+      detail.dealtHand.forEach((c, i) => {
+        const at = minePool.indexOf(c.id);
+        if (at >= 0) { minePool.splice(at, 1); keptWorldPickIdx.add(i); }
+      });
+    } else if (effective) {
       const matchPool: string[] = [];
       const theirsOnly = [...theirs];
       const mineOnly: string[] = [];
@@ -227,7 +252,9 @@ export function OpeningStage({
   // the kept world share the screen without scrolling.
   const effectiveDecision =
     stage === 'reveal' ? (practice ?? detail.myResponse)?.decision : myMulligan;
-  const dualHand = !kept && (stage === 'resource' || stage === 'reveal') && effectiveDecision === 'keep';
+  // The fork view is REVEAL-only: stage 2 shows a single hand (the user's
+  // world) and reveals nothing about the recorder's call.
+  const dualHand = stage === 'reveal' && !kept && effectiveDecision === 'keep';
 
   const startPractice = () => {
     setPracticing(true);
@@ -264,28 +291,6 @@ export function OpeningStage({
         Their resource picks
       </div>
     ) : null;
-
-  // Stage 2's DECISION BEAT: the hand changing (or not) is what betrays their
-  // mulligan call — stage 2 always shows the REAL post-decision hand. Say it
-  // loudly in the prompt ("I hit Keep and it mulliganed?!" was the confusion
-  // when this lived in fine print).
-  const agreedBeat = myMulligan === (kept ? 'keep' : 'mulligan');
-  const decisionBeat = stage === 'resource' && myMulligan !== null && (
-    <div
-      data-testid="opening-beat"
-      style={{
-        textAlign: 'center',
-        fontSize: 13.5,
-        fontWeight: 700,
-        marginBottom: 6,
-        color: agreedBeat ? '#6bd968' : '#ff7b72',
-      }}
-    >
-      {kept
-        ? agreedBeat ? '✓ They kept it too.' : '✗ They kept it.'
-        : agreedBeat ? '✓ They mulliganed too.' : '✗ They mulliganed.'}
-    </div>
-  );
 
   // ONE layout for every screen size — the karabast table, scaled: the
   // center column (their leader/base above yours) dead-center, the hand
@@ -362,7 +367,6 @@ export function OpeningStage({
         )}
         {stage === 'resource' && (
           <section style={{ ...promptPanelStyle, padding: '0.9rem 1rem 1rem' }} aria-label="Resource Step">
-            {decisionBeat}
             <div style={{ ...promptTitleStyle, fontSize: '1rem' }}>Select 2 cards to resource</div>
             <div style={{ display: 'flex', gap: '1rem', marginTop: '0.8rem', justifyContent: 'center' }}>
               <GradientBorderButton testId="opening-confirm" style={{ padding: '0.6rem 1.3rem' }} onClick={submit} disabled={picks.length !== 2 || submitting}>
@@ -398,7 +402,9 @@ export function OpeningStage({
         {board}
         {overlay}
       </div>
-      {!kept && stage !== 'mulligan' && (
+      {/* Reveal-only: naming the hand "their redraw" before the picks would
+          spoil the recorder's call. */}
+      {stage === 'reveal' && !kept && (
         <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: -4 }}>
           Their redraw
         </div>
@@ -419,7 +425,15 @@ export function OpeningStage({
           </div>
           <HandRow cardWidth={compact ? 88 : 92} overlap={compact ? 46 : 42}>
             {detail.dealtHand.map((c, i) => (
-              <QuizCard key={`kept-${c.id}-${i}`} card={c} width={compact ? 88 : 92} dimmed />
+              <QuizCard
+                key={`kept-${c.id}-${i}`}
+                card={c}
+                width={compact ? 88 : 92}
+                // YOUR two picks in this world render cyan at full strength —
+                // the rest stays dimmed (the timeline that didn't happen).
+                verdict={keptWorldPickIdx.has(i) ? 'mine' : undefined}
+                dimmed={!keptWorldPickIdx.has(i)}
+              />
             ))}
           </HandRow>
         </div>
@@ -519,7 +533,9 @@ function RevealPanel({
       )}
       {mine && (
         <p style={{ ...promptTextStyle, margin: '8px 0 0', fontSize: 13 }}>
-          {sharedPicks.size === 2 ? 'Same two picks.' : sharedPicks.size === 1 ? 'One pick matched.' : 'No picks matched.'}
+          {mine.decision === 'keep' && reveal.decision === 'mulligan'
+            ? 'Your picks are on your kept hand below — theirs on the redraw.'
+            : sharedPicks.size === 2 ? 'Same two picks.' : sharedPicks.size === 1 ? 'One pick matched.' : 'No picks matched.'}
         </p>
       )}
 

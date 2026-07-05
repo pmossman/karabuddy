@@ -145,6 +145,26 @@ describe('B221 opening drills', () => {
     expect(item.myPickMatches).toBe(1);
   });
 
+  it('a KEEP answer on a mulligan game picks from the DEALT hand (the fork data)', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const team = await seedTeam(a.id, [a.id, b.id]);
+    as(a.id);
+    const { slug, keptIds } = await doUpload(a.token, `g-${randomUUID()}`, [team], { mulligan: true });
+    const dealtIds = DEALT().map((c) => `${c.setId.set}_${String(c.setId.number).padStart(3, '0')}`);
+    as(b.id);
+    // Redraw-only cards are NOT valid for a keep answer…
+    expect((await respond(slug, 'keep', [keptIds[0], keptIds[1]])).error).toMatch(/not in hand/);
+    // …dealt-hand cards are.
+    const ok = await respond(slug, 'keep', [dealtIds[0], dealtIds[2]]);
+    expect(ok.ok).toBe(true);
+    // Different hands → the pick overlap is NOT comparable (glyph shows divergence).
+    const [item] = await pool(team);
+    expect(item.myDecision).toBe('keep');
+    expect(item.recordedDecision).toBe('mulligan');
+    expect(item.myPickMatches).toBeNull();
+  });
+
   it('pool: the teammate filter reveals identity (coaching mode)', async () => {
     const a = await seedUser('Aster');
     const b = await seedUser('Boba');

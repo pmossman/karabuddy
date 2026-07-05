@@ -148,7 +148,9 @@ export interface OpeningPoolItem {
   // The viewer's own outcome (answered items only) — drives the compact
   // outcome glyph: their decision + how many of their 2 picks matched.
   myDecision?: 'keep' | 'mulligan';
-  myPickMatches?: number; // 0..2, multiset overlap with the recorded picks
+  // 0..2 multiset overlap with the recorded picks — or null when the picks
+  // aren't comparable (you kept, they mulliganed: different hands).
+  myPickMatches?: number | null;
   // Coaching mode / own items: identity, only when requested or mine.
   recorder?: { userId: string | null; name: string | null };
 }
@@ -241,14 +243,22 @@ export async function openingPoolForTeam(
       const mineResp = teamResponses.find((r) => r.userId === viewerId);
       if (mineResp) {
         item.myDecision = mineResp.decision as 'keep' | 'mulligan';
-        // Multiset overlap of their picks vs the recorded picks (dup-safe).
-        const pool = [...((opening.resourced as string[]) ?? [])];
-        let matches = 0;
-        for (const id of (mineResp.resourced as string[]) ?? []) {
-          const at = pool.indexOf(id);
-          if (at >= 0) { pool.splice(at, 1); matches++; }
+        // Comparable only when both picked from the SAME hand: a keep answer
+        // against a recorded mulligan lives on the dealt hand while their
+        // picks live on the redraw.
+        const comparable = !(mineResp.decision === 'keep' && opening.decision === 'mulligan');
+        if (!comparable) {
+          item.myPickMatches = null;
+        } else {
+          // Multiset overlap of their picks vs the recorded picks (dup-safe).
+          const pool = [...((opening.resourced as string[]) ?? [])];
+          let matches = 0;
+          for (const id of (mineResp.resourced as string[]) ?? []) {
+            const at = pool.indexOf(id);
+            if (at >= 0) { pool.splice(at, 1); matches++; }
+          }
+          item.myPickMatches = matches;
         }
-        item.myPickMatches = matches;
       }
     }
     if (mine || opts.withRecorder) {

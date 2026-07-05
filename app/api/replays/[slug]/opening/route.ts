@@ -122,10 +122,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!Array.isArray(resourced) || resourced.length !== 2 || !resourced.every((r) => typeof r === 'string')) {
     return NextResponse.json({ ok: false, error: 'pick exactly 2 resources' }, { status: 400 });
   }
-  // Multiset check: the picks must fit within the kept hand's copies (two
-  // picks of the same cardId need two copies in hand).
+  // Multiset check against the hand implied by the RESPONDER'S OWN decision:
+  // a keep answers from the dealt hand (even if the recorder mulliganed —
+  // those picks are the discussion data), a mulligan answers from the
+  // recorder's post-decision hand (the only redraw that exists; identical to
+  // the dealt hand when the recorder kept). Two picks of the same cardId
+  // need two copies in that hand.
+  const sourceHand = (decision === 'keep' ? ent.opening.dealtHand : ent.opening.keptHand) as string[];
   const avail = new Map<string, number>();
-  for (const id of ent.opening.keptHand as string[]) avail.set(id, (avail.get(id) ?? 0) + 1);
+  for (const id of sourceHand) avail.set(id, (avail.get(id) ?? 0) + 1);
   for (const id of resourced) {
     const n = avail.get(id) ?? 0;
     if (n <= 0) return NextResponse.json({ ok: false, error: 'resource not in hand' }, { status: 400 });

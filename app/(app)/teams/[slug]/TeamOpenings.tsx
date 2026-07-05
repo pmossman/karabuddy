@@ -581,8 +581,11 @@ function OutcomeGlyph({ item }: { item: PoolItem }) {
     />
   );
   const decisionMatched = item.myDecision === item.recordedDecision;
-  const picks = item.myPickMatches ?? 0;
-  const title = `${decisionMatched ? 'Call matched' : `You said ${item.myDecision}, they ${item.recordedDecision}ed`} · ${picks}/2 resources matched`;
+  // null = picks not comparable (you kept, they mulliganed — different
+  // hands): both pick chips render as divergence.
+  const comparable = item.myPickMatches !== null && item.myPickMatches !== undefined;
+  const picks = comparable ? item.myPickMatches! : 0;
+  const title = `${decisionMatched ? 'Call matched' : `You said ${item.myDecision}, they ${item.recordedDecision === 'keep' ? 'kept' : 'mulliganed'}`} · ${comparable ? `${picks}/2 resources matched` : 'picks from different hands'}`;
   return (
     <span title={title} style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>
       {chip(decisionMatched, 'd')}

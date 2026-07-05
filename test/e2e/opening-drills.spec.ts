@@ -100,10 +100,9 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByText(/On the (play|draw)/)).toHaveCount(0);
   await page2.getByTestId('opening-keep').click();
 
-  // Stage 2 — the decision beat announces their actual call (they kept, and
-  // so did we), then pick exactly two from the hand.
-  await expect(page2.getByTestId('opening-beat')).toContainText('They kept it too');
+  // Stage 2 — nothing about their call is revealed yet; just pick two.
   await expect(page2.getByText('Select 2 cards to resource')).toBeVisible();
+  await expect(page2.getByTestId('opening-beat')).toHaveCount(0);
   await expect(page2.getByTestId('opening-confirm')).toBeDisabled();
   await page2.getByTestId('opening-pick-1').click(); // their actual pick
   await page2.getByTestId('opening-pick-3').click(); // a different second pick
@@ -255,24 +254,27 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   await page2.goto(`/teams/${teamSlug}?tab=openings`);
   await page2.getByTestId('opening-begin').click();
 
-  // Disagree with their mulligan: say KEEP → the timelines fork. Stage 2
-  // shows THEIR redraw as the live picker plus your kept-world in gray.
+  // Disagree with their mulligan: say KEEP. Stage 2 stays in YOUR world —
+  // the DEALT hand, no beat, no redraw caption — so your kept-hand resource
+  // picks are captured as discussion data before anything is revealed.
   await page2.getByTestId('opening-keep').click();
-  await expect(page2.getByTestId('opening-beat')).toContainText('✗ They mulliganed.');
-  await expect(page2.getByText('Their redraw')).toBeVisible();
-  const keptWorld = page2.getByTestId('opening-kept-world');
-  await expect(keptWorld).toContainText('Your kept hand');
-  // The live picker works on the REDRAW (their picks are redrawn[1]+[4]).
-  await page2.getByTestId('opening-pick-1').click();
-  await page2.getByTestId('opening-pick-4').click();
+  await expect(page2.getByText('Select 2 cards to resource')).toBeVisible();
+  await expect(page2.getByTestId('opening-beat')).toHaveCount(0);
+  await expect(page2.getByText('Their redraw')).toHaveCount(0);
+  await expect(page2.getByTestId('opening-kept-world')).toHaveCount(0);
+  await page2.getByTestId('opening-pick-0').click();
+  await page2.getByTestId('opening-pick-2').click();
   await page2.getByTestId('opening-confirm').click();
 
-  // Reveal: both timelines still visible — verdicts on the redraw (perfect
-  // match → all green), the kept world grayed below.
+  // Reveal: the fork. Their redraw on top with THEIR picks (yellow), your
+  // kept world below with YOUR picks (cyan) — different hands, so no
+  // matched-picks claim.
   await expect(page2.getByTestId('opening-reveal')).toContainText('ForkOwner mulliganed');
   await expect(page2.getByTestId('opening-reveal')).toContainText('you said keep');
-  await expect(page2.getByTestId('opening-reveal')).toContainText('Same two picks.');
-  await expect(page2.getByText('Both picked', { exact: true })).toHaveCount(2);
-  await expect(page2.getByTestId('opening-kept-world')).toBeVisible();
+  await expect(page2.getByTestId('opening-reveal')).toContainText('Your picks are on your kept hand below');
   await expect(page2.getByText('Their redraw')).toBeVisible();
+  await expect(page2.getByText('Their pick', { exact: true })).toHaveCount(2);
+  const keptWorld = page2.getByTestId('opening-kept-world');
+  await expect(keptWorld).toContainText('Your kept hand');
+  await expect(keptWorld.getByText('Your pick', { exact: true })).toHaveCount(2);
 });
