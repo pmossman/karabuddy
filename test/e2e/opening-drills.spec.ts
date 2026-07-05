@@ -94,6 +94,12 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-match-count')).toContainText('1 unanswered opening');
   await page2.getByTestId('opening-begin').click();
 
+  // The session rail (game-log pattern): one mini card per queue item, the
+  // current one highlighted; it survives the whole session.
+  await expect(page2.getByTestId('opening-session-rail')).toBeVisible();
+  await expect(page2.getByTestId('opening-rail-item')).toHaveCount(1);
+  await expect(page2.getByTestId('opening-rail-item')).toHaveAttribute('aria-current', 'step');
+
   // PLAY, stage 1: session HUD + the board column (landscape seats, name
   // plates, Initiative pill on the holder's seat — SWU terms, no play/draw).
   await expect(page2.getByText('Opening 1 of 1')).toBeVisible();
@@ -246,6 +252,13 @@ test('mobile: the two-phase flow works at 390px, footer reclaimed', async ({ pag
   // no horizontal overflow blocking the picks).
   await page2.getByTestId('opening-begin').click();
   await expect(page2.getByTestId('opening-keep')).toBeVisible();
+
+  // On mobile the session rail is a slide-over drawer behind the HUD toggle.
+  await expect(page2.getByTestId('opening-session-rail')).toHaveCount(0);
+  await page2.getByTestId('opening-rail-toggle').click();
+  await expect(page2.getByTestId('opening-session-rail')).toBeVisible();
+  await page2.getByLabel('Close session list').click();
+  await expect(page2.getByTestId('opening-session-rail')).toHaveCount(0);
   await page2.getByTestId('opening-keep').click();
   await page2.getByTestId('opening-pick-0').click();
   await page2.getByTestId('opening-pick-5').click();

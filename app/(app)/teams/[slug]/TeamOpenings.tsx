@@ -14,11 +14,12 @@
 // Identity stays hidden on quiz items; the teammate filter is "coaching mode"
 // and inherently reveals it.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { useFilterMemory, FilterMemoryChips } from '@/app/_components/filterMemory';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { GradientBorderButton } from './OpeningPromptKit';
@@ -80,6 +81,9 @@ export function TeamOpenings({
   // filters with zero re-setup (the workflow ask).
   const [view, setView] = useState<'setup' | 'history'>('setup');
   const [search, setSearch] = useState('');
+  // Mobile: the session rail becomes a slide-over drawer.
+  const [railOpen, setRailOpen] = useState(false);
+  const compact = useMediaQuery('(max-width: 1100px)');
 
   const load = useCallback(async (opts: { flash?: boolean } = {}) => {
     if (opts.flash) setItems(null);
@@ -221,17 +225,79 @@ export function TeamOpenings({
               {matched}/{answeredCount} matched
             </span>
           )}
+          {current && compact && (
+            <button
+              type="button"
+              data-testid="opening-rail-toggle"
+              onClick={() => setRailOpen(true)}
+              style={{
+                marginLeft: 'auto',
+                background: 'transparent',
+                border: '1px solid #2e333c',
+                borderRadius: tokens.radius.sm,
+                color: '#a0a8b8',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                padding: '5px 10px',
+                cursor: 'pointer',
+              }}
+            >
+              ☰ {index + 1}/{queue.length}
+            </button>
+          )}
         </div>
         {current ? (
-          <OpeningStage
-            key={current}
-            teamSlug={teamSlug}
-            replaySlug={current}
-            viewerName={viewerName}
-            hasNext={index + 1 < queue.length}
-            onAnswered={onAnswered}
-            onNext={() => setSession((s) => (s ? { ...s, index: s.index + 1 } : s))}
-          />
+          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <OpeningStage
+                key={current}
+                teamSlug={teamSlug}
+                replaySlug={current}
+                viewerName={viewerName}
+                hasNext={index + 1 < queue.length}
+                onAnswered={onAnswered}
+                onNext={() => setSession((s) => (s ? { ...s, index: s.index + 1 } : s))}
+              />
+            </div>
+            {!compact && (
+              <SessionRail
+                queue={queue}
+                index={index}
+                results={results}
+                items={items}
+                onJump={(i) => setSession((s) => (s ? { ...s, index: i } : s))}
+              />
+            )}
+            {compact && railOpen && (
+              <>
+                <div
+                  aria-hidden
+                  onClick={() => setRailOpen(false)}
+                  style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(6,8,12,0.6)', cursor: 'pointer' }}
+                />
+                <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 81, width: 'min(300px, 85vw)', background: '#12151c', borderLeft: '1px solid #2e333c', boxShadow: '-12px 0 34px rgba(0,0,0,0.6)', padding: 12, overflowY: 'auto' }}>
+                  <button
+                    type="button"
+                    aria-label="Close session list"
+                    onClick={() => setRailOpen(false)}
+                    style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid #2e333c', borderRadius: 6, color: '#a0a8b8', cursor: 'pointer' }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <path d="M18 6L6 18" /><path d="M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <SessionRail
+                    queue={queue}
+                    index={index}
+                    results={results}
+                    items={items}
+                    onJump={(i) => { setSession((s) => (s ? { ...s, index: i } : s)); setRailOpen(false); }}
+                    drawer
+                  />
+                </div>
+              </>
+            )}
+          </div>
         ) : (
           <SessionSummary
             queue={queue}
@@ -410,6 +476,103 @@ export function TeamOpenings({
         </ListSection>
       )}
     </div>
+  );
+}
+
+// The session rail — the replay viewer's game-log pattern applied to the
+// gauntlet: every opening in the queue as a mini card. Answered ones sit
+// dimmed with their outcome, the CURRENT one is bright (the dimness gradient
+// orients you in the feed), upcoming ones wait dimmed below. Click to jump —
+// back to an answered reveal (Redo/practice + comments live there; the stored
+// answer itself is immutable by design) or ahead to any unanswered opening.
+function SessionRail({
+  queue,
+  index,
+  results,
+  items,
+  onJump,
+  drawer = false,
+}: {
+  queue: string[];
+  index: number;
+  results: Record<string, boolean>;
+  items: PoolItem[] | null;
+  onJump: (i: number) => void;
+  drawer?: boolean;
+}) {
+  const byId = new Map((items ?? []).map((i) => [i.replaySlug, i]));
+  const currentRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [index]);
+  return (
+    <nav
+      data-testid="opening-session-rail"
+      aria-label="Session openings"
+      style={{
+        width: drawer ? '100%' : 236,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        ...(drawer
+          ? {}
+          : {
+              maxHeight: 'calc(100dvh - 140px)',
+              overflowY: 'auto',
+              padding: '10px 10px 12px',
+              background: tokens.surface.panel,
+              border: `1px solid ${tokens.surface.panelBorder}`,
+              borderRadius: tokens.radius.md,
+            }),
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', padding: '0 2px 2px' }}>
+        Session · {index + 1}/{queue.length}
+      </div>
+      {queue.map((slug, i) => {
+        const it = byId.get(slug);
+        const answered = results[slug] !== undefined;
+        const isCurrent = i === index;
+        const own = (it?.ownLeader?.name as string) || 'Unknown';
+        const opp = (it?.oppLeader?.name as string) || 'Unknown';
+        return (
+          <button
+            key={slug}
+            ref={isCurrent ? currentRef : undefined}
+            type="button"
+            data-testid="opening-rail-item"
+            aria-current={isCurrent ? 'step' : undefined}
+            onClick={() => onJump(i)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '5px 8px',
+              background: isCurrent ? 'rgba(77,157,255,0.10)' : 'transparent',
+              border: `1px solid ${isCurrent ? '#4d9dff' : 'transparent'}`,
+              borderRadius: tokens.radius.sm,
+              cursor: 'pointer',
+              textAlign: 'left',
+              fontFamily: 'inherit',
+              width: '100%',
+              opacity: isCurrent ? 1 : 0.45,
+            }}
+          >
+            <span style={{ fontSize: 10.5, color: '#6c7588', width: 16, flexShrink: 0, textAlign: 'right' }}>{i + 1}</span>
+            <LeaderBasePair leader={it?.ownLeader} base={it?.ownBase} orientation="overlap" width={34} height={24} fit="cover" radius={3} fallback="hide" />
+            <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {own} <span style={{ color: '#6c7588', fontWeight: 400 }}>vs</span> {opp}
+            </span>
+            {answered && (
+              <span style={{ fontSize: 11, flexShrink: 0, color: results[slug] ? '#00E25B' : '#FFD60A' }}>
+                {results[slug] ? '✓' : '≠'}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
