@@ -151,6 +151,10 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await page2.getByTestId('opening-comment').fill('I resource the Cantwell here every time');
   await page2.getByTestId('opening-post').click();
   await expect(page2.getByText('Posted — @DrillOwner notified.')).toBeVisible();
+  // The comment lands in the reveal's own discussion list — still there when
+  // the opening is reopened later.
+  await expect(page2.getByTestId('opening-comments')).toContainText('I resource the Cantwell here every time');
+  await expect(page2.getByTestId('opening-comments')).toContainText('DrillMate');
 
   // Redo as a PRACTICE run — replay the motions with a different answer.
   // The throwaway answer drives the diff, but the STORED answer and the team
@@ -214,6 +218,8 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await ownRow.click();
   await expect(page.getByTestId('opening-reveal')).toContainText('DrillMate');
   await expect(page.getByTestId('opening-reveal')).toContainText('Team so far — Keep 1 · Mulligan 0');
+  // The owner sees the feedback right on the reveal too.
+  await expect(page.getByTestId('opening-comments')).toContainText('I resource the Cantwell here every time');
 });
 
 test('mobile: the two-phase flow works at 390px, footer reclaimed', async ({ page, browser }) => {

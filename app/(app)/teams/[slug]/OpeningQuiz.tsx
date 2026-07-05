@@ -202,7 +202,14 @@ export function OpeningStage({
     const effective = practice ?? detail.myResponse;
     // Incomparable fork: I kept (picked from the dealt hand), they mulliganed
     // (picked from the redraw) — two different hands, no pick-vs-pick diff.
-    const incomparable = !!effective && effective.decision === 'keep' && detail.reveal.decision === 'mulligan';
+    // LEGACY guard: answers recorded before the pick-first flow sourced keep-
+    // picks from the REDRAW — if the picks don't map onto the dealt hand,
+    // render them where they actually came from (comparable on the redraw).
+    const incomparable =
+      !!effective &&
+      effective.decision === 'keep' &&
+      detail.reveal.decision === 'mulligan' &&
+      picksMapOnto(detail.dealtHand, effective.resourced);
     if (effective && incomparable) {
       // Their picks light the live (redraw) hand; mine light the kept world.
       const remaining = [...theirs];
@@ -480,6 +487,17 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Can every pick be consumed from this hand's multiset?
+function picksMapOnto(hand: QuizCardRef[], picks: string[]): boolean {
+  const pool = hand.map((c) => c.id);
+  for (const id of picks) {
+    const at = pool.indexOf(id);
+    if (at < 0) return false;
+    pool.splice(at, 1);
+  }
+  return true;
+}
+
 // On a keep, dealt === kept, so the stage-2 helper copy shouldn't spoil
 // anything: only call out "they actually mulliganed" when the hands differ.
 // (Comparing by multiset of ids — same rule the server validates with.)
@@ -549,7 +567,7 @@ function RevealPanel({
       )}
       {mine && (
         <p style={{ ...promptTextStyle, margin: '8px 0 0', fontSize: 13 }}>
-          {mine.decision === 'keep' && reveal.decision === 'mulligan'
+          {mine.decision === 'keep' && reveal.decision === 'mulligan' && picksMapOnto(detail.dealtHand, mine.resourced)
             ? 'Your picks are on your kept hand below — theirs on the redraw.'
             : sharedPicks.size === 2 ? 'Same two picks.' : sharedPicks.size === 1 ? 'One pick matched.' : 'No picks matched.'}
         </p>
@@ -600,16 +618,82 @@ function RevealPanel({
       </div>
 
       <div style={{ marginTop: 14, textAlign: 'left' }}>
-        <DisagreeComposer
+        <OpeningDiscussion
           teamSlug={teamSlug}
           replaySlug={detail.replaySlug}
-          frameIndex={reveal.mulliganFrameIndex}
+          decisionFrames={[reveal.mulliganFrameIndex, reveal.resourceFrameIndex]}
+          composeFrame={reveal.mulliganFrameIndex}
           recorder={reveal.recorder}
           viewerName={viewerName}
           isOwner={detail.isOwner}
         />
       </div>
     </section>
+  );
+}
+
+// The opening's discussion: every tag anchored at its decision frames —
+// visible on the reveal so a comment you (or a teammate) left is still there
+// when you reopen the item — plus the composer.
+function OpeningDiscussion({
+  teamSlug,
+  replaySlug,
+  decisionFrames,
+  composeFrame,
+  recorder,
+  viewerName,
+  isOwner,
+}: {
+  teamSlug: string;
+  replaySlug: string;
+  decisionFrames: number[];
+  composeFrame: number;
+  recorder: { userId: string | null; name: string | null };
+  viewerName: string;
+  isOwner: boolean;
+}) {
+  const [comments, setComments] = useState<any[] | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const j = await (await fetch(`/api/replays/${replaySlug}/tags`)).json();
+      if (j.ok && Array.isArray(j.data)) {
+        setComments(j.data.filter((t: any) => decisionFrames.includes(t.frameIndex)));
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replaySlug, decisionFrames.join(',')]);
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {comments && comments.length > 0 && (
+        <div data-testid="opening-comments" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3' }}>
+            Discussion · {comments.length}
+          </div>
+          {comments.map((t) => (
+            <div key={t.id} style={{ display: 'flex', gap: 8, fontSize: 12.5, alignItems: 'baseline' }}>
+              <span style={{ fontWeight: 700, color: '#c8cdd8', flexShrink: 0 }}>{t.authorName ?? 'Teammate'}</span>
+              <span style={{ color: '#a0a8b8', minWidth: 0, overflowWrap: 'anywhere' }}>{t.comment}</span>
+              {t.createdAt && (
+                <span style={{ marginLeft: 'auto', fontSize: 10.5, color: '#6c7588', flexShrink: 0 }}>
+                  {new Date(t.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <DisagreeComposer
+        teamSlug={teamSlug}
+        replaySlug={replaySlug}
+        frameIndex={composeFrame}
+        recorder={recorder}
+        viewerName={viewerName}
+        isOwner={isOwner}
+        onPosted={load}
+      />
+    </div>
   );
 }
 
@@ -623,6 +707,7 @@ function DisagreeComposer({
   recorder,
   viewerName,
   isOwner,
+  onPosted,
 }: {
   teamSlug: string;
   replaySlug: string;
@@ -630,6 +715,7 @@ function DisagreeComposer({
   recorder: { userId: string | null; name: string | null };
   viewerName: string;
   isOwner: boolean;
+  onPosted?: () => void;
 }) {
   const [text, setText] = useState('');
   const [state, setState] = useState<'idle' | 'posting' | 'posted' | 'error'>('idle');
@@ -653,19 +739,17 @@ function DisagreeComposer({
         }),
       });
       const j = await res.json();
-      setState(j.ok ? 'posted' : 'error');
+      if (j.ok) {
+        setText('');
+        setState('posted');
+        onPosted?.(); // the list above refreshes with the new comment
+      } else {
+        setState('error');
+      }
     } catch {
       setState('error');
     }
   };
-
-  if (state === 'posted') {
-    return (
-      <div style={{ fontSize: 13, color: '#6bd968' }}>
-        Posted{recorder.name ? ` — @${recorder.name} notified.` : '.'}
-      </div>
-    );
-  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <textarea
@@ -697,9 +781,13 @@ function DisagreeComposer({
         >
           {state === 'posting' ? 'Posting…' : 'Post to team discussion'}
         </button>
-        {recorder.name && (
+        {state === 'posted' ? (
+          <span data-testid="opening-posted-note" style={{ fontSize: 12, color: '#6bd968' }}>
+            Posted{recorder.name ? ` — @${recorder.name} notified.` : '.'}
+          </span>
+        ) : recorder.name ? (
           <span style={{ fontSize: 11.5, color: '#6c7588' }}>@{recorder.name} will be notified</span>
-        )}
+        ) : null}
         {state === 'error' && <span style={{ fontSize: 12, color: '#ff7b72' }}>Failed — try again.</span>}
       </div>
     </div>

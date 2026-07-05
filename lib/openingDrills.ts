@@ -253,8 +253,18 @@ export async function openingPoolForTeam(
         item.myAnsweredAt = mineResp.createdAt.toISOString();
         // Comparable only when both picked from the SAME hand: a keep answer
         // against a recorded mulligan lives on the dealt hand while their
-        // picks live on the redraw.
-        const comparable = !(mineResp.decision === 'keep' && opening.decision === 'mulligan');
+        // picks live on the redraw. LEGACY answers (pre pick-first flow)
+        // sourced keep-picks from the redraw — those ARE comparable.
+        const mapsOntoDealt = (() => {
+          const pool = [...((opening.dealtHand as string[]) ?? [])];
+          for (const id of (mineResp.resourced as string[]) ?? []) {
+            const at = pool.indexOf(id);
+            if (at < 0) return false;
+            pool.splice(at, 1);
+          }
+          return true;
+        })();
+        const comparable = !(mineResp.decision === 'keep' && opening.decision === 'mulligan' && mapsOntoDealt);
         if (!comparable) {
           item.myPickMatches = null;
         } else {
