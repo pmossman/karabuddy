@@ -349,6 +349,53 @@ export function OpeningStage({
 
   // The floating prompt layer. pointerEvents:none on the wrapper keeps the
   // uncovered board cards hoverable; the panel itself re-enables them.
+  const minimizeGlyph = (
+    <button
+      type="button"
+      data-testid="opening-reveal-minimize"
+      aria-label="Minimize"
+      onClick={() => setRevealMin(true)}
+      style={{ position: 'absolute', top: 4, right: 6, zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 30, background: 'transparent', border: 'none', color: '#a0a8b8', cursor: 'pointer', padding: 0 }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
+    </button>
+  );
+
+  // The collapsed reveal: verdict at a glance + expand, in the modal's own
+  // visual language (floating card, gradient border).
+  const summaryRow = detail.reveal ? (
+    <div
+      data-testid="opening-reveal-summary"
+      style={{ ...promptPanelStyle, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', boxShadow: '0 8px 26px rgba(0,0,0,0.55)' }}
+    >
+      {(() => {
+        const eff = practice ?? detail.myResponse;
+        const agreed = eff ? eff.decision === detail.reveal!.decision : null;
+        return (
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <strong style={{ color: '#e6ebf2' }}>
+              {detail.reveal!.recorder.name ?? 'They'} {detail.reveal!.decision === 'keep' ? 'kept' : 'mulliganed'}
+            </strong>
+            {eff && (
+              <span style={{ color: agreed ? '#6bd968' : '#ff7b72' }}>
+                {' '}— you said {eff.decision} {agreed ? '✓' : '✗'}
+              </span>
+            )}
+          </span>
+        );
+      })()}
+      <button
+        type="button"
+        data-testid="opening-reveal-expand"
+        aria-label="Expand"
+        onClick={() => setRevealMin(false)}
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 30, background: 'transparent', border: 'none', color: '#a0a8b8', cursor: 'pointer', flexShrink: 0, padding: 0 }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
+      </button>
+    </div>
+  ) : null;
+
   const revealPanel = detail.reveal ? (
     <RevealPanel
       teamSlug={teamSlug}
@@ -421,8 +468,18 @@ export function OpeningStage({
             </div>
           </section>
         )}
-        {stage === 'reveal' && detail.reveal && !compact && revealPanel}
+        {stage === 'reveal' && detail.reveal && !compact && !revealMin && (
+          <div style={{ position: 'relative' }}>
+            {minimizeGlyph}
+            {revealPanel}
+          </div>
+        )}
       </div>
+      {stage === 'reveal' && detail.reveal && !compact && revealMin && (
+        <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{ pointerEvents: 'auto', width: 'min(520px, 100%)' }}>{summaryRow}</div>
+        </div>
+      )}
     </div>
   );
 
@@ -449,51 +506,13 @@ export function OpeningStage({
           style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.55)', overflowY: 'auto', padding: '12px 12px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
         >
           <div style={{ position: 'relative', width: 'min(560px, 100%)' }}>
-            {/* A bare minus glyph in the panel's corner — no chrome. */}
-            <button
-              type="button"
-              data-testid="opening-reveal-minimize"
-              aria-label="Minimize"
-              onClick={() => setRevealMin(true)}
-              style={{ position: 'absolute', top: 4, right: 6, zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 30, background: 'transparent', border: 'none', color: '#a0a8b8', cursor: 'pointer', padding: 0 }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
-            </button>
+            {minimizeGlyph}
             {revealPanel}
           </div>
         </div>
       )}
       {stage === 'reveal' && detail.reveal && compact && revealMin && (
-        <div
-          data-testid="opening-reveal-summary"
-          style={{ ...promptPanelStyle, position: 'fixed', top: 8, left: 8, right: 8, zIndex: 90, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', boxShadow: '0 8px 26px rgba(0,0,0,0.55)' }}
-        >
-          {(() => {
-            const eff = practice ?? detail.myResponse;
-            const agreed = eff ? eff.decision === detail.reveal!.decision : null;
-            return (
-              <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <strong style={{ color: '#e6ebf2' }}>
-                  {detail.reveal!.recorder.name ?? 'They'} {detail.reveal!.decision === 'keep' ? 'kept' : 'mulliganed'}
-                </strong>
-                {eff && (
-                  <span style={{ color: agreed ? '#6bd968' : '#ff7b72' }}>
-                    {' '}— you said {eff.decision} {agreed ? '✓' : '✗'}
-                  </span>
-                )}
-              </span>
-            );
-          })()}
-          <button
-            type="button"
-            data-testid="opening-reveal-expand"
-            aria-label="Expand"
-            onClick={() => setRevealMin(false)}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 30, background: 'transparent', border: 'none', color: '#a0a8b8', cursor: 'pointer', flexShrink: 0, padding: 0 }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
-          </button>
-        </div>
+        <div style={{ position: 'fixed', top: 8, left: 8, right: 8, zIndex: 90 }}>{summaryRow}</div>
       )}
       {watching && detail.reveal && (
         <OpeningWatchModal

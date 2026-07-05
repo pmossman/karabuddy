@@ -123,6 +123,14 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // The reveal: recorded decision, identity, pick agreement, watch link.
   const reveal = page2.getByTestId('opening-reveal');
   await expect(reveal).toBeVisible();
+
+  // Collapsible on desktop too: minimize → the summary row floats at the
+  // board top (verdict at a glance), expand restores the panel.
+  await page2.getByTestId('opening-reveal-minimize').click();
+  await expect(page2.getByTestId('opening-reveal')).toHaveCount(0);
+  await expect(page2.getByTestId('opening-reveal-summary')).toContainText('DrillOwner kept');
+  await page2.getByTestId('opening-reveal-expand').click();
+  await expect(reveal).toBeVisible();
   await expect(reveal).toContainText('DrillOwner kept this hand');
   await expect(reveal).toContainText('so did you');
   await expect(reveal).toContainText('One pick matched.');
