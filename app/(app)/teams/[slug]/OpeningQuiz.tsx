@@ -12,7 +12,7 @@
 //
 // Keyboard: K = keep, M = mulligan, Enter = confirm picks / next opening.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { glowButtonStyle } from '@/app/_components/glowButton';
 import { tokens } from '@/app/_theme/karabuddyTokens';
@@ -67,6 +67,7 @@ export function OpeningStage({
   hasNext,
   onAnswered,
   onNext,
+  finishLabel = 'Finish session',
 }: {
   teamSlug: string;
   replaySlug: string;
@@ -76,6 +77,9 @@ export function OpeningStage({
   // Fired once when a response lands: (slug, agreedWithRecordedDecision).
   onAnswered: (slug: string, agreed: boolean) => void;
   onNext: () => void;
+  // The last-item button label — "Finish session" in a session, "Done" when
+  // revisiting a single opening (no session framing).
+  finishLabel?: string;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +99,10 @@ export function OpeningStage({
   // Mobile: the reveal is a full-screen modal (the in-board float left the
   // fork hands off-screen); minimized = peek at the whole board state.
   const [revealMin, setRevealMin] = useState(false);
+  // The minimized summary row is draggable (it lands over the opponent's
+  // leader by default — move it wherever). Offset resets per opening/expand.
+  const [sumOffset, setSumOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
 
   useEffect(() => {
     let dead = false;
@@ -107,6 +115,7 @@ export function OpeningStage({
     setPractice(null);
     setWatching(false);
     setRevealMin(false);
+    setSumOffset({ x: 0, y: 0 });
     (async () => {
       try {
         const res = await fetch(`/api/replays/${replaySlug}/opening`);
@@ -181,6 +190,9 @@ export function OpeningStage({
   useEffect(() => {
     if (stage !== 'reveal') setRevealMin(false);
   }, [stage]);
+  useEffect(() => {
+    if (!revealMin) setSumOffset({ x: 0, y: 0 });
+  }, [revealMin]);
 
   // Same breakpoint as the shell + the tab container: below it the stage
   // re-composes hand-first.
@@ -366,7 +378,19 @@ export function OpeningStage({
   const summaryRow = detail.reveal ? (
     <div
       data-testid="opening-reveal-summary"
-      style={{ ...promptPanelStyle, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', boxShadow: '0 8px 26px rgba(0,0,0,0.55)' }}
+      onPointerDown={(e) => {
+        const t = e.target as HTMLElement;
+        if (t.closest('button')) return; // the expand glyph stays a click
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: sumOffset.x, baseY: sumOffset.y };
+      }}
+      onPointerMove={(e) => {
+        const d = dragRef.current;
+        if (!d) return;
+        setSumOffset({ x: d.baseX + e.clientX - d.startX, y: d.baseY + e.clientY - d.startY });
+      }}
+      onPointerUp={() => { dragRef.current = null; }}
+      style={{ ...promptPanelStyle, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', boxShadow: '0 8px 26px rgba(0,0,0,0.55)', transform: `translate(${sumOffset.x}px, ${sumOffset.y}px)`, cursor: 'grab', touchAction: 'none', userSelect: 'none' }}
     >
       {(() => {
         const eff = practice ?? detail.myResponse;
@@ -404,6 +428,7 @@ export function OpeningStage({
       viewerName={viewerName}
       hasNext={hasNext}
       onNext={onNext}
+      finishLabel={finishLabel}
       response={practice ?? detail.myResponse}
       isPractice={!!practice}
       onRetry={detail.isOwner ? undefined : startPractice}
@@ -596,6 +621,7 @@ function RevealPanel({
   viewerName,
   hasNext,
   onNext,
+  finishLabel,
   response,
   isPractice,
   onRetry,
@@ -607,6 +633,7 @@ function RevealPanel({
   viewerName: string;
   hasNext: boolean;
   onNext: () => void;
+  finishLabel: string;
   // The answer the diff is shown against: the stored response, or the
   // throwaway practice answer when this reveal follows a practice run.
   response: { decision: 'keep' | 'mulligan'; resourced: string[] } | null;
@@ -695,7 +722,7 @@ function RevealPanel({
           </button>
         )}
         <GradientBorderButton testId="opening-next" onClick={onNext} style={{ padding: '0.55rem 1.2rem' }}>
-          {hasNext ? 'Next opening' : 'Finish session'} <Kbd>⏎</Kbd>
+          {hasNext ? 'Next opening' : finishLabel} <Kbd>⏎</Kbd>
         </GradientBorderButton>
       </div>
 

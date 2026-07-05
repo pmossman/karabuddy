@@ -56,6 +56,8 @@ interface Session {
   queue: string[]; // snapshotted at Begin — stable for the whole run
   index: number; // === queue.length → the summary screen
   results: Record<string, boolean>; // slug → matched the recorded call?
+  // Single-opening revisit (clicked from a list) — no session framing.
+  revisit?: boolean;
 }
 
 export function TeamOpenings({
@@ -162,7 +164,8 @@ export function TeamOpenings({
     }
     setSession({ queue: matching.map((i) => i.replaySlug), index: 0, results: {} });
   };
-  const revisit = (slug: string) => setSession({ queue: [slug], index: 0, results: {} });
+  // A revisit is NOT a session — single opening, no summary, its own copy.
+  const revisit = (slug: string) => setSession({ queue: [slug], index: 0, results: {}, revisit: true });
   const endSession = () => {
     setSession(null);
     void load(); // fresh badges/comment counts for the setup lists
@@ -192,7 +195,7 @@ export function TeamOpenings({
 
   // ── PLAY ─────────────────────────────────────────────────────────────
   if (session) {
-    const { queue, index, results } = session;
+    const { queue, index, results, revisit: isRevisit } = session;
     const matched = Object.values(results).filter(Boolean).length;
     const answeredCount = Object.values(results).length;
     const current = index < queue.length ? queue[index] : null;
@@ -215,19 +218,19 @@ export function TeamOpenings({
               cursor: 'pointer',
             }}
           >
-            ← End session
+            {isRevisit ? '← Back' : '← End session'}
           </button>
           {current && (
             <span style={{ fontSize: 13, fontWeight: 700, color: '#c8cdd8' }}>
-              Opening {index + 1} of {queue.length}
+              {isRevisit ? 'Reviewing opening' : `Opening ${index + 1} of ${queue.length}`}
             </span>
           )}
-          {answeredCount > 0 && (
+          {!isRevisit && answeredCount > 0 && (
             <span style={{ fontSize: 12.5, color: '#6bd968' }}>
               {matched}/{answeredCount} matched
             </span>
           )}
-          {current && compact && (
+          {current && compact && !isRevisit && (
             <button
               type="button"
               data-testid="opening-rail-toggle"
@@ -258,10 +261,11 @@ export function TeamOpenings({
                 viewerName={viewerName}
                 hasNext={index + 1 < queue.length}
                 onAnswered={onAnswered}
-                onNext={() => setSession((s) => (s ? { ...s, index: s.index + 1 } : s))}
+                onNext={isRevisit ? endSession : () => setSession((s) => (s ? { ...s, index: s.index + 1 } : s))}
+                finishLabel={isRevisit ? 'Done' : 'Finish session'}
               />
             </div>
-            {!compact && (
+            {!compact && !isRevisit && (
               <SessionRail
                 queue={queue}
                 index={index}
@@ -270,7 +274,7 @@ export function TeamOpenings({
                 onJump={(i) => setSession((s) => (s ? { ...s, index: i } : s))}
               />
             )}
-            {compact && railOpen && (
+            {compact && railOpen && !isRevisit && (
               <>
                 <div
                   aria-hidden

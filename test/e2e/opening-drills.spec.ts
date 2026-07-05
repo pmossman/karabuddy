@@ -230,8 +230,12 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(ownRow).toContainText('Consensus');
   await expect(ownRow).toContainText('💬 1');
   await ownRow.click();
+  // A revisit is NOT a session: no session copy, a Done button, no rail.
+  await expect(page.getByText('Reviewing opening')).toBeVisible();
+  await expect(page.getByTestId('opening-session-rail')).toHaveCount(0);
   await expect(page.getByTestId('opening-reveal')).toContainText('DrillMate');
   await expect(page.getByTestId('opening-reveal')).toContainText('Team so far — Keep 1 · Mulligan 0');
+  await expect(page.getByTestId('opening-next')).toContainText('Done');
   // The owner sees the feedback right on the reveal too.
   await expect(page.getByTestId('opening-comments')).toContainText('I resource the Cantwell here every time');
 });
