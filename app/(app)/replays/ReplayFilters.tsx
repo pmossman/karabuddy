@@ -22,6 +22,7 @@ import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
+import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
 
@@ -229,16 +230,8 @@ export function ReplayFilters({
 
   // B116: leader options split by perspective — leaders the viewer/uploader
   // played (`ownLeader`) vs leaders faced (`oppLeader`).
-  const ownLeaders = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows) if (r.ownLeader?.name) set.add(r.ownLeader.name);
-    return Array.from(set).sort();
-  }, [rows]);
-  const oppLeaders = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows) if (r.oppLeader?.name) set.add(r.oppLeader.name);
-    return Array.from(set).sort();
-  }, [rows]);
+  const ownLeaders = useMemo(() => leaderSelectOptions(rows, (r) => r.ownLeader), [rows]);
+  const oppLeaders = useMemo(() => leaderSelectOptions(rows, (r) => r.oppLeader), [rows]);
 
   // B116: uploader options for the team grid's "Uploaded by" filter.
   const uploaders = useMemo(() => {
@@ -1633,8 +1626,8 @@ function FilterControls({
   label, setLabel, labels,
   result, setResult,
 }: {
-  myLeader: string; setMyLeader: (v: string) => void; ownLeaders: string[];
-  vsLeader: string; setVsLeader: (v: string) => void; oppLeaders: string[];
+  myLeader: string; setMyLeader: (v: string) => void; ownLeaders: LeaderSelectOption[];
+  vsLeader: string; setVsLeader: (v: string) => void; oppLeaders: LeaderSelectOption[];
   uploadedBy: string; setUploadedBy: (v: string) => void; uploaders: string[]; showUploaderFilter: boolean;
   since: string; setSince: (v: string) => void;
   format: string; setFormat: (v: string) => void;
@@ -1656,12 +1649,10 @@ function FilterControls({
       }}
     >
       <Field orientation="column" label="My leader">
-        <Select size="sm" style={replaySelectStyle} placeholder="Any"
-          value={myLeader} onChange={setMyLeader} options={ownLeaders.map((l) => [l, l] as const)} />
+        <LeaderSelect value={myLeader} onChange={setMyLeader} options={ownLeaders} anyLabel="Any" anyValue="" ariaLabel="Filter by my leader" fullWidth />
       </Field>
       <Field orientation="column" label="Opponent leader">
-        <Select size="sm" style={replaySelectStyle} placeholder="Any"
-          value={vsLeader} onChange={setVsLeader} options={oppLeaders.map((l) => [l, l] as const)} />
+        <LeaderSelect value={vsLeader} onChange={setVsLeader} options={oppLeaders} anyLabel="Any" anyValue="" ariaLabel="Filter by opponent leader" fullWidth />
       </Field>
       {showUploaderFilter && (
         <Field orientation="column" label="Uploaded by">
@@ -1707,3 +1698,16 @@ function NoMatchesEmpty() {
 // to the old local `selectStyle`: radius 4 (not 6), tighter 6px 8px padding,
 // suppressed focus outline, and no 220px maxWidth cap.
 const replaySelectStyle: React.CSSProperties = { borderRadius: 4, padding: '6px 8px', outline: 'none', maxWidth: 'none' };
+
+// Unique leaders (by name) with a representative art ref — options for the
+// shared <LeaderSelect> art picker.
+function leaderSelectOptions<T>(rows: T[], pick: (r: T) => { name?: string | null; set?: string | null; number?: number | null } | null | undefined): LeaderSelectOption[] {
+  const byName = new Map<string, any>();
+  for (const r of rows) {
+    const l = pick(r);
+    if (l?.name && !byName.has(l.name)) byName.set(l.name, l);
+  }
+  return Array.from(byName.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, card]) => ({ value: name, label: name, art: card }));
+}

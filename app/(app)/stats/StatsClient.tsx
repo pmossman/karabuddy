@@ -6,6 +6,7 @@ import { cardImageUrl } from '@/lib/cardImage';
 import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/statsView';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
+import { LeaderSelect } from '@/app/_components/LeaderSelect';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
 import { ReplayMatchup } from '@/app/_components/ReplayMatchup';
@@ -352,15 +353,14 @@ export function StatsClient({
           )}
 
           {view === 'cards' && (<>
-            <Field orientation="row" label="Deck"><Select value={leaderCtx} onChange={setLeaderCtx} options={[['', 'All decks'], ...leaderOptions.map((id) => [id, nm(id)] as [string, string])]} /></Field>
+            <Field orientation="row" label="Deck"><LeaderSelect value={leaderCtx} onChange={setLeaderCtx} anyLabel="All decks" anyValue="" ariaLabel="Focus a deck" options={leaderOptions.map((id) => ({ value: id, label: nm(id), art: idToArt(id) }))} /></Field>
             {leaderCtx && (
-              <Field orientation="row" label="Base"><Select value={baseSel} onChange={setBaseSel} options={[
-                ['', 'Any base'],
-                ...deckBases.map((b) => [
-                  baseKeyOf(b.baseId, b.baseAspect),
-                  b.baseId ? `${nm(b.baseId)} (${b.games})` : `${b.baseAspect ? b.baseAspect[0].toUpperCase() + b.baseAspect.slice(1) : 'Unknown'} — no ability (${b.games})`,
-                ] as [string, string]),
-              ]} /></Field>
+              <Field orientation="row" label="Base"><LeaderSelect value={baseSel} onChange={setBaseSel} anyLabel="Any base" anyValue="" ariaLabel="Filter by base" options={deckBases.map((b) => ({
+                value: baseKeyOf(b.baseId, b.baseAspect),
+                label: b.baseId ? `${nm(b.baseId)} (${b.games})` : `${b.baseAspect ? b.baseAspect[0].toUpperCase() + b.baseAspect.slice(1) : 'Unknown'} — no ability (${b.games})`,
+                art: b.baseId ? idToArt(b.baseId) : null,
+                artIsLeader: false,
+              }))} /></Field>
             )}
             <Field orientation="row" label="Win rate when"><Segmented options={EVENTS} value={event} onChange={(v) => setEvent(v as CardEvent)} /></Field>
             {RECORDER_SIDE[event] && (
@@ -1059,4 +1059,10 @@ function Table({ cols, rows, sort, dir, onSort, onRowClick, rowKeys }: { cols: C
       </tbody>
     </table>
   );
+}
+
+// "SET_NNN" card id -> an art ref for the shared <LeaderSelect> thumbs.
+function idToArt(id: string): { set: string; number: number } | null {
+  const m = id.match(/^([A-Za-z0-9]+)_(\d+)$/);
+  return m ? { set: m[1], number: Number(m[2]) } : null;
 }

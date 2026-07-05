@@ -53,6 +53,19 @@ const GUARDS: Guard[] = [
     allowlist: [],
     fix: 'use the shared <Select> (app/_components/Select.tsx)',
   },
+  {
+    // A leader/base picker built on the plain <Select> — those options carry
+    // card ART + fuzzy search in the shared component. The tell: leader/base
+    // in the Select's OWN props (value/options/placeholder, within the first
+    // ~120 chars of the tag — a wider window false-positived on neighboring
+    // controls). Caught the replay browser, clips, and stats pickers when
+    // introduced.
+    concept: 'leader/base dropdown',
+    pattern: /<Select\b[\s\S]{0,120}?(?:value=\{[^}]{0,60}(?:leader|base)|options=\{[^\n]{0,80}(?:leader|base)|placeholder="[^"]{0,40}(?:leader|base))/i,
+    canonical: ['app/_components/LeaderSelect.tsx'],
+    allowlist: [],
+    fix: 'use the shared <LeaderSelect> (app/_components/LeaderSelect.tsx) — art thumbs + fuzzy search',
+  },
 ];
 
 describe('canonical components: a divergent path fails CI once a primitive exists', () => {

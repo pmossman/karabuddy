@@ -40,13 +40,18 @@ export function LeaderSelect({
   anyLabel,
   ariaLabel,
   testId,
+  anyValue = ANY,
+  fullWidth = false,
 }: {
-  value: string; // an option value, or '__all__' for the any/cleared state
+  value: string; // an option value, or `anyValue` for the any/cleared state
   onChange: (v: string) => void;
   options: LeaderSelectOption[];
   anyLabel: string; // the cleared state's label, e.g. 'Any deck'
   ariaLabel: string;
   testId?: string;
+  // What "Any" means to the CALLER's state ('' for the URL-param filters).
+  anyValue?: string;
+  fullWidth?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -77,7 +82,7 @@ export function LeaderSelect({
     };
   }, [open]);
 
-  const current = value !== ANY ? options.find((o) => o.value === value) : undefined;
+  const current = value !== anyValue ? options.find((o) => o.value === value) : undefined;
 
   const filtered = useMemo(() => {
     if (!query.trim()) return options;
@@ -108,7 +113,7 @@ export function LeaderSelect({
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={wrapRef} style={{ position: 'relative', display: fullWidth ? 'block' : 'inline-block', width: fullWidth ? '100%' : undefined }}>
       <button
         type="button"
         data-testid={testId}
@@ -129,6 +134,7 @@ export function LeaderSelect({
           fontSize: 13,
           cursor: 'pointer',
           minWidth: 150,
+          width: fullWidth ? '100%' : undefined,
         }}
       >
         {thumb(current)}
@@ -194,7 +200,7 @@ export function LeaderSelect({
             }}
           />
           {!query.trim() && (
-            <Row selected={value === ANY} onClick={() => pick(ANY)}>
+            <Row selected={value === anyValue} onClick={() => pick(anyValue)}>
               {thumb(undefined)}
               <span style={{ color: '#a0a8b8' }}>{anyLabel}</span>
             </Row>
