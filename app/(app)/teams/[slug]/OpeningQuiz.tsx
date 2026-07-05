@@ -367,7 +367,19 @@ export function OpeningStage({
         )}
         {stage === 'resource' && (
           <section style={{ ...promptPanelStyle, padding: '0.9rem 1rem 1rem' }} aria-label="Resource Step">
+            {/* The ONE early reveal, by design: you mulliganed but they kept,
+                so there IS no redraw — without saying so, the unchanged hand
+                reads as a bug. The other direction (you kept, they mulliganed)
+                stays unspoiled: you pick from the hand you wanted first. */}
+            {myMulligan === 'mulligan' && kept && (
+              <div data-testid="opening-beat" style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, marginBottom: 6, color: '#ff7b72' }}>
+                ✗ They kept this hand — pick your two from it anyway.
+              </div>
+            )}
             <div style={{ ...promptTitleStyle, fontSize: '1rem' }}>Select 2 cards to resource</div>
+            {myMulligan === 'mulligan' && !kept && (
+              <p style={{ ...promptTextStyle, margin: '4px 0 0', fontSize: 12.5 }}>You mulliganed — pick from the new hand below.</p>
+            )}
             <div style={{ display: 'flex', gap: '1rem', marginTop: '0.8rem', justifyContent: 'center' }}>
               <GradientBorderButton testId="opening-confirm" style={{ padding: '0.6rem 1.3rem' }} onClick={submit} disabled={picks.length !== 2 || submitting}>
                 {submitting ? 'Submitting…' : 'Confirm Resources'} <Kbd>⏎</Kbd>

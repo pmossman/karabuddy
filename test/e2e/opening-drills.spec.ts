@@ -151,6 +151,9 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // distribution stay untouched (first answer counts).
   await page2.getByTestId('opening-retry').click();
   await page2.getByTestId('opening-mulligan').click();
+  // You mulliganed but they kept: the ONLY early reveal (the unchanged hand
+  // would otherwise read as a bug).
+  await expect(page2.getByTestId('opening-beat')).toContainText('They kept this hand');
   await page2.getByTestId('opening-pick-0').click();
   await page2.getByTestId('opening-pick-2').click();
   await page2.getByTestId('opening-confirm').click();
