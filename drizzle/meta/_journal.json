@@ -246,6 +246,13 @@
       "when": 1782345600000,
       "tag": "0034_review_dm_pref",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783104741860,
+      "tag": "0035_opening_drills",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,278 @@
+import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { signInAsTestUser, createTeam, generateInvite, claimInstallToken } from './helpers';
+
+// B221: the TWO-PHASE opening gauntlet, end to end — a teammate sets up a
+// session on the team's Openings tab (filters + match count + Begin), runs
+// the anonymized opening through both karabast prompts on the board layout
+// (landscape leader/base center column), gets the reveal (recorded decision +
+// identity + distribution + watch link), posts a team-scoped discussion tag
+// that auto-@mentions the uploader, finishes on the session summary, and the
+// setup screen re-files the item under Answered with its badges. The
+// uploader's own view shows the team's verdict.
+
+// A payload with a complete setup: pre-deal frame → dealt hand (6 real cards)
+// → resources picked → action. Same shape the recorder uploads (the api-layer
+// twin lives in test/api/opening-drills.test.ts).
+function drillPayload(gameId: string, opts: { mulligan?: boolean } = {}): string {
+  let uu = 0;
+  const card = (set: string, num: number) => ({ setId: { set, number: num }, name: `${set} ${num}`, uuid: `u${uu++}` });
+  const masked = () => ({ uuid: `m${uu++}` });
+  const dealt = [card('SOR', 1), card('SOR', 2), card('SHD', 10), card('SHD', 11), card('TWI', 55), card('JTL', 200)];
+  const redrawn = [card('SOR', 90), card('SOR', 91), card('SHD', 92), card('TWI', 93), card('JTL', 94), card('JTL', 95)];
+  const kept = opts.mulligan ? redrawn : dealt;
+  const resourced = [kept[1], kept[4]];
+  const after = kept.filter((c) => c !== resourced[0] && c !== resourced[1]);
+  // The FULL pile set — the lifted board indexes deck/discard/arenas
+  // unconditionally (real payloads always carry them).
+  const allPiles = (piles: { hand?: any[]; resources?: any[] }) => ({
+    hand: piles.hand ?? [],
+    resources: piles.resources ?? [],
+    deck: [],
+    discard: [],
+    groundArena: [],
+    spaceArena: [],
+    capturedZone: [],
+  });
+  const p = (piles: { hand?: any[]; resources?: any[] }) => ({
+    user: { username: 'RecKarabast' },
+    hasInitiative: true,
+    leader: { name: 'Own Leader', setId: { set: 'SOR', number: 5 } },
+    base: { name: 'Own Base', setId: { set: 'SOR', number: 20 } },
+    cardPiles: allPiles(piles),
+  });
+  const opp = (hand: any[]) => ({
+    user: { username: 'OppKarabast' },
+    hasInitiative: false,
+    leader: { name: 'Opp Leader', setId: { set: 'TWI', number: 9 } },
+    base: { name: 'Opp Base', setId: { set: 'TWI', number: 21 } },
+    cardPiles: allPiles({ hand }),
+  });
+  const frame = (phase: string, mine: { hand?: any[]; resources?: any[] }, oppHand: any[]) => ({
+    event: 'gamestate',
+    args: [{ full: { id: gameId, phase, players: { p1: p(mine), p2: opp(oppHand) } } }],
+  });
+  const frames = [
+    frame('setup', {}, []),
+    frame('setup', { hand: dealt }, Array(6).fill(0).map(masked)),
+    ...(opts.mulligan ? [frame('setup', { hand: kept }, Array(6).fill(0).map(masked))] : []),
+    frame('setup', { hand: after, resources: resourced }, Array(6).fill(0).map(masked)),
+    frame('action', { hand: after, resources: resourced }, Array(4).fill(0).map(masked)),
+  ];
+  return JSON.stringify({ version: 2, actionCount: 10, durationMs: 1000, localPlayerId: 'p1', events: frames, tags: [] });
+}
+
+test('opening gauntlet: setup → play → reveal → tag → summary → uploader view', async ({ page, browser }) => {
+  // Owner: team + shared replay with a full setup.
+  await signInAsTestUser(page, { name: 'DrillOwner', email: 'drill-owner@example.com' });
+  const { slug: teamSlug } = await createTeam(page, 'Drill Squad');
+  const { code } = await generateInvite(page, teamSlug);
+  const ownerToken = `kbx_${randomUUID()}`;
+  await claimInstallToken(page, ownerToken);
+  const up = await page.request.post('/api/replays', {
+    data: { installToken: ownerToken, payload: drillPayload(`g-${randomUUID()}`), shareTeamSlugs: [teamSlug] },
+  });
+  expect(up.ok()).toBeTruthy();
+  const { slug } = await up.json();
+
+  // Teammate joins.
+  const ctx2 = await browser.newContext();
+  const page2 = await ctx2.newPage();
+  await signInAsTestUser(page2, { name: 'DrillMate', email: 'drill-mate@example.com' });
+  await page2.goto(`/teams/join?code=${code}`);
+  await page2.waitForURL(new RegExp(`/teams/${teamSlug}`));
+
+  // SETUP: filters + match count + Begin. No board on this screen.
+  await page2.goto(`/teams/${teamSlug}?tab=openings`);
+  await expect(page2.getByTestId('opening-match-count')).toContainText('1 unanswered opening');
+  await expect(page2.getByTestId('opening-stage')).toHaveCount(0);
+  await page2.getByTestId('opening-begin').click();
+
+  // PLAY, stage 1: session HUD + the board column (landscape seats, name
+  // plates, Initiative pill on the holder's seat — SWU terms, no play/draw).
+  await expect(page2.getByText('Opening 1 of 1')).toBeVisible();
+  await expect(page2.getByTestId('opening-mulligan')).toBeVisible();
+  await expect(page2.getByTestId('opening-seat-opp')).toBeVisible();
+  await expect(page2.getByTestId('opening-seat-own')).toContainText('Your seat');
+  const pill = page2.getByText('Initiative', { exact: true });
+  await expect(pill).toBeVisible();
+  await expect(pill).toHaveCSS('border-top-color', 'rgb(0, 186, 255)'); // --initiative-blue: the recorder's seat
+  await expect(page2.getByText(/On the (play|draw)/)).toHaveCount(0);
+  await page2.getByTestId('opening-keep').click();
+
+  // Stage 2 — the decision beat announces their actual call (they kept, and
+  // so did we), then pick exactly two from the hand.
+  await expect(page2.getByTestId('opening-beat')).toContainText('They kept it too');
+  await expect(page2.getByText('Select 2 cards to resource')).toBeVisible();
+  await expect(page2.getByTestId('opening-confirm')).toBeDisabled();
+  await page2.getByTestId('opening-pick-1').click(); // their actual pick
+  await page2.getByTestId('opening-pick-3').click(); // a different second pick
+  await page2.getByTestId('opening-confirm').click();
+
+  // The reveal: recorded decision, identity, pick agreement, watch link.
+  const reveal = page2.getByTestId('opening-reveal');
+  await expect(reveal).toBeVisible();
+  await expect(reveal).toContainText('DrillOwner kept this hand');
+  await expect(reveal).toContainText('so did you');
+  await expect(reveal).toContainText('One pick matched.');
+  await expect(reveal).toContainText('Team so far — Keep 1 · Mulligan 0');
+  // The resource diff is painted on the hand, each card self-labeled:
+  // green shared pick, yellow theirs-only, cyan yours-only. No legend.
+  await expect(page2.getByText('Both picked', { exact: true })).toBeVisible();
+  await expect(page2.getByText('Their pick', { exact: true })).toBeVisible();
+  await expect(page2.getByText('Your pick', { exact: true })).toBeVisible();
+  await expect(page2.getByTestId('opening-legend')).toHaveCount(0);
+
+  // "Watch from the opening" opens the mini-player MODAL (no navigation):
+  // just the board + step controls, arrow keys included.
+  await page2.getByTestId('opening-watch').click();
+  await expect(page2.getByTestId('gameboard-board-wrapper')).toBeVisible();
+  // Pop-out goes to the FULL viewer at the current frame, new tab.
+  await expect(page2.getByTestId('opening-watch-popout')).toHaveAttribute('href', new RegExp(`/r/${slug}\\?f=\\d+`));
+  await expect(page2.getByTestId('opening-watch-popout')).toHaveAttribute('target', '_blank');
+  const pos0 = await page2.getByTestId('opening-watch-pos').textContent();
+  await page2.keyboard.press('ArrowRight');
+  await expect(page2.getByTestId('opening-watch-pos')).not.toHaveText(pos0!);
+  await page2.getByTestId('opening-watch-next').click();
+  await page2.keyboard.press('Escape');
+  await expect(page2.getByTestId('gameboard-board-wrapper')).toHaveCount(0);
+  // Still on the reveal — the modal never navigated.
+  await expect(page2.getByTestId('opening-reveal')).toBeVisible();
+  // Post-reveal the seat plate names the recorder.
+  await expect(page2.getByTestId('opening-seat-own')).toContainText('DrillOwner');
+
+  // Post the disagreement — a team-scoped tag on the source replay that
+  // auto-@mentions the uploader.
+  await page2.getByTestId('opening-comment').fill('I resource the Cantwell here every time');
+  await page2.getByTestId('opening-post').click();
+  await expect(page2.getByText('Posted — @DrillOwner notified.')).toBeVisible();
+
+  // Redo as a PRACTICE run — replay the motions with a different answer.
+  // The throwaway answer drives the diff, but the STORED answer and the team
+  // distribution stay untouched (first answer counts).
+  await page2.getByTestId('opening-retry').click();
+  await page2.getByTestId('opening-mulligan').click();
+  await page2.getByTestId('opening-pick-0').click();
+  await page2.getByTestId('opening-pick-2').click();
+  await page2.getByTestId('opening-confirm').click();
+  await expect(page2.getByTestId('opening-practice-note')).toContainText('recorded answer (keep) unchanged');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('you said mulligan');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('Team so far — Keep 1 · Mulligan 0');
+
+  // Finish → session summary → back to setup, where the item is re-filed
+  // under Answered with its badges.
+  await page2.getByTestId('opening-next').click(); // "Finish session" (last item)
+  await expect(page2.getByTestId('opening-summary')).toContainText('Session complete');
+  await expect(page2.getByTestId('opening-summary')).toContainText('1 opening · 1 matched');
+  await page2.getByTestId('opening-new-session').click();
+  await expect(page2.getByTestId('opening-match-count')).toContainText('0 unanswered openings');
+  const row = page2.getByTestId('opening-row');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('Consensus');
+  await expect(row).toContainText('💬 1');
+
+  // "Show all" opens the HISTORY view — filters carry over (same state), the
+  // graded item lists with its outcome glyph, and Back returns to setup.
+  await page2.getByTestId('opening-answered-showall').click();
+  await expect(page2.getByTestId('opening-history')).toBeVisible();
+  await expect(page2.getByTestId('opening-history')).toContainText('Answered openings · 1');
+  await expect(page2.getByTestId('opening-row')).toHaveCount(1);
+  await page2.getByTestId('opening-history-back').click();
+  await expect(page2.getByTestId('opening-begin')).toBeVisible();
+
+  // The tag really landed: owner reads it back with team scope + their mention.
+  const tagsRes = await page.request.get(`/api/replays/${slug}/tags`);
+  const tags = (await tagsRes.json()).data as any[];
+  const posted = tags.find((t) => t.comment.includes('Cantwell'));
+  expect(posted).toBeTruthy();
+  expect(posted.frameIndex).toBe(1); // anchored at the dealt-hand (decision) frame
+
+  // Uploader view: their own opening on the setup screen with the team's
+  // verdict; clicking it opens the reveal (no answering their own).
+  await page.goto(`/teams/${teamSlug}?tab=openings`);
+  const ownRow = page.getByTestId('opening-row');
+  await expect(ownRow).toHaveCount(1);
+  await expect(ownRow).toContainText('DrillOwner (you)');
+  await expect(ownRow).toContainText('Consensus');
+  await expect(ownRow).toContainText('💬 1');
+  await ownRow.click();
+  await expect(page.getByTestId('opening-reveal')).toContainText('DrillMate');
+  await expect(page.getByTestId('opening-reveal')).toContainText('Team so far — Keep 1 · Mulligan 0');
+});
+
+test('mobile: the two-phase flow works at 390px, footer reclaimed', async ({ page, browser }) => {
+  await signInAsTestUser(page, { name: 'MobOwner', email: 'mob-owner@example.com' });
+  const { slug: teamSlug } = await createTeam(page, 'Mobile Squad');
+  const { code } = await generateInvite(page, teamSlug);
+  const ownerToken = `kbx_${randomUUID()}`;
+  await claimInstallToken(page, ownerToken);
+  await page.request.post('/api/replays', {
+    data: { installToken: ownerToken, payload: drillPayload(`g-${randomUUID()}`), shareTeamSlugs: [teamSlug] },
+  });
+
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page2 = await ctx2.newPage();
+  await signInAsTestUser(page2, { name: 'MobMate', email: 'mob-mate@example.com' });
+  await page2.goto(`/teams/join?code=${code}`);
+  await page2.waitForURL(new RegExp(`/teams/${teamSlug}`));
+  await page2.goto(`/teams/${teamSlug}?tab=openings`);
+
+  // The gauntlet reclaims the sticky footer's band.
+  await expect(page2.locator('footer')).toBeHidden();
+
+  // Setup → play: the whole flow works at phone width (the hand self-scales;
+  // no horizontal overflow blocking the picks).
+  await page2.getByTestId('opening-begin').click();
+  await expect(page2.getByTestId('opening-keep')).toBeVisible();
+  await page2.getByTestId('opening-keep').click();
+  await page2.getByTestId('opening-pick-0').click();
+  await page2.getByTestId('opening-pick-5').click();
+  await page2.getByTestId('opening-confirm').click();
+  await expect(page2.getByTestId('opening-reveal')).toBeVisible();
+  await page2.getByTestId('opening-next').click();
+  await expect(page2.getByTestId('opening-summary')).toBeVisible();
+
+  // No horizontal page overflow at 390px (the classic hand failure mode).
+  const overflow = await page2.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test('the fork: they mulliganed, you kept — both timelines render', async ({ page, browser }) => {
+  await signInAsTestUser(page, { name: 'ForkOwner', email: 'fork-owner@example.com' });
+  const { slug: teamSlug } = await createTeam(page, 'Fork Squad');
+  const { code } = await generateInvite(page, teamSlug);
+  const ownerToken = `kbx_${randomUUID()}`;
+  await claimInstallToken(page, ownerToken);
+  await page.request.post('/api/replays', {
+    data: { installToken: ownerToken, payload: drillPayload(`g-${randomUUID()}`, { mulligan: true }), shareTeamSlugs: [teamSlug] },
+  });
+
+  const ctx2 = await browser.newContext();
+  const page2 = await ctx2.newPage();
+  await signInAsTestUser(page2, { name: 'ForkMate', email: 'fork-mate@example.com' });
+  await page2.goto(`/teams/join?code=${code}`);
+  await page2.waitForURL(new RegExp(`/teams/${teamSlug}`));
+  await page2.goto(`/teams/${teamSlug}?tab=openings`);
+  await page2.getByTestId('opening-begin').click();
+
+  // Disagree with their mulligan: say KEEP → the timelines fork. Stage 2
+  // shows THEIR redraw as the live picker plus your kept-world in gray.
+  await page2.getByTestId('opening-keep').click();
+  await expect(page2.getByTestId('opening-beat')).toContainText('✗ They mulliganed.');
+  await expect(page2.getByText('Their redraw')).toBeVisible();
+  const keptWorld = page2.getByTestId('opening-kept-world');
+  await expect(keptWorld).toContainText('Your kept hand');
+  // The live picker works on the REDRAW (their picks are redrawn[1]+[4]).
+  await page2.getByTestId('opening-pick-1').click();
+  await page2.getByTestId('opening-pick-4').click();
+  await page2.getByTestId('opening-confirm').click();
+
+  // Reveal: both timelines still visible — verdicts on the redraw (perfect
+  // match → all green), the kept world grayed below.
+  await expect(page2.getByTestId('opening-reveal')).toContainText('ForkOwner mulliganed');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('you said keep');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('Same two picks.');
+  await expect(page2.getByText('Both picked', { exact: true })).toHaveCount(2);
+  await expect(page2.getByTestId('opening-kept-world')).toBeVisible();
+  await expect(page2.getByText('Their redraw')).toBeVisible();
+});
