@@ -164,7 +164,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // auto-@mentions the uploader.
   await page2.getByTestId('opening-comment').fill('I resource the Cantwell here every time');
   await page2.getByTestId('opening-post').click();
-  await expect(page2.getByText('Posted — @DrillOwner notified.')).toBeVisible();
+  await expect(page2.getByTestId('opening-posted-note')).toContainText('Posted.');
   // The comment lands in the reveal's own discussion list — still there when
   // the opening is reopened later.
   await expect(page2.getByTestId('opening-comments')).toContainText('I resource the Cantwell here every time');

@@ -888,15 +888,13 @@ function DisagreeComposer({
           disabled={state === 'posting' || !text.trim()}
           style={{ ...glowButtonStyle, fontSize: 12.5, opacity: state === 'posting' || !text.trim() ? 0.6 : 1 }}
         >
-          {state === 'posting' ? 'Posting…' : 'Post to team discussion'}
+          {state === 'posting' ? 'Posting…' : 'Post'}
         </button>
-        {state === 'posted' ? (
+        {state === 'posted' && (
           <span data-testid="opening-posted-note" style={{ fontSize: 12, color: '#6bd968' }}>
-            Posted{recorder.name ? ` — @${recorder.name} notified.` : '.'}
+            Posted.
           </span>
-        ) : recorder.name ? (
-          <span style={{ fontSize: 11.5, color: '#6c7588' }}>@{recorder.name} will be notified</span>
-        ) : null}
+        )}
         {state === 'error' && <span style={{ fontSize: 12, color: '#ff7b72' }}>Failed — try again.</span>}
       </div>
     </div>
