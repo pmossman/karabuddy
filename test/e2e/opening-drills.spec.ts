@@ -161,9 +161,10 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-seat-own')).toContainText('DrillOwner');
 
   // Post the disagreement — a team-scoped tag on the source replay. No
-  // auto-mention (default = no notification); a typed @Name resolves against
-  // the roster and rides the normal mention machinery.
-  await page2.getByTestId('opening-comment').fill('I resource the Cantwell here every time, @DrillOwner');
+  // auto-mention (default = no notification); the canonical @-autocomplete
+  // (MentionInput) picks the uploader, riding the normal mention machinery.
+  await page2.getByTestId('opening-comment').fill('I resource the Cantwell here every time, @Drill');
+  await page2.getByTestId('opening-comment').press('Enter'); // popover open → confirms the DrillOwner suggestion
   await page2.getByTestId('opening-post').click();
   await expect(page2.getByTestId('opening-posted-note')).toContainText('Posted.');
   // The comment lands in the reveal's own discussion list — still there when

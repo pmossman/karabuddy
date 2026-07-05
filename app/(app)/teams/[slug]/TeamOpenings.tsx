@@ -267,7 +267,6 @@ export function TeamOpenings({
                 onAnswered={onAnswered}
                 onNext={isRevisit ? endSession : () => setSession((s) => (s ? { ...s, index: s.index + 1 } : s))}
                 finishLabel={isRevisit ? 'Done' : 'Finish session'}
-                members={members}
               />
             </div>
             {!compact && !isRevisit && (

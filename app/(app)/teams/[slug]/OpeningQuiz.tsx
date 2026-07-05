@@ -19,6 +19,7 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { OpeningWatchModal, prepareWatch } from './OpeningWatchModal';
+import { MentionInput, type MentionData } from '@/app/(app)/r/[slug]/MentionInput';
 import {
   GradientBorderButton,
   HandRow,
@@ -68,7 +69,6 @@ export function OpeningStage({
   onAnswered,
   onNext,
   finishLabel = 'Finish session',
-  members = [],
 }: {
   teamSlug: string;
   replaySlug: string;
@@ -81,8 +81,6 @@ export function OpeningStage({
   // The last-item button label — "Finish session" in a session, "Done" when
   // revisiting a single opening (no session framing).
   finishLabel?: string;
-  // Team members — resolves typed @Name mentions in the composer.
-  members?: { userId: string; name: string | null }[];
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -432,7 +430,6 @@ export function OpeningStage({
       hasNext={hasNext}
       onNext={onNext}
       finishLabel={finishLabel}
-      members={members}
       response={practice ?? detail.myResponse}
       isPractice={!!practice}
       onRetry={detail.isOwner ? undefined : startPractice}
@@ -626,7 +623,6 @@ function RevealPanel({
   hasNext,
   onNext,
   finishLabel,
-  members,
   response,
   isPractice,
   onRetry,
@@ -639,7 +635,6 @@ function RevealPanel({
   hasNext: boolean;
   onNext: () => void;
   finishLabel: string;
-  members: { userId: string; name: string | null }[];
   // The answer the diff is shown against: the stored response, or the
   // throwaway practice answer when this reveal follows a practice run.
   response: { decision: 'keep' | 'mulligan'; resourced: string[] } | null;
@@ -741,7 +736,6 @@ function RevealPanel({
           recorder={reveal.recorder}
           viewerName={viewerName}
           isOwner={detail.isOwner}
-          members={members}
         />
       </div>
     </section>
@@ -759,7 +753,6 @@ function OpeningDiscussion({
   recorder,
   viewerName,
   isOwner,
-  members,
 }: {
   teamSlug: string;
   replaySlug: string;
@@ -768,7 +761,6 @@ function OpeningDiscussion({
   recorder: { userId: string | null; name: string | null };
   viewerName: string;
   isOwner: boolean;
-  members: { userId: string; name: string | null }[];
 }) {
   const [comments, setComments] = useState<any[] | null>(null);
   const load = useCallback(async () => {
@@ -809,7 +801,6 @@ function OpeningDiscussion({
         recorder={recorder}
         viewerName={viewerName}
         isOwner={isOwner}
-        members={members}
         onPosted={load}
       />
     </div>
@@ -826,7 +817,6 @@ function DisagreeComposer({
   recorder,
   viewerName,
   isOwner,
-  members,
   onPosted,
 }: {
   teamSlug: string;
@@ -835,24 +825,36 @@ function DisagreeComposer({
   recorder: { userId: string | null; name: string | null };
   viewerName: string;
   isOwner: boolean;
-  members: { userId: string; name: string | null }[];
   onPosted?: () => void;
 }) {
   const [text, setText] = useState('');
   const [state, setState] = useState<'idle' | 'posting' | 'posted' | 'error'>('idle');
+  // The canonical @-autocomplete (MentionInput, same as the tag composers).
+  // Lazily fetched once per composer; selections accumulate structured
+  // mentions — the server never parses free text.
+  const [mentionData, setMentionData] = useState<MentionData | null>(null);
+  const [draftMentions, setDraftMentions] = useState<{ userIds: string[]; teamSlugs: string[] }>({ userIds: [], teamSlugs: [] });
+  useEffect(() => {
+    if (isOwner) return;
+    let live = true;
+    fetch('/api/me/teams-mention-data')
+      .then((r) => r.json())
+      .then((b) => { if (live && b?.ok) setMentionData({ teams: b.teams ?? [], members: b.members ?? [] }); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [isOwner]);
   if (isOwner) return null; // owners discuss from the feed/viewer — nothing to disagree with
+
+  const addMention = (kind: 'user' | 'team', id: string) =>
+    setDraftMentions((m) => (kind === 'user'
+      ? { ...m, userIds: [...new Set([...m.userIds, id])] }
+      : { ...m, teamSlugs: [...new Set([...m.teamSlugs, id])] }));
 
   const post = async () => {
     const comment = text.trim();
     if (!comment) return;
     setState('posting');
     try {
-      // Longest-name-first so "@Jordan Cross Jr" beats "@Jordan Cross".
-      const typedMentions = members
-        .filter((m) => m.name)
-        .sort((a, b) => (b.name!.length - a.name!.length))
-        .filter((m) => text.toLowerCase().includes(`@${m.name!.toLowerCase()}`))
-        .map((m) => m.userId);
       const res = await fetch(`/api/replays/${replaySlug}/tags`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -862,16 +864,17 @@ function DisagreeComposer({
           frameIndex,
           comment,
           teamSlugs: [teamSlug],
-          // Deliberately NO auto-mention (default = no notification). A typed
-          // @Name resolves against the team roster below and rides the normal
-          // mention machinery (inbox + discord ping); the uploader otherwise
-          // finds feedback via the with-comments filter.
-          ...(typedMentions.length ? { mentions: { userIds: typedMentions, teamSlugs: [] } } : {}),
+          // Deliberately NO auto-mention (default = no notification).
+          // Autocomplete-picked @mentions ride the normal machinery (inbox +
+          // discord ping); the uploader otherwise finds feedback via the
+          // with-comments filter.
+          ...(draftMentions.userIds.length || draftMentions.teamSlugs.length ? { mentions: draftMentions } : {}),
         }),
       });
       const j = await res.json();
       if (j.ok) {
         setText('');
+        setDraftMentions({ userIds: [], teamSlugs: [] });
         setState('posted');
         onPosted?.(); // the list above refreshes with the new comment
       } else {
@@ -883,13 +886,15 @@ function DisagreeComposer({
   };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <textarea
-        data-testid="opening-comment"
+      <MentionInput
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        onMention={addMention}
+        mentionData={mentionData}
         rows={2}
-        placeholder={`Disagree? Tell ${recorder.name ?? 'them'} why…`}
-        style={{
+        placeholder={`Disagree? Tell ${recorder.name ?? 'them'} why… (@ to notify)`}
+        onSubmit={post}
+        textareaStyle={{
           width: '100%',
           resize: 'vertical',
           background: '#0d1016',
@@ -901,6 +906,7 @@ function DisagreeComposer({
           padding: '8px 10px',
           boxSizing: 'border-box',
         }}
+        textareaProps={{ 'data-testid': 'opening-comment' } as any}
       />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <button
