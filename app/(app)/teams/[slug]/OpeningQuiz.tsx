@@ -68,6 +68,7 @@ export function OpeningStage({
   onAnswered,
   onNext,
   finishLabel = 'Finish session',
+  members = [],
 }: {
   teamSlug: string;
   replaySlug: string;
@@ -80,6 +81,8 @@ export function OpeningStage({
   // The last-item button label — "Finish session" in a session, "Done" when
   // revisiting a single opening (no session framing).
   finishLabel?: string;
+  // Team members — resolves typed @Name mentions in the composer.
+  members?: { userId: string; name: string | null }[];
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -429,6 +432,7 @@ export function OpeningStage({
       hasNext={hasNext}
       onNext={onNext}
       finishLabel={finishLabel}
+      members={members}
       response={practice ?? detail.myResponse}
       isPractice={!!practice}
       onRetry={detail.isOwner ? undefined : startPractice}
@@ -622,6 +626,7 @@ function RevealPanel({
   hasNext,
   onNext,
   finishLabel,
+  members,
   response,
   isPractice,
   onRetry,
@@ -634,6 +639,7 @@ function RevealPanel({
   hasNext: boolean;
   onNext: () => void;
   finishLabel: string;
+  members: { userId: string; name: string | null }[];
   // The answer the diff is shown against: the stored response, or the
   // throwaway practice answer when this reveal follows a practice run.
   response: { decision: 'keep' | 'mulligan'; resourced: string[] } | null;
@@ -735,6 +741,7 @@ function RevealPanel({
           recorder={reveal.recorder}
           viewerName={viewerName}
           isOwner={detail.isOwner}
+          members={members}
         />
       </div>
     </section>
@@ -752,6 +759,7 @@ function OpeningDiscussion({
   recorder,
   viewerName,
   isOwner,
+  members,
 }: {
   teamSlug: string;
   replaySlug: string;
@@ -760,6 +768,7 @@ function OpeningDiscussion({
   recorder: { userId: string | null; name: string | null };
   viewerName: string;
   isOwner: boolean;
+  members: { userId: string; name: string | null }[];
 }) {
   const [comments, setComments] = useState<any[] | null>(null);
   const load = useCallback(async () => {
@@ -800,6 +809,7 @@ function OpeningDiscussion({
         recorder={recorder}
         viewerName={viewerName}
         isOwner={isOwner}
+        members={members}
         onPosted={load}
       />
     </div>
@@ -816,6 +826,7 @@ function DisagreeComposer({
   recorder,
   viewerName,
   isOwner,
+  members,
   onPosted,
 }: {
   teamSlug: string;
@@ -824,6 +835,7 @@ function DisagreeComposer({
   recorder: { userId: string | null; name: string | null };
   viewerName: string;
   isOwner: boolean;
+  members: { userId: string; name: string | null }[];
   onPosted?: () => void;
 }) {
   const [text, setText] = useState('');
@@ -835,6 +847,12 @@ function DisagreeComposer({
     if (!comment) return;
     setState('posting');
     try {
+      // Longest-name-first so "@Jordan Cross Jr" beats "@Jordan Cross".
+      const typedMentions = members
+        .filter((m) => m.name)
+        .sort((a, b) => (b.name!.length - a.name!.length))
+        .filter((m) => text.toLowerCase().includes(`@${m.name!.toLowerCase()}`))
+        .map((m) => m.userId);
       const res = await fetch(`/api/replays/${replaySlug}/tags`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -844,7 +862,11 @@ function DisagreeComposer({
           frameIndex,
           comment,
           teamSlugs: [teamSlug],
-          ...(recorder.userId ? { mentions: { userIds: [recorder.userId], teamSlugs: [] } } : {}),
+          // Deliberately NO auto-mention (default = no notification). A typed
+          // @Name resolves against the team roster below and rides the normal
+          // mention machinery (inbox + discord ping); the uploader otherwise
+          // finds feedback via the with-comments filter.
+          ...(typedMentions.length ? { mentions: { userIds: typedMentions, teamSlugs: [] } } : {}),
         }),
       });
       const j = await res.json();

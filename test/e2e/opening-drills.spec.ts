@@ -160,9 +160,10 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // Post-reveal the seat plate names the recorder.
   await expect(page2.getByTestId('opening-seat-own')).toContainText('DrillOwner');
 
-  // Post the disagreement — a team-scoped tag on the source replay that
-  // auto-@mentions the uploader.
-  await page2.getByTestId('opening-comment').fill('I resource the Cantwell here every time');
+  // Post the disagreement — a team-scoped tag on the source replay. No
+  // auto-mention (default = no notification); a typed @Name resolves against
+  // the roster and rides the normal mention machinery.
+  await page2.getByTestId('opening-comment').fill('I resource the Cantwell here every time, @DrillOwner');
   await page2.getByTestId('opening-post').click();
   await expect(page2.getByTestId('opening-posted-note')).toContainText('Posted.');
   // The comment lands in the reveal's own discussion list — still there when
@@ -214,16 +215,21 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await page2.getByTestId('filter-memory-chip').click();
   await expect(page2.getByTestId('opening-filter-deck')).toContainText('Own Leader');
 
-  // The tag really landed: owner reads it back with team scope + their mention.
+  // The tag really landed: team-scoped, anchored at the decision frame, and
+  // the TYPED @DrillOwner resolved to a real mention (no silent auto-mention).
   const tagsRes = await page.request.get(`/api/replays/${slug}/tags`);
   const tags = (await tagsRes.json()).data as any[];
   const posted = tags.find((t) => t.comment.includes('Cantwell'));
   expect(posted).toBeTruthy();
   expect(posted.frameIndex).toBe(1); // anchored at the dealt-hand (decision) frame
+  expect(posted.mentions?.userIds ?? posted.mentions ?? []).toHaveLength(1); // the typed mention resolved
+
+  // The uploader's feedback finder: the with-comments filter on My openings.
 
   // Uploader view: their own opening on the setup screen with the team's
   // verdict; clicking it opens the reveal (no answering their own).
   await page.goto(`/teams/${teamSlug}?tab=openings`);
+  await expect(page.getByText('With comments (1)')).toBeVisible();
   const ownRow = page.getByTestId('opening-row');
   await expect(ownRow).toHaveCount(1);
   await expect(ownRow).toContainText('DrillOwner (you)');

@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
+import { LedToggle } from '@/app/_components/LedToggle';
 import { useFilterMemory, FilterMemoryChips } from '@/app/_components/filterMemory';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -80,6 +81,9 @@ export function TeamOpenings({
   const [since, setSince] = useState<string>(ALL); // days-back preset
   const [session, setSession] = useState<Session | null>(null);
   const [showAllMine, setShowAllMine] = useState(false);
+  // Uploader's feedback finder: comments don't notify by default, so this
+  // filter IS how you find discussion on your openings.
+  const [mineCommentsOnly, setMineCommentsOnly] = useState(false);
   // 'history' = the full-page browse/search surface for already-graded
   // openings. Same component, same FILTER STATE — switching views carries the
   // filters with zero re-setup (the workflow ask).
@@ -263,6 +267,7 @@ export function TeamOpenings({
                 onAnswered={onAnswered}
                 onNext={isRevisit ? endSession : () => setSession((s) => (s ? { ...s, index: s.index + 1 } : s))}
                 finishLabel={isRevisit ? 'Done' : 'Finish session'}
+                members={members}
               />
             </div>
             {!compact && !isRevisit && (
@@ -412,8 +417,9 @@ export function TeamOpenings({
   // Centered, focused column: the session card is the star; the revisit
   // lists below only surface items with something to look at (feedback /
   // your answers), the long tail behind Show all.
-  const mineWithSignal = mine.filter((i) => i.responseCount > 0 || i.commentCount > 0);
-  const shownMine = showAllMine ? mine : mineWithSignal.slice(0, 12);
+  const mineFiltered = mineCommentsOnly ? mine.filter((i) => i.commentCount > 0) : mine;
+  const mineWithSignal = mineFiltered.filter((i) => i.responseCount > 0 || i.commentCount > 0);
+  const shownMine = mineCommentsOnly ? mineFiltered : showAllMine ? mine : mineWithSignal.slice(0, 12);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 680, margin: '0 auto', width: '100%' }}>
@@ -452,17 +458,28 @@ export function TeamOpenings({
       {mine.length > 0 && (
         <ListSection
           title="My openings"
+          headerRight={
+            <LedToggle
+              checked={mineCommentsOnly}
+              onChange={setMineCommentsOnly}
+              label={`With comments (${mine.filter((i) => i.commentCount > 0).length})`}
+            />
+          }
           note={
-            mineWithSignal.length === 0
-              ? `No feedback on your ${mine.length} opening${mine.length === 1 ? '' : 's'} yet.`
-              : undefined
+            mineCommentsOnly && mineFiltered.length === 0
+              ? 'No comments on your openings yet.'
+              : !mineCommentsOnly && mineWithSignal.length === 0
+                ? `No feedback on your ${mine.length} opening${mine.length === 1 ? '' : 's'} yet.`
+                : undefined
           }
           expander={
-            mine.length > shownMine.length
-              ? { label: `Show all ${mine.length}`, onClick: () => setShowAllMine(true) }
-              : showAllMine && mine.length > 12
-                ? { label: 'Show less', onClick: () => setShowAllMine(false) }
-                : undefined
+            mineCommentsOnly
+              ? undefined
+              : mine.length > shownMine.length
+                ? { label: `Show all ${mine.length}`, onClick: () => setShowAllMine(true) }
+                : showAllMine && mine.length > 12
+                  ? { label: 'Show less', onClick: () => setShowAllMine(false) }
+                  : undefined
           }
         >
           {shownMine.map((i) => (
@@ -697,17 +714,22 @@ function ListSection({
   title,
   note,
   expander,
+  headerRight,
   children,
 }: {
   title: string;
   note?: string;
   expander?: { label: string; onClick: () => void; testId?: string };
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', margin: '0 0 6px' }}>
-        {title}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '0 0 6px' }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3' }}>
+          {title}
+        </div>
+        {headerRight}
       </div>
       {note && <div style={{ fontSize: 12, color: '#6c7588', marginBottom: 6 }}>{note}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 6 }}>
