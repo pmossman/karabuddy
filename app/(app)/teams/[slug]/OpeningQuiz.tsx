@@ -265,9 +265,13 @@ export function OpeningStage({
   };
 
   // The hand — the full-width bottom row, exactly like sitting at the table.
-  const fanW = compact ? (dualHand ? 112 : 132) : (dualHand ? 124 : 150);
+  // The reveal stacks more below the board (caption + verdict-labeled hand),
+  // so the fan sizes down a notch there even in single-hand mode — the whole
+  // story should sit on one screen.
+  const fanShrunk = dualHand || stage === 'reveal';
+  const fanW = compact ? (fanShrunk ? 112 : 132) : (fanShrunk ? 126 : 150);
   const fan = (
-    <HandRow cardWidth={fanW} overlap={compact ? 56 : dualHand ? 30 : 24}>
+    <HandRow cardWidth={fanW} overlap={compact ? 56 : fanShrunk ? 30 : 24}>
       {hand.map((c, i) => (
         <QuizCard
           key={`${c.id}-${i}`}
