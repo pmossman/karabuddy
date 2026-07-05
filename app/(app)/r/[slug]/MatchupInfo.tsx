@@ -63,10 +63,10 @@ function MatchupPlayer({ player, winners }: { player: any; winners?: string[] | 
       <LeaderBasePair
         leader={player.leader}
         base={player.base}
-        orientation="row"
+        orientation="overlap"
         width={44}
         height={30}
-        gap={2}
+        fit="cover"
         radius={3}
         fallback="initials"
       />

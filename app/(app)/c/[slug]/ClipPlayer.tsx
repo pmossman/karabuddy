@@ -534,7 +534,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
                 {matchup.map((m, i) => (
                   <Fragment key={i}>
                     {i > 0 && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>}
-                    <LeaderBasePair leader={m.leader} base={m.base} orientation="row" width={46} height={32} gap={3} radius={3} border="1px solid #2e333c" fallback="box" />
+                    <LeaderBasePair leader={m.leader} base={m.base} orientation="overlap" width={46} height={32} fit="cover" radius={3} fallback="box" />
                   </Fragment>
                 ))}
               </div>

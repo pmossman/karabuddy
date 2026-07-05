@@ -34,7 +34,7 @@ function CheckIcon() {
 function DeckLeaderBase({ deck }: { deck: any }) {
   if (!deck?.leader?.id && !deck?.base?.id) return null;
   return (
-    <LeaderBasePair leader={deck.leader?.id} base={deck.base?.id} orientation="row" width={40} height={28} fit="cover" radius={4} gap={4} background="#0b0e14" border="1px solid #2e333c" fallback="hide" />
+    <LeaderBasePair leader={deck.leader?.id} base={deck.base?.id} orientation="overlap" width={40} height={28} fit="cover" radius={4} background="#0b0e14" fallback="hide" />
   );
 }
 

@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { useFilterMemory, FilterMemoryChips } from '@/app/_components/filterMemory';
-import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { GradientBorderButton } from './OpeningPromptKit';
@@ -624,32 +624,9 @@ function OutcomeGlyph({ item }: { item: PoolItem }) {
   );
 }
 
-// Leader art with its base peeking out behind — the compact "deck" cluster.
-function PairArt({ leader, base }: { leader: any; base: any }) {
-  const leaderUrl = leader ? cardImageUrl(leader, true) : null;
-  const baseUrl = base ? cardImageUrl(base, false) : null;
-  return (
-    <span style={{ position: 'relative', width: 74, height: 46, flexShrink: 0, display: 'inline-block' }}>
-      {baseUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={baseUrl}
-          alt={base?.name ?? ''}
-          title={base?.name ?? undefined}
-          style={{ position: 'absolute', right: 0, top: 0, width: 52, height: 37, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.12)', filter: 'brightness(0.8)' }}
-        />
-      )}
-      {leaderUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={leaderUrl}
-          alt={leader?.name ?? ''}
-          title={leader?.name ?? undefined}
-          style={{ position: 'absolute', left: 0, bottom: 0, width: 58, height: 41, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.2)', boxShadow: '2px 2px 8px rgba(0,0,0,0.6)' }}
-        />
-      )}
-    </span>
-  );
+// Leader art with its base peeking out behind — the shared overlap treatment.
+function PairArt({ leader, base, reverse }: { leader: any; base: any; reverse?: boolean }) {
+  return <LeaderBasePair leader={leader} base={base} orientation="overlap" reverse={reverse} width={58} height={41} fit="cover" radius={4} fallback="hide" />;
 }
 
 const shortDate = (iso?: string) =>
@@ -687,7 +664,7 @@ function AnsweredRow({ item, onClick }: { item: PoolItem; onClick: () => void })
     >
       <PairArt leader={item.ownLeader} base={item.ownBase} />
       <span style={{ fontSize: 10, fontWeight: 800, color: '#6c7588', flexShrink: 0 }}>VS</span>
-      <PairArt leader={item.oppLeader} base={item.oppBase} />
+      <PairArt leader={item.oppLeader} base={item.oppBase} reverse />
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span style={{ fontWeight: 600, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {own} <span style={{ color: '#6c7588', fontWeight: 400 }}>vs</span> {opp}

@@ -255,7 +255,7 @@ When building a surface that does one of these jobs, **use the canonical compone
 | Per-player deck tabs | `<DecksTabs>` | viewer modal + grid quick-view + deck page |
 | Sortable table | `useSortable` + `<SortHeader>` | |
 | Filter toolbar | `<FilterChip>` / `<Field>` (`FilterToolbar.tsx`) | |
-| Leader+base thumbnail | `<LeaderBasePair>` | mini matchup thumb (NOT the live-board `LeaderBaseCard`) |
+| Leader+base thumbnail | `<LeaderBasePair>` | mini matchup thumb (NOT the live-board `LeaderBaseCard`); `orientation="overlap"` (leader front, base peeking behind) is the canonical MATCHUP treatment |
 | Leader/base dropdown (art options) | `<LeaderSelect>` | name-only dropdowns don't scan — options carry card-art thumbs; native `<select>` can't render images |
 | Recent filter-sets (restore chips) | `useFilterMemory` + `<FilterMemoryChips>` (`filterMemory.tsx`) | per-device localStorage; record at the MEANINGFUL moment (session start / search), not per keystroke |
 | Matchup VS row | `<MatchupRow>` | replay/clip card header |

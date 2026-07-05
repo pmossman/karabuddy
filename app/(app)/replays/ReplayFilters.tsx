@@ -1483,7 +1483,7 @@ export function DoubleSidedChip() {
 // Per-player leader + base stacked vertically. Tiny — meant for at-a-glance
 // scanning down the table, not for reading card text.
 function PlayerThumbs({ player }: { player: any }) {
-  return <LeaderBasePair leader={player?.leader} base={player?.base} width={38} height={26} gap={1} radius={2} />;
+  return <LeaderBasePair leader={player?.leader} base={player?.base} orientation="overlap" width={38} height={27} fit="cover" radius={2} />;
 }
 
 function PlainHeader({ children }: { children: React.ReactNode }) {
