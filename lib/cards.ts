@@ -31,7 +31,23 @@ export interface CatalogRow {
   arena: string | null;
   traits: string[] | null;
   hasAbility: boolean | null;
+  baseAbilityHash: string | null;
   source: string;
+}
+
+// Normalized fingerprint of a base's printed ability. Bases with the SAME
+// text are functionally interchangeable (the LOF force pairs, every reprint),
+// so aspect+hash IS a base's functional identity — see lib/baseIdentity.
+// FNV-1a over normalized text: deterministic, dependency-free, client-safe.
+export function baseAbilityHash(text: string | null | undefined): string | null {
+  const norm = (text ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!norm) return null;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < norm.length; i++) {
+    h ^= norm.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
 }
 
 // `${SET}_${NNN}` — numeric numbers zero-pad to 3 (matching the gamestate-
@@ -63,6 +79,7 @@ export function swuCardToRow(c: SwuCard): CatalogRow {
     arena: Array.isArray(c.Arenas) && c.Arenas.length ? c.Arenas[0].toLowerCase() : null, // ground | space | null
     traits: Array.isArray(c.Traits) ? c.Traits : null,
     hasAbility: type === 'base' ? ability.length > 0 : null,
+    baseAbilityHash: type === 'base' ? baseAbilityHash(ability) : null,
     source: 'seed',
   };
 }

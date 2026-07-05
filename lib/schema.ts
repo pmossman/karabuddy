@@ -593,6 +593,10 @@ export const cards = pgTable('cards', {
   // ability bases stay distinct, vanilla bases collapse to their aspect. Null
   // for non-bases / not-yet-seeded.
   hasAbility: boolean('has_ability'),
+  // Fingerprint of the printed ability (lib/cards.baseAbilityHash). Same
+  // hash = functionally the same base (force pairs, reprints) — the input to
+  // lib/baseIdentity's grouping. Null for vanilla bases / non-bases.
+  baseAbilityHash: text('base_ability_hash'),
   source: text('source').notNull().default('observed'), // 'seed' | 'observed'
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

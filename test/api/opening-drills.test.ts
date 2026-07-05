@@ -120,6 +120,11 @@ describe('B221 opening drills', () => {
     expect(forB[0].recordedDecision).toBeUndefined(); // no answer leak
     expect(forB[0].ownLeader?.set).toBe('SOR'); // matchup context IS present
     expect(forB[0].oppLeader?.set).toBe('TWI');
+    // Base FUNCTIONAL identity rides along (lib/baseIdentity). With no card
+    // catalog seeded it falls back to name identity — still filterable.
+    expect(forB[0].ownBaseKind?.kind).toBe('unknown');
+    expect(forB[0].ownBaseKind?.key).toBe('name:B');
+    expect(forB[0].ownBaseKind?.label).toBe('B');
 
     as(a.id);
     const forA = await pool(team);

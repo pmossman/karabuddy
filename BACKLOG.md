@@ -13,6 +13,8 @@ Source of truth for outstanding work. The autonomous loop pulls from **Backlog**
 
 ## Backlog
 
+- **B222 — stats deck axis adopts base functional identity.** `lib/baseIdentity` (B221 follow-up) groups bases by aspect+ability-text hash: vanilla→aspect (stats already does this), but stats still keys ability bases on `cardId` — so LOF force PAIRS (two names, identical text) and REPRINTS (same name, many cardIds) show as separate decks. Rework `lib/statsQuery`'s base-identity SQL (`base:<cardId>` → `ab:<aspect>:<hash>` via `cards.base_ability_hash`) + the StatsClient picker labels. Ship note: `scripts/seed-cards.ts` must be re-run against prod once (populates `base_ability_hash`; migration 0036 only adds the column).
+
 ### [B220] Extension: non-destructive finalize — phantom-winner lock truncates replays
 
 - **Why:** the secondary truncation cause from the B219 diagnosis (3/14 truncated replays, incl. the user-reported r_9wxwfn): karabast sets a transient `winners` on non-terminal events (opponent disconnect/PlayerLeft, timeout, rolled-back win — forceteki `Game.endGame`), and karabast explicitly supports continuing play after game end. `looksLikeGameEnd` treats any `winners` as terminal → `download('auto')` finalizes, sets `finalizedGameId`, and the recorder PERMANENTLY drops every later frame for that gameId (`03-recorder.js` post-finalize guard). Evidence: final captured frame had opponent base at 6/30 (no possible win), no "has won the game" log message, game demonstrably continued.

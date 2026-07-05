@@ -32,6 +32,8 @@ interface PoolItem {
   ownBase: any;
   oppLeader: any;
   oppBase: any;
+  ownBaseKind: { key: string; label: string; aspect: string | null; art: any; iconAspect: string | null } | null;
+  oppBaseKind: { key: string; label: string; aspect: string | null; art: any; iconAspect: string | null } | null;
   format: string | null;
   wentFirst: boolean | null;
   mine: boolean;
@@ -104,8 +106,8 @@ export function TeamOpenings({
   const leaderName = (l: any) => (l?.name as string) || null;
   const deckOptions = useMemo(() => leaderArtOptions(items, (i) => i.ownLeader), [items]);
   const vsOptions = useMemo(() => leaderArtOptions(items, (i) => i.oppLeader), [items]);
-  const baseOptions = useMemo(() => leaderArtOptions(items, (i) => i.ownBase, false), [items]);
-  const vsBaseOptions = useMemo(() => leaderArtOptions(items, (i) => i.oppBase, false), [items]);
+  const baseOptions = useMemo(() => baseKindOptions(items, (i) => i.ownBaseKind), [items]);
+  const vsBaseOptions = useMemo(() => baseKindOptions(items, (i) => i.oppBaseKind), [items]);
   const formatOptions = useMemo(
     () => Array.from(new Set((items ?? []).map((i) => i.format).filter((f): f is string => !!f))).sort(),
     [items],
@@ -117,9 +119,9 @@ export function TeamOpenings({
     return items.filter(
       (i) =>
         (deck === ALL || leaderName(i.ownLeader) === deck) &&
-        (base === ALL || leaderName(i.ownBase) === base) &&
+        (base === ALL || i.ownBaseKind?.key === base) &&
         (vs === ALL || leaderName(i.oppLeader) === vs) &&
-        (vsBase === ALL || leaderName(i.oppBase) === vsBase) &&
+        (vsBase === ALL || i.oppBaseKind?.key === vsBase) &&
         (format === ALL || i.format === format) &&
         (cutoff === null || new Date(i.createdAt).getTime() >= cutoff),
     );
@@ -657,6 +659,21 @@ function SessionSummary({
       </div>
     </div>
   );
+}
+
+// Base options keyed on FUNCTIONAL identity (lib/baseIdentity): vanilla and
+// force-pair groups collapse to one option with the aspect icon; unique bases
+// keep their name + art.
+function baseKindOptions(items: PoolItem[] | null, pick: (i: PoolItem) => PoolItem['ownBaseKind']): LeaderSelectOption[] {
+  if (!items) return [];
+  const byKey = new Map<string, LeaderSelectOption>();
+  for (const i of items) {
+    const k = pick(i);
+    if (k && !byKey.has(k.key)) {
+      byKey.set(k.key, { value: k.key, label: k.label, art: k.art, artIsLeader: false, iconAspect: k.iconAspect });
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function leaderArtOptions(items: PoolItem[] | null, pick: (i: PoolItem) => any, artIsLeader = true): LeaderSelectOption[] {

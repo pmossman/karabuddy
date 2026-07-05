@@ -17,6 +17,9 @@ export interface LeaderSelectOption {
   label: string;
   art?: { set?: string; number?: number | string; name?: string } | null;
   artIsLeader?: boolean; // default true — the landscape leader side
+  // Aspect icon instead of card art — for base-identity GROUPS (vanilla /
+  // force-pair bases, lib/baseIdentity), where no single card IS the option.
+  iconAspect?: string | null;
 }
 
 const ANY = '__all__';
@@ -99,6 +102,14 @@ export function LeaderSelect({
   };
 
   const thumb = (o?: LeaderSelectOption) => {
+    if (o?.iconAspect) {
+      return (
+        <span style={{ width: 40, height: 29, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/aspect-icons/aspect-${o.iconAspect}.webp`} alt={o.iconAspect} style={{ width: 22, height: 22, display: 'block' }} />
+        </span>
+      );
+    }
     const url = o?.art ? cardImageUrl(o.art, o.artIsLeader ?? true) : null;
     return url ? (
       // eslint-disable-next-line @next/next/no-img-element

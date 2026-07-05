@@ -253,6 +253,13 @@
       "when": 1783104741860,
       "tag": "0035_opening_drills",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1783104742860,
+      "tag": "0036_base_ability_hash",
+      "breakpoints": true
     }
   ]
 }

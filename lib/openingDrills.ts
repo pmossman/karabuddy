@@ -25,6 +25,7 @@ import {
   users,
   type ReplayOpening,
 } from './schema';
+import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
 
 export interface OpeningCardRef {
   id: string; // SET_NNN
@@ -133,6 +134,10 @@ export interface OpeningPoolItem {
   ownBase: any | null;
   oppLeader: any | null;
   oppBase: any | null;
+  // Functional base identity (lib/baseIdentity) — what base FILTERS key on:
+  // vanilla and force-pair bases group; unique bases stay unique.
+  ownBaseKind: BaseIdentity | null;
+  oppBaseKind: BaseIdentity | null;
   format: string | null;
   wentFirst: boolean | null;
   // Viewer state
@@ -213,6 +218,20 @@ export async function openingPoolForTeam(
     }
   }
 
+  // One batched identity resolve for every base in the pool (2 queries).
+  const baseRefs: any[] = [];
+  for (const r of rows) {
+    const ps = Array.isArray(r.replay.players) ? (r.replay.players as any[]) : [];
+    for (const p of ps) if (p?.base) baseRefs.push(p.base);
+  }
+  const baseIdentities = await resolveBaseIdentities(baseRefs);
+  const kindOf = (base: any): BaseIdentity | null => {
+    if (!base?.set || base?.number == null) return null;
+    const n = Number(base.number);
+    const id = `${base.set}_${Number.isFinite(n) ? String(n).padStart(3, '0') : String(base.number)}`;
+    return baseIdentities.get(id) ?? null;
+  };
+
   const items = rows.map(({ replay, opening, ownerName }) => {
     const mine = !!replay.userId && replay.userId === viewerId;
     const teamResponses = responses.filter(
@@ -232,6 +251,8 @@ export async function openingPoolForTeam(
       ownBase: stripName(own, 'base'),
       oppLeader: stripName(opp, 'leader'),
       oppBase: stripName(opp, 'base'),
+      ownBaseKind: kindOf(own?.base),
+      oppBaseKind: kindOf(opp?.base),
       format: (replay.match as any)?.gameFormat ?? null,
       wentFirst: opening.wentFirst,
       mine,
