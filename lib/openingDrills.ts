@@ -148,6 +148,10 @@ export interface OpeningPoolItem {
   // The viewer's own outcome (answered items only) — drives the compact
   // outcome glyph: their decision + how many of their 2 picks matched.
   myDecision?: 'keep' | 'mulligan';
+  myAnsweredAt?: string;
+  // Karabast usernames (answered/own items only — identity is part of the
+  // reveal): the recorder's side and their opponent's.
+  usernames?: { own: string | null; opp: string | null };
   // 0..2 multiset overlap with the recorded picks — or null when the picks
   // aren't comparable (you kept, they mulliganed: different hands).
   myPickMatches?: number | null;
@@ -189,6 +193,7 @@ export async function openingPoolForTeam(
       userId: openingResponses.userId,
       decision: openingResponses.decision,
       resourced: openingResponses.resourced,
+      createdAt: openingResponses.createdAt,
     })
     .from(openingResponses)
     .where(inArray(openingResponses.replaySlug, slugs));
@@ -240,9 +245,12 @@ export async function openingPoolForTeam(
       item.recordedDecision = opening.decision as 'keep' | 'mulligan';
       item.keepCount = teamResponses.filter((r) => r.decision === 'keep').length;
       item.mulliganCount = teamResponses.filter((r) => r.decision === 'mulligan').length;
+      // Identity is part of the reveal — answered rows may show who played.
+      item.usernames = { own: own?.username ?? null, opp: opp?.username ?? null };
       const mineResp = teamResponses.find((r) => r.userId === viewerId);
       if (mineResp) {
         item.myDecision = mineResp.decision as 'keep' | 'mulligan';
+        item.myAnsweredAt = mineResp.createdAt.toISOString();
         // Comparable only when both picked from the SAME hand: a keep answer
         // against a recorded mulligan lives on the dealt hand while their
         // picks live on the redraw.
@@ -261,7 +269,7 @@ export async function openingPoolForTeam(
         }
       }
     }
-    if (mine || opts.withRecorder) {
+    if (mine || answered || opts.withRecorder) {
       item.recorder = { userId: replay.userId ?? null, name: ownerName ?? null };
     }
     return item;

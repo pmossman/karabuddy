@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { useFilterMemory, FilterMemoryChips } from '@/app/_components/filterMemory';
+import { cardImageUrl } from '@/lib/cardImage';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { GradientBorderButton } from './OpeningPromptKit';
@@ -40,7 +41,9 @@ interface PoolItem {
   keepCount?: number;
   mulliganCount?: number;
   myDecision?: 'keep' | 'mulligan';
-  myPickMatches?: number;
+  myPickMatches?: number | null;
+  myAnsweredAt?: string;
+  usernames?: { own: string | null; opp: string | null };
   recorder?: { userId: string | null; name: string | null };
 }
 
@@ -323,7 +326,7 @@ export function TeamOpenings({
         {rows.length === 0 ? (
           <EmptyState icon="🃏">Nothing graded matches these filters.</EmptyState>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: 8 }}>
             {rows.map((i) => (
               <AnsweredRow key={i.replaySlug} item={i} onClick={() => revisit(i.replaySlug)} />
             ))}
@@ -523,7 +526,7 @@ function ListSection({
         {title}
       </div>
       {note && <div style={{ fontSize: 12, color: '#6c7588', marginBottom: 6 }}>{note}</div>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 6 }}>
         {children}
       </div>
       {expander && (
@@ -621,10 +624,46 @@ function OutcomeGlyph({ item }: { item: PoolItem }) {
   );
 }
 
-// One-line preview of a graded opening: matchup · outcome glyph · badges.
+// Leader art with its base peeking out behind — the compact "deck" cluster.
+function PairArt({ leader, base }: { leader: any; base: any }) {
+  const leaderUrl = leader ? cardImageUrl(leader, true) : null;
+  const baseUrl = base ? cardImageUrl(base, false) : null;
+  return (
+    <span style={{ position: 'relative', width: 74, height: 46, flexShrink: 0, display: 'inline-block' }}>
+      {baseUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={baseUrl}
+          alt={base?.name ?? ''}
+          title={base?.name ?? undefined}
+          style={{ position: 'absolute', right: 0, top: 0, width: 52, height: 37, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.12)', filter: 'brightness(0.8)' }}
+        />
+      )}
+      {leaderUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={leaderUrl}
+          alt={leader?.name ?? ''}
+          title={leader?.name ?? undefined}
+          style={{ position: 'absolute', left: 0, bottom: 0, width: 58, height: 41, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.2)', boxShadow: '2px 2px 8px rgba(0,0,0,0.6)' }}
+        />
+      )}
+    </span>
+  );
+}
+
+const shortDate = (iso?: string) =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null;
+
+// A graded opening's card: overlapped leader/base art per side, matchup +
+// players + dates, the outcome glyph, and the badges.
 function AnsweredRow({ item, onClick }: { item: PoolItem; onClick: () => void }) {
   const own = (item.ownLeader?.name as string) || 'Unknown';
   const opp = (item.oppLeader?.name as string) || 'Unknown';
+  const ownUser = item.usernames?.own ?? item.recorder?.name ?? null;
+  const oppUser = item.usernames?.opp ?? null;
+  const played = shortDate(item.createdAt);
+  const answeredAt = shortDate(item.myAnsweredAt);
   return (
     <button
       type="button"
@@ -633,8 +672,8 @@ function AnsweredRow({ item, onClick }: { item: PoolItem; onClick: () => void })
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '6px 10px',
+        gap: 10,
+        padding: '8px 12px',
         background: tokens.surface.panel,
         border: `1px solid ${tokens.surface.panelBorder}`,
         borderRadius: tokens.radius.sm,
@@ -646,14 +685,25 @@ function AnsweredRow({ item, onClick }: { item: PoolItem; onClick: () => void })
         fontSize: 12.5,
       }}
     >
-      <OutcomeGlyph item={item} />
-      <span style={{ flex: 1, fontWeight: 600, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {own} <span style={{ color: '#6c7588', fontWeight: 400 }}>vs</span> {opp}
-        {item.recorder?.name && <span style={{ color: '#6c7588', fontWeight: 400 }}> · {item.recorder.name}</span>}
+      <PairArt leader={item.ownLeader} base={item.ownBase} />
+      <span style={{ fontSize: 10, fontWeight: 800, color: '#6c7588', flexShrink: 0 }}>VS</span>
+      <PairArt leader={item.oppLeader} base={item.oppBase} />
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontWeight: 600, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {own} <span style={{ color: '#6c7588', fontWeight: 400 }}>vs</span> {opp}
+        </span>
+        <span style={{ fontSize: 11, color: '#6c7588', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {ownUser && oppUser ? `${ownUser} vs ${oppUser}` : ownUser ?? ''}
+          {played && ` · played ${played}`}
+          {answeredAt && ` · answered ${answeredAt}`}
+        </span>
       </span>
-      <span style={{ display: 'flex', gap: 5, alignItems: 'center', flexShrink: 0 }}>
-        {item.commentCount > 0 && <Badge color="#5db4ff">💬 {item.commentCount}</Badge>}
-        <ConsensusBadge item={item} />
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
+        <OutcomeGlyph item={item} />
+        <span style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+          {item.commentCount > 0 && <Badge color="#5db4ff">💬 {item.commentCount}</Badge>}
+          <ConsensusBadge item={item} />
+        </span>
       </span>
     </button>
   );

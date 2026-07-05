@@ -143,6 +143,10 @@ describe('B221 opening drills', () => {
     expect(item.myDecision).toBe('mulligan');
     expect(item.recordedDecision).toBe('keep');
     expect(item.myPickMatches).toBe(1);
+    // Answered rows carry the reveal-tier identity + dates.
+    expect(item.usernames).toEqual({ own: 'Rec', opp: 'Opp' });
+    expect(item.recorder?.userId).toBe(a.id);
+    expect(typeof item.myAnsweredAt).toBe('string');
   });
 
   it('a KEEP answer on a mulligan game picks from the DEALT hand (the fork data)', async () => {
