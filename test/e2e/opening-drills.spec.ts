@@ -135,6 +135,14 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(reveal).toContainText('so did you');
   await expect(reveal).toContainText('One pick matched.');
   await expect(reveal).toContainText('Team so far — Keep 1 · Mulligan 0');
+  // Per-member picks: expand → this responder's resourced + kept cards.
+  await expect(page2.getByTestId('opening-member-picks-toggle')).toContainText('Team picks · 1');
+  await page2.getByTestId('opening-member-picks-toggle').click();
+  await expect(page2.getByTestId('opening-member-picks')).toContainText('Resourced');
+  await expect(page2.getByTestId('opening-member-picks')).toContainText('In hand');
+  await expect(page2.getByTestId('opening-member-picks')).toContainText('DrillMate');
+  await page2.getByTestId('opening-member-picks-toggle').click(); // collapse again
+
   // The resource diff is painted on the hand, each card self-labeled:
   // green shared pick, yellow theirs-only, cyan yours-only. No legend.
   await expect(page2.getByText('Both picked', { exact: true })).toBeVisible();

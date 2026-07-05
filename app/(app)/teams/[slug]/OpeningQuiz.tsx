@@ -30,6 +30,7 @@ import {
   promptTextStyle,
   promptTitleStyle,
   type QuizCardRef,
+  type PickVerdict,
 } from './OpeningPromptKit';
 
 interface ResponseView {
@@ -528,10 +529,12 @@ export function OpeningStage({
       {stage === 'reveal' && detail.reveal && compact && !revealMin && (
         <div
           data-testid="opening-reveal-overlay"
-          // Light scrim only — the board behind should stay readable.
-          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.55)', overflowY: 'auto', padding: '12px 12px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+          // Light scrim that does NOT block pointer events — hovering a board
+          // card behind the modal still fires its preview (the preview portal
+          // renders above at z-500). The panel re-enables events + scrolls.
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.55)', pointerEvents: 'none', display: 'flex', justifyContent: 'center', padding: 12 }}
         >
-          <div style={{ position: 'relative', width: 'min(560px, 100%)' }}>
+          <div style={{ position: 'relative', width: 'min(560px, 100%)', maxHeight: '100%', overflowY: 'auto', pointerEvents: 'auto' }}>
             {minimizeGlyph}
             {revealPanel}
           </div>
@@ -613,6 +616,87 @@ function sameHand(d: Detail): boolean {
   const a = d.dealtHand.map((c) => c.id).sort();
   const b = d.keptHand.map((c) => c.id).sort();
   return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+// Per-member RESOURCE SUMMARY (B221): each participating teammate's final
+// selection as its own little view — the two cards they resourced and the
+// four they kept. Their source hand is deterministic from THEIR decision
+// (keep → the dealt hand, mulligan → the redraw), matching what they picked
+// from; the server validated the picks against it. Collapsed by default so
+// solo reveals stay compact.
+function MemberPicks({
+  responses,
+  dealtHand,
+  keptHand,
+}: {
+  responses: ResponseView[];
+  dealtHand: QuizCardRef[];
+  keptHand: QuizCardRef[];
+}) {
+  const [open, setOpen] = useState(false);
+  if (responses.length === 0) return null;
+
+  const split = (r: ResponseView) => {
+    const source = r.decision === 'keep' ? dealtHand : keptHand;
+    const pool = [...r.resourced];
+    const resourced: QuizCardRef[] = [];
+    const kept: QuizCardRef[] = [];
+    for (const c of source) {
+      const at = pool.indexOf(c.id);
+      if (at >= 0) { pool.splice(at, 1); resourced.push(c); } else { kept.push(c); }
+    }
+    return { resourced, kept };
+  };
+
+  return (
+    <div data-testid="opening-member-picks" style={{ marginTop: 12, textAlign: 'left' }}>
+      <button
+        type="button"
+        data-testid="opening-member-picks-toggle"
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: '#8a93a3', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', padding: 0 }}
+      >
+        Team picks · {responses.length}
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms' }}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+          {responses.map((r) => {
+            const { resourced, kept } = split(r);
+            return (
+              <div key={r.userId} style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c', borderRadius: 8 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
+                  {r.name ?? 'Teammate'} <span style={{ color: '#6c7588', fontWeight: 400 }}>· {r.decision}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                  <MiniHand label="Resourced" cards={resourced} verdict="mine" />
+                  <MiniHand label="In hand" cards={kept} dimmed />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A tiny labeled row of cards for the per-member summary. Cards keep the
+// hover/long-press full preview (QuizCard's built-in useCardPreview).
+function MiniHand({ label, cards, verdict, dimmed }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; dimmed?: boolean }) {
+  if (cards.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588' }}>{label}</span>
+      <HandRow cardWidth={44} overlap={22}>
+        {cards.map((c, i) => (
+          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} dimmed={dimmed} />
+        ))}
+      </HandRow>
+    </div>
+  );
 }
 
 function RevealPanel({
@@ -702,6 +786,8 @@ function RevealPanel({
           </div>
         )}
       </div>
+
+      <MemberPicks responses={reveal.responses} dealtHand={detail.dealtHand} keptHand={detail.keptHand} />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
         <button
