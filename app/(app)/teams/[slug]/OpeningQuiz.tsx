@@ -92,6 +92,9 @@ export function OpeningStage({
   // The "Watch from the opening" mini-player. While open, the stage's own
   // keyboard flow is suspended (the player owns the arrow keys).
   const [watching, setWatching] = useState(false);
+  // Mobile: the reveal is a full-screen modal (the in-board float left the
+  // fork hands off-screen); minimized = peek at the whole board state.
+  const [revealMin, setRevealMin] = useState(false);
 
   useEffect(() => {
     let dead = false;
@@ -103,6 +106,7 @@ export function OpeningStage({
     setPracticing(false);
     setPractice(null);
     setWatching(false);
+    setRevealMin(false);
     (async () => {
       try {
         const res = await fetch(`/api/replays/${replaySlug}/opening`);
@@ -173,6 +177,10 @@ export function OpeningStage({
   useEffect(() => {
     if (stage === 'reveal' && detail?.reveal) prepareWatch(detail.replaySlug).catch(() => {});
   }, [stage, detail]);
+
+  useEffect(() => {
+    if (stage !== 'reveal') setRevealMin(false);
+  }, [stage]);
 
   // Same breakpoint as the shell + the tab container: below it the stage
   // re-composes hand-first.
@@ -341,6 +349,21 @@ export function OpeningStage({
 
   // The floating prompt layer. pointerEvents:none on the wrapper keeps the
   // uncovered board cards hoverable; the panel itself re-enables them.
+  const revealPanel = detail.reveal ? (
+    <RevealPanel
+      teamSlug={teamSlug}
+      detail={detail}
+      reveal={detail.reveal}
+      viewerName={viewerName}
+      hasNext={hasNext}
+      onNext={onNext}
+      response={practice ?? detail.myResponse}
+      isPractice={!!practice}
+      onRetry={detail.isOwner ? undefined : startPractice}
+      onWatch={() => setWatching(true)}
+    />
+  ) : null;
+
   const overlay = (
     <div
       style={{
@@ -398,20 +421,7 @@ export function OpeningStage({
             </div>
           </section>
         )}
-        {stage === 'reveal' && detail.reveal && (
-          <RevealPanel
-            teamSlug={teamSlug}
-            detail={detail}
-            reveal={detail.reveal}
-            viewerName={viewerName}
-            hasNext={hasNext}
-            onNext={onNext}
-            response={practice ?? detail.myResponse}
-            isPractice={!!practice}
-            onRetry={detail.isOwner ? undefined : startPractice}
-            onWatch={() => setWatching(true)}
-          />
-        )}
+        {stage === 'reveal' && detail.reveal && !compact && revealPanel}
       </div>
     </div>
   );
@@ -431,6 +441,35 @@ export function OpeningStage({
         <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: -4 }}>
           Their redraw
         </div>
+      )}
+      {stage === 'reveal' && detail.reveal && compact && !revealMin && (
+        <div
+          data-testid="opening-reveal-overlay"
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.88)', overflowY: 'auto', padding: '46px 12px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+        >
+          <button
+            type="button"
+            data-testid="opening-reveal-minimize"
+            aria-label="Show the board"
+            onClick={() => setRevealMin(true)}
+            style={{ position: 'fixed', top: 10, right: 12, zIndex: 91, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(13,16,22,0.9)', border: '1px solid #2e333c', borderRadius: 999, color: '#a0a8b8', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6" /></svg>
+            Board
+          </button>
+          <div style={{ width: 'min(560px, 100%)' }}>{revealPanel}</div>
+        </div>
+      )}
+      {stage === 'reveal' && detail.reveal && compact && revealMin && (
+        <button
+          type="button"
+          data-testid="opening-reveal-expand"
+          onClick={() => setRevealMin(false)}
+          style={{ position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 90, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'rgba(13,16,22,0.94)', border: '1px solid #4d9dff', borderRadius: 999, color: '#cfe6ff', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 6px 22px rgba(0,0,0,0.55)' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 15l-6-6-6 6" /></svg>
+          Reveal
+        </button>
       )}
       {watching && detail.reveal && (
         <OpeningWatchModal

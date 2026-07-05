@@ -264,6 +264,16 @@ test('mobile: the two-phase flow works at 390px, footer reclaimed', async ({ pag
   await page2.getByTestId('opening-pick-5').click();
   await page2.getByTestId('opening-confirm').click();
   await expect(page2.getByTestId('opening-reveal')).toBeVisible();
+
+  // Mobile reveal = a TRUE modal over everything (the in-board float left the
+  // hands off-screen). Minimize → the whole board is visible again; the
+  // floating pill restores the panel.
+  await expect(page2.getByTestId('opening-reveal-overlay')).toBeVisible();
+  await page2.getByTestId('opening-reveal-minimize').click();
+  await expect(page2.getByTestId('opening-reveal-overlay')).toHaveCount(0);
+  await expect(page2.getByTestId('opening-stage')).toBeVisible();
+  await page2.getByTestId('opening-reveal-expand').click();
+  await expect(page2.getByTestId('opening-reveal-overlay')).toBeVisible();
   await page2.getByTestId('opening-next').click();
   await expect(page2.getByTestId('opening-summary')).toBeVisible();
 
