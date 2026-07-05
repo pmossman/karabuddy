@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
+import { useFilterMemory, FilterMemoryChips } from '@/app/_components/filterMemory';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { GradientBorderButton } from './OpeningPromptKit';
@@ -122,12 +123,34 @@ export function TeamOpenings({
     setDeck(ALL); setBase(ALL); setVs(ALL); setVsBase(ALL); setTeammate(ALL); setFormat(ALL); setSince(ALL); setSearch('');
   };
 
+  // Per-device memory of filter-sets actually USED (recorded on Begin) —
+  // one-click restore chips on both views. Per-team key: leader pools differ.
+  interface OpeningFilters { deck: string; base: string; vs: string; vsBase: string; teammate: string; format: string; since: string }
+  const filterMemory = useFilterMemory<OpeningFilters>(`openings:${teamSlug}`);
+  const applyFilters = (f: OpeningFilters) => {
+    setDeck(f.deck); setBase(f.base); setVs(f.vs); setVsBase(f.vsBase); setTeammate(f.teammate); setFormat(f.format); setSince(f.since);
+  };
+  const filterLabel = () => {
+    const parts: string[] = [];
+    if (deck !== ALL) parts.push(deck);
+    if (base !== ALL) parts.push(base);
+    if (vs !== ALL) parts.push(`vs ${vs}`);
+    if (vsBase !== ALL) parts.push(`vs ${vsBase}`);
+    if (teammate !== ALL) parts.push(members.find((m) => m.userId === teammate)?.name ?? 'teammate');
+    if (format !== ALL) parts.push(format);
+    if (since !== ALL) parts.push(`${since}d`);
+    return parts.join(' · ');
+  };
+
   const matching = filtered.filter((i) => !i.mine && !i.answered);
   const answered = filtered.filter((i) => !i.mine && i.answered);
   const mine = filtered.filter((i) => i.mine);
 
   const begin = () => {
     if (matching.length === 0) return;
+    if (deck !== ALL || base !== ALL || vs !== ALL || vsBase !== ALL || teammate !== ALL || format !== ALL || since !== ALL) {
+      filterMemory.remember({ deck, base, vs, vsBase, teammate, format, since }, filterLabel());
+    }
     setSession({ queue: matching.map((i) => i.replaySlug), index: 0, results: {} });
   };
   const revisit = (slug: string) => setSession({ queue: [slug], index: 0, results: {} });
@@ -296,6 +319,7 @@ export function TeamOpenings({
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{filterControls}</div>
+        <FilterMemoryChips history={filterMemory.history} onApply={applyFilters} />
         {rows.length === 0 ? (
           <EmptyState icon="🃏">Nothing graded matches these filters.</EmptyState>
         ) : (
@@ -333,6 +357,7 @@ export function TeamOpenings({
       >
         <div style={{ fontSize: 15, fontWeight: 800, color: '#e6ebf2' }}>Set up your session</div>
         {filterControls}
+        <FilterMemoryChips history={filterMemory.history} onApply={applyFilters} />
         {teammate !== ALL && (
           <span style={{ fontSize: 11.5, color: '#6c7588' }}>
             Coaching mode — identities visible.

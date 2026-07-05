@@ -82,10 +82,16 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await page2.goto(`/teams/join?code=${code}`);
   await page2.waitForURL(new RegExp(`/teams/${teamSlug}`));
 
-  // SETUP: filters + match count + Begin. No board on this screen.
+  // SETUP: filters + match count + Begin. No board on this screen. Filter to
+  // the deck first — Begin records the set into the per-device filter memory.
   await page2.goto(`/teams/${teamSlug}?tab=openings`);
   await expect(page2.getByTestId('opening-match-count')).toContainText('1 unanswered opening');
   await expect(page2.getByTestId('opening-stage')).toHaveCount(0);
+  await page2.getByTestId('opening-filter-deck').click();
+  const deckBox = page2.getByPlaceholder('Type to filter…');
+  await deckBox.fill('own');
+  await deckBox.press('Enter');
+  await expect(page2.getByTestId('opening-match-count')).toContainText('1 unanswered opening');
   await page2.getByTestId('opening-begin').click();
 
   // PLAY, stage 1: session HUD + the board column (landscape seats, name
@@ -181,6 +187,14 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-row')).toHaveCount(1);
   await page2.getByTestId('opening-history-back').click();
   await expect(page2.getByTestId('opening-begin')).toBeVisible();
+
+  // Filter memory: the set used at Begin is restorable with one click after
+  // a Reset — on this view and the history view alike.
+  await page2.getByTestId('opening-filter-reset').click();
+  await expect(page2.getByTestId('opening-filter-deck')).toContainText('Any leader');
+  await expect(page2.getByTestId('filter-memory-chip')).toContainText('Own Leader');
+  await page2.getByTestId('filter-memory-chip').click();
+  await expect(page2.getByTestId('opening-filter-deck')).toContainText('Own Leader');
 
   // The tag really landed: owner reads it back with team scope + their mention.
   const tagsRes = await page.request.get(`/api/replays/${slug}/tags`);
