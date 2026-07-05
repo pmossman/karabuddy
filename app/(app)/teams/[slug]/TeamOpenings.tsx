@@ -325,11 +325,16 @@ export function TeamOpenings({
   // carry across views.
   const filterControls = (
     <>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <LeaderSelect value={deck} onChange={setDeck} ariaLabel="Filter by deck leader" anyLabel="Any leader" options={deckOptions} testId="opening-filter-deck" />
-        <LeaderSelect value={base} onChange={setBase} ariaLabel="Filter by base" anyLabel="Any base" options={baseOptions} testId="opening-filter-base" />
-        <LeaderSelect value={vs} onChange={setVs} ariaLabel="Filter by opposing leader" anyLabel="vs any leader" options={vsOptions} testId="opening-filter-vs" />
-        <LeaderSelect value={vsBase} onChange={setVsBase} ariaLabel="Filter by opposing base" anyLabel="vs any base" options={vsBaseOptions} testId="opening-filter-vs-base" />
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
+          <LeaderSelect value={deck} onChange={setDeck} ariaLabel="Filter by deck leader" anyLabel="Any leader" options={deckOptions} testId="opening-filter-deck" fullWidth />
+          <LeaderSelect value={base} onChange={setBase} ariaLabel="Filter by base" anyLabel="Any base" options={baseOptions} testId="opening-filter-base" fullWidth />
+        </div>
+        <span style={{ flex: '0 1 auto', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: '#6c7588', textAlign: 'center', minWidth: 24 }}>VS</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
+          <LeaderSelect value={vs} onChange={setVs} ariaLabel="Filter by opposing leader" anyLabel="Any leader" options={vsOptions} testId="opening-filter-vs" fullWidth />
+          <LeaderSelect value={vsBase} onChange={setVsBase} ariaLabel="Filter by opposing base" anyLabel="Any base" options={vsBaseOptions} testId="opening-filter-vs-base" fullWidth />
+        </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <Select
@@ -854,6 +859,7 @@ function AnsweredRow({ item, onClick }: { item: PoolItem; onClick: () => void })
       style={{
         display: 'flex',
         alignItems: 'center',
+        flexWrap: 'wrap',
         gap: 10,
         padding: '8px 12px',
         background: tokens.surface.panel,
@@ -864,13 +870,15 @@ function AnsweredRow({ item, onClick }: { item: PoolItem; onClick: () => void })
         color: '#e6e6e6',
         fontFamily: 'inherit',
         width: '100%',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
         fontSize: 12.5,
       }}
     >
       <PairArt leader={item.ownLeader} base={item.ownBase} />
       <span style={{ fontSize: 10, fontWeight: 800, color: '#6c7588', flexShrink: 0 }}>VS</span>
       <PairArt leader={item.oppLeader} base={item.oppBase} reverse />
-      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ flex: '1 1 170px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span style={{ fontWeight: 600, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {own} <span style={{ color: '#6c7588', fontWeight: 400 }}>vs</span> {opp}
         </span>
@@ -880,7 +888,7 @@ function AnsweredRow({ item, onClick }: { item: PoolItem; onClick: () => void })
           {answeredAt && ` · answered ${answeredAt}`}
         </span>
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0, marginLeft: 'auto' }}>
         <OutcomeGlyph item={item} />
         <span style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
           {item.commentCount > 0 && <Badge color="#5db4ff">💬 {item.commentCount}</Badge>}
