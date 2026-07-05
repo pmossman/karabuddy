@@ -154,6 +154,30 @@ describe('B221 opening drills', () => {
     expect(typeof item.myAnsweredAt).toBe('string');
   });
 
+  it('resource consensus: same decision but a different pick is NOT full consensus', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const c = await seedUser();
+    const team = await seedTeam(a.id, [a.id, b.id, c.id]);
+    as(a.id);
+    const { slug, keptIds, resourcedIds } = await doUpload(a.token, `g-${randomUUID()}`, [team]);
+    const miss = keptIds.find((id) => !resourcedIds.includes(id))!;
+
+    // b matches the recorder's decision (keep) AND both picks → so far unanimous.
+    as(b.id);
+    await respond(slug, 'keep', [resourcedIds[0], resourcedIds[1]]);
+    expect((await pool(team))[0].resourcesUnanimous).toBe(true);
+
+    // c also keeps (decision agrees) but swaps one pick → picks no longer unanimous.
+    as(c.id);
+    await respond(slug, 'keep', [resourcedIds[0], miss]);
+    const [item] = await pool(team);
+    expect(item.keepCount).toBe(2);
+    expect(item.mulliganCount).toBe(0);
+    expect(item.recordedDecision).toBe('keep'); // decision consensus holds…
+    expect(item.resourcesUnanimous).toBe(false); // …but the picks split
+  });
+
   it('a KEEP answer on a mulligan game picks from the DEALT hand (the fork data)', async () => {
     const a = await seedUser();
     const b = await seedUser();

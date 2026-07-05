@@ -196,7 +196,8 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-match-count')).toContainText('0 unanswered openings');
   const row = page2.getByTestId('opening-row');
   await expect(row).toHaveCount(1);
-  await expect(row).toContainText('Consensus');
+  // Same decision (keep) but only ONE pick matched → NOT full consensus.
+  await expect(row).toContainText('Picks differ');
   await expect(row).toContainText('💬 1');
 
   // "Show all" opens the HISTORY view — filters carry over (same state), the
@@ -235,7 +236,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   const ownRow = page.getByTestId('opening-row');
   await expect(ownRow).toHaveCount(1);
   await expect(ownRow).toContainText('DrillOwner (you)');
-  await expect(ownRow).toContainText('Consensus');
+  await expect(ownRow).toContainText('Picks differ');
   await expect(ownRow).toContainText('💬 1');
   await ownRow.click();
   // A revisit is NOT a session: no session copy, a Done button, no rail.
@@ -304,6 +305,37 @@ test('mobile: the two-phase flow works at 390px, footer reclaimed', async ({ pag
   const overflow = await page2.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('consensus: matching the decision AND both picks earns the green badge', async ({ page, browser }) => {
+  await signInAsTestUser(page, { name: 'ConOwner', email: 'con-owner@example.com' });
+  const { slug: teamSlug } = await createTeam(page, 'Consensus Squad');
+  const { code } = await generateInvite(page, teamSlug);
+  const ownerToken = `kbx_${randomUUID()}`;
+  await claimInstallToken(page, ownerToken);
+  await page.request.post('/api/replays', {
+    data: { installToken: ownerToken, payload: drillPayload(`g-${randomUUID()}`), shareTeamSlugs: [teamSlug] },
+  });
+
+  const ctx2 = await browser.newContext();
+  const page2 = await ctx2.newPage();
+  await signInAsTestUser(page2, { name: 'ConMate', email: 'con-mate@example.com' });
+  await page2.goto(`/teams/join?code=${code}`);
+  await page2.waitForURL(new RegExp(`/teams/${teamSlug}`));
+  await page2.goto(`/teams/${teamSlug}?tab=openings`);
+  await page2.getByTestId('opening-begin').click();
+  await page2.getByTestId('opening-keep').click(); // recorder kept
+  // Pick BOTH of the recorder's resources (indices 1 and 4) → full match.
+  await page2.getByTestId('opening-pick-1').click();
+  await page2.getByTestId('opening-pick-4').click();
+  await page2.getByTestId('opening-confirm').click();
+  await expect(page2.getByTestId('opening-reveal')).toContainText('Same two picks.');
+  await page2.getByTestId('opening-next').click(); // Finish session
+  await page2.getByTestId('opening-new-session').click();
+  const row = page2.getByTestId('opening-row');
+  await expect(row).toContainText('Consensus');
+  await expect(row).not.toContainText('Picks differ');
+});
+
 
 test('the fork: they mulliganed, you kept — both timelines render', async ({ page, browser }) => {
   await signInAsTestUser(page, { name: 'ForkOwner', email: 'fork-owner@example.com' });

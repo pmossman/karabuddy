@@ -46,6 +46,7 @@ interface PoolItem {
   recordedDecision?: 'keep' | 'mulligan';
   keepCount?: number;
   mulliganCount?: number;
+  resourcesUnanimous?: boolean;
   myDecision?: 'keep' | 'mulligan';
   myPickMatches?: number | null;
   myAnsweredAt?: string;
@@ -774,6 +775,11 @@ function ConsensusBadge({ item }: { item: PoolItem }) {
   const unanimous = k > 0 ? 'keep' : 'mulligan';
   if (unanimous !== item.recordedDecision) {
     return <Badge color="#ff7b72">▲ Team disagrees ({total})</Badge>;
+  }
+  // Decision is unanimous with the recorder — but consensus means the picks
+  // matched too. Same call, different resources = a softer "picks differ".
+  if (item.resourcesUnanimous === false) {
+    return <Badge color="#ffb454">≈ Picks differ ({total})</Badge>;
   }
   return <Badge color="#6bd968">✓ Consensus ({total})</Badge>;
 }

@@ -150,6 +150,11 @@ export interface OpeningPoolItem {
   recordedDecision?: 'keep' | 'mulligan';
   keepCount?: number;
   mulliganCount?: number;
+  // True when every responder who made the RECORDED decision also picked the
+  // exact recorded resources — i.e. the team agrees on decision AND picks.
+  // False when the decision agrees but at least one pick set differs. Only
+  // set alongside the tallies (answered/mine).
+  resourcesUnanimous?: boolean;
   // The viewer's own outcome (answered items only) — drives the compact
   // outcome glyph: their decision + how many of their 2 picks matched.
   myDecision?: 'keep' | 'mulligan';
@@ -266,6 +271,22 @@ export async function openingPoolForTeam(
       item.recordedDecision = opening.decision as 'keep' | 'mulligan';
       item.keepCount = teamResponses.filter((r) => r.decision === 'keep').length;
       item.mulliganCount = teamResponses.filter((r) => r.decision === 'mulligan').length;
+      // Resource agreement: responders who made the RECORDED decision picked
+      // from the same hand as the recorder, so their picks compare directly to
+      // opening.resourced. Consensus needs the decision AND both picks.
+      const recordedPicks = (opening.resourced as string[]) ?? [];
+      const decisionAgreers = teamResponses.filter((r) => r.decision === opening.decision);
+      item.resourcesUnanimous = decisionAgreers.every((r) => {
+        const picks = (r.resourced as string[]) ?? [];
+        if (picks.length !== recordedPicks.length) return false;
+        const pool = [...recordedPicks];
+        for (const id of picks) {
+          const at = pool.indexOf(id);
+          if (at < 0) return false;
+          pool.splice(at, 1);
+        }
+        return true;
+      });
       // Identity is part of the reveal — answered rows may show who played.
       item.usernames = { own: own?.username ?? null, opp: opp?.username ?? null };
       const mineResp = teamResponses.find((r) => r.userId === viewerId);
