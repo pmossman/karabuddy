@@ -59,7 +59,7 @@ const ALL = '__all__';
 interface Session {
   queue: string[]; // snapshotted at Begin — stable for the whole run
   index: number; // === queue.length → the summary screen
-  results: Record<string, boolean>; // slug → matched the recorded call?
+  results: Record<string, boolean>; // slug → same TAKE as the recorder (decision + picks); not a score
   // Single-opening revisit (clicked from a list) — no session framing.
   revisit?: boolean;
 }
@@ -203,8 +203,8 @@ export function TeamOpenings({
   // ── PLAY ─────────────────────────────────────────────────────────────
   if (session) {
     const { queue, index, results, revisit: isRevisit } = session;
-    const matched = Object.values(results).filter(Boolean).length;
     const answeredCount = Object.values(results).length;
+    const differentCount = Object.values(results).filter((v) => !v).length;
     const current = index < queue.length ? queue[index] : null;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -232,9 +232,9 @@ export function TeamOpenings({
               {isRevisit ? 'Reviewing opening' : `Opening ${index + 1} of ${queue.length}`}
             </span>
           )}
-          {!isRevisit && answeredCount > 0 && (
-            <span style={{ fontSize: 12.5, color: '#6bd968' }}>
-              {matched}/{answeredCount} matched
+          {!isRevisit && differentCount > 0 && (
+            <span style={{ fontSize: 12.5, color: '#FFD60A' }}>
+              {differentCount} different {differentCount === 1 ? 'take' : 'takes'}
             </span>
           )}
           {current && compact && !isRevisit && (
@@ -590,8 +590,8 @@ function SessionRail({
               {own} <span style={{ color: '#6c7588', fontWeight: 400 }}>vs</span> {opp}
             </span>
             {answered && (
-              <span style={{ fontSize: 11, flexShrink: 0, color: results[slug] ? '#00E25B' : '#FFD60A' }}>
-                {results[slug] ? '✓' : '≠'}
+              <span style={{ fontSize: 10, flexShrink: 0, fontWeight: 700, color: results[slug] ? '#6c7588' : '#FFD60A' }}>
+                {results[slug] ? 'same' : 'different'}
               </span>
             )}
           </button>
@@ -615,7 +615,7 @@ function SessionSummary({
   onDone: () => void;
 }) {
   const answered = Object.values(results).length;
-  const matched = Object.values(results).filter(Boolean).length;
+  const different = Object.values(results).filter((v) => !v).length;
   const byId = new Map(items.map((i) => [i.replaySlug, i]));
   return (
     <div
@@ -636,7 +636,8 @@ function SessionSummary({
       <div style={{ fontSize: 34 }}>🏁</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: '#e6ebf2', marginTop: 8 }}>Session complete</div>
       <div style={{ fontSize: 13, marginTop: 6 }}>
-        {answered} opening{answered === 1 ? '' : 's'} · {matched} matched
+        {answered} opening{answered === 1 ? '' : 's'}
+        {different > 0 && <> · {different} different {different === 1 ? 'take' : 'takes'}</>}
       </div>
       {queue.length > 1 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '18px 0 0', textAlign: 'left' }}>
@@ -666,8 +667,8 @@ function SessionSummary({
                   {(item?.ownLeader?.name as string) ?? '?'} vs {(item?.oppLeader?.name as string) ?? '?'}
                 </span>
                 {mark !== undefined && (
-                  <span style={{ color: mark ? '#6bd968' : '#ff7b72', fontWeight: 700 }}>
-                    {mark ? '✓ matched' : '✗ differed'}
+                  <span style={{ color: mark ? '#6c7588' : '#FFD60A', fontWeight: 700 }}>
+                    {mark ? 'same' : 'different take'}
                   </span>
                 )}
               </button>
@@ -802,13 +803,13 @@ function Badge({ color, children }: { color: string; children: React.ReactNode }
   );
 }
 
-// The compact outcome glyph, in the reveal's visual language: three tiny
-// card shapes — [mulligan call][pick][pick]. Same palette as the reveal:
-// green = you matched them; a yellow/salmon split = you diverged (yellow your
-// side, salmon theirs).
+// The compact take glyph: three tiny card shapes — [mulligan call][pick][pick].
+// NOT a score — muted where your take matched what was played, amber where it
+// DIFFERED (the discussion-worthy dimensions). An all-muted glyph = the same
+// opening; amber squares flag a different take.
 function OutcomeGlyph({ item }: { item: PoolItem }) {
   if (item.myDecision === undefined || item.recordedDecision === undefined) return null;
-  const chip = (matched: boolean, key: string) => (
+  const chip = (same: boolean, key: string) => (
     <span
       key={key}
       style={{
@@ -816,18 +817,16 @@ function OutcomeGlyph({ item }: { item: PoolItem }) {
         height: 14,
         borderRadius: 2,
         display: 'inline-block',
-        background: matched
-          ? '#00E25B'
-          : 'linear-gradient(135deg, #FFD60A 50%, #FF8E7A 50%)',
+        background: same ? '#3a4150' : '#FFD60A',
       }}
     />
   );
   const decisionMatched = item.myDecision === item.recordedDecision;
   // null = picks not comparable (you kept, they mulliganed — different
-  // hands): both pick chips render as divergence.
+  // hands): both pick chips render as a different take.
   const comparable = item.myPickMatches !== null && item.myPickMatches !== undefined;
   const picks = comparable ? item.myPickMatches! : 0;
-  const title = `${decisionMatched ? 'Call matched' : `You said ${item.myDecision}, they ${item.recordedDecision === 'keep' ? 'kept' : 'mulliganed'}`} · ${comparable ? `${picks}/2 resources matched` : 'picks from different hands'}`;
+  const title = `${decisionMatched ? 'Same call' : `You ${item.myDecision}, they ${item.recordedDecision === 'keep' ? 'kept' : 'mulliganed'}`} · ${comparable ? `${picks}/2 resources shared` : 'picks from different hands'}`;
   return (
     <span title={title} style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>
       {chip(decisionMatched, 'd')}

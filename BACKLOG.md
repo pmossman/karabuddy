@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B225] Reframe openings from match-scoring to neutral "takes"
+_completed: 2026-07-06 by claude_
+Feedback: the green ✓ / "N matched" scoring made the reveal feel like a mini-game where you should guess the recorder's play — but the recorder is "what was played", not an answer key. Removed the win/lose framing across the reveal chips (side-by-side calls, no ✓/✗, neutral recorder chip), the session summary ("N different takes", muted "same" / amber "different take"), the HUD counter, the answered-list glyph, and the OutcomeGlyph (muted where the take matched, amber where it differed). `onAnswered` now reports the full take (decision AND resources). Divergence is the discussion signal, not a wrong answer. Team-consensus badges unchanged (they describe the team, not your score).
+
 ### [B224] Classify Bo1→Bo3 conversions as true Bo3 series
 _completed: 2026-07-06 by claude_
 karabast lets a Bo1 be converted to a Bo3 (the Bo1 counts as game 1), so game 1 records `gamesToWinMode: bestOfOne` while games 2–3 read `bestOfThree` — the old grouping split a converted set into standalone Bo1s. `seriesGrouping.segmentMatches` is now conversion-aware (a bestOfOne game immediately followed by a multi-game format is the converted game 1; per-game format accessor; returns `{games, format}`), with a shared `effectiveFormats`. Grouping + Bo3 label fixed at read time (viewer + replay browser). Stats `bo3` flag reclassified via `lib/bo3Reconcile` (per recorder, idempotent + self-healing), wired into the upload path and `scripts/backfill-bo3.ts`. **Ship note:** run `KARABUDDY_DB_DRIVER=pg POSTGRES_URL="<prod>" npx tsx scripts/backfill-bo3.ts` once against prod to fix historical lobbies (new conversions self-heal on upload). No migration.
