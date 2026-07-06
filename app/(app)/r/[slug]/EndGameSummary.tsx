@@ -175,12 +175,11 @@ function PlayerHead({ entry, isLocal }: { entry: { player: any; s: PlayerEndStat
       <LeaderBasePair
         leader={player.leader}
         base={player.base}
-        orientation="row"
-        width={30}
-        height={42}
+        orientation="overlap"
+        width={46}
+        height={32}
         fit="cover"
         radius={3}
-        gap={4}
         background="rgba(255,255,255,0.06)"
         border="none"
         fallback="box"

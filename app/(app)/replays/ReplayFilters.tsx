@@ -22,6 +22,9 @@ import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
+import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
+import { DateRangeSelect } from '@/app/_components/DateRangeSelect';
+import { inDateRange, dateRangeLabel } from '@/lib/dateRange';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
 
@@ -73,6 +76,10 @@ interface Row {
   viewerPlayerId?: string | null;
   ownLeader?: { name?: string | null; set?: string | null; number?: number | null } | null;
   oppLeader?: { name?: string | null; set?: string | null; number?: number | null } | null;
+  // Base FUNCTIONAL identity (lib/baseIdentity) — the base filters key on
+  // this, never raw names: vanilla/force-pair bases group, unique stay unique.
+  ownBaseKind?: { key: string; label: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null } | null;
+  oppBaseKind?: { key: string; label: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null } | null;
   // B116: stable across a Bo3's games — drives series grouping. Null = singleton.
   lobbyId?: string | null;
   // B128: both players' recordings exist — the viewer can show both hands
@@ -107,13 +114,6 @@ const OP_VERB: Record<string, string> = {
   delete: 'deleted', publish: 'made public', unpublish: 'made unlisted', share: 'shared', unshare: 'unshared',
   'label-add': 'labeled', 'label-remove': 'unlabeled', 'review-request': 'review requested', 'review-cancel': 'review cancelled',
 };
-
-const SINCE_OPTIONS = [
-  { value: '', label: 'All time' },
-  { value: '7d', label: 'Past 7 days' },
-  { value: '30d', label: 'Past 30 days' },
-  { value: '90d', label: 'Past 90 days' },
-];
 
 function parseView(raw: string | null): ViewMode {
   if (raw === 'by-leader' || raw === 'by-member' || raw === 'timeline') return raw;
@@ -171,6 +171,8 @@ export function ReplayFilters({
   // username filters. `by` = which team member uploaded (team grid only).
   const [myLeader, setMyLeader] = useState(() => searchParams.get('mine') || '');
   const [vsLeader, setVsLeader] = useState(() => searchParams.get('vs') || '');
+  const [myBase, setMyBase] = useState(() => searchParams.get('mbase') || '');
+  const [vsBase, setVsBase] = useState(() => searchParams.get('obase') || '');
   const [uploadedBy, setUploadedBy] = useState(() => searchParams.get('by') || '');
   const [since, setSince] = useState(() => searchParams.get('since') || '');
   const [format, setFormat] = useState(() => searchParams.get('format') || '');
@@ -188,7 +190,7 @@ export function ReplayFilters({
   // filters still show as removable chips when collapsed. Auto-open if the URL
   // arrives with filters applied (deep-link) so they're immediately visible.
   const [filtersOpen, setFiltersOpen] = useState(() =>
-    ['mine', 'vs', 'by', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
+    ['mine', 'vs', 'mbase', 'obase', 'by', 'since', 'format', 'mode', 'label', 'result'].some((k) => !!searchParams.get(k)),
   );
 
   // Bulk multi-select state. `removed` is the optimistic post-op hide (deleted
@@ -214,6 +216,8 @@ export function ReplayFilters({
     if (showShareTabs) setOrDelete('share', tab === 'all' ? '' : tab);
     setOrDelete('mine', myLeader);
     setOrDelete('vs', vsLeader);
+    setOrDelete('mbase', myBase);
+    setOrDelete('obase', vsBase);
     setOrDelete('by', uploadedBy);
     setOrDelete('since', since);
     setOrDelete('format', format);
@@ -225,20 +229,14 @@ export function ReplayFilters({
     if (next !== searchParams.toString()) {
       router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
     }
-  }, [showShareTabs, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result, view, pathname, router, searchParams]);
+  }, [showShareTabs, tab, myLeader, vsLeader, myBase, vsBase, uploadedBy, since, format, mode, label, result, view, pathname, router, searchParams]);
 
   // B116: leader options split by perspective — leaders the viewer/uploader
   // played (`ownLeader`) vs leaders faced (`oppLeader`).
-  const ownLeaders = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows) if (r.ownLeader?.name) set.add(r.ownLeader.name);
-    return Array.from(set).sort();
-  }, [rows]);
-  const oppLeaders = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows) if (r.oppLeader?.name) set.add(r.oppLeader.name);
-    return Array.from(set).sort();
-  }, [rows]);
+  const ownLeaders = useMemo(() => leaderSelectOptions(rows, (r) => r.ownLeader), [rows]);
+  const oppLeaders = useMemo(() => leaderSelectOptions(rows, (r) => r.oppLeader), [rows]);
+  const ownBases = useMemo(() => baseKindSelectOptions(rows, (r) => r.ownBaseKind), [rows]);
+  const oppBases = useMemo(() => baseKindSelectOptions(rows, (r) => r.oppBaseKind), [rows]);
 
   // B116: uploader options for the team grid's "Uploaded by" filter.
   const uploaders = useMemo(() => {
@@ -270,12 +268,10 @@ export function ReplayFilters({
       if (tab === 'unlisted' && isShared(r)) return false;
       if (myLeader && r.ownLeader?.name !== myLeader) return false;
       if (vsLeader && r.oppLeader?.name !== vsLeader) return false;
+      if (myBase && r.ownBaseKind?.key !== myBase) return false;
+      if (vsBase && r.oppBaseKind?.key !== vsBase) return false;
       if (uploadedBy && r.ownerName !== uploadedBy) return false;
-      if (since) {
-        const days = parseInt(since.replace('d', ''), 10);
-        const cutoff = Date.now() - days * 86_400_000;
-        if (new Date(r.createdAt).getTime() < cutoff) return false;
-      }
+      if (since && !inDateRange(r.createdAt, since)) return false;
       if (format && r.match?.gameFormat !== format) return false;
       if (mode && r.match?.gamesToWinMode !== mode) return false;
       if (label) {
@@ -390,8 +386,10 @@ export function ReplayFilters({
   const activeChips: { key: string; label: string; onClear: () => void }[] = [];
   if (myLeader) activeChips.push({ key: 'mine', label: `My leader: ${myLeader}`, onClear: () => setMyLeader('') });
   if (vsLeader) activeChips.push({ key: 'vs', label: `Vs: ${vsLeader}`, onClear: () => setVsLeader('') });
+  if (myBase) activeChips.push({ key: 'mbase', label: `Base: ${ownBases.find((o) => o.value === myBase)?.label ?? myBase}`, onClear: () => setMyBase('') });
+  if (vsBase) activeChips.push({ key: 'obase', label: `Vs base: ${oppBases.find((o) => o.value === vsBase)?.label ?? vsBase}`, onClear: () => setVsBase('') });
   if (uploadedBy) activeChips.push({ key: 'by', label: `By: ${uploadedBy}`, onClear: () => setUploadedBy('') });
-  if (since) activeChips.push({ key: 'since', label: SINCE_OPTIONS.find((s) => s.value === since)?.label || since, onClear: () => setSince('') });
+  if (since) activeChips.push({ key: 'since', label: dateRangeLabel(since), onClear: () => setSince('') });
   if (format) activeChips.push({ key: 'fmt', label: FORMAT_LABEL[format] || format, onClear: () => setFormat('') });
   if (mode) activeChips.push({ key: 'mode', label: MODE_LABEL[mode] || mode, onClear: () => setMode('') });
   if (label) activeChips.push({ key: 'label', label: `#${label}`, onClear: () => setLabel('') });
@@ -469,6 +467,8 @@ export function ReplayFilters({
         <FilterControls
           myLeader={myLeader} setMyLeader={setMyLeader} ownLeaders={ownLeaders}
           vsLeader={vsLeader} setVsLeader={setVsLeader} oppLeaders={oppLeaders}
+          myBase={myBase} setMyBase={setMyBase} ownBases={ownBases}
+          vsBase={vsBase} setVsBase={setVsBase} oppBases={oppBases}
           uploadedBy={uploadedBy} setUploadedBy={setUploadedBy} uploaders={uploaders}
           showUploaderFilter={showUploaderFilter}
           since={since} setSince={setSince}
@@ -1483,7 +1483,7 @@ export function DoubleSidedChip() {
 // Per-player leader + base stacked vertically. Tiny — meant for at-a-glance
 // scanning down the table, not for reading card text.
 function PlayerThumbs({ player }: { player: any }) {
-  return <LeaderBasePair leader={player?.leader} base={player?.base} width={38} height={26} gap={1} radius={2} />;
+  return <LeaderBasePair leader={player?.leader} base={player?.base} orientation="overlap" width={38} height={27} fit="cover" radius={2} />;
 }
 
 function PlainHeader({ children }: { children: React.ReactNode }) {
@@ -1626,6 +1626,8 @@ function ViewSwitcher({ view, setView, showMember = false }: { view: ViewMode; s
 function FilterControls({
   myLeader, setMyLeader, ownLeaders,
   vsLeader, setVsLeader, oppLeaders,
+  myBase, setMyBase, ownBases,
+  vsBase, setVsBase, oppBases,
   uploadedBy, setUploadedBy, uploaders, showUploaderFilter,
   since, setSince,
   format, setFormat,
@@ -1633,8 +1635,10 @@ function FilterControls({
   label, setLabel, labels,
   result, setResult,
 }: {
-  myLeader: string; setMyLeader: (v: string) => void; ownLeaders: string[];
-  vsLeader: string; setVsLeader: (v: string) => void; oppLeaders: string[];
+  myLeader: string; setMyLeader: (v: string) => void; ownLeaders: LeaderSelectOption[];
+  vsLeader: string; setVsLeader: (v: string) => void; oppLeaders: LeaderSelectOption[];
+  myBase: string; setMyBase: (v: string) => void; ownBases: LeaderSelectOption[];
+  vsBase: string; setVsBase: (v: string) => void; oppBases: LeaderSelectOption[];
   uploadedBy: string; setUploadedBy: (v: string) => void; uploaders: string[]; showUploaderFilter: boolean;
   since: string; setSince: (v: string) => void;
   format: string; setFormat: (v: string) => void;
@@ -1656,12 +1660,16 @@ function FilterControls({
       }}
     >
       <Field orientation="column" label="My leader">
-        <Select size="sm" style={replaySelectStyle} placeholder="Any"
-          value={myLeader} onChange={setMyLeader} options={ownLeaders.map((l) => [l, l] as const)} />
+        <LeaderSelect value={myLeader} onChange={setMyLeader} options={ownLeaders} anyLabel="Any" anyValue="" ariaLabel="Filter by my leader" fullWidth />
       </Field>
       <Field orientation="column" label="Opponent leader">
-        <Select size="sm" style={replaySelectStyle} placeholder="Any"
-          value={vsLeader} onChange={setVsLeader} options={oppLeaders.map((l) => [l, l] as const)} />
+        <LeaderSelect value={vsLeader} onChange={setVsLeader} options={oppLeaders} anyLabel="Any" anyValue="" ariaLabel="Filter by opponent leader" fullWidth />
+      </Field>
+      <Field orientation="column" label="My base">
+        <LeaderSelect value={myBase} onChange={setMyBase} options={ownBases} anyLabel="Any" anyValue="" ariaLabel="Filter by my base" fullWidth />
+      </Field>
+      <Field orientation="column" label="Opponent base">
+        <LeaderSelect value={vsBase} onChange={setVsBase} options={oppBases} anyLabel="Any" anyValue="" ariaLabel="Filter by opponent base" fullWidth />
       </Field>
       {showUploaderFilter && (
         <Field orientation="column" label="Uploaded by">
@@ -1670,8 +1678,7 @@ function FilterControls({
         </Field>
       )}
       <Field orientation="column" label="Date">
-        <Select size="sm" style={replaySelectStyle}
-          value={since} onChange={setSince} options={SINCE_OPTIONS.map((s) => [s.value, s.label] as const)} />
+        <DateRangeSelect value={since} onChange={setSince} ariaLabel="Filter by date" testId="replay-filter-date" fullWidth />
       </Field>
       <Field orientation="column" label="Format">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"
@@ -1707,3 +1714,29 @@ function NoMatchesEmpty() {
 // to the old local `selectStyle`: radius 4 (not 6), tighter 6px 8px padding,
 // suppressed focus outline, and no 220px maxWidth cap.
 const replaySelectStyle: React.CSSProperties = { borderRadius: 4, padding: '6px 8px', outline: 'none', maxWidth: 'none' };
+
+// Base options keyed on FUNCTIONAL identity (lib/baseIdentity): vanilla and
+// force-pair groups collapse to one option with the aspect icon.
+function baseKindSelectOptions<T>(rows: T[], pick: (r: T) => any): LeaderSelectOption[] {
+  const byKey = new Map<string, LeaderSelectOption>();
+  for (const r of rows) {
+    const k = pick(r);
+    if (k?.key && !byKey.has(k.key)) {
+      byKey.set(k.key, { value: k.key, label: k.label, art: k.art, artIsLeader: false, iconAspect: k.iconAspect });
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// Unique leaders (by name) with a representative art ref — options for the
+// shared <LeaderSelect> art picker.
+function leaderSelectOptions<T>(rows: T[], pick: (r: T) => { name?: string | null; set?: string | null; number?: number | null } | null | undefined): LeaderSelectOption[] {
+  const byName = new Map<string, any>();
+  for (const r of rows) {
+    const l = pick(r);
+    if (l?.name && !byName.has(l.name)) byName.set(l.name, l);
+  }
+  return Array.from(byName.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, card]) => ({ value: name, label: name, art: card }));
+}

@@ -43,7 +43,12 @@ export function LeaderBasePair({
 }: {
   leader: CardInput;
   base: CardInput;
-  orientation?: 'row' | 'column';
+  // 'overlap' = the canonical MATCHUP treatment: leader in front, base
+  // peeking out behind it — the base stays identifiable without costing a
+  // second card's width. width/height size the LEADER; the base derives.
+  // `reverse` mirrors the overlap (leader anchored right) so the two sides
+  // of a "X vs Y" face each other.
+  orientation?: 'row' | 'column' | 'overlap';
   reverse?: boolean;
   align?: 'start' | 'center' | 'end';
   width: number;
@@ -60,25 +65,56 @@ export function LeaderBasePair({
   // `border`, when set, frames the actual image too (some sites have bordered
   // cards); pass 'none' to suppress the box placeholder's default border.
   const imgStyle: CSSProperties = { width, height, objectFit: fit, borderRadius: radius, background, display: 'block', ...(border ? { border } : {}) };
-  const thumb = (card: CardInput, isLeader: boolean) => {
+  const thumb = (card: CardInput, isLeader: boolean, styleOverride?: CSSProperties) => {
+    const style = { ...imgStyle, ...styleOverride };
     const c = normalizeCard(card);
     const url = cardImageUrl(c, isLeader);
     const name = c?.name ?? '';
     if (url) {
       // eslint-disable-next-line @next/next/no-img-element
-      return <img src={url} alt={name} title={name || undefined} loading="lazy" style={imgStyle} />;
+      return <img src={url} alt={name} title={name || undefined} loading="lazy" style={style} />;
     }
     if (fallback === 'hide') return null;
     if (fallback === 'name' || fallback === 'initials') {
       const text = fallback === 'initials' ? name.slice(0, 4) : name;
       return (
-        <div style={{ ...imgStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 2, fontSize: fallback === 'initials' ? 8 : 10, lineHeight: 1.1, color: '#6c7588', overflow: 'hidden' }} title={name || undefined}>
+        <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 2, fontSize: fallback === 'initials' ? 8 : 10, lineHeight: 1.1, color: '#6c7588', overflow: 'hidden' }} title={name || undefined}>
           {text}
         </div>
       );
     }
-    return <div style={{ ...imgStyle, border: border ?? '1px solid #2e333c' }} title={name || undefined} />;
+    return <div style={{ ...style, border: border ?? '1px solid #2e333c' }} title={name || undefined} />;
   };
+
+  if (orientation === 'overlap') {
+    // Base behind (slightly smaller, dimmed, offset to the far corner);
+    // leader in front with a drop shadow lifting it off the base.
+    const baseW = Math.round(width * 0.88);
+    const baseH = Math.round(height * 0.88);
+    const cw = Math.round(width * 1.28);
+    const ch = Math.round(height * 1.12);
+    return (
+      <span style={{ position: 'relative', width: cw, height: ch, display: 'inline-block', flexShrink: 0 }}>
+        {thumb(base, false, {
+          position: 'absolute',
+          [reverse ? 'left' : 'right']: 0,
+          top: 0,
+          width: baseW,
+          height: baseH,
+          filter: 'brightness(0.8)',
+          border: border ?? '1px solid rgba(255,255,255,0.12)',
+        })}
+        {thumb(leader, true, {
+          position: 'absolute',
+          [reverse ? 'right' : 'left']: 0,
+          bottom: 0,
+          border: border ?? '1px solid rgba(255,255,255,0.2)',
+          boxShadow: '2px 2px 8px rgba(0,0,0,0.6)',
+        })}
+      </span>
+    );
+  }
+
   const flexDirection: CSSProperties['flexDirection'] =
     orientation === 'row' ? (reverse ? 'row-reverse' : 'row') : (reverse ? 'column-reverse' : 'column');
   const alignItems = align === 'center' ? 'center' : align === 'end' ? 'flex-end' : undefined;

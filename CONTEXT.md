@@ -213,6 +213,32 @@ for the decisions behind the model.
   hidden underneath) — transforming the live base in the board DOM didn't move
   it.
 
+## Opening drills (B221)
+
+- **Opening** — the recorder's setup-phase decision slice of one replay: the
+  dealt hand at the mulligan prompt, the post-mulligan hand, and the two cards
+  resourced. Exactly one opening per replay (only the recorder's side is
+  unmasked). A replay with no captured setup (mid-game recording start,
+  encrypted payload) has no opening.
+- **Opening drill** — the quiz loop over teammates' openings: re-make the two
+  decisions yourself (Mulligan/Keep, then pick 2 resources), submit, get the
+  reveal. The pool is derived from replays shared to the team; your own
+  recordings are excluded. Lives on the team page's **Openings** tab.
+- **Drill response** — one member's answer to an opening (mulligan choice +
+  resource picks). Keyed by replay + responder — NOT by team; what a viewer
+  sees of others' responses is scoped at read time (your teammates'; the
+  replay owner sees all, as with tags). Immutable once submitted.
+- **Reveal** — the post-submit screen: the recorded decision vs yours, whose
+  game it was, the team's response distribution, and a jump into the viewer
+  at the decision frame.
+- **Consensus / split** — whether a team's responses to an opening agree or
+  disagree (with each other and with the recorded choice). Badged on the
+  drill list; "everyone answered differently from the recorder" is the
+  headline signal for the uploader.
+- **Coaching mode** — filtering the drill pool to one teammate's openings;
+  doing so reveals identity pre-submit (the anonymous default applies to the
+  mixed pool).
+
 ## Canonical UI components (build-here registry)
 
 When building a surface that does one of these jobs, **use the canonical component — don't re-roll it.** This list is the defense against conceptual duplication (the same job done by divergent code in different files — the failure that let the deck viewer fork into three implementations). It complements the audit method: classify components by concept, invert concept→components, and anything with >1 implementation is a re-fork to reconcile.
@@ -229,7 +255,12 @@ When building a surface that does one of these jobs, **use the canonical compone
 | Per-player deck tabs | `<DecksTabs>` | viewer modal + grid quick-view + deck page |
 | Sortable table | `useSortable` + `<SortHeader>` | |
 | Filter toolbar | `<FilterChip>` / `<Field>` (`FilterToolbar.tsx`) | |
-| Leader+base thumbnail | `<LeaderBasePair>` | mini matchup thumb (NOT the live-board `LeaderBaseCard`) |
+| Leader+base thumbnail | `<LeaderBasePair>` | mini matchup thumb (NOT the live-board `LeaderBaseCard`); `orientation="overlap"` (leader front, base peeking behind) is the canonical MATCHUP treatment |
+| Leader/base dropdown (art options) | `<LeaderSelect>` | name-only dropdowns don't scan — options carry card-art thumbs; native `<select>` can't render images |
+| Time / date-range filter | `<DateRangeSelect>` + `lib/dateRange` | rolling presets AND explicit from/to; ONE grammar ('' | '30d' | 'YYYY-MM-DD..YYYY-MM-DD') shared by openings, replay browser, stats (URL params, filter memory, and the stats API all parse it) |
+| Recent filter-sets (restore menu) | `useFilterMemory` + `<FilterMemoryMenu>` (`filterMemory.tsx`) | per-device localStorage; record at the MEANINGFUL moment (session start / search), not per keystroke; one compact Recent button, not scattered pills |
+| Comment box with @-mentions | `<MentionInput>` (`r/[slug]/MentionInput.tsx`) | ANY composer that can mention someone — autocomplete popover accumulates structured mentions; the server never parses free text, so a raw textarea = mentions silently don't work |
+| Base functional identity | `lib/baseIdentity.resolveBaseIdentities` | which bases are ACTUALLY the same base: vanilla → aspect, force pairs/reprints → shared ability-text hash (`cards.base_ability_hash`), unique → themselves. Any base filter/selector MUST key on this, never raw names |
 | Matchup VS row | `<MatchupRow>` | replay/clip card header |
 | Deck card list | `<DeckBlock>` / `<DecksTabs>` | **retiring `DeckGrid`** — migrate, don't extend |
 | Status (error/loading/empty/muted) | `StatusUi.tsx` | |

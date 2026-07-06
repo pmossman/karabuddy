@@ -12,6 +12,7 @@ import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { decodeReplay, extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayFacts } from '@/lib/statsPersist';
+import { persistOpening } from '@/lib/openingPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
@@ -72,8 +73,14 @@ async function applyUploadShares(
 // present) snapshot, not on every mid-match periodic snapshot (perf — a P1
 // rollup/cron can revisit). The backfill covers historical replays.
 async function persistStatsSafe(slug: string, parsed: any, gameId: string, winners: string[] | null): Promise<void> {
+  let decoded: ReturnType<typeof decodeReplay>;
   try {
-    const decoded = decodeReplay(parsed);
+    decoded = decodeReplay(parsed);
+  } catch (e) {
+    console.error('[stats] decode failed for', slug, e);
+    return;
+  }
+  try {
     await persistReplayFacts({
       decoded,
       replaySlug: slug,
@@ -84,6 +91,13 @@ async function persistStatsSafe(slug: string, parsed: any, gameId: string, winne
     });
   } catch (e) {
     console.error('[stats] persistReplayFacts failed for', slug, e);
+  }
+  // B221: opening facts for the drill pool ride the same decode. Guarded
+  // separately so an opening quirk can't cost the match facts (or vice versa).
+  try {
+    await persistOpening(decoded, slug);
+  } catch (e) {
+    console.error('[openings] persistOpening failed for', slug, e);
   }
 }
 

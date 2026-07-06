@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { replays, users, replayTeamShares, teams, teamMembers, tags, replayReviews } from '@/lib/schema';
 import { serializeReplayRow } from '@/lib/replayRow';
+import { attachBaseKinds } from '@/lib/baseIdentity';
 import { doubleSidedGameIds } from '@/lib/doubleSided';
 import { recordedReplaySlugs } from '@/lib/recordedReplays';
 import { MineEmpty } from './MineEmpty';
@@ -141,7 +142,7 @@ async function MyReplays({ userId }: { userId: string }) {
 
   return (
     <ReplayFilters
-      rows={rows.map(({ replay, ownerName }) => serializeReplayRow(replay, {
+      rows={(await attachBaseKinds(rows.map(({ replay, ownerName }) => serializeReplayRow(replay, {
         ownerName,
         // B166: every row in my library is one I own → my POV is its ownerPlayerId.
         viewerPlayerId: replay.ownerPlayerId ?? null,
@@ -149,7 +150,7 @@ async function MyReplays({ userId }: { userId: string }) {
         commentCount: commentCountBySlug.get(replay.slug) ?? 0,
         doubleSided: dsGameIds.has(replay.gameId),
         isPublic: !!replay.publicAt,
-      })).map((row) => ({ ...row, reviewRequest: reviewBySlug.get(row.slug) ?? null }))}
+      })))).map((row) => ({ ...row, reviewRequest: reviewBySlug.get(row.slug) ?? null }))}
       canManage
       showShareTabs
       myTeams={myTeams}

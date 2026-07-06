@@ -210,5 +210,5 @@ function ParticipantBubbles({ participants }: { participants: Participant[] }) {
 }
 
 function PlayerThumbs({ player }: { player: any }) {
-  return <LeaderBasePair leader={player?.leader} base={player?.base} width={38} height={26} gap={1} radius={2} />;
+  return <LeaderBasePair leader={player?.leader} base={player?.base} orientation="overlap" width={38} height={27} fit="cover" radius={2} />;
 }

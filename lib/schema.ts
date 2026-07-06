@@ -593,6 +593,10 @@ export const cards = pgTable('cards', {
   // ability bases stay distinct, vanilla bases collapse to their aspect. Null
   // for non-bases / not-yet-seeded.
   hasAbility: boolean('has_ability'),
+  // Fingerprint of the printed ability (lib/cards.baseAbilityHash). Same
+  // hash = functionally the same base (force pairs, reprints) — the input to
+  // lib/baseIdentity's grouping. Null for vanilla bases / non-bases.
+  baseAbilityHash: text('base_ability_hash'),
   source: text('source').notNull().default('observed'), // 'seed' | 'observed'
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -849,3 +853,53 @@ export type Tournament = typeof tournaments.$inferSelect;
 export type TournamentEntrant = typeof tournamentEntrants.$inferSelect;
 export type TournamentRound = typeof tournamentRounds.$inferSelect;
 export type TournamentMatch = typeof tournamentMatches.$inferSelect;
+
+// ----- B221: Team Opening Drills
+//
+// One row per replay — the recorder's OPENING decision slice, extracted at
+// upload (persistStatsSafe posture) + backfill by lib/openingExtract. Absent
+// for replays with no usable setup (mid-game start, stripped logs) and for
+// encrypted payloads (the server can never decode those — ADR 0010).
+export const replayOpenings = pgTable('replay_openings', {
+  replaySlug: text('replay_slug')
+    .primaryKey()
+    .references(() => replays.slug, { onDelete: 'cascade' }),
+  recorderId: text('recorder_id').notNull(), // playerId within the payload
+  decision: text('decision').notNull(), // keep | mulligan
+  dealtHand: jsonb('dealt_hand').$type<string[]>().notNull(), // cardIds at the mulligan prompt, display order
+  keptHand: jsonb('kept_hand').$type<string[]>().notNull(), // the hand resources were picked from
+  resourced: jsonb('resourced').$type<string[]>().notNull(), // exactly 2 cardIds (multiset)
+  mulliganFrameIndex: integer('mulligan_frame_index').notNull(),
+  resourceFrameIndex: integer('resource_frame_index').notNull(),
+  wentFirst: boolean('went_first'), // null when initiative never visible
+  extractorVersion: integer('extractor_version').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A member's answer to an opening drill. DELIBERATELY no team column: rows
+// are keyed (replay, responder) and what a viewer sees of OTHERS' responses
+// is scoped at read time (their team's members; the replay owner sees all —
+// the B131 analog). That keeps the future public/crowdsourced mode a
+// read-scope change, not a migration. Immutable once written (first answer
+// counts — protects the consensus signal).
+export const openingResponses = pgTable(
+  'opening_responses',
+  {
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    decision: text('decision').notNull(), // keep | mulligan
+    resourced: jsonb('resourced').$type<string[]>().notNull(), // 2 cardIds picked from keptHand
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.replaySlug, t.userId] }),
+    userIdx: index('opening_responses_user_idx').on(t.userId),
+  })
+);
+
+export type ReplayOpening = typeof replayOpenings.$inferSelect;
+export type OpeningResponse = typeof openingResponses.$inferSelect;

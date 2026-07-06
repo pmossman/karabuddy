@@ -8,7 +8,7 @@ function Side({ player }: { player: any }) {
   if (!player) return <div style={{ flex: 1 }} />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, alignItems: 'center', minWidth: 0 }}>
-      <LeaderBasePair leader={player.leader} base={player.base} width={90} height={64} radius={4} gap={4} align="center" fallback="name" />
+      <LeaderBasePair leader={player.leader} base={player.base} orientation="overlap" width={90} height={64} fit="cover" radius={4} fallback="name" />
     </div>
   );
 }

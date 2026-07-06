@@ -17,6 +17,7 @@ import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
 import { TeamTournaments } from './TeamTournaments';
 import { ReviewQueue } from './ReviewQueue';
+import { TeamOpenings } from './TeamOpenings';
 import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
 import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
@@ -35,7 +36,7 @@ interface PageProps {
 // Overview is the default landing "hub"; the rest stay as drill-in tabs. The
 // clean-URL rule maps the default tab to bare /teams/<slug>, so old ?tab= deep
 // links keep working — only change: bare /teams/<slug> now lands on Overview.
-const VALID_TABS = ['overview', 'discussion', 'replays', 'clips', 'review', 'tournaments', 'stats', 'members', 'settings'] as const;
+const VALID_TABS = ['overview', 'discussion', 'replays', 'clips', 'review', 'openings', 'tournaments', 'stats', 'members', 'settings'] as const;
 type Tab = (typeof VALID_TABS)[number];
 const DEFAULT_TAB: Tab = 'overview';
 
@@ -51,6 +52,7 @@ const TAB_EYEBROW: Partial<Record<Tab, string>> = {
   replays: 'Team Replays',
   clips: 'Team Clips',
   review: 'Team Reviews',
+  openings: 'Team Openings',
   tournaments: 'Team Tournaments',
   stats: 'Team Stats',
   members: 'Team Members',
@@ -123,26 +125,44 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
     ? await teamClips(slug, { sessionUserId: userId, installToken: null })
     : [];
 
+  const isGauntlet = tab === 'openings';
+
   return (
     <main
       style={{
-        maxWidth: isOverview ? 1440 : 1100,
+        // The overview dashboard + the openings gauntlet (rail + table stage)
+        // both want the wide canvas.
+        maxWidth: isOverview || isGauntlet ? 1440 : 1100,
         margin: '0 auto',
-        padding: '32px 28px 80px',
+        // The gauntlet is a play surface — every vertical pixel goes to the
+        // table, so its header collapses to one slim line and the padding
+        // tightens (the sitewide footer is hidden by the tab itself).
+        padding: isGauntlet ? '16px 20px 28px' : '32px 28px 80px',
         color: '#e6e6e6',
         fontFamily: 'var(--font-barlow), sans-serif',
       }}
     >
-      {TAB_EYEBROW[tab] && (
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: tokens.led.on, margin: '0 0 3px' }}>
-          {TAB_EYEBROW[tab]}
+      {isGauntlet ? (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: '0 0 12px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: tokens.led.on }}>
+            Team Openings
+          </span>
+          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#c8cdd8' }}>{team.name}</h1>
         </div>
+      ) : (
+        <>
+          {TAB_EYEBROW[tab] && (
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: tokens.led.on, margin: '0 0 3px' }}>
+              {TAB_EYEBROW[tab]}
+            </div>
+          )}
+          <h1 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 600 }}>{team.name}</h1>
+          <p style={{ margin: '0 0 20px', fontSize: 12, color: '#6c7588' }}>
+            {members.length} {members.length === 1 ? 'member' : 'members'} · Created{' '}
+            {new Date(team.createdAt).toLocaleDateString()}
+          </p>
+        </>
       )}
-      <h1 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 600 }}>{team.name}</h1>
-      <p style={{ margin: '0 0 20px', fontSize: 12, color: '#6c7588' }}>
-        {members.length} {members.length === 1 ? 'member' : 'members'} · Created{' '}
-        {new Date(team.createdAt).toLocaleDateString()}
-      </p>
 
       {/* B170 / ADR 0010: a private team's members get a top-of-page nudge until
           they're set up (extension + key). Hidden once ready, and never shown for
@@ -160,6 +180,26 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
           <ClipsBrowser rows={teamClipRows} showCreator emptyLabel="No clips on this team’s replays yet." />
         )}
         {tab === 'review' && <ReviewQueue teamSlug={slug} />}
+        {tab === 'openings' && (
+          (team as any).privateMode ? (
+            // B221: openings are extracted from plaintext frames server-side —
+            // a private team's encrypted replays never expose them (ADR 0010).
+            <div style={{ padding: 32, textAlign: 'center', color: '#8a93a3', maxWidth: 460, margin: '0 auto', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 32 }}>🔒</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#e6ebf2', marginTop: 8 }}>Opening drills are off for private teams</div>
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                This team’s replays are end-to-end encrypted, so the server can’t read the hands
+                to build drills from them.
+              </div>
+            </div>
+          ) : (
+            <TeamOpenings
+              teamSlug={slug}
+              members={members.map((m) => ({ userId: m.userId, name: m.name }))}
+              viewerName={session?.user?.name || 'You'}
+            />
+          )
+        )}
         {tab === 'stats' && (
           (team as any).privateMode ? (
             // B170 / ADR 0010: stats are mined from plaintext frames server-side,

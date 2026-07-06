@@ -11,7 +11,7 @@
 // audiences can never leak into each other. Aggregation is plain SQL via the
 // drizzle query builder (portable across neon / pg / pglite).
 
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql, gte, lte } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
 import { matchPlayers, matches, replays, cardEvents, cards } from './schema';
@@ -31,6 +31,10 @@ export type StatsScope =
 export interface StatsQueryOpts {
   scope: StatsScope;
   format?: string | null; // filter to one format; omit/null = all formats
+  // Time window over matches.createdAt (lib/dateRange grammar parsed at the
+  // API edge — these are the resolved bounds). Null/omit = all time.
+  from?: Date | null;
+  to?: Date | null;
   minGames?: number; // min sample size to surface a row
 }
 
@@ -131,6 +135,12 @@ const cardPerspectiveCond = (scope: StatsScope) =>
       : eq(cardEvents.isRecorder, true);
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
+// Time window over matches.createdAt — every stats query joins matches.
+const timeCond = (opts: { from?: Date | null; to?: Date | null }) =>
+  and(
+    opts.from ? gte(matches.createdAt, opts.from) : undefined,
+    opts.to ? lte(matches.createdAt, opts.to) : undefined,
+  );
 
 // Self-side deck filter shared by leader-scoped producers (drill-in): exact base
 // for an ability base (`baseId`), or any vanilla base of an aspect (`baseAspect`,
@@ -163,7 +173,7 @@ export async function getLeaderStats(opts: StatsQueryOpts): Promise<LeaderStat[]
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), perspectiveCond(opts.scope), fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -194,7 +204,7 @@ export async function getLeaderMatchups(opts: StatsQueryOpts & { leader?: string
     .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
-  const conds: any[] = [isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)];
+  const conds: any[] = [isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)];
   if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
   base = applySelfBaseFilter(base, opts, conds);
   const rows = await base
@@ -260,7 +270,7 @@ export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number
     .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
     .$dynamic();
   const rows = await base
-    .where(and(eq(matchPlayers.isRecorder, true), isNotNull(matchPlayers.resourceAvailable), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(eq(matchPlayers.isRecorder, true), isNotNull(matchPlayers.resourceAvailable), fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)))
     .orderBy(sql`${replays.createdAt} desc`)
     .limit(opts.limit ?? 200);
   return rows.map((r: any) => ({
@@ -316,7 +326,7 @@ export async function getEntityReplays(
     .$dynamic();
   // My side only (recorder) — independent of perspectiveCond (which, for team,
   // also counts opponent rows): a "replays on leader X" list means games I played X.
-  const conds: any[] = [eq(matchPlayers.isRecorder, true), fmtCond(opts.format), scopePredicate(opts.scope)];
+  const conds: any[] = [eq(matchPlayers.isRecorder, true), fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)];
   if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
   if (opts.opponentLeader) conds.push(eq(matchPlayers.opponentLeader, opts.opponentLeader));
   base = applySelfBaseFilter(base, opts, conds);
@@ -374,7 +384,7 @@ export async function getCardStats(
     .innerJoin(matches, eq(matches.gameId, cardEvents.gameId))
     .innerJoin(replays, eq(replays.slug, matches.replaySlug))
     .$dynamic();
-  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, cardPerspectiveCond(opts.scope), scopePredicate(opts.scope)];
+  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, timeCond(opts), cardPerspectiveCond(opts.scope), scopePredicate(opts.scope)];
   if (opts.leader || opts.baseAspect || opts.baseId || opts.opponentLeader) {
     // Join the EVENT side's own match_players row (same game + player).
     base = base.innerJoin(matchPlayers, and(eq(matchPlayers.gameId, cardEvents.gameId), eq(matchPlayers.playerId, cardEvents.playerId)));
@@ -436,7 +446,7 @@ export async function getDecks(opts: StatsQueryOpts & { leader?: string | null }
     .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
     .$dynamic();
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), opts.leader ? eq(matchPlayers.leader, opts.leader) : undefined, perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), opts.leader ? eq(matchPlayers.leader, opts.leader) : undefined, perspectiveCond(opts.scope), fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, idCols.baseId, idCols.baseAspect)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);
@@ -476,7 +486,7 @@ export async function getDeckMatchups(opts: StatsQueryOpts): Promise<DeckMatchup
     .leftJoin(obc, eq(obc.cardId, matchPlayers.opponentBase))
     .$dynamic();
   const rows = await base
-    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), scopePredicate(opts.scope)))
+    .where(and(isNotNull(matchPlayers.leader), isNotNull(matchPlayers.opponentLeader), perspectiveCond(opts.scope), fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)))
     .groupBy(matchPlayers.leader, self.baseId, self.baseAspect, matchPlayers.opponentLeader, opp.baseId, opp.baseAspect)
     .having(sql`count(*) >= ${minGames}`)
     .orderBy(sql`count(*) desc`);

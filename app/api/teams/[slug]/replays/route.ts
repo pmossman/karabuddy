@@ -5,6 +5,7 @@ import { replays, users, teamMembers, tags, tagTeamScope } from '@/lib/schema';
 import { surfacedReplaySlugs } from '@/lib/teamSurface';
 import { requireTeamMember } from '@/lib/apiAuth';
 import { serializeReplayRow } from '@/lib/replayRow';
+import { attachBaseKinds } from '@/lib/baseIdentity';
 
 export const runtime = 'nodejs';
 
@@ -112,13 +113,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 
   // B116: serialize via the shared serializer. Team perspective = the
   // representative recorder's side; `isMine` lets the owner manage their own row.
-  const flat = reps.map(({ replay, ownerName }) => serializeReplayRow(replay, {
+  const flat = await attachBaseKinds(reps.map(({ replay, ownerName }) => serializeReplayRow(replay, {
     ownerName,
     viewerPlayerId: replay.ownerPlayerId ?? null,
     internal: internalGame(replay.gameId),
     commentCount: commentCountBySlug.get(replay.slug) ?? 0,
     isMine: !!replay.userId && replay.userId === userId,
     doubleSided: internalGame(replay.gameId),
-  }));
+  })));
   return NextResponse.json({ ok: true, data: flat });
 }

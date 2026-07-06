@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { swuCardToRow, cardIdFromSetNumber } from './cards';
+import { swuCardToRow, cardIdFromSetNumber, baseAbilityHash } from './cards';
 
 describe('cardIdFromSetNumber', () => {
   it('zero-pads numeric numbers to 3 (matching the gamestate-derived id)', () => {
@@ -18,7 +18,7 @@ describe('swuCardToRow', () => {
     const r = swuCardToRow({ Set: 'SOR', Number: '005', Name: 'Luke Skywalker', Subtitle: 'Jedi Knight', Cost: '7', Type: 'Unit', Aspects: ['Vigilance'], Arenas: ['Ground'], Traits: ['Force', 'Rebel'] });
     expect(r).toEqual({
       cardId: 'SOR_005', name: 'Luke Skywalker', subtitle: 'Jedi Knight', set: 'SOR', number: 5,
-      aspects: ['vigilance'], cost: 7, type: 'unit', arena: 'ground', traits: ['Force', 'Rebel'], hasAbility: null, source: 'seed',
+      aspects: ['vigilance'], cost: 7, type: 'unit', arena: 'ground', traits: ['Force', 'Rebel'], hasAbility: null, baseAbilityHash: null, source: 'seed',
     });
   });
   it('subtitle is null when the card has none', () => {
@@ -41,5 +41,19 @@ describe('swuCardToRow', () => {
   });
   it('events/leaders/bases have no arena', () => {
     expect(swuCardToRow({ Set: 'SOR', Number: '100', Type: 'Event', Cost: '2' }).arena).toBeNull();
+  });
+});
+
+describe('baseAbilityHash (base functional identity)', () => {
+  it('normalizes whitespace + case; empty/blank → null', () => {
+    const a = baseAbilityHash('When a friendly Force unit attacks: The Force is with you.');
+    expect(a).toBe(baseAbilityHash('  when a friendly force  unit attacks:\nthe force is with you.  '));
+    expect(a).toMatch(/^[0-9a-f]{8}$/);
+    expect(baseAbilityHash('')).toBeNull();
+    expect(baseAbilityHash('   ')).toBeNull();
+    expect(baseAbilityHash(null)).toBeNull();
+  });
+  it('different text → different hash', () => {
+    expect(baseAbilityHash('Epic Action: deal 2 damage.')).not.toBe(baseAbilityHash('Epic Action: heal 2 damage.'));
   });
 });

@@ -1,5 +1,5 @@
-import { cardImageUrl } from '@/lib/cardImage';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 
 // Canonical compact replay representation: leader + base art for BOTH sides and
 // the W/L outcome (from the recorder's POV). Used everywhere a replay is shown
@@ -34,15 +34,10 @@ export function ReplayMatchup({
 }
 
 function Deck({ player, align, thumb, showNames }: { player: any; align: 'left' | 'right'; thumb: number; showNames: boolean }) {
-  const leaderImg = cardImageUrl(player?.leader ?? null, true);
-  const baseImg = cardImageUrl(player?.base ?? null, false);
   const h = Math.round(thumb * 0.72);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, overflow: 'hidden', flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
-      <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-        <Thumb src={leaderImg} alt={player?.leader?.name} w={thumb} h={h} />
-        <Thumb src={baseImg} alt={player?.base?.name} w={thumb} h={h} />
-      </span>
+      <LeaderBasePair leader={player?.leader} base={player?.base} orientation="overlap" reverse={align === 'right'} width={thumb} height={h} fit="cover" radius={3} />
       {showNames && (
         // Names drop on phones (the kb-rm-names media rule) so the art + W/L
         // always fit; the leader/base art carries the identity there.
@@ -55,10 +50,3 @@ function Deck({ player, align, thumb, showNames }: { player: any; align: 'left' 
   );
 }
 
-function Thumb({ src, alt, w, h }: { src: string | null; alt?: string; w: number; h: number }) {
-  if (!src) {
-    return <span style={{ width: w, height: h, borderRadius: 3, background: '#0a0c10', display: 'inline-block', flexShrink: 0 }} title={alt} />;
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt || ''} loading="lazy" style={{ width: w, height: h, objectFit: 'contain', borderRadius: 3, background: '#0a0c10', flexShrink: 0 }} />;
-}

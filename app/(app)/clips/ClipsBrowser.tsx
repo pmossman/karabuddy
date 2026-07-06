@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { ClipCard } from './ClipCard';
 import { EmptyState } from '@/app/_components/StatusUi';
 import { Select } from '@/app/_components/Select';
+import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import type { SerializedClipRow } from '@/lib/clipRow';
 
 // B142: focused clip grid — title search + my-leader / opponent-leader filters +
@@ -23,8 +24,8 @@ export function ClipsBrowser({
   const [vs, setVs] = useState('');
   const [sort, setSort] = useState<'new' | 'old'>('new');
 
-  const mineLeaders = useMemo(() => leaderOptions(rows, (r) => r.ownLeader?.name), [rows]);
-  const vsLeaders = useMemo(() => leaderOptions(rows, (r) => r.oppLeader?.name), [rows]);
+  const mineLeaders = useMemo(() => leaderArtOptions(rows, (r) => r.ownLeader), [rows]);
+  const vsLeaders = useMemo(() => leaderArtOptions(rows, (r) => r.oppLeader), [rows]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -55,8 +56,8 @@ export function ClipsBrowser({
           placeholder="Search clip titles…"
           style={inputStyle}
         />
-        <Select size="md" style={clipSelectStyle} value={mine} onChange={setMine} options={mineLeaders.map((v) => [v, v] as const)} placeholder="My leader" />
-        <Select size="md" style={clipSelectStyle} value={vs} onChange={setVs} options={vsLeaders.map((v) => [v, v] as const)} placeholder="Opponent leader" />
+        <LeaderSelect value={mine} onChange={setMine} options={mineLeaders} anyLabel="My leader" anyValue="" ariaLabel="Filter by my leader" />
+        <LeaderSelect value={vs} onChange={setVs} options={vsLeaders} anyLabel="Opponent leader" anyValue="" ariaLabel="Filter by opponent leader" />
         <Select size="md" style={clipSelectStyle} value={sort} onChange={setSort} options={[['new', 'Newest'], ['old', 'Oldest']]} />
       </div>
       {filtered.length === 0 ? (
@@ -72,10 +73,15 @@ export function ClipsBrowser({
   );
 }
 
-function leaderOptions(rows: SerializedClipRow[], pick: (r: SerializedClipRow) => string | null | undefined): string[] {
-  const set = new Set<string>();
-  for (const r of rows) { const n = pick(r); if (n) set.add(n); }
-  return Array.from(set).sort();
+function leaderArtOptions(rows: SerializedClipRow[], pick: (r: SerializedClipRow) => any): LeaderSelectOption[] {
+  const byName = new Map<string, any>();
+  for (const r of rows) {
+    const l = pick(r);
+    if (l?.name && !byName.has(l.name)) byName.set(l.name, l);
+  }
+  return Array.from(byName.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, card]) => ({ value: name, label: name, art: card }));
 }
 
 const inputStyle: React.CSSProperties = {
