@@ -13,6 +13,8 @@
 // Keyboard: K = keep, M = mulligan, Enter = confirm picks / next opening.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { cardImageUrl } from '@/lib/cardImage';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { glowButtonStyle } from '@/app/_components/glowButton';
 import { tokens } from '@/app/_theme/karabuddyTokens';
@@ -29,6 +31,7 @@ import {
   promptPanelStyle,
   promptTextStyle,
   promptTitleStyle,
+  VERDICT_STYLE,
   type QuizCardRef,
   type PickVerdict,
 } from './OpeningPromptKit';
@@ -640,6 +643,7 @@ function MemberPicks({
   recorder: { name: string | null; decision: 'keep' | 'mulligan'; resourced: QuizCardRef[] };
 }) {
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState<MemberRecord | null>(null);
   if (responses.length === 0) return null;
 
   // The recorder kept `keptHand`; split it into what they resourced vs held.
@@ -680,6 +684,12 @@ function MemberPicks({
     return { resourced, kept };
   };
 
+  // Normalized records — the recorder first (the reference), then responders.
+  const records: MemberRecord[] = [
+    { key: '__recorder__', name: recorder.name, decision: recorder.decision, resourced: recResourced, kept: recKept, verdict: 'match', isRecorder: true },
+    ...responses.map((r) => { const sp = split(r); return { key: r.userId, name: r.name, decision: r.decision, resourced: sp.resourced, kept: sp.kept, verdict: 'mine' as const, isRecorder: false }; }),
+  ];
+
   return (
     <div data-testid="opening-member-picks" style={{ marginTop: 12, textAlign: 'left' }}>
       <button
@@ -695,37 +705,61 @@ function MemberPicks({
       </button>
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-          <div data-testid="opening-member-recorder" style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center', padding: '8px 10px', background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)', borderRadius: 8 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
-              {recorder.name ?? 'Recorder'} <span style={{ color: '#6bd968', fontWeight: 700 }}>· recorded {recorder.decision}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'center' }}>
-              <MiniHand label="Resourced" cards={recResourced} verdict="match" />
-              <MiniHand label="In hand" cards={recKept} />
-            </div>
-          </div>
-          {responses.map((r) => {
-            const { resourced, kept } = split(r);
-            return (
-              <div key={r.userId} style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c', borderRadius: 8 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
-                  {r.name ?? 'Teammate'} <span style={{ color: '#6c7588', fontWeight: 400 }}>· {r.decision}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                  <MiniHand label="Resourced" cards={resourced} verdict="mine" testId="opening-member-resourced" />
-                  <MiniHand label="In hand" cards={kept} />
-                </div>
-              </div>
-            );
-          })}
+          {records.map((rec) => (
+            <MemberRow key={rec.key} rec={rec} onHover={setHovered} />
+          ))}
         </div>
       )}
+      {hovered && <HandPreview rec={hovered} />}
     </div>
   );
 }
 
-// A tiny labeled row of cards for the per-member summary. Cards keep the
-// hover/long-press full preview (QuizCard's built-in useCardPreview).
+interface MemberRecord {
+  key: string;
+  name: string | null;
+  decision: 'keep' | 'mulligan';
+  resourced: QuizCardRef[];
+  kept: QuizCardRef[];
+  verdict: PickVerdict;
+  isRecorder: boolean;
+}
+
+// One member's row. Hovering ANYWHERE on it previews their WHOLE hand large
+// (not the individual card) — that's the whole point of the per-member view.
+function MemberRow({ rec, onHover }: { rec: MemberRecord; onHover: (r: MemberRecord | null) => void }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clear = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; };
+  useEffect(() => clear, []);
+  const coarse = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+  const handlers = {
+    onMouseEnter: () => { if (coarse()) return; clear(); timer.current = setTimeout(() => onHover(rec), 200); },
+    onMouseLeave: () => { clear(); onHover(null); },
+    onTouchStart: () => { clear(); timer.current = setTimeout(() => onHover(rec), 350); },
+    onTouchEnd: () => { clear(); onHover(null); },
+    onTouchMove: () => { clear(); onHover(null); },
+  };
+  const style: React.CSSProperties = rec.isRecorder
+    ? { display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center', padding: '8px 10px', background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)', borderRadius: 8, cursor: 'default' }
+    : { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c', borderRadius: 8, cursor: 'default' };
+  return (
+    <div data-testid={rec.isRecorder ? 'opening-member-recorder' : undefined} style={style} {...handlers}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
+        {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}{' '}
+        <span style={{ color: rec.isRecorder ? '#6bd968' : '#6c7588', fontWeight: rec.isRecorder ? 700 : 400 }}>
+          {rec.isRecorder ? `· recorded ${rec.decision}` : `· ${rec.decision}`}
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: rec.isRecorder ? 'center' : 'flex-start' }}>
+        <MiniHand label="Resourced" cards={rec.resourced} verdict={rec.verdict} testId={rec.isRecorder ? undefined : 'opening-member-resourced'} />
+        <MiniHand label="In hand" cards={rec.kept} />
+      </div>
+    </div>
+  );
+}
+
+// A tiny labeled row of cards. Per-card preview is OFF here (noPreview) — the
+// parent row previews the whole hand instead.
 function MiniHand({ label, cards, verdict, testId }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; testId?: string }) {
   if (cards.length === 0) return null;
   return (
@@ -733,10 +767,53 @@ function MiniHand({ label, cards, verdict, testId }: { label: string; cards: Qui
       <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588' }}>{label}</span>
       <HandRow cardWidth={44} overlap={22}>
         {cards.map((c, i) => (
-          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} />
+          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} noPreview />
         ))}
       </HandRow>
     </div>
+  );
+}
+
+// The whole-hand preview: hovering a member's row floats their FULL selection
+// large — Resourced + In hand at readable size — centered on screen.
+function HandPreview({ rec }: { rec: MemberRecord }) {
+  if (typeof document === 'undefined') return null;
+  const bigCard = (c: QuizCardRef, verdict?: PickVerdict) => {
+    const url = cardImageUrl({ set: c.set, number: c.number });
+    const color = verdict ? VERDICT_STYLE[verdict].color : null;
+    return (
+      <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt={c.name ?? c.id} style={{ width: 118, aspectRatio: '1/1.4', objectFit: 'cover', borderRadius: 9, border: color ? `2px solid ${color}` : '1px solid rgba(255,255,255,0.14)', boxShadow: color ? `0 0 12px 2px ${color}80` : 'none', display: 'block' }} />
+        ) : (
+          <div style={{ width: 118, aspectRatio: '1/1.4', borderRadius: 9, background: '#101720', color: '#8a93a3', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6, textAlign: 'center' }}>{c.name ?? c.id}</div>
+        )}
+      </div>
+    );
+  };
+  const group = (label: string, cards: QuizCardRef[], verdict?: PickVerdict) => (
+    cards.length === 0 ? null : (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', textAlign: 'center' }}>{label}</span>
+        <div style={{ display: 'flex', gap: 8 }}>{cards.map((c) => bigCard(c, verdict))}</div>
+      </div>
+    )
+  );
+  return createPortal(
+    <div data-testid="opening-hand-preview" style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', padding: 16 }}>
+      <div style={{ ...promptPanelStyle, padding: '16px 20px', maxWidth: '95vw', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 20px 70px rgba(0,0,0,0.85)' }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#e6ebf2', textAlign: 'center' }}>
+          {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}
+          <span style={{ color: rec.isRecorder ? '#6bd968' : '#a0a8b8', fontWeight: 600 }}> · {rec.isRecorder ? `recorded ${rec.decision}` : rec.decision}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', justifyContent: 'center', flexWrap: 'wrap' }}>
+          {group('Resourced', rec.resourced, rec.verdict)}
+          {group('In hand', rec.kept)}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

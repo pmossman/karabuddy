@@ -193,6 +193,7 @@ export function QuizCard({
   onClick,
   width = 104,
   testId,
+  noPreview,
 }: {
   card: QuizCardRef;
   selected?: boolean;
@@ -201,9 +202,14 @@ export function QuizCard({
   onClick?: () => void;
   width?: number;
   testId?: string;
+  // Suppress the per-card hover preview (the Team-picks minis preview the
+  // whole member hand instead — handled by the parent).
+  noPreview?: boolean;
 }) {
   const url = cardImageUrl({ set: card.set, number: card.number });
-  const { show, anchor, handlers } = useCardPreview();
+  const preview = useCardPreview();
+  const { show, anchor } = preview;
+  const handlers = noPreview ? {} : preview.handlers;
   const v = verdict ? VERDICT_STYLE[verdict] : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
@@ -305,7 +311,7 @@ export function QuizCard({
           }}
         />
       )}
-      {show && url && <CardPreviewOverlay url={url} anchor={anchor.current} />}
+      {!noPreview && show && url && <CardPreviewOverlay url={url} anchor={anchor.current} />}
     </div>
   );
 }

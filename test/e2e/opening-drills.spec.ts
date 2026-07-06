@@ -144,6 +144,11 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // The recorder's actual selection anchors the comparison at the top.
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('DrillOwner');
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('recorded keep');
+  // Hovering a member's row previews their WHOLE hand large (not one card).
+  await page2.getByTestId('opening-member-recorder').hover();
+  await expect(page2.getByTestId('opening-hand-preview')).toBeVisible();
+  await expect(page2.getByTestId('opening-hand-preview')).toContainText('DrillOwner');
+  await expect(page2.getByTestId('opening-hand-preview').locator('img[alt]')).toHaveCount(6);
   await page2.getByTestId('opening-member-picks-toggle').click(); // collapse again
 
   // The resource diff is painted on the hand, each card self-labeled:
