@@ -177,12 +177,11 @@ export function GradientBorderButton({
 export type PickVerdict = 'match' | 'theirs' | 'mine';
 export const VERDICT_STYLE: Record<PickVerdict, { color: string; label: string }> = {
   match: { color: '#00E25B', label: 'Both kept' },
-  // Yellow, deliberately not red: keeping it isn't WRONG, it's the
-  // difference worth discussing.
-  theirs: { color: '#FFD60A', label: 'They kept' },
-  // Cyan = the game's own "your selection" color (stage-2 picks ring cyan) —
-  // "yours" without any correctness implication. Symmetric with yellow.
-  mine: { color: '#66E5FF', label: 'You kept' },
+  // Salmon (not danger red): a card they kept and you cut isn't WRONG, it's
+  // the difference worth discussing.
+  theirs: { color: '#FF8E7A', label: 'They kept' },
+  // Yellow = your own kept cards — neutral, no correctness implication.
+  mine: { color: '#FFD60A', label: 'You kept' },
 };
 
 export function QuizCard({
