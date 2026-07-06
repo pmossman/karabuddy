@@ -12,6 +12,7 @@ import { sanitizeIncomingMentions } from '@/lib/mentions';
 import { decodeReplay, extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayFacts } from '@/lib/statsPersist';
+import { reconcileBo3ForReplay } from '@/lib/bo3Reconcile';
 import { persistOpening } from '@/lib/openingPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
@@ -92,6 +93,10 @@ async function persistStatsSafe(slug: string, parsed: any, gameId: string, winne
   } catch (e) {
     console.error('[stats] persistReplayFacts failed for', slug, e);
   }
+  // B224: a Bo1 that karabast converts to a Bo3 records its game 1 as
+  // bestOfOne. Reconcile the whole lobby's stored bo3 flags conversion-aware —
+  // self-heals the moment game 2 (bestOfThree) lands. Best-effort (swallows).
+  await reconcileBo3ForReplay(parsed.match);
   // B221: opening facts for the drill pool ride the same decode. Guarded
   // separately so an opening quirk can't cost the match facts (or vice versa).
   try {
