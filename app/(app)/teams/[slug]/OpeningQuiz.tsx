@@ -724,18 +724,21 @@ function MemberRow({ rec, onHover }: { rec: MemberRecord; onHover: (r: MemberRec
   const clear = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; };
   useEffect(() => clear, []);
   const coarse = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
-  const handlers = {
-    onMouseEnter: () => { if (coarse()) return; clear(); timer.current = setTimeout(() => onHover(rec), 200); },
-    onMouseLeave: () => { clear(); onHover(null); },
+  // Hover fires only on a CARD, not the whole row. A short leave delay
+  // bridges the gap while moving between overlapping cards in the same hand
+  // (both hands set the same rec, so it never flickers).
+  const cardHandlers = {
+    onMouseEnter: () => { if (coarse()) return; clear(); onHover(rec); },
+    onMouseLeave: () => { clear(); timer.current = setTimeout(() => onHover(null), 80); },
     onTouchStart: () => { clear(); timer.current = setTimeout(() => onHover(rec), 350); },
     onTouchEnd: () => { clear(); onHover(null); },
     onTouchMove: () => { clear(); onHover(null); },
   };
   const style: React.CSSProperties = rec.isRecorder
-    ? { display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center', padding: '8px 10px', background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)', borderRadius: 8, cursor: 'default' }
-    : { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c', borderRadius: 8, cursor: 'default' };
+    ? { display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center', padding: '8px 10px', background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)', borderRadius: 8 }
+    : { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c', borderRadius: 8 };
   return (
-    <div data-testid={rec.isRecorder ? 'opening-member-recorder' : undefined} style={style} {...handlers}>
+    <div data-testid={rec.isRecorder ? 'opening-member-recorder' : undefined} style={style}>
       <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
         {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}{' '}
         <span style={{ color: rec.isRecorder ? '#6bd968' : '#6c7588', fontWeight: rec.isRecorder ? 700 : 400 }}>
@@ -743,8 +746,8 @@ function MemberRow({ rec, onHover }: { rec: MemberRecord; onHover: (r: MemberRec
         </span>
       </div>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: rec.isRecorder ? 'center' : 'flex-start' }}>
-        <MiniHand label="Resourced" cards={rec.resourced} verdict={rec.verdict} testId={rec.isRecorder ? undefined : 'opening-member-resourced'} />
-        <MiniHand label="In hand" cards={rec.kept} />
+        <MiniHand label="Resourced" cards={rec.resourced} verdict={rec.verdict} testId={rec.isRecorder ? undefined : 'opening-member-resourced'} cardHandlers={cardHandlers} />
+        <MiniHand label="In hand" cards={rec.kept} cardHandlers={cardHandlers} />
       </div>
     </div>
   );
@@ -752,14 +755,18 @@ function MemberRow({ rec, onHover }: { rec: MemberRecord; onHover: (r: MemberRec
 
 // A tiny labeled row of cards. Per-card preview is OFF here (noPreview) — the
 // parent row previews the whole hand instead.
-function MiniHand({ label, cards, verdict, testId }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; testId?: string }) {
+function MiniHand({ label, cards, verdict, testId, cardHandlers }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; testId?: string; cardHandlers?: React.HTMLAttributes<HTMLSpanElement> }) {
   if (cards.length === 0) return null;
   return (
     <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588' }}>{label}</span>
       <HandRow cardWidth={44} overlap={22}>
         {cards.map((c, i) => (
-          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} noPreview />
+          // The hover trigger is this tight per-card wrapper — hovering the
+          // CARD (not the row/labels/padding) opens the whole-hand preview.
+          <span key={`${c.id}-${i}`} style={{ display: 'inline-block', lineHeight: 0, cursor: 'pointer' }} {...cardHandlers}>
+            <QuizCard card={c} width={44} verdict={verdict} noPreview />
+          </span>
         ))}
       </HandRow>
     </div>
