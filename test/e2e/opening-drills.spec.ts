@@ -134,8 +134,8 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('DrillOwner');
   await expect(page2.getByTestId('opening-member-you')).toContainText('You');
   await expect(page2.getByTestId('opening-member-recorder').locator('img[alt]')).toHaveCount(6);
-  await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-pick')).toHaveCount(2);
-  await expect(page2.getByTestId('opening-member-recorder').getByTestId('opening-member-pick')).toHaveCount(2);
+  await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-cut')).toHaveCount(2);
+  await expect(page2.getByTestId('opening-member-recorder').getByTestId('opening-member-cut')).toHaveCount(2);
   // The eye opens the full-size hand; click-out closes.
   await page2.getByTestId('opening-member-recorder').getByTestId('opening-member-view').click();
   await expect(page2.getByTestId('opening-hand-preview')).toBeVisible();
@@ -403,6 +403,6 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   // side's full hand shows its own 2 picks — you kept from the dealt hand.
   await expect(page2.getByTestId('opening-reveal')).toContainText('You keep');
   await expect(page2.getByTestId('opening-reveal')).toContainText('ForkOwner mulligan');
-  await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-pick')).toHaveCount(2);
-  await expect(page2.getByTestId('opening-member-recorder').getByTestId('opening-member-pick')).toHaveCount(2);
+  await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-cut')).toHaveCount(2);
+  await expect(page2.getByTestId('opening-member-recorder').getByTestId('opening-member-cut')).toHaveCount(2);
 });

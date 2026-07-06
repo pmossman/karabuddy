@@ -195,6 +195,7 @@ export function QuizCard({
   testId,
   noPreview,
   mini,
+  muted,
 }: {
   card: QuizCardRef;
   selected?: boolean;
@@ -206,6 +207,9 @@ export function QuizCard({
   // Suppress the per-card hover preview (the Team-picks minis preview the
   // whole member hand instead — handled by the parent).
   noPreview?: boolean;
+  // Grayed + dimmed — the cards RESOURCED (cut from the playable hand). The
+  // reveal emphasizes the KEPT cards, so cuts recede.
+  muted?: boolean;
   // Compact use (summary hands): no verdict text label + a softer glow so it
   // doesn't wash out the cards behind it.
   mini?: boolean;
@@ -233,7 +237,7 @@ export function QuizCard({
           background: 'transparent',
           // forceteki selectedCardBorderStyle: cyan ring when selected;
           // verdict colors take over on the reveal.
-          border: v ? `2px solid ${v.color}` : selected ? '2px solid #66E5FF' : '2px solid transparent',
+          border: v ? `2px solid ${v.color}` : selected ? '2px solid #66E5FF' : muted ? '2px solid transparent' : '2px solid transparent',
           borderRadius: 10,
           boxShadow: v ? (mini ? `0 0 5px 1px ${v.color}66` : `0 0 11px 3px ${v.color}b0`) : selected ? '0 0 9px 2px rgba(102,229,255,0.55)' : 'none',
           cursor: selectable ? 'pointer' : 'default',
@@ -249,7 +253,7 @@ export function QuizCard({
             alt={card.name ?? card.id}
             // Background + border so a still-loading (or failed) card art
             // reads as a card back, not an invisible hole in the hand.
-            style={{ width, aspectRatio: '1/1.4', objectFit: 'cover', borderRadius: 8, display: 'block', background: '#101720', border: '1px solid rgba(255,255,255,0.12)', boxSizing: 'border-box' }}
+            style={{ width, aspectRatio: '1/1.4', objectFit: 'cover', borderRadius: 8, display: 'block', background: '#101720', border: '1px solid rgba(255,255,255,0.12)', boxSizing: 'border-box', filter: muted ? 'grayscale(1) brightness(0.5)' : 'none', opacity: muted ? 0.8 : 1 }}
           />
         ) : (
           <div

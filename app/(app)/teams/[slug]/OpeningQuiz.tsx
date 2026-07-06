@@ -445,16 +445,34 @@ function MemberPicks({
     return set;
   };
 
-  // Your picks are the comparison reference; the uploader falls back to their own.
+  // Your resource picks are the comparison reference (the uploader falls back
+  // to their own). The reveal EMPHASIZES THE KEPT cards: a member's resourced
+  // cards are muted (cut from the playable hand); the four they kept are
+  // colored by whether YOU kept them too. Comparison only holds when both
+  // picked from the same six.
   const referencePicks = viewerResponse?.resourced ?? recorder.resourced.map((c) => c.id);
+  const viewerHand = viewerResponse ? sourceHand(viewerResponse.decision, viewerResponse.resourced) : keptHand;
+  const sameHandIds = (hand: QuizCardRef[]) => {
+    const a = hand.map((c) => c.id).slice().sort();
+    const b = viewerHand.map((c) => c.id).slice().sort();
+    return a.length === b.length && a.every((x, i) => x === b[i]);
+  };
 
-  const buildVerdicts = (hand: QuizCardRef[], idx: Set<number>, tone: MemberRecord['tone']) => {
+  // KEPT-card colors: green = you both kept it, yellow = they kept it but you
+  // cut it, cyan = your own kept cards. Resourced indices get no color (muted).
+  const buildVerdicts = (hand: QuizCardRef[], resourcedIdx: Set<number>, tone: MemberRecord['tone']) => {
     const map = new Map<number, PickVerdict>();
-    if (tone === 'viewer') { idx.forEach((i) => map.set(i, 'mine')); return map; }
-    const pool = [...referencePicks];
-    [...idx].sort((a, b) => a - b).forEach((i) => {
-      const at = pool.indexOf(hand[i].id);
-      if (at >= 0) { pool.splice(at, 1); map.set(i, 'match'); } else { map.set(i, 'theirs'); }
+    if (tone === 'viewer') {
+      hand.forEach((_, i) => { if (!resourcedIdx.has(i)) map.set(i, 'mine'); });
+      return map;
+    }
+    if (!sameHandIds(hand)) return map; // fork: different hands, no kept diff
+    const youCut = [...referencePicks]; // the cards YOU resourced
+    hand.forEach((c, i) => {
+      if (resourcedIdx.has(i)) return; // they cut it — muted, no color
+      const at = youCut.indexOf(c.id);
+      if (at >= 0) { youCut.splice(at, 1); map.set(i, 'theirs'); } // they kept, you cut
+      else map.set(i, 'match'); // you both kept it
     });
     return map;
   };
@@ -584,14 +602,17 @@ function TeamHand({ rec, width, spread, mini }: { rec: MemberRecord; width: numb
     <div ref={ref} style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', height: naturalH * scale, overflow: 'hidden' }}>
       <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', display: 'flex', alignItems: 'flex-end', paddingTop: 18 }}>
         {rec.hand.map((c, i) => {
-          const isR = rec.resourcedIdx.has(i);
+          const isResourced = rec.resourcedIdx.has(i);
+          const verdict = isResourced ? undefined : rec.verdictByIdx.get(i);
+          // Kept (colored) cards lift slightly so the playable hand reads as
+          // the focus; the muted resourced cuts sit flat.
           return (
             <div
               key={`${c.id}-${i}`}
-              data-testid={isR ? 'opening-member-pick' : undefined}
-              style={{ marginLeft: i === 0 ? 0 : spread, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-14px)' : 'none' }}
+              data-testid={isResourced ? 'opening-member-cut' : 'opening-member-pick'}
+              style={{ marginLeft: i === 0 ? 0 : spread, zIndex: isResourced ? i : 30, transform: isResourced ? 'none' : 'translateY(-14px)' }}
             >
-              <QuizCard card={c} width={width} verdict={rec.verdictByIdx.get(i)} noPreview mini={mini} />
+              <QuizCard card={c} width={width} verdict={verdict} muted={isResourced} noPreview mini={mini} />
             </div>
           );
         })}
