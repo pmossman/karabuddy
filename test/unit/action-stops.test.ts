@@ -109,6 +109,34 @@ describe('computeActionStops', () => {
     expect(stopsOf(fs)).toEqual([0, 2]); // only start + last; frame 1 skipped
   });
 
+  it('stops on each consecutive action after an initiative claim (B221)', () => {
+    // After "claims initiative and passes", the opponent takes every remaining
+    // action of the phase WITHOUT the active player flipping — the flip rule is
+    // blind there (Lostrian's r_n5zhum f=77: one step blew through play+attack
+    // to the regroup draw). Each action DECLARATION in the log is its own beat.
+    const fs = [
+      frame('p1', { hand: 5 }, { hand: 5 }),                                            // 0
+      frame('p2', { hand: 5 }, { hand: 5 }, ['Tommy claims initiative and passes']),    // 1 flip (+claim)
+      frame('p2', { hand: 4 }, { hand: 5 }, ['Confiscate plays Moff Gideon']),          // 2 action, no flip
+      frame('p2', { hand: 4 }, { hand: 5 }),                                            // 3 resolution frame
+      frame('p2', { hand: 4 }, { hand: 5 }, ['Confiscate attacks base with Krennic']),  // 4 action, no flip
+      frame('p2', { hand: 5 }, { hand: 6 }, []),                                        // 5 regroup draw (pile growth)
+    ];
+    expect(stopsOf(fs)).toEqual([0, 1, 2, 4, 5]);
+  });
+
+  it('an ability resolution line ("uses") is not its own stop', () => {
+    // Sub-steps of one action (shield attach, Krennic reveal…) log "uses" — they
+    // animate as part of the action rather than being separate beats.
+    const fs = [
+      frame('p1', { hand: 5 }, { hand: 5 }),                                              // 0
+      frame('p2', { hand: 5 }, { hand: 5 }, ['Confiscate attacks base with Krennic']),    // 1 flip + action
+      frame('p2', { hand: 5 }, { hand: 5 }, ['Tommy uses Krennic to reveal a card']),     // 2 resolution — no stop
+      frame('p1', { hand: 5 }, { hand: 5 }),                                              // 3 flip
+    ];
+    expect(stopsOf(fs)).toEqual([0, 1, 3]);
+  });
+
   it('finds the next/prev stop and is symmetric across a step', () => {
     const stops = [0, 2, 3, 7];
     expect(nextActionStop(stops, 0, 1)).toBe(2);

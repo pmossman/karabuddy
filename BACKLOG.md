@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B221] Viewer: step-by-action blows through post-initiative-claim actions
+_completed: 2026-07-02 by claude_
+User report (Lostrian, r_n5zhum f=77): one forward step played out the rest of the turn. Root cause is original to B108, not a B217 regression: after "{p} claims initiative and passes", the opponent takes every remaining action while karabast keeps isActionPhaseActivePlayer on them, so the active-flip rule sees no boundary until the regroup pile-growth stop. Fix: the B217 log-delta detector also treats action DECLARATIONS as stops — "plays" / "attacks" / "claims initiative" ("uses" deliberately excluded: ability lines are sub-steps of the action they resolve). Verified against the prod replay: f=77 → the Krennic attack; only the two missed beats gained stops in the affected range.
+
 ### [B219] Extension: transport-agnostic capture — replays truncate on socket.io polling fallback
 _completed: 2026-07-02 by claude_
 Diagnosed from 23 prod replays of a reporting user: 61% truncated, all single contiguous recordings stopping mid-game. Root cause (11/14): karabast's socket.io uses default `['polling','websocket']` transports + auto-reconnect, so a mid-game reconnect falls back to HTTP long-polling — invisible to the recorder's WebSocket-only proxy. Shipped in ext 1.2.0: polling capture (XHR+fetch wrap, observe-only; `\x1e`-batched EIO4 parser in 02-decoder; WS proxy path kept byte-identical), content-free transport `diag` in every payload (dedup-preserved through the B120 merge), and the `karabast-sim` validation harness (`npm run sim:karabast`, scripts/karabast-sim/ — anonymized real game over fake WS+polling, auto PASS/FAIL). Live-verified with a real unpacked extension via CDP-driven Chrome for Testing: all scenarios green incl. the WS-drop→polling production case, upload → local viewer, server-side merge. Secondary cause (3/14, phantom-winner finalize-lock) split to B220. Post-CWS-approval: bump `KARABUDDY_EXT_LATEST`.
