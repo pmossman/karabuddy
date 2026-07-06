@@ -12,7 +12,7 @@
 //
 // Keyboard: K = keep, M = mulligan, Enter = confirm picks / next opening.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cardImageUrl } from '@/lib/cardImage';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
@@ -608,6 +608,43 @@ function picksMapOnto(hand: QuizCardRef[], picks: string[]): boolean {
   return true;
 }
 
+// Which indices of `hand` are resourced (multiset-consuming, dup-safe).
+function resourcedIndexSet(hand: QuizCardRef[], picks: string[]): Set<number> {
+  const pool = [...picks];
+  const set = new Set<number>();
+  hand.forEach((c, i) => { const at = pool.indexOf(c.id); if (at >= 0) { pool.splice(at, 1); set.add(i); } });
+  return set;
+}
+
+// YOUR opening's outcome as one hand of six, resourced lifted + 3-color diff
+// vs the recorder (green = you both took it, cyan = you only, yellow = the
+// recorder only). When you diverged on the mulligan (you kept, they
+// mulliganed) the picks aren't comparable — show your kept hand (cyan picks)
+// and let the fork banner carry the decision mismatch.
+function yourResult(
+  detail: { dealtHand: QuizCardRef[]; keptHand: QuizCardRef[] },
+  yourPicks: string[],
+  recorderPicks: string[],
+): { hand: QuizCardRef[]; resourcedIdx: Set<number>; verdictByIdx: Map<number, PickVerdict>; comparable: boolean } {
+  const comparable = picksMapOnto(detail.keptHand, yourPicks);
+  const hand = comparable ? detail.keptHand : (picksMapOnto(detail.dealtHand, yourPicks) ? detail.dealtHand : detail.keptHand);
+  const yourIdx = resourcedIndexSet(hand, yourPicks);
+  const verdictByIdx = new Map<number, PickVerdict>();
+  const lift = new Set<number>(yourIdx);
+  if (comparable) {
+    const recIdx = resourcedIndexSet(hand, recorderPicks);
+    hand.forEach((_, i) => {
+      const mine = yourIdx.has(i), theirs = recIdx.has(i);
+      if (mine && theirs) verdictByIdx.set(i, 'match');
+      else if (mine) verdictByIdx.set(i, 'mine');
+      else if (theirs) { verdictByIdx.set(i, 'theirs'); lift.add(i); }
+    });
+  } else {
+    yourIdx.forEach((i) => verdictByIdx.set(i, 'mine'));
+  }
+  return { hand, resourcedIdx: lift, verdictByIdx, comparable };
+}
+
 // On a keep, dealt === kept, so the stage-2 helper copy shouldn't spoil
 // anything: only call out "they actually mulliganed" when the hands differ.
 // (Comparing by multiset of ids — same rule the server validates with.)
@@ -756,24 +793,25 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
           </svg>
         </button>
       </div>
-      <TeamHand rec={rec} width={50} overlap={26} />
+      <TeamHand rec={rec} width={50} overlap={26} mini />
     </div>
   );
 }
 
 // One hand of six, resourced cards lifted and colored (verdict) vs your picks.
-function TeamHand({ rec, width, overlap }: { rec: MemberRecord; width: number; overlap: number }) {
+// `mini` (the small grid): no verdict text + soft glow; full-size keeps both.
+function TeamHand({ rec, width, overlap, mini }: { rec: MemberRecord; width: number; overlap: number; mini?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', paddingTop: 20, justifyContent: 'center' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-end', paddingTop: 18, justifyContent: 'center' }}>
       {rec.hand.map((c, i) => {
         const isR = rec.resourcedIdx.has(i);
         return (
           <div
             key={`${c.id}-${i}`}
             data-testid={isR ? 'opening-member-pick' : undefined}
-            style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-16px)' : 'none' }}
+            style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-14px)' : 'none' }}
           >
-            <QuizCard card={c} width={width} verdict={rec.verdictByIdx.get(i)} noPreview />
+            <QuizCard card={c} width={width} verdict={rec.verdictByIdx.get(i)} noPreview mini={mini} />
           </div>
         );
       })}
@@ -819,6 +857,44 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
   );
 }
 
+// The reveal's instant read: a keep/mulligan verdict chip pair + YOUR hand of
+// six with the resource diff painted on it (green both / cyan you / yellow
+// them). The mulligan mismatch (you kept, they mulliganed) shows as a red
+// decision chip and a fork note — the picks live on different hands.
+function ResultSummary({
+  detail,
+  mine,
+  recorderDecision,
+  recorderPicks,
+  recorderName,
+}: {
+  detail: Detail;
+  mine: { decision: 'keep' | 'mulligan'; resourced: string[] };
+  recorderDecision: 'keep' | 'mulligan';
+  recorderPicks: string[];
+  recorderName: string;
+}) {
+  const res = yourResult(detail, mine.resourced, recorderPicks);
+  const decisionMatch = mine.decision === recorderDecision;
+  const rec: MemberRecord = { key: 'you', name: 'You', decision: mine.decision, hand: res.hand, resourcedIdx: res.resourcedIdx, verdictByIdx: res.verdictByIdx, tone: 'viewer' };
+  const chip = (label: string, on: boolean, color: string) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, background: on ? `${color}22` : 'transparent', border: `1px solid ${on ? color : '#2e333c'}`, color: on ? color : '#8a93a3' }}>{label}</span>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {chip(`You ${mine.decision}`, true, decisionMatch ? '#00E25B' : '#66E5FF')}
+        <span style={{ color: decisionMatch ? '#6bd968' : '#ff7b72', fontWeight: 800, fontSize: 13 }}>{decisionMatch ? '✓' : '✗'}</span>
+        {chip(`${recorderName} ${recorderDecision}`, true, decisionMatch ? '#00E25B' : '#ff7b72')}
+      </div>
+      <TeamHand rec={rec} width={62} overlap={30} mini />
+      {!res.comparable && (
+        <div style={{ fontSize: 11.5, color: '#ff7b72', fontWeight: 600 }}>Different mulligan — your kept hand shown; their redraw is in Team picks.</div>
+      )}
+    </div>
+  );
+}
+
 function RevealPanel({
   teamSlug,
   detail,
@@ -847,65 +923,33 @@ function RevealPanel({
   onWatch: () => void;
 }) {
   const mine = response;
-  const decisionMatch = mine ? mine.decision === reveal.decision : null;
   const theirPicks = reveal.resourced.map((c) => c.id);
-  const sharedPicks = useMemo(() => {
-    if (!mine) return new Set<string>();
-    const remaining = [...theirPicks];
-    const shared = new Set<string>();
-    for (const id of mine.resourced) {
-      const at = remaining.indexOf(id);
-      if (at >= 0) { remaining.splice(at, 1); shared.add(id); }
-    }
-    return shared;
-  }, [mine, theirPicks]);
-
   const who = reveal.recorder.name ?? 'Your teammate';
   const keeps = reveal.responses.filter((r) => r.decision === 'keep').length;
   const mulls = reveal.responses.length - keeps;
 
   return (
     <section data-testid="opening-reveal" style={{ ...promptPanelStyle, position: 'relative' }}>
-      <div style={promptTitleStyle}>
-        {who} {reveal.decision === 'keep' ? 'kept this hand' : 'mulliganed'}
-        {decisionMatch !== null && (
-          <span style={{ marginLeft: 10, fontSize: 13, color: decisionMatch ? '#6bd968' : '#ff7b72', fontWeight: 700 }}>
-            {decisionMatch ? '— so did you ✓' : `— you said ${mine!.decision} ✗`}
-          </span>
-        )}
-      </div>
       {isPractice && (
-        <p data-testid="opening-practice-note" style={{ margin: '6px 0 0', fontSize: 12, color: '#ffb454', textAlign: 'center' }}>
+        <p data-testid="opening-practice-note" style={{ margin: '0 0 8px', fontSize: 12, color: '#ffb454', textAlign: 'center' }}>
           Practice run — recorded answer{detail.myResponse ? ` (${detail.myResponse.decision})` : ''} unchanged.
         </p>
       )}
-      {mine && (
-        <p style={{ ...promptTextStyle, margin: '8px 0 0', fontSize: 13 }}>
-          {mine.decision === 'keep' && reveal.decision === 'mulligan' && picksMapOnto(detail.dealtHand, mine.resourced)
-            ? 'Your picks are on your kept hand below — theirs on the redraw.'
-            : sharedPicks.size === 2 ? 'Same two picks.' : sharedPicks.size === 1 ? 'One pick matched.' : 'No picks matched.'}
-        </p>
+
+      {/* The result AT A GLANCE — your hand with the diff painted on, plus the
+          keep/mulligan verdict. No prose needed. Owner (no answer) just sees
+          the recorded pick. */}
+      {mine ? (
+        <ResultSummary detail={detail} mine={mine} recorderDecision={reveal.decision} recorderPicks={theirPicks} recorderName={who} />
+      ) : (
+        <div style={{ ...promptTitleStyle }}>{who} {reveal.decision === 'keep' ? 'kept this hand' : 'mulliganed'}</div>
       )}
 
-      {/* The resource diff lives ON the hand below (verdict colors) — no
-          separate card grid needed here. */}
-      <div style={{ display: 'flex', gap: 16, marginTop: 12, justifyContent: 'center', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        {reveal.responses.length > 0 && (
-          <div style={{ minWidth: 200, textAlign: 'left' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 6 }}>
-              Team so far — Keep {keeps} · Mulligan {mulls}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {reveal.responses.map((r) => (
-                <div key={r.userId} style={{ display: 'flex', gap: 8, fontSize: 12.5, color: '#c8cdd8' }}>
-                  <span style={{ fontWeight: 600, minWidth: 110 }}>{r.name ?? 'Teammate'}</span>
-                  <span style={{ color: r.decision === reveal.decision ? '#6bd968' : '#ff7b72' }}>{r.decision}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      {reveal.responses.length > 0 && (
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', textAlign: 'center', marginTop: 10 }}>
+          Team · Keep {keeps} · Mulligan {mulls}
+        </div>
+      )}
 
       <MemberPicks
         responses={reveal.responses}

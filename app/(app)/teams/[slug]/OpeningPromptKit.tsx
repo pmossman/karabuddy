@@ -194,6 +194,7 @@ export function QuizCard({
   width = 104,
   testId,
   noPreview,
+  mini,
 }: {
   card: QuizCardRef;
   selected?: boolean;
@@ -205,6 +206,9 @@ export function QuizCard({
   // Suppress the per-card hover preview (the Team-picks minis preview the
   // whole member hand instead — handled by the parent).
   noPreview?: boolean;
+  // Compact use (summary hands): no verdict text label + a softer glow so it
+  // doesn't wash out the cards behind it.
+  mini?: boolean;
 }) {
   const url = cardImageUrl({ set: card.set, number: card.number });
   const preview = useCardPreview();
@@ -231,7 +235,7 @@ export function QuizCard({
           // verdict colors take over on the reveal.
           border: v ? `2px solid ${v.color}` : selected ? '2px solid #66E5FF' : '2px solid transparent',
           borderRadius: 10,
-          boxShadow: v ? `0 0 11px 3px ${v.color}b0` : selected ? '0 0 9px 2px rgba(102,229,255,0.55)' : 'none',
+          boxShadow: v ? (mini ? `0 0 5px 1px ${v.color}66` : `0 0 11px 3px ${v.color}b0`) : selected ? '0 0 9px 2px rgba(102,229,255,0.55)' : 'none',
           cursor: selectable ? 'pointer' : 'default',
           lineHeight: 0,
           transition: 'box-shadow 120ms ease, transform 120ms ease',
@@ -277,6 +281,7 @@ export function QuizCard({
                 pointerEvents: 'none',
               }}
             />
+            {!mini && (
             <span
               style={{
                 position: 'absolute',
@@ -296,6 +301,7 @@ export function QuizCard({
             >
               {v.label}
             </span>
+            )}
           </>
         )}
       </button>

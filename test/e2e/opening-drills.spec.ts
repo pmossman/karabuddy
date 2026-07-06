@@ -131,10 +131,9 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-reveal-summary')).toContainText('DrillOwner kept');
   await page2.getByTestId('opening-reveal-expand').click();
   await expect(reveal).toBeVisible();
-  await expect(reveal).toContainText('DrillOwner kept this hand');
-  await expect(reveal).toContainText('so did you');
-  await expect(reveal).toContainText('One pick matched.');
-  await expect(reveal).toContainText('Team so far — Keep 1 · Mulligan 0');
+  await expect(reveal).toContainText('You keep');
+  await expect(reveal).toContainText('DrillOwner keep');
+  await expect(reveal).toContainText('Team · Keep 1 · Mulligan 0');
   // Per-member picks: expand → each participant's single 6-card hand.
   await expect(page2.getByTestId('opening-member-picks-toggle')).toContainText('Team picks · 1');
   await page2.getByTestId('opening-member-picks-toggle').click();
@@ -203,8 +202,8 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await page2.getByTestId('opening-pick-2').click();
   await page2.getByTestId('opening-confirm').click();
   await expect(page2.getByTestId('opening-practice-note')).toContainText('recorded answer (keep) unchanged');
-  await expect(page2.getByTestId('opening-reveal')).toContainText('you said mulligan');
-  await expect(page2.getByTestId('opening-reveal')).toContainText('Team so far — Keep 1 · Mulligan 0');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('You mulligan');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('Team · Keep 1 · Mulligan 0');
 
   // Finish → session summary → back to setup, where the item is re-filed
   // under Answered with its badges.
@@ -262,7 +261,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page.getByText('Reviewing opening')).toBeVisible();
   await expect(page.getByTestId('opening-session-rail')).toHaveCount(0);
   await expect(page.getByTestId('opening-reveal')).toContainText('DrillMate');
-  await expect(page.getByTestId('opening-reveal')).toContainText('Team so far — Keep 1 · Mulligan 0');
+  await expect(page.getByTestId('opening-reveal')).toContainText('Team · Keep 1 · Mulligan 0');
   await expect(page.getByTestId('opening-next')).toContainText('Done');
   // The owner sees the feedback right on the reveal too.
   await expect(page.getByTestId('opening-comments')).toContainText('I resource the Cantwell here every time');
@@ -347,7 +346,7 @@ test('consensus: matching the decision AND both picks earns the green badge', as
   await page2.getByTestId('opening-pick-1').click();
   await page2.getByTestId('opening-pick-4').click();
   await page2.getByTestId('opening-confirm').click();
-  await expect(page2.getByTestId('opening-reveal')).toContainText('Same two picks.');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('You keep');
   await page2.getByTestId('opening-next').click(); // Finish session
   await page2.getByTestId('opening-new-session').click();
   const row = page2.getByTestId('opening-row');
@@ -380,7 +379,7 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   await page2.getByTestId('opening-keep').click();
   await expect(page2.getByText('Select 2 cards to resource')).toBeVisible();
   await expect(page2.getByTestId('opening-beat')).toHaveCount(0);
-  await expect(page2.getByText('Their redraw')).toHaveCount(0);
+  await expect(page2.getByText('Their redraw', { exact: true })).toHaveCount(0);
   await expect(page2.getByTestId('opening-kept-world')).toHaveCount(0);
   await page2.getByTestId('opening-pick-0').click();
   await page2.getByTestId('opening-pick-2').click();
@@ -389,10 +388,10 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   // Reveal: the fork. Their redraw on top with THEIR picks (yellow), your
   // kept world below with YOUR picks (cyan) — different hands, so no
   // matched-picks claim.
-  await expect(page2.getByTestId('opening-reveal')).toContainText('ForkOwner mulliganed');
-  await expect(page2.getByTestId('opening-reveal')).toContainText('you said keep');
-  await expect(page2.getByTestId('opening-reveal')).toContainText('Your picks are on your kept hand below');
-  await expect(page2.getByText('Their redraw')).toBeVisible();
+  await expect(page2.getByTestId('opening-reveal')).toContainText('You keep');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('ForkOwner mulligan');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('Different mulligan');
+  await expect(page2.getByText('Their redraw', { exact: true })).toBeVisible();
   await expect(page2.getByText('Their pick', { exact: true })).toHaveCount(2);
   const keptWorld = page2.getByTestId('opening-kept-world');
   await expect(keptWorld).toContainText('Your kept hand');
