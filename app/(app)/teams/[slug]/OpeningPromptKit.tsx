@@ -64,7 +64,7 @@ function CardPreviewOverlay({ url, landscape, anchor }: { url: string; landscape
   );
 }
 
-export function useCardPreview() {
+function useCardPreview() {
   const [show, setShow] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClick = useRef(false);
@@ -172,8 +172,9 @@ export function GradientBorderButton({
 
 // One card in the prompt grid: catalog art, karabast's selection ring
 // (#66E5FF) + the selection dot under selectable cards.
-// Reveal verdicts, painted straight onto the hand: green = you both
-// resourced it, red = only they did, gray = only you did.
+// Reveal verdicts on the KEPT cards (the resourced cards are muted instead):
+// green = you both kept it, salmon = they kept it and you cut it, yellow =
+// your own kept card.
 export type PickVerdict = 'match' | 'theirs' | 'mine';
 export const VERDICT_STYLE: Record<PickVerdict, { color: string; label: string }> = {
   match: { color: '#00E25B', label: 'Both kept' },
@@ -314,22 +315,6 @@ export function QuizCard({
   );
 }
 
-// forceteki selectableCardsContainer — the responsive prompt card grid.
-export function QuizCardGrid({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 10,
-        marginTop: '1rem',
-        justifyContent: 'center',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
 
 // The board's Initiative pill (lifted look: Gameboard/Board/Board.tsx
 // `initiativeWrapper`, in its setup/unclaimed state — translucent fill,
@@ -441,24 +426,33 @@ export function SeatCard({
   );
 }
 
+// Self-scaling measurement shared by HandRow and the reveal's TeamHand: watches
+// the container width and scales a fixed-natural-width row down so it always
+// fits (`pad` is slack so the row never kisses the edge). Returns the ref to
+// put on the measured wrapper and the scale to apply to the inner row.
+export function useFitScale(natural: number, pad = 8) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setScale(Math.min(1, el.clientWidth / (natural + pad)));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [natural, pad]);
+  return { ref, scale };
+}
+
 // The hand: a FLAT overlapping row, like karabast's own PlayerHand (no arc —
 // their hand isn't curved). SELF-SCALING: it measures its container and
 // scales the whole row down so six cards always fit (the mobile case)
 // instead of overflowing.
 export function HandRow({ children, cardWidth = 112, overlap = 14 }: { children: ReactNode[]; cardWidth?: number; overlap?: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
   const n = children.length;
   const natural = cardWidth + Math.max(0, n - 1) * (cardWidth - overlap); // width incl. overlaps
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => setScale(Math.min(1, el.clientWidth / (natural + 8)));
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [natural]);
+  const { ref, scale } = useFitScale(natural);
 
   // Card height + selection-dot row + the selected-card lift — reserve the
   // SCALED height so the layout hugs the shrunken row.

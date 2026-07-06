@@ -699,7 +699,7 @@ function baseKindOptions(items: PoolItem[] | null, pick: (i: PoolItem) => PoolIt
   return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function leaderArtOptions(items: PoolItem[] | null, pick: (i: PoolItem) => any, artIsLeader = true): LeaderSelectOption[] {
+function leaderArtOptions(items: PoolItem[] | null, pick: (i: PoolItem) => any): LeaderSelectOption[] {
   if (!items) return [];
   const byName = new Map<string, any>();
   for (const i of items) {
@@ -709,7 +709,7 @@ function leaderArtOptions(items: PoolItem[] | null, pick: (i: PoolItem) => any, 
   }
   return Array.from(byName.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, card]) => ({ value: name, label: name, art: card, artIsLeader }));
+    .map(([name, card]) => ({ value: name, label: name, art: card }));
 }
 
 function ListSection({

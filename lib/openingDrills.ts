@@ -26,6 +26,8 @@ import {
   type ReplayOpening,
 } from './schema';
 import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
+import { cardIdFromSetNumber } from './cards';
+import { multisetContains, multisetEquals, multisetOverlap } from './multiset';
 
 export interface OpeningCardRef {
   id: string; // SET_NNN
@@ -234,9 +236,7 @@ export async function openingPoolForTeam(
   const baseIdentities = await resolveBaseIdentities(baseRefs);
   const kindOf = (base: any): BaseIdentity | null => {
     if (!base?.set || base?.number == null) return null;
-    const n = Number(base.number);
-    const id = `${base.set}_${Number.isFinite(n) ? String(n).padStart(3, '0') : String(base.number)}`;
-    return baseIdentities.get(id) ?? null;
+    return baseIdentities.get(cardIdFromSetNumber(base.set, base.number)) ?? null;
   };
 
   const items = rows.map(({ replay, opening, ownerName }) => {
@@ -278,17 +278,9 @@ export async function openingPoolForTeam(
       // opening.resourced. Consensus needs the decision AND both picks.
       const recordedPicks = (opening.resourced as string[]) ?? [];
       const decisionAgreers = teamResponses.filter((r) => r.decision === opening.decision);
-      item.resourcesUnanimous = decisionAgreers.every((r) => {
-        const picks = (r.resourced as string[]) ?? [];
-        if (picks.length !== recordedPicks.length) return false;
-        const pool = [...recordedPicks];
-        for (const id of picks) {
-          const at = pool.indexOf(id);
-          if (at < 0) return false;
-          pool.splice(at, 1);
-        }
-        return true;
-      });
+      item.resourcesUnanimous = decisionAgreers.every((r) =>
+        multisetEquals((r.resourced as string[]) ?? [], recordedPicks),
+      );
       // Identity is part of the reveal — answered rows may show who played.
       item.usernames = { own: own?.username ?? null, opp: opp?.username ?? null };
       const mineResp = teamResponses.find((r) => r.userId === viewerId);
@@ -299,27 +291,18 @@ export async function openingPoolForTeam(
         // against a recorded mulligan lives on the dealt hand while their
         // picks live on the redraw. LEGACY answers (pre pick-first flow)
         // sourced keep-picks from the redraw — those ARE comparable.
-        const mapsOntoDealt = (() => {
-          const pool = [...((opening.dealtHand as string[]) ?? [])];
-          for (const id of (mineResp.resourced as string[]) ?? []) {
-            const at = pool.indexOf(id);
-            if (at < 0) return false;
-            pool.splice(at, 1);
-          }
-          return true;
-        })();
+        const mapsOntoDealt = multisetContains(
+          (opening.dealtHand as string[]) ?? [],
+          (mineResp.resourced as string[]) ?? [],
+        );
         const comparable = !(mineResp.decision === 'keep' && opening.decision === 'mulligan' && mapsOntoDealt);
         if (!comparable) {
           item.myPickMatches = null;
         } else {
-          // Multiset overlap of their picks vs the recorded picks (dup-safe).
-          const pool = [...((opening.resourced as string[]) ?? [])];
-          let matches = 0;
-          for (const id of (mineResp.resourced as string[]) ?? []) {
-            const at = pool.indexOf(id);
-            if (at >= 0) { pool.splice(at, 1); matches++; }
-          }
-          item.myPickMatches = matches;
+          item.myPickMatches = multisetOverlap(
+            (mineResp.resourced as string[]) ?? [],
+            (opening.resourced as string[]) ?? [],
+          );
         }
       }
     }

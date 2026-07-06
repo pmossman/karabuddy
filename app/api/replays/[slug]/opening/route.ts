@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { openingResponses, users } from '@/lib/schema';
 import { requireSession } from '@/lib/apiAuth';
+import { multisetContains } from '@/lib/multiset';
 import {
   cardRefs,
   openingEntitlement,
@@ -54,7 +55,6 @@ async function buildDetail(
     ownBase: own?.base ?? null,
     oppLeader: opp?.leader ?? null,
     oppBase: opp?.base ?? null,
-    format: (replay.match as any)?.gameFormat ?? null,
     wentFirst: opening.wentFirst,
     dealtHand: enrich(opening.dealtHand as string[]),
     keptHand: enrich(opening.keptHand as string[]),
@@ -129,12 +129,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   // the dealt hand when the recorder kept). Two picks of the same cardId
   // need two copies in that hand.
   const sourceHand = (decision === 'keep' ? ent.opening.dealtHand : ent.opening.keptHand) as string[];
-  const avail = new Map<string, number>();
-  for (const id of sourceHand) avail.set(id, (avail.get(id) ?? 0) + 1);
-  for (const id of resourced) {
-    const n = avail.get(id) ?? 0;
-    if (n <= 0) return NextResponse.json({ ok: false, error: 'resource not in hand' }, { status: 400 });
-    avail.set(id, n - 1);
+  if (!multisetContains(sourceHand, resourced)) {
+    return NextResponse.json({ ok: false, error: 'resource not in hand' }, { status: 400 });
   }
 
   // Immutable: first answer counts (protects the consensus signal). A

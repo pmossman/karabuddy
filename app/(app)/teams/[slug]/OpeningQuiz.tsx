@@ -12,13 +12,13 @@
 //
 // Keyboard: K = keep, M = mulligan, Enter = confirm picks / next opening.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { cardImageUrl } from '@/lib/cardImage';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { glowButtonStyle } from '@/app/_components/glowButton';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { multisetContains, multisetEquals } from '@/lib/multiset';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { OpeningWatchModal, prepareWatch } from './OpeningWatchModal';
@@ -29,10 +29,10 @@ import {
   InitiativePill,
   QuizCard,
   SeatCard,
+  useFitScale,
   promptPanelStyle,
   promptTextStyle,
   promptTitleStyle,
-  VERDICT_STYLE,
   type QuizCardRef,
   type PickVerdict,
 } from './OpeningPromptKit';
@@ -47,7 +47,7 @@ interface ResponseView {
 interface Reveal {
   decision: 'keep' | 'mulligan';
   resourced: QuizCardRef[];
-  recorder: { userId: string | null; name: string | null };
+  recorder: { name: string | null };
   mulliganFrameIndex: number;
   resourceFrameIndex: number;
   responses: ResponseView[];
@@ -387,24 +387,23 @@ function Kbd({ children }: { children: React.ReactNode }) {
 // anything: only call out "they actually mulliganed" when the hands differ.
 // (Comparing by multiset of ids — same rule the server validates with.)
 function sameHand(d: Detail): boolean {
-  const a = d.dealtHand.map((c) => c.id).sort();
-  const b = d.keptHand.map((c) => c.id).sort();
-  return a.length === b.length && a.every((x, i) => x === b[i]);
+  return multisetEquals(d.dealtHand.map((c) => c.id), d.keptHand.map((c) => c.id));
 }
 
-// Per-member RESOURCE SUMMARY (B221): each participant's opening as ONE hand
-// of six, with the two cards they resourced lifted up and colored by how they
-// match YOUR picks (green = you both took it, yellow = they took it and you
-// didn't, cyan = it's your own pick). Layout: the uploader and you side by
-// side up top (the two anchors), the rest of the team in a grid below.
+// Per-member KEEP SUMMARY (B221): each participant's opening as ONE hand of
+// six. The two cards they RESOURCED are muted (cut from the playable hand);
+// the four they KEPT are lifted and colored by agreement — green = you both
+// kept it, salmon = they kept it and you cut it, yellow = your own kept card.
+// Layout: the uploader's pick then yours stacked full-width up top (the two
+// anchors), the rest of the team grouped in a grid below.
 interface MemberRecord {
   key: string;
   name: string | null;
   names?: string[]; // >1 when identical answers are grouped into one cell
   decision: 'keep' | 'mulligan';
   hand: QuizCardRef[]; // the full six they picked from
-  resourcedIdx: Set<number>; // which of the six were resourced
-  verdictByIdx: Map<number, PickVerdict>; // color per resourced card, vs your picks
+  resourcedIdx: Set<number>; // which of the six were resourced (muted)
+  verdictByIdx: Map<number, PickVerdict>; // color per KEPT card, vs your keeps
   tone: 'recorder' | 'viewer' | 'other';
 }
 
@@ -431,15 +430,11 @@ function MemberPicks({
 }) {
   const [viewing, setViewing] = useState<MemberRecord | null>(null);
 
-  const holdsBoth = (hand: QuizCardRef[], picks: string[]) => {
-    const pool = hand.map((c) => c.id);
-    for (const id of picks) { const at = pool.indexOf(id); if (at < 0) return false; pool.splice(at, 1); }
-    return true;
-  };
+  const holds = (hand: QuizCardRef[], picks: string[]) => multisetContains(hand.map((c) => c.id), picks);
   const sourceHand = (decision: 'keep' | 'mulligan', picks: string[]) => {
     const primary = decision === 'keep' ? dealtHand : keptHand;
     const other = decision === 'keep' ? keptHand : dealtHand;
-    return holdsBoth(primary, picks) ? primary : holdsBoth(other, picks) ? other : primary;
+    return holds(primary, picks) ? primary : holds(other, picks) ? other : primary;
   };
   const resourcedIndices = (hand: QuizCardRef[], picks: string[]) => {
     const pool = [...picks];
@@ -456,16 +451,13 @@ function MemberPicks({
   const referencePicks = viewerResponse?.resourced ?? recorder.resourced.map((c) => c.id);
   const recorderCut = recorder.resourced.map((c) => c.id);
   const viewerHand = viewerResponse ? sourceHand(viewerResponse.decision, viewerResponse.resourced) : keptHand;
-  const sameIds = (a: QuizCardRef[], b: QuizCardRef[]) => {
-    const x = a.map((c) => c.id).slice().sort();
-    const y = b.map((c) => c.id).slice().sort();
-    return x.length === y.length && x.every((v, i) => v === y[i]);
-  };
+  const sameIds = (a: QuizCardRef[], b: QuizCardRef[]) => multisetEquals(a.map((c) => c.id), b.map((c) => c.id));
 
   // KEPT-card colors. YOUR hand is measured against the RECORDER (the ground
-  // truth): green = they kept it too, cyan = only you kept it (they cut it).
-  // Everyone ELSE is measured against YOU: green = you both kept it, yellow =
-  // they kept it but you cut it. Resourced cards get no color (muted).
+  // truth): green = they kept it too, yellow ('mine') = only you kept it (they
+  // cut it). Everyone ELSE is measured against YOU: green = you both kept it,
+  // salmon ('theirs') = they kept it but you cut it. Resourced cards get no
+  // color (muted).
   const buildVerdicts = (hand: QuizCardRef[], resourcedIdx: Set<number>, tone: MemberRecord['tone']) => {
     const map = new Map<number, PickVerdict>();
     if (tone === 'viewer') {
@@ -475,7 +467,7 @@ function MemberPicks({
         if (resourcedIdx.has(i)) return; // your cut — muted
         if (!comparable) { map.set(i, 'mine'); return; } // fork: your own world
         const at = cut.indexOf(c.id);
-        if (at >= 0) { cut.splice(at, 1); map.set(i, 'mine'); } // you kept, they cut → cyan
+        if (at >= 0) { cut.splice(at, 1); map.set(i, 'mine'); } // you kept, they cut → yellow
         else { map.set(i, 'match'); } // you both kept → green
       });
       return map;
@@ -612,25 +604,16 @@ function MemberBlock({ rec, onView, variant = 'grid' }: { rec: MemberRecord; onV
   );
 }
 
-// One hand of six, resourced cards lifted and colored (verdict) vs your picks.
-// `spread` is the gap between cards: positive spaces them out (no overlap),
-// negative overlaps (mobile). SCALES TO FIT its container so a hand never
-// spills out of its grid cell. `mini` (the small grid): no verdict text + soft
-// glow; full-size keeps both.
+// One hand of six: the KEPT cards lifted and colored (verdict) vs your keeps,
+// the resourced cuts muted and flat. `spread` is the gap between cards:
+// positive spaces them out (no overlap), negative overlaps (mobile/grid).
+// SCALES TO FIT its container so a hand never spills out. `mini` (the small
+// grid cells): no verdict text label + softer glow; the wide hero hands keep
+// the labels.
 function TeamHand({ rec, width, spread, mini }: { rec: MemberRecord; width: number; spread: number; mini?: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
   const n = rec.hand.length;
   const natural = width * n + spread * (n - 1); // full row width at 1:1
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => setScale(Math.min(1, el.clientWidth / (natural + 10)));
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [natural]);
+  const { ref, scale } = useFitScale(natural, 10);
   const naturalH = width * 1.4 + 14 /* lift */ + 18 /* paddingTop */;
   return (
     <div ref={ref} style={{ width: '100%', minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', height: naturalH * scale, overflow: 'hidden' }}>
@@ -816,7 +799,7 @@ function OpeningDiscussion({
   replaySlug: string;
   decisionFrames: number[];
   composeFrame: number;
-  recorder: { userId: string | null; name: string | null };
+  recorder: { name: string | null };
   viewerName: string;
   isOwner: boolean;
 }) {
@@ -880,7 +863,7 @@ function DisagreeComposer({
   teamSlug: string;
   replaySlug: string;
   frameIndex: number;
-  recorder: { userId: string | null; name: string | null };
+  recorder: { name: string | null };
   viewerName: string;
   isOwner: boolean;
   onPosted?: () => void;
