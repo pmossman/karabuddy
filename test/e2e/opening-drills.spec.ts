@@ -126,7 +126,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
 
   await expect(reveal).toContainText('You keep');
   await expect(reveal).toContainText('DrillOwner keep');
-  await expect(reveal).toContainText('Team · Keep 1 · Mulligan 0');
+  await expect(reveal).toContainText('Keep 1 · Mull 0');
   // The result: your hand next to the uploader's, always shown (no toggle).
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('recorded keep');
   // Uploader + you sit side by side; each is a single 6-card hand with the 2
@@ -186,7 +186,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await page2.getByTestId('opening-confirm').click();
   await expect(page2.getByTestId('opening-practice-note')).toContainText('recorded answer (keep) unchanged');
   await expect(page2.getByTestId('opening-reveal')).toContainText('You mulligan');
-  await expect(page2.getByTestId('opening-reveal')).toContainText('Team · Keep 1 · Mulligan 0');
+  await expect(page2.getByTestId('opening-reveal')).toContainText('Keep 1 · Mull 0');
 
   // Finish → session summary → back to setup, where the item is re-filed
   // under Answered with its badges.
@@ -244,7 +244,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page.getByText('Reviewing opening')).toBeVisible();
   await expect(page.getByTestId('opening-session-rail')).toHaveCount(0);
   await expect(page.getByTestId('opening-reveal')).toContainText('DrillMate');
-  await expect(page.getByTestId('opening-reveal')).toContainText('Team · Keep 1 · Mulligan 0');
+  await expect(page.getByTestId('opening-reveal')).toContainText('Keep 1 · Mull 0');
   await expect(page.getByTestId('opening-next')).toContainText('Done');
   // The owner sees the feedback right on the reveal too.
   await expect(page.getByTestId('opening-comments')).toContainText('I resource the Cantwell here every time');

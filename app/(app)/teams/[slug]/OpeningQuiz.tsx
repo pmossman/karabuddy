@@ -414,6 +414,7 @@ function MemberPicks({
   keptHand,
   recorder,
   viewerResponse,
+  actions,
 }: {
   responses: ResponseView[];
   dealtHand: QuizCardRef[];
@@ -422,6 +423,8 @@ function MemberPicks({
   // The viewer's EFFECTIVE answer (practice run overrides the stored one), or
   // null when the viewer is the uploader and never answered.
   viewerResponse: { decision: 'keep' | 'mulligan'; resourced: string[] } | null;
+  // The action bar, slotted between the hero comparison and the team grid.
+  actions?: React.ReactNode;
 }) {
   const [viewing, setViewing] = useState<MemberRecord | null>(null);
 
@@ -491,18 +494,20 @@ function MemberPicks({
           <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#ff7b72'}`, color: decisionMatch ? '#6bd968' : '#ff7b72' }}>{recorderRec.name ?? 'Recorder'} {recorderRec.decision}</span>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-        {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} grow />}
-        <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} grow />
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} hero />}
+        <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} hero />
       </div>
+
+      {actions}
 
       {/* The rest of the team — always shown, grouped by identical answer. */}
       {others.length > 0 && (
         <div data-testid="opening-rest-of-team">
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', margin: '4px 0 8px' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', margin: '2px 0 8px' }}>
             Rest of the team · {others.length}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
             {others.map((rec) => (
               <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
             ))}
@@ -514,7 +519,7 @@ function MemberPicks({
   );
 }
 
-function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => void; grow?: boolean }) {
+function MemberBlock({ rec, onView, hero }: { rec: MemberRecord; onView: () => void; hero?: boolean }) {
   const compact = useMediaQuery('(max-width: 860px)');
   const tint = rec.tone === 'recorder'
     ? { background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)' }
@@ -527,7 +532,7 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
   return (
     <div
       data-testid={rec.tone === 'recorder' ? 'opening-member-recorder' : rec.tone === 'viewer' ? 'opening-member-you' : undefined}
-      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(grow ? { flex: '1 1 460px', minWidth: 0 } : {}) }}
+      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(hero ? { flex: '1 1 300px', minWidth: 0 } : {}) }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {grouped && (
@@ -550,7 +555,7 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
           </svg>
         </button>
       </div>
-      <TeamHand rec={rec} width={compact ? 52 : 76} spread={compact ? -26 : 6} mini />
+      <TeamHand rec={rec} width={hero ? (compact ? 56 : 84) : (compact ? 44 : 56)} spread={compact ? -24 : 6} mini />
     </div>
   );
 }
@@ -688,68 +693,60 @@ function RevealPanel({
   onWatch: () => void;
 }) {
   const mine = response;
-  const compact = useMediaQuery('(max-width: 980px)');
   const keeps = reveal.responses.filter((r) => r.decision === 'keep').length;
   const mulls = reveal.responses.length - keeps;
 
-  const actionBtn = { fontSize: 13, padding: '0.6rem 0.9rem', width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center' } as const;
+  // The action bar sits right under the you-vs-uploader comparison — the
+  // primary Next on the right, the secondary Watch/Redo on the left, so the
+  // gauntlet's forward motion is always a click away above the fold.
+  const actions = (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" data-testid="opening-watch" onClick={onWatch} style={{ ...glowButtonStyle, fontSize: 12.5, padding: '0.5rem 0.9rem' }}>▶ Watch</button>
+        {onRetry && (
+          <button type="button" data-testid="opening-retry" onClick={onRetry} style={{ ...glowButtonStyle, fontSize: 12.5, padding: '0.5rem 0.9rem', background: 'transparent', boxShadow: 'none', color: '#a0a8b8', borderColor: '#2e333c' }}>↺ Redo</button>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        {reveal.responses.length > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', whiteSpace: 'nowrap' }}>Keep {keeps} · Mull {mulls}</span>
+        )}
+        <GradientBorderButton testId="opening-next" onClick={onNext} style={{ padding: '0.55rem 1.3rem' }}>
+          {hasNext ? 'Next opening' : finishLabel} <Kbd>⏎</Kbd>
+        </GradientBorderButton>
+      </div>
+    </div>
+  );
 
   return (
-    <section data-testid="opening-reveal" style={{ width: '100%', maxWidth: 1440, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <section data-testid="opening-reveal" style={{ width: '100%', maxWidth: 1160, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {isPractice && (
         <p data-testid="opening-practice-note" style={{ margin: 0, fontSize: 12, color: '#ffb454', textAlign: 'center' }}>
           Practice run — recorded answer{detail.myResponse ? ` (${detail.myResponse.decision})` : ''} unchanged.
         </p>
       )}
 
-      {/* Two columns on desktop: the visual result fills the width; the actions
-          + discussion live in a sticky sidebar so they stay put while you scan
-          the team's hands. Stacks single-column on narrow screens. */}
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        {/* MAIN: your hand vs the uploader's + the rest of the team. */}
-        <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <MemberPicks
-            responses={reveal.responses}
-            dealtHand={detail.dealtHand}
-            keptHand={detail.keptHand}
-            recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
-            viewerResponse={mine}
-          />
-        </div>
+      {/* Verdict chips → you-vs-uploader hero → action bar → the rest of the
+          team → the discussion. One column, capped width, everything stacks
+          cleanly on mobile. */}
+      <MemberPicks
+        responses={reveal.responses}
+        dealtHand={detail.dealtHand}
+        keptHand={detail.keptHand}
+        recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
+        viewerResponse={mine}
+        actions={actions}
+      />
 
-        {/* SIDE: actions on top, then the discussion. */}
-        <div style={{ flex: compact ? '1 1 100%' : '0 0 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, position: compact ? 'static' : 'sticky', top: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <GradientBorderButton testId="opening-next" onClick={onNext} style={{ ...actionBtn, padding: '0.7rem 0.9rem' }}>
-              {hasNext ? 'Next opening' : finishLabel} <Kbd>⏎</Kbd>
-            </GradientBorderButton>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" data-testid="opening-watch" onClick={onWatch} style={{ ...glowButtonStyle, ...actionBtn, flex: 1 }}>
-                ▶ Watch
-              </button>
-              {onRetry && (
-                <button type="button" data-testid="opening-retry" onClick={onRetry} style={{ ...glowButtonStyle, ...actionBtn, flex: 1, background: 'transparent', boxShadow: 'none', color: '#a0a8b8', borderColor: '#2e333c' }}>
-                  ↺ Redo
-                </button>
-              )}
-            </div>
-            {reveal.responses.length > 0 && (
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', textAlign: 'center', marginTop: 2 }}>
-                Team · Keep {keeps} · Mulligan {mulls}
-              </div>
-            )}
-          </div>
-          <OpeningDiscussion
-            teamSlug={teamSlug}
-            replaySlug={detail.replaySlug}
-            decisionFrames={[reveal.mulliganFrameIndex, reveal.resourceFrameIndex]}
-            composeFrame={reveal.mulliganFrameIndex}
-            recorder={reveal.recorder}
-            viewerName={viewerName}
-            isOwner={detail.isOwner}
-          />
-        </div>
-      </div>
+      <OpeningDiscussion
+        teamSlug={teamSlug}
+        replaySlug={detail.replaySlug}
+        decisionFrames={[reveal.mulliganFrameIndex, reveal.resourceFrameIndex]}
+        composeFrame={reveal.mulliganFrameIndex}
+        recorder={reveal.recorder}
+        viewerName={viewerName}
+        isOwner={detail.isOwner}
+      />
     </section>
   );
 }
