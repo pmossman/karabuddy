@@ -124,13 +124,6 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   const reveal = page2.getByTestId('opening-reveal');
   await expect(reveal).toBeVisible();
 
-  // Collapsible on desktop too: minimize → the summary row floats at the
-  // board top (verdict at a glance), expand restores the panel.
-  await page2.getByTestId('opening-reveal-minimize').click();
-  await expect(page2.getByTestId('opening-reveal')).toHaveCount(0);
-  await expect(page2.getByTestId('opening-reveal-summary')).toContainText('DrillOwner kept');
-  await page2.getByTestId('opening-reveal-expand').click();
-  await expect(reveal).toBeVisible();
   await expect(reveal).toContainText('You keep');
   await expect(reveal).toContainText('DrillOwner keep');
   await expect(reveal).toContainText('Team · Keep 1 · Mulligan 0');
@@ -150,13 +143,6 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await page2.getByTestId('opening-hand-preview-close').click();
   await expect(page2.getByTestId('opening-hand-preview')).toHaveCount(0);
 
-  // The resource diff is painted on the hand, each card self-labeled:
-  // green shared pick, yellow theirs-only, cyan yours-only. No legend.
-  await expect(page2.getByText('Both picked', { exact: true })).toBeVisible();
-  await expect(page2.getByText('Their pick', { exact: true })).toBeVisible();
-  await expect(page2.getByText('Your pick', { exact: true })).toBeVisible();
-  await expect(page2.getByTestId('opening-legend')).toHaveCount(0);
-
   // "Watch from the opening" opens the mini-player MODAL (no navigation):
   // just the board + step controls, arrow keys included.
   await page2.getByTestId('opening-watch').click();
@@ -172,8 +158,8 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('gameboard-board-wrapper')).toHaveCount(0);
   // Still on the reveal — the modal never navigated.
   await expect(page2.getByTestId('opening-reveal')).toBeVisible();
-  // Post-reveal the seat plate names the recorder.
-  await expect(page2.getByTestId('opening-seat-own')).toContainText('DrillOwner');
+  // Post-reveal the matchup header names the recorder (the board is gone).
+  await expect(page2.getByTestId('opening-reveal')).toContainText('DrillOwner');
 
   // Post the disagreement — a team-scoped tag on the source replay. No
   // auto-mention (default = no notification); the canonical @-autocomplete
@@ -300,19 +286,9 @@ test('mobile: the two-phase flow works at 390px, footer reclaimed', async ({ pag
   await page2.getByTestId('opening-pick-5').click();
   await page2.getByTestId('opening-confirm').click();
   await expect(page2.getByTestId('opening-reveal')).toBeVisible();
-
-  // Mobile reveal = a TRUE modal over everything (the in-board float left the
-  // hands off-screen). Minimize → the whole board is visible again; the
-  // floating pill restores the panel.
-  await expect(page2.getByTestId('opening-reveal-overlay')).toBeVisible();
-  await page2.getByTestId('opening-reveal-minimize').click();
-  await expect(page2.getByTestId('opening-reveal-overlay')).toHaveCount(0);
-  // Minimized = a slim summary row (the verdict at a glance) + expand.
-  await expect(page2.getByTestId('opening-reveal-summary')).toContainText('MobOwner kept');
-  await expect(page2.getByTestId('opening-stage')).toBeVisible();
-  await page2.getByTestId('opening-reveal-expand').click();
-  await expect(page2.getByTestId('opening-reveal-overlay')).toBeVisible();
-  await expect(page2.getByTestId('opening-reveal-summary')).toHaveCount(0);
+  // Mobile reveal is a full-page result (no modal) — the two hands stack.
+  await expect(page2.getByTestId('opening-member-you')).toBeVisible();
+  await expect(page2.getByTestId('opening-member-recorder')).toBeVisible();
   await page2.getByTestId('opening-next').click();
   await expect(page2.getByTestId('opening-summary')).toBeVisible();
 
@@ -376,24 +352,14 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   await page2.getByTestId('opening-keep').click();
   await expect(page2.getByText('Select 2 cards to resource')).toBeVisible();
   await expect(page2.getByTestId('opening-beat')).toHaveCount(0);
-  await expect(page2.getByText('Their redraw', { exact: true })).toHaveCount(0);
-  await expect(page2.getByTestId('opening-kept-world')).toHaveCount(0);
   await page2.getByTestId('opening-pick-0').click();
   await page2.getByTestId('opening-pick-2').click();
   await page2.getByTestId('opening-confirm').click();
 
-  // Reveal: the fork. Their redraw on top with THEIR picks (yellow), your
-  // kept world below with YOUR picks (cyan) — different hands, so no
-  // matched-picks claim.
+  // Reveal: the fork reads as your keep vs their mulligan (chips), and each
+  // side's full hand shows its own 2 picks — you kept from the dealt hand.
   await expect(page2.getByTestId('opening-reveal')).toContainText('You keep');
   await expect(page2.getByTestId('opening-reveal')).toContainText('ForkOwner mulligan');
-  await expect(page2.getByText('Their redraw', { exact: true })).toBeVisible();
-  await expect(page2.getByText('Their pick', { exact: true })).toHaveCount(2);
-  const keptWorld = page2.getByTestId('opening-kept-world');
-  await expect(keptWorld).toContainText('Your kept hand');
-  await expect(keptWorld.getByText('Your pick', { exact: true })).toHaveCount(2);
-
-  // Per-member picks show BOTH resourced cards even in the fork (keep answer
-  // vs recorded mulligan) — the source-hand resolution finds the right hand.
   await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-pick')).toHaveCount(2);
+  await expect(page2.getByTestId('opening-member-recorder').getByTestId('opening-member-pick')).toHaveCount(2);
 });

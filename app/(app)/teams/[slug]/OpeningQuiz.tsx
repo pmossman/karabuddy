@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cardImageUrl } from '@/lib/cardImage';
+import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { glowButtonStyle } from '@/app/_components/glowButton';
 import { tokens } from '@/app/_theme/karabuddyTokens';
@@ -102,13 +103,6 @@ export function OpeningStage({
   // The "Watch from the opening" mini-player. While open, the stage's own
   // keyboard flow is suspended (the player owns the arrow keys).
   const [watching, setWatching] = useState(false);
-  // Mobile: the reveal is a full-screen modal (the in-board float left the
-  // fork hands off-screen); minimized = peek at the whole board state.
-  const [revealMin, setRevealMin] = useState(false);
-  // The minimized summary row is draggable (it lands over the opponent's
-  // leader by default — move it wherever). Offset resets per opening/expand.
-  const [sumOffset, setSumOffset] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
 
   useEffect(() => {
     let dead = false;
@@ -120,8 +114,6 @@ export function OpeningStage({
     setPracticing(false);
     setPractice(null);
     setWatching(false);
-    setRevealMin(false);
-    setSumOffset({ x: 0, y: 0 });
     (async () => {
       try {
         const res = await fetch(`/api/replays/${replaySlug}/opening`);
@@ -193,13 +185,6 @@ export function OpeningStage({
     if (stage === 'reveal' && detail?.reveal) prepareWatch(detail.replaySlug).catch(() => {});
   }, [stage, detail]);
 
-  useEffect(() => {
-    if (stage !== 'reveal') setRevealMin(false);
-  }, [stage]);
-  useEffect(() => {
-    if (!revealMin) setSumOffset({ x: 0, y: 0 });
-  }, [revealMin]);
-
   // Same breakpoint as the shell + the tab container: below it the stage
   // re-composes hand-first.
   const compact = useMediaQuery('(max-width: 860px)');
@@ -207,87 +192,12 @@ export function OpeningStage({
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!detail) return <Loading label="Dealing the hand…" />;
 
-  // Stage 2 follows the USER'S decision, not the recorder's — a keep answers
-  // from the dealt hand (even if the recorder mulliganed: those picks are
-  // the discussion data), a mulligan answers from the recorder's redraw
-  // (the only one that exists; == dealt when the recorder kept). Nothing is
-  // revealed until the picks land. The reveal shows the recorder's world.
-  const hand =
-    stage === 'mulligan' ? detail.dealtHand
-    : stage === 'resource' ? (myMulligan === 'keep' ? detail.dealtHand : detail.keptHand)
-    : detail.keptHand;
-  // Reveal: the DIFF is painted straight onto the hand (multiset-safe index
-  // assignment — duplicate copies are interchangeable): green = you both
-  // resourced it, red = only they did, gray = only you did. The owner has no
-  // answer of their own, so their recorded picks get the plain cyan highlight.
-  const verdictByIdx = new Map<number, 'match' | 'theirs' | 'mine'>();
-  const keptWorldPickIdx = new Set<number>(); // MY picks on the kept-world (fork) hand
-  const theirPickIdx = new Set<number>();
-  if (stage === 'reveal' && detail.reveal) {
-    const theirs = detail.reveal.resourced.map((c) => c.id);
-    const effective = practice ?? detail.myResponse;
-    // Incomparable fork: I kept (picked from the dealt hand), they mulliganed
-    // (picked from the redraw) — two different hands, no pick-vs-pick diff.
-    // LEGACY guard: answers recorded before the pick-first flow sourced keep-
-    // picks from the REDRAW — if the picks don't map onto the dealt hand,
-    // render them where they actually came from (comparable on the redraw).
-    const incomparable =
-      !!effective &&
-      effective.decision === 'keep' &&
-      detail.reveal.decision === 'mulligan' &&
-      picksMapOnto(detail.dealtHand, effective.resourced);
-    if (effective && incomparable) {
-      // Their picks light the live (redraw) hand; mine light the kept world.
-      const remaining = [...theirs];
-      detail.keptHand.forEach((c, i) => {
-        const at = remaining.indexOf(c.id);
-        if (at >= 0) { remaining.splice(at, 1); verdictByIdx.set(i, 'theirs'); }
-      });
-      const minePool = [...effective.resourced];
-      detail.dealtHand.forEach((c, i) => {
-        const at = minePool.indexOf(c.id);
-        if (at >= 0) { minePool.splice(at, 1); keptWorldPickIdx.add(i); }
-      });
-    } else if (effective) {
-      const matchPool: string[] = [];
-      const theirsOnly = [...theirs];
-      const mineOnly: string[] = [];
-      for (const id of effective.resourced) {
-        const at = theirsOnly.indexOf(id);
-        if (at >= 0) { theirsOnly.splice(at, 1); matchPool.push(id); }
-        else mineOnly.push(id);
-      }
-      const pools: [string[], 'match' | 'theirs' | 'mine'][] = [
-        [matchPool, 'match'],
-        [theirsOnly, 'theirs'],
-        [mineOnly, 'mine'],
-      ];
-      detail.keptHand.forEach((c, i) => {
-        for (const [pool, v] of pools) {
-          const at = pool.indexOf(c.id);
-          if (at >= 0) { pool.splice(at, 1); verdictByIdx.set(i, v); return; }
-        }
-      });
-    } else {
-      const remaining = [...theirs];
-      detail.keptHand.forEach((c, i) => {
-        const at = remaining.indexOf(c.id);
-        if (at >= 0) { remaining.splice(at, 1); theirPickIdx.add(i); }
-      });
-    }
-  }
-
-  const seatLabel = detail.isOwner ? 'You' : stage === 'reveal' ? detail.reveal?.recorder.name ?? 'Your teammate' : 'Your seat';
-  // Did the recorder keep? (dealt ≡ kept multiset — a keep can't change cards.)
-  const kept = sameHand(detail);
-  // The fork visualization: they mulliganed but YOUR call was keep — show
-  // both timelines at once. Everything sizes down a notch so the redraw and
-  // the kept world share the screen without scrolling.
-  const effectiveDecision =
-    stage === 'reveal' ? (practice ?? detail.myResponse)?.decision : myMulligan;
-  // The fork view is REVEAL-only: stage 2 shows a single hand (the user's
-  // world) and reveals nothing about the recorder's call.
-  const dualHand = stage === 'reveal' && !kept && effectiveDecision === 'keep';
+  // The picking hand — stage 2 follows YOUR decision (keep → dealt, mulligan
+  // → the redraw, which == dealt when the recorder kept). The reveal is a
+  // separate full page (no board), so nothing paints on this hand anymore.
+  const hand = stage === 'mulligan' ? detail.dealtHand : myMulligan === 'keep' ? detail.dealtHand : detail.keptHand;
+  const seatLabel = detail.isOwner ? 'You' : 'Your seat';
+  const kept = sameHand(detail); // did the recorder keep? (a keep can't change cards)
 
   const startPractice = () => {
     setPracticing(true);
@@ -297,12 +207,8 @@ export function OpeningStage({
     setStage('mulligan');
   };
 
-  // The hand — the full-width bottom row, exactly like sitting at the table.
-  // The reveal stacks more below the board (caption + verdict-labeled hand),
-  // so the fan sizes down a notch there even in single-hand mode — the whole
-  // story should sit on one screen.
-  const fanShrunk = dualHand || stage === 'reveal';
-  const fanW = compact ? (fanShrunk ? 112 : 132) : (fanShrunk ? 126 : 150);
+  // The picking hand — the full-width bottom row, like sitting at the table.
+  const fanW = compact ? 132 : 150;
   const fan = (
     <HandRow cardWidth={fanW} overlap={compact ? 56 : -10}>
       {hand.map((c, i) => (
@@ -312,29 +218,19 @@ export function OpeningStage({
           card={c}
           width={fanW}
           selectable={stage === 'resource' ? true : undefined}
-          selected={stage === 'resource' ? picks.includes(i) : stage === 'reveal' ? theirPickIdx.has(i) : undefined}
-          verdict={stage === 'reveal' ? verdictByIdx.get(i) : undefined}
+          selected={stage === 'resource' ? picks.includes(i) : undefined}
           onClick={stage === 'resource' ? () => togglePick(i) : undefined}
         />
       ))}
     </HandRow>
   );
 
-  // No legend — every verdict card carries its own label. The owner view
-  // (unlabeled cyan highlights) keeps a one-line caption.
-  const fanCaption =
-    stage === 'reveal' && verdictByIdx.size === 0 && theirPickIdx.size > 0 ? (
-      <div style={{ textAlign: 'center', fontSize: 12, color: '#66E5FF', marginTop: -6 }}>
-        Their resource picks
-      </div>
-    ) : null;
-
   // ONE layout for every screen size — the karabast table, scaled: the
   // center column (their leader/base above yours) dead-center, the hand
   // across the bottom, and ALL interaction floating OVER the board like the
   // game's own prompt popups. The Initiative pill hangs off the holder's
   // leader card.
-  const seatW = compact ? (dualHand ? 100 : 124) : (dualHand ? 120 : 168);
+  const seatW = compact ? 124 : 168;
   const pillAt = (holder: 'own' | 'opp') => (
     <span
       style={{
@@ -350,13 +246,13 @@ export function OpeningStage({
   );
 
   const board = (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: dualHand ? 5 : compact ? 8 : 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: compact ? 8 : 10 }}>
       <div style={{ position: 'relative' }}>
         <SeatCard testId="opening-seat-opp" kind="leader" card={detail.oppLeader} label="Opponent" width={seatW} />
         {detail.wentFirst === false && pillAt('opp')}
       </div>
       <SeatCard kind="base" card={detail.oppBase} width={seatW} />
-      <div style={{ height: dualHand ? 6 : compact ? 10 : 18 }} />
+      <div style={{ height: compact ? 10 : 18 }} />
       <SeatCard kind="base" card={detail.ownBase} width={seatW} />
       <div style={{ position: 'relative' }}>
         <SeatCard testId="opening-seat-own" kind="leader" card={detail.ownLeader} label={seatLabel} width={seatW} />
@@ -364,83 +260,6 @@ export function OpeningStage({
       </div>
     </div>
   );
-
-  // The floating prompt layer. pointerEvents:none on the wrapper keeps the
-  // uncovered board cards hoverable; the panel itself re-enables them.
-  const minimizeGlyph = (
-    <button
-      type="button"
-      data-testid="opening-reveal-minimize"
-      aria-label="Minimize"
-      onClick={() => setRevealMin(true)}
-      style={{ position: 'absolute', top: 4, right: 6, zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 30, background: 'transparent', border: 'none', color: '#a0a8b8', cursor: 'pointer', padding: 0 }}
-    >
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
-    </button>
-  );
-
-  // The collapsed reveal: verdict at a glance + expand, in the modal's own
-  // visual language (floating card, gradient border).
-  const summaryRow = detail.reveal ? (
-    <div
-      data-testid="opening-reveal-summary"
-      onPointerDown={(e) => {
-        const t = e.target as HTMLElement;
-        if (t.closest('button')) return; // the expand glyph stays a click
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: sumOffset.x, baseY: sumOffset.y };
-      }}
-      onPointerMove={(e) => {
-        const d = dragRef.current;
-        if (!d) return;
-        setSumOffset({ x: d.baseX + e.clientX - d.startX, y: d.baseY + e.clientY - d.startY });
-      }}
-      onPointerUp={() => { dragRef.current = null; }}
-      style={{ ...promptPanelStyle, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', boxShadow: '0 8px 26px rgba(0,0,0,0.55)', transform: `translate(${sumOffset.x}px, ${sumOffset.y}px)`, cursor: 'grab', touchAction: 'none', userSelect: 'none' }}
-    >
-      {(() => {
-        const eff = practice ?? detail.myResponse;
-        const agreed = eff ? eff.decision === detail.reveal!.decision : null;
-        return (
-          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <strong style={{ color: '#e6ebf2' }}>
-              {detail.reveal!.recorder.name ?? 'They'} {detail.reveal!.decision === 'keep' ? 'kept' : 'mulliganed'}
-            </strong>
-            {eff && (
-              <span style={{ color: agreed ? '#6bd968' : '#ff7b72' }}>
-                {' '}— you said {eff.decision} {agreed ? '✓' : '✗'}
-              </span>
-            )}
-          </span>
-        );
-      })()}
-      <button
-        type="button"
-        data-testid="opening-reveal-expand"
-        aria-label="Expand"
-        onClick={() => setRevealMin(false)}
-        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 30, background: 'transparent', border: 'none', color: '#a0a8b8', cursor: 'pointer', flexShrink: 0, padding: 0 }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
-      </button>
-    </div>
-  ) : null;
-
-  const revealPanel = detail.reveal ? (
-    <RevealPanel
-      teamSlug={teamSlug}
-      detail={detail}
-      reveal={detail.reveal}
-      viewerName={viewerName}
-      hasNext={hasNext}
-      onNext={onNext}
-      finishLabel={finishLabel}
-      response={practice ?? detail.myResponse}
-      isPractice={!!practice}
-      onRetry={detail.isOwner ? undefined : startPractice}
-      onWatch={() => setWatching(true)}
-    />
-  ) : null;
 
   const overlay = (
     <div
@@ -456,17 +275,7 @@ export function OpeningStage({
       }}
     >
       <div
-        style={{
-          pointerEvents: 'auto',
-          width: stage === 'reveal' ? 'min(680px, 100%)' : 'min(520px, 100%)',
-          // minHeight:0 is load-bearing: a flex item defaults to min-height
-          // auto (= content height), so without it maxHeight+overflow never
-          // engage and a tall reveal panel spills past the board (cut off).
-          minHeight: 0,
-          maxHeight: '100%',
-          overflowY: 'auto',
-          filter: 'drop-shadow(0 18px 50px rgba(0,0,0,0.8))',
-        }}
+        style={{ pointerEvents: 'auto', width: 'min(520px, 100%)', minHeight: 0, maxHeight: '100%', overflowY: 'auto', filter: 'drop-shadow(0 18px 50px rgba(0,0,0,0.8))' }}
       >
         {stage === 'mulligan' && (
           <section style={{ ...promptPanelStyle, padding: '0.9rem 1rem 1rem' }} aria-label="Mulligan Step">
@@ -507,70 +316,47 @@ export function OpeningStage({
     </div>
   );
 
+  // Once the picks are in, the board goes away entirely — the reveal is a
+  // full-width RESULT PAGE that uses all the room to compare hands clearly.
+  if (stage === 'reveal' && detail.reveal) {
+    return (
+      <div data-testid="opening-stage" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0, flex: 1 }}>
+        <MatchupHeader detail={detail} recorderName={detail.reveal.recorder.name} />
+        <RevealPanel
+          teamSlug={teamSlug}
+          detail={detail}
+          reveal={detail.reveal}
+          viewerName={viewerName}
+          hasNext={hasNext}
+          onNext={onNext}
+          finishLabel={finishLabel}
+          response={practice ?? detail.myResponse}
+          isPractice={!!practice}
+          onRetry={detail.isOwner ? undefined : startPractice}
+          onWatch={() => setWatching(true)}
+        />
+        {watching && (
+          <OpeningWatchModal
+            replaySlug={detail.replaySlug}
+            startFrame={detail.reveal.mulliganFrameIndex}
+            onClose={() => setWatching(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Picking stages: the karabast table — board + floating prompt + your hand.
   return (
     <div
       data-testid="opening-stage"
-      style={{ display: 'flex', flexDirection: 'column', gap: dualHand ? 6 : compact ? 10 : 14, minWidth: 0, flex: 1 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: compact ? 10 : 14, minWidth: 0, flex: 1 }}
     >
       <div style={{ position: 'relative' }}>
         {board}
         {overlay}
       </div>
-      {/* Reveal-only: naming the hand "their redraw" before the picks would
-          spoil the recorder's call. */}
-      {stage === 'reveal' && !kept && (
-        <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: -4 }}>
-          Their redraw
-        </div>
-      )}
-      {stage === 'reveal' && detail.reveal && !revealMin && (
-        <div
-          data-testid="opening-reveal-overlay"
-          // Viewport-sized so a tall reveal is never clipped by the short
-          // seat-column board. Light scrim that does NOT block pointer events
-          // — hovering a board card behind still fires its preview (the
-          // preview portal renders above at z-500). Panel scrolls internally.
-          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.5)', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: compact ? 12 : 24 }}
-        >
-          <div style={{ position: 'relative', width: compact ? 'min(560px, 100%)' : 'min(960px, 100%)', minHeight: 0, maxHeight: '100%', overflowY: 'auto', pointerEvents: 'auto', filter: compact ? 'none' : 'drop-shadow(0 18px 50px rgba(0,0,0,0.8))' }}>
-            {minimizeGlyph}
-            {revealPanel}
-          </div>
-        </div>
-      )}
-      {stage === 'reveal' && detail.reveal && revealMin && (
-        <div style={{ position: 'fixed', top: 8, left: 8, right: 8, zIndex: 90, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-          <div style={{ pointerEvents: 'auto', width: compact ? '100%' : 'min(560px, 100%)' }}>{summaryRow}</div>
-        </div>
-      )}
-      {watching && detail.reveal && (
-        <OpeningWatchModal
-          replaySlug={detail.replaySlug}
-          startFrame={detail.reveal.mulliganFrameIndex}
-          onClose={() => setWatching(false)}
-        />
-      )}
       {fan}
-      {fanCaption}
-      {dualHand && (
-        <div data-testid="opening-kept-world" style={{ marginTop: 2 }}>
-          <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588', marginBottom: -2 }}>
-            Your kept hand
-          </div>
-          <HandRow cardWidth={compact ? 88 : 92} overlap={compact ? 46 : -10}>
-            {detail.dealtHand.map((c, i) => (
-              <QuizCard
-                key={`kept-${c.id}-${i}`}
-                card={c}
-                width={compact ? 88 : 92}
-                // YOUR two picks in this world get the cyan ring; the rest of
-                // the hand stays at full brightness (no darkening).
-                verdict={keptWorldPickIdx.has(i) ? 'mine' : undefined}
-              />
-            ))}
-          </HandRow>
-        </div>
-      )}
     </div>
   );
 }
@@ -595,17 +381,6 @@ function Kbd({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
-}
-
-// Can every pick be consumed from this hand's multiset?
-function picksMapOnto(hand: QuizCardRef[], picks: string[]): boolean {
-  const pool = hand.map((c) => c.id);
-  for (const id of picks) {
-    const at = pool.indexOf(id);
-    if (at < 0) return false;
-    pool.splice(at, 1);
-  }
-  return true;
 }
 
 // On a keep, dealt === kept, so the stage-2 helper copy shouldn't spoil
@@ -749,7 +524,7 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
   return (
     <div
       data-testid={rec.tone === 'recorder' ? 'opening-member-recorder' : rec.tone === 'viewer' ? 'opening-member-you' : undefined}
-      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(grow ? { flex: '1 1 400px', minWidth: 0 } : {}) }}
+      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(grow ? { flex: '1 1 460px', minWidth: 0 } : {}) }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -769,7 +544,7 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
           </svg>
         </button>
       </div>
-      <TeamHand rec={rec} width={compact ? 50 : 58} spread={compact ? -26 : 4} mini />
+      <TeamHand rec={rec} width={compact ? 52 : 76} spread={compact ? -26 : 6} mini />
     </div>
   );
 }
@@ -835,6 +610,31 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
   );
 }
 
+// The reveal's matchup header: horizontal, leader overlapping its base to save
+// vertical space (the board is gone). Recorder's deck vs the opponent's, with
+// who had initiative.
+function MatchupHeader({ detail, recorderName }: { detail: Detail; recorderName: string | null }) {
+  const Side = ({ leader, base, label, initiative, align }: { leader: any; base: any; label: string; initiative: boolean; align: 'left' | 'right' }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexDirection: align === 'right' ? 'row-reverse' : 'row', minWidth: 0 }}>
+      <LeaderBasePair leader={leader} base={base} orientation="overlap" reverse={align === 'right'} width={64} height={45} fit="cover" radius={5} fallback="hide" />
+      <div style={{ minWidth: 0, textAlign: align }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+        <div style={{ fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {(leader?.name as string) || 'Unknown'}
+          {initiative && <span style={{ marginLeft: 6, color: '#00BAFF', fontWeight: 700 }}>· initiative</span>}
+        </div>
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap', padding: '4px 0 2px' }}>
+      <Side leader={detail.ownLeader} base={detail.ownBase} label={recorderName ?? 'Recorder'} initiative={detail.wentFirst === true} align="left" />
+      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
+      <Side leader={detail.oppLeader} base={detail.oppBase} label="Opponent" initiative={detail.wentFirst === false} align="right" />
+    </div>
+  );
+}
+
 function RevealPanel({
   teamSlug,
   detail,
@@ -867,7 +667,7 @@ function RevealPanel({
   const mulls = reveal.responses.length - keeps;
 
   return (
-    <section data-testid="opening-reveal" style={{ ...promptPanelStyle, position: 'relative' }}>
+    <section data-testid="opening-reveal" style={{ width: '100%', maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       {isPractice && (
         <p data-testid="opening-practice-note" style={{ margin: '0 0 8px', fontSize: 12, color: '#ffb454', textAlign: 'center' }}>
           Practice run — recorded answer{detail.myResponse ? ` (${detail.myResponse.decision})` : ''} unchanged.
