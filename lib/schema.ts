@@ -205,6 +205,9 @@ export const replays = pgTable(
     ownerIdx: index('replays_owner_idx').on(t.ownerToken),
     userIdx: index('replays_user_idx').on(t.userId),
     createdAtIdx: index('replays_created_at_idx').on(t.createdAt),
+    // B224: series grouping + the bo3 reconcile scan a lobby's games by
+    // match->>'lobbyId'; index the expression so it's a lookup, not a seq scan.
+    lobbyIdx: index('replays_lobby_idx').on(sql`((${t.match} ->> 'lobbyId'))`),
   })
 );
 
