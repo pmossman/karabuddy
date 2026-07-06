@@ -502,18 +502,7 @@ export function OpeningStage({
             </div>
           </section>
         )}
-        {stage === 'reveal' && detail.reveal && !compact && !revealMin && (
-          <div style={{ position: 'relative' }}>
-            {minimizeGlyph}
-            {revealPanel}
-          </div>
-        )}
       </div>
-      {stage === 'reveal' && detail.reveal && !compact && revealMin && (
-        <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-          <div style={{ pointerEvents: 'auto', width: 'min(520px, 100%)' }}>{summaryRow}</div>
-        </div>
-      )}
     </div>
   );
 
@@ -533,22 +522,25 @@ export function OpeningStage({
           Their redraw
         </div>
       )}
-      {stage === 'reveal' && detail.reveal && compact && !revealMin && (
+      {stage === 'reveal' && detail.reveal && !revealMin && (
         <div
           data-testid="opening-reveal-overlay"
-          // Light scrim that does NOT block pointer events — hovering a board
-          // card behind the modal still fires its preview (the preview portal
-          // renders above at z-500). The panel re-enables events + scrolls.
-          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.55)', pointerEvents: 'none', display: 'flex', justifyContent: 'center', padding: 12 }}
+          // Viewport-sized so a tall reveal is never clipped by the short
+          // seat-column board. Light scrim that does NOT block pointer events
+          // — hovering a board card behind still fires its preview (the
+          // preview portal renders above at z-500). Panel scrolls internally.
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.5)', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: compact ? 12 : 24 }}
         >
-          <div style={{ position: 'relative', width: 'min(560px, 100%)', maxHeight: '100%', overflowY: 'auto', pointerEvents: 'auto' }}>
+          <div style={{ position: 'relative', width: compact ? 'min(560px, 100%)' : 'min(680px, 100%)', minHeight: 0, maxHeight: '100%', overflowY: 'auto', pointerEvents: 'auto', filter: compact ? 'none' : 'drop-shadow(0 18px 50px rgba(0,0,0,0.8))' }}>
             {minimizeGlyph}
             {revealPanel}
           </div>
         </div>
       )}
-      {stage === 'reveal' && detail.reveal && compact && revealMin && (
-        <div style={{ position: 'fixed', top: 8, left: 8, right: 8, zIndex: 90 }}>{summaryRow}</div>
+      {stage === 'reveal' && detail.reveal && revealMin && (
+        <div style={{ position: 'fixed', top: 8, left: 8, right: 8, zIndex: 90, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{ pointerEvents: 'auto', width: compact ? '100%' : 'min(560px, 100%)' }}>{summaryRow}</div>
+        </div>
       )}
       {watching && detail.reveal && (
         <OpeningWatchModal
