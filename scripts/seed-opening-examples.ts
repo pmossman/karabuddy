@@ -16,7 +16,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../lib/db';
-import { users, teams, teamMembers, replays, replayTeamShares, openingResponses } from '../lib/schema';
+import { users, teams, teamMembers, replays, replayTeamShares, openingResponses, replayOpenings, tags, tagTeamScope } from '../lib/schema';
 import { decodeReplay } from '../lib/replayDecoder';
 import { persistOpening } from '../lib/openingPersist';
 import { eq } from 'drizzle-orm';
@@ -159,6 +159,26 @@ async function main() {
 
   const idFor = (who: 'viewer' | number) => (who === 'viewer' ? viewerId : memberIds[who]);
 
+  const COMMENTS_BY_OPENING: Record<number, { who: 'viewer' | number; text: string }[]> = {
+    0: [
+      { who: 1, text: 'Standard keep — resource the two events, hold the units. No-brainer here.' },
+      { who: 3, text: 'I get keeping, but I resourced the Skirmisher instead — I want tempo turn 1.' },
+      { who: 'viewer', text: 'Agree with the keep. Curve is too good to ship.' },
+    ],
+    1: [
+      { who: 0, text: 'Way too much disagreement on the resources for a "keep". What are we prioritizing?' },
+      { who: 2, text: 'Depends on the matchup — vs aggro I keep the cheap units, vs control the events.' },
+    ],
+    2: [
+      { who: 1, text: 'This is a snap KEEP for me, not a mulligan. Two playables + a base is fine.' },
+      { who: 4, text: 'Yeah the recorder over-mulliganed imo. This hand does enough.' },
+      { who: 'viewer', text: 'I mulliganed too but I see the argument for keeping. Close one.' },
+    ],
+    3: [
+      { who: 5, text: 'Unanimous mulligan — that dealt hand had zero early plays.' },
+    ],
+  };
+
   // Given an answerer's decision + mode, choose their 2 resourced cardIds.
   function picksFor(decision: 'keep' | 'mulligan', mode: string, hands: { dealtIds: string[]; keptIds: string[]; resourcedIds: string[] }) {
     const src = decision === 'keep' ? hands.dealtIds : hands.keptIds;
@@ -224,6 +244,24 @@ async function main() {
       resourced: picksFor(a.decision, a.mode, hands),
     }));
     await db.insert(openingResponses).values(rows).onConflictDoNothing();
+
+    // A little discussion so the reveal's comment panel isn't empty. Anchor
+    // at the opening's mulligan (decision) frame; scope to the team so members
+    // see it.
+    const [op] = await db.select().from(replayOpenings).where(eq(replayOpenings.replaySlug, rslug));
+    const frame = op?.mulliganFrameIndex ?? 1;
+    const comments = COMMENTS_BY_OPENING[made] ?? [];
+    for (let ci = 0; ci < comments.length; ci++) {
+      const c = comments[ci];
+      const authorId = c.who === 'viewer' ? viewerId : memberIds[c.who];
+      const authorName = c.who === 'viewer' ? 'Skyler Vance' : MEMBER_NAMES[c.who];
+      const tagId = `t_${randomUUID().slice(0, 10)}`;
+      await db.insert(tags).values({
+        id: tagId, replaySlug: rslug, frameIndex: frame, userId: authorId,
+        authorToken: `kbx_${randomUUID()}`, authorName, comment: c.text,
+      } as any).onConflictDoNothing();
+      await db.insert(tagTeamScope).values({ tagId, teamSlug: slug }).onConflictDoNothing();
+    }
 
     made++;
     console.log(`  ✓ ${o.title}  (recorder ${o.recorderMulligan ? 'mulligan' : 'keep'}, ${o.answers.length} answers)`);

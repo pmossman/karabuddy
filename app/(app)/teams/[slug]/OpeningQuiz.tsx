@@ -423,7 +423,6 @@ function MemberPicks({
   // null when the viewer is the uploader and never answered.
   viewerResponse: { decision: 'keep' | 'mulligan'; resourced: string[] } | null;
 }) {
-  const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState<MemberRecord | null>(null);
 
   const holdsBoth = (hand: QuizCardRef[], picks: string[]) => {
@@ -497,27 +496,17 @@ function MemberPicks({
         <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} grow />
       </div>
 
-      {/* The rest of the team, behind a toggle. */}
+      {/* The rest of the team — always shown, grouped by identical answer. */}
       {others.length > 0 && (
-        <div>
-          <button
-            type="button"
-            data-testid="opening-member-picks-toggle"
-            onClick={() => setOpen((v) => !v)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: '#8a93a3', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', padding: 0 }}
-          >
+        <div data-testid="opening-rest-of-team">
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', margin: '4px 0 8px' }}>
             Rest of the team · {others.length}
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms' }}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {open && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginTop: 8 }}>
-              {others.map((rec) => (
-                <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
-              ))}
-            </div>
-          )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+            {others.map((rec) => (
+              <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
+            ))}
+          </div>
         </div>
       )}
       {viewing && <HandPreview rec={viewing} onClose={() => setViewing(null)} />}
@@ -699,68 +688,67 @@ function RevealPanel({
   onWatch: () => void;
 }) {
   const mine = response;
+  const compact = useMediaQuery('(max-width: 980px)');
   const keeps = reveal.responses.filter((r) => r.decision === 'keep').length;
   const mulls = reveal.responses.length - keeps;
 
+  const actionBtn = { fontSize: 13, padding: '0.6rem 0.9rem', width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center' } as const;
+
   return (
-    <section data-testid="opening-reveal" style={{ width: '100%', maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <section data-testid="opening-reveal" style={{ width: '100%', maxWidth: 1440, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       {isPractice && (
-        <p data-testid="opening-practice-note" style={{ margin: '0 0 8px', fontSize: 12, color: '#ffb454', textAlign: 'center' }}>
+        <p data-testid="opening-practice-note" style={{ margin: 0, fontSize: 12, color: '#ffb454', textAlign: 'center' }}>
           Practice run — recorded answer{detail.myResponse ? ` (${detail.myResponse.decision})` : ''} unchanged.
         </p>
       )}
 
-      {/* THE RESULT: your full end state next to the uploader's, side by side —
-          reads at a glance, no prose. The uploader (no answer) just sees the
-          recorded hand. */}
-      <MemberPicks
-        responses={reveal.responses}
-        dealtHand={detail.dealtHand}
-        keptHand={detail.keptHand}
-        recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
-        viewerResponse={mine}
-      />
-
-      {reveal.responses.length > 0 && (
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', textAlign: 'center', marginTop: 10 }}>
-          Team · Keep {keeps} · Mulligan {mulls}
+      {/* Two columns on desktop: the visual result fills the width; the actions
+          + discussion live in a sticky sidebar so they stay put while you scan
+          the team's hands. Stacks single-column on narrow screens. */}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {/* MAIN: your hand vs the uploader's + the rest of the team. */}
+        <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <MemberPicks
+            responses={reveal.responses}
+            dealtHand={detail.dealtHand}
+            keptHand={detail.keptHand}
+            recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
+            viewerResponse={mine}
+          />
         </div>
-      )}
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button
-          type="button"
-          data-testid="opening-watch"
-          onClick={onWatch}
-          style={{ ...glowButtonStyle, fontSize: 12.5 }}
-        >
-          ▶ Watch the opening
-        </button>
-        {onRetry && (
-          <button
-            type="button"
-            data-testid="opening-retry"
-            onClick={onRetry}
-            style={{ ...glowButtonStyle, fontSize: 12.5, background: 'transparent', boxShadow: 'none', color: '#a0a8b8', borderColor: '#2e333c' }}
-          >
-            ↺ Redo
-          </button>
-        )}
-        <GradientBorderButton testId="opening-next" onClick={onNext} style={{ padding: '0.55rem 1.2rem' }}>
-          {hasNext ? 'Next opening' : finishLabel} <Kbd>⏎</Kbd>
-        </GradientBorderButton>
-      </div>
-
-      <div style={{ marginTop: 14, textAlign: 'left' }}>
-        <OpeningDiscussion
-          teamSlug={teamSlug}
-          replaySlug={detail.replaySlug}
-          decisionFrames={[reveal.mulliganFrameIndex, reveal.resourceFrameIndex]}
-          composeFrame={reveal.mulliganFrameIndex}
-          recorder={reveal.recorder}
-          viewerName={viewerName}
-          isOwner={detail.isOwner}
-        />
+        {/* SIDE: actions on top, then the discussion. */}
+        <div style={{ flex: compact ? '1 1 100%' : '0 0 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, position: compact ? 'static' : 'sticky', top: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <GradientBorderButton testId="opening-next" onClick={onNext} style={{ ...actionBtn, padding: '0.7rem 0.9rem' }}>
+              {hasNext ? 'Next opening' : finishLabel} <Kbd>⏎</Kbd>
+            </GradientBorderButton>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" data-testid="opening-watch" onClick={onWatch} style={{ ...glowButtonStyle, ...actionBtn, flex: 1 }}>
+                ▶ Watch
+              </button>
+              {onRetry && (
+                <button type="button" data-testid="opening-retry" onClick={onRetry} style={{ ...glowButtonStyle, ...actionBtn, flex: 1, background: 'transparent', boxShadow: 'none', color: '#a0a8b8', borderColor: '#2e333c' }}>
+                  ↺ Redo
+                </button>
+              )}
+            </div>
+            {reveal.responses.length > 0 && (
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', textAlign: 'center', marginTop: 2 }}>
+                Team · Keep {keeps} · Mulligan {mulls}
+              </div>
+            )}
+          </div>
+          <OpeningDiscussion
+            teamSlug={teamSlug}
+            replaySlug={detail.replaySlug}
+            decisionFrames={[reveal.mulliganFrameIndex, reveal.resourceFrameIndex]}
+            composeFrame={reveal.mulliganFrameIndex}
+            recorder={reveal.recorder}
+            viewerName={viewerName}
+            isOwner={detail.isOwner}
+          />
+        </div>
       </div>
     </section>
   );

@@ -363,9 +363,8 @@ test('rest of the team: identical answers collapse into one grouped cell', async
   await p3.getByTestId('opening-pick-1').click();
   await p3.getByTestId('opening-pick-3').click();
   await p3.getByTestId('opening-confirm').click();
-  // p3 sees the rest of the team: the two identical answers as ONE ×2 cell,
-  // and no fourth cell for its own answer.
-  await p3.getByTestId('opening-member-picks-toggle').click();
+  // p3 sees the rest of the team (always shown): the two identical answers as
+  // ONE ×2 cell, and no fourth cell for its own answer.
   const grouped = p3.getByText('Aa Bb, Cc Dd');
   await expect(grouped).toBeVisible();
   await expect(p3.getByText('×2')).toBeVisible();
