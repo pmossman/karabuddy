@@ -386,4 +386,9 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   const keptWorld = page2.getByTestId('opening-kept-world');
   await expect(keptWorld).toContainText('Your kept hand');
   await expect(keptWorld.getByText('Your pick', { exact: true })).toHaveCount(2);
+
+  // Per-member picks show BOTH resourced cards even in the fork (keep answer
+  // vs recorded mulligan) — the source-hand resolution finds the right hand.
+  await page2.getByTestId('opening-member-picks-toggle').click();
+  await expect(page2.getByTestId('opening-member-resourced').locator('button[aria-label]')).toHaveCount(2);
 });

@@ -455,6 +455,10 @@ export function OpeningStage({
         style={{
           pointerEvents: 'auto',
           width: stage === 'reveal' ? 'min(680px, 100%)' : 'min(520px, 100%)',
+          // minHeight:0 is load-bearing: a flex item defaults to min-height
+          // auto (= content height), so without it maxHeight+overflow never
+          // engage and a tall reveal panel spills past the board (cut off).
+          minHeight: 0,
           maxHeight: '100%',
           overflowY: 'auto',
           filter: 'drop-shadow(0 18px 50px rgba(0,0,0,0.8))',
@@ -636,8 +640,22 @@ function MemberPicks({
   const [open, setOpen] = useState(false);
   if (responses.length === 0) return null;
 
+  const holdsBoth = (hand: QuizCardRef[], picks: string[]) => {
+    const pool = hand.map((c) => c.id);
+    for (const id of picks) {
+      const at = pool.indexOf(id);
+      if (at < 0) return false;
+      pool.splice(at, 1);
+    }
+    return true;
+  };
   const split = (r: ResponseView) => {
-    const source = r.decision === 'keep' ? dealtHand : keptHand;
+    // The hand they picked from: normally decision-implied (keep → dealt,
+    // mulligan → redraw), but a legacy keep-answer sourced from the redraw —
+    // so use whichever hand actually contains both picks.
+    const primary = r.decision === 'keep' ? dealtHand : keptHand;
+    const other = r.decision === 'keep' ? keptHand : dealtHand;
+    const source = holdsBoth(primary, r.resourced) ? primary : holdsBoth(other, r.resourced) ? other : primary;
     const pool = [...r.resourced];
     const resourced: QuizCardRef[] = [];
     const kept: QuizCardRef[] = [];
@@ -671,7 +689,7 @@ function MemberPicks({
                   {r.name ?? 'Teammate'} <span style={{ color: '#6c7588', fontWeight: 400 }}>· {r.decision}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                  <MiniHand label="Resourced" cards={resourced} verdict="mine" />
+                  <MiniHand label="Resourced" cards={resourced} verdict="mine" testId="opening-member-resourced" />
                   <MiniHand label="In hand" cards={kept} dimmed />
                 </div>
               </div>
@@ -685,10 +703,10 @@ function MemberPicks({
 
 // A tiny labeled row of cards for the per-member summary. Cards keep the
 // hover/long-press full preview (QuizCard's built-in useCardPreview).
-function MiniHand({ label, cards, verdict, dimmed }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; dimmed?: boolean }) {
+function MiniHand({ label, cards, verdict, dimmed, testId }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; dimmed?: boolean; testId?: string }) {
   if (cards.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588' }}>{label}</span>
       <HandRow cardWidth={44} overlap={22}>
         {cards.map((c, i) => (
