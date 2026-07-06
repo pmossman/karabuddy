@@ -21,6 +21,25 @@ export function relativeTime(iso: string | null | undefined, opts: { fallbackToD
   return `${d}d ago`;
 }
 
+// Coarse human age in the largest sensible unit: "today" / "yesterday" /
+// "N days ago" / "N weeks ago" / "N months ago" / "N years ago". Unlike
+// `relativeTime` (which tops out at days and reads "300d ago" for old items),
+// this stays legible far back — pair it with an absolute date when precision
+// also matters. Null/invalid → ''.
+export function coarseAge(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const days = Math.floor(Math.max(0, Date.now() - then) / 86_400_000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  const unit = (n: number, label: string) => `${n} ${label}${n === 1 ? '' : 's'} ago`;
+  if (days < 30) return unit(Math.floor(days / 7), 'week');
+  if (days < 365) return unit(Math.floor(days / 30), 'month');
+  return unit(Math.floor(days / 365), 'year');
+}
+
 // Compact absolute timestamp: "M/D/YY, h:mm AM". Null/invalid → ''. `year:false`
 // drops the year (the in-context "shortDate" variant); `time:false` drops the
 // clock (date-only, for the old `toLocaleDateString` sites).

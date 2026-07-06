@@ -22,7 +22,7 @@ type IconName =
   | 'dashboard' | 'discussion' | 'replays' | 'reviews' | 'openings' | 'tournaments' | 'members' | 'settings'
   | 'stats' | 'clips' | 'mentions' | 'addTeam';
 
-interface NavItem { href: string; label: string; icon: IconName; active: boolean }
+interface NavItem { href: string; label: string; icon: IconName; active: boolean; badge?: string }
 
 export function Sidebar({
   hasLinkedExtension,
@@ -63,7 +63,7 @@ export function Sidebar({
     { href: `/teams/${activeTeam.slug}?tab=replays`, label: 'Replays', icon: 'replays', active: onTeam && tab === 'replays' },
     { href: `/teams/${activeTeam.slug}?tab=clips`, label: 'Clips', icon: 'clips', active: onTeam && tab === 'clips' },
     { href: `/teams/${activeTeam.slug}?tab=review`, label: 'Reviews', icon: 'reviews', active: onTeam && tab === 'review' },
-    { href: `/teams/${activeTeam.slug}?tab=openings`, label: 'Openings', icon: 'openings', active: onTeam && tab === 'openings' },
+    { href: `/teams/${activeTeam.slug}?tab=openings`, label: 'Openings', icon: 'openings', active: onTeam && tab === 'openings', badge: 'beta' },
     { href: `/teams/${activeTeam.slug}?tab=tournaments`, label: 'Tournaments', icon: 'tournaments', active: onTeam && tab === 'tournaments' },
     { href: `/teams/${activeTeam.slug}?tab=stats`, label: 'Stats', icon: 'stats', active: onTeam && tab === 'stats' },
     { href: `/teams/${activeTeam.slug}?tab=members`, label: 'Members', icon: 'members', active: onTeam && tab === 'members' },
@@ -314,6 +314,17 @@ function NavRow({ item }: { item: NavItem }) {
     >
       <Icon name={item.icon} active={item.active} />
       {item.label}
+      {item.badge && (
+        <span
+          style={{
+            marginLeft: 'auto', fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+            textTransform: 'uppercase', color: '#4dd2ff', background: 'rgba(77,210,255,0.14)',
+            border: '1px solid rgba(77,210,255,0.35)', borderRadius: 5, padding: '1px 5px', lineHeight: 1.5,
+          }}
+        >
+          {item.badge}
+        </span>
+      )}
     </Link>
   );
 }

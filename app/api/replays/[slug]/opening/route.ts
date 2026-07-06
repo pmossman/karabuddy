@@ -51,6 +51,7 @@ async function buildDetail(
 
   const detail: any = {
     replaySlug: replay.slug,
+    playedAt: replay.createdAt instanceof Date ? replay.createdAt.toISOString() : (replay.createdAt ?? null),
     ownLeader: own?.leader ?? null,
     ownBase: own?.base ?? null,
     oppLeader: opp?.leader ?? null,
