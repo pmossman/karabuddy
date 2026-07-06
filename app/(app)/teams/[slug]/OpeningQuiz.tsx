@@ -614,22 +614,24 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
 // vertical space (the board is gone). Recorder's deck vs the opponent's, with
 // who had initiative.
 function MatchupHeader({ detail, recorderName }: { detail: Detail; recorderName: string | null }) {
+  const compact = useMediaQuery('(max-width: 860px)');
+  const w = compact ? 108 : 168;
   const Side = ({ leader, base, label, initiative, align }: { leader: any; base: any; label: string; initiative: boolean; align: 'left' | 'right' }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexDirection: align === 'right' ? 'row-reverse' : 'row', minWidth: 0 }}>
-      <LeaderBasePair leader={leader} base={base} orientation="overlap" reverse={align === 'right'} width={64} height={45} fit="cover" radius={5} fallback="hide" />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexDirection: align === 'right' ? 'row-reverse' : 'row', minWidth: 0 }}>
+      <LeaderBasePair leader={leader} base={base} orientation="overlap" reverse={align === 'right'} width={w} height={Math.round(w / 1.4)} fit="cover" radius={8} fallback="hide" />
       <div style={{ minWidth: 0, textAlign: align }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
-        <div style={{ fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: compact ? 15 : 19, fontWeight: 800, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+        <div style={{ fontSize: compact ? 12.5 : 14.5, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {(leader?.name as string) || 'Unknown'}
-          {initiative && <span style={{ marginLeft: 6, color: '#00BAFF', fontWeight: 700 }}>· initiative</span>}
         </div>
+        {initiative && <div style={{ fontSize: compact ? 11 : 12, color: '#00BAFF', fontWeight: 800, letterSpacing: '0.04em', marginTop: 2 }}>INITIATIVE</div>}
       </div>
     </div>
   );
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap', padding: '4px 0 2px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: compact ? 18 : 40, flexWrap: 'wrap', padding: '6px 0 10px' }}>
       <Side leader={detail.ownLeader} base={detail.ownBase} label={recorderName ?? 'Recorder'} initiative={detail.wentFirst === true} align="left" />
-      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: '#6c7588' }}>VS</span>
+      <span style={{ fontSize: compact ? 13 : 16, fontWeight: 800, letterSpacing: '0.1em', color: '#6c7588' }}>VS</span>
       <Side leader={detail.oppLeader} base={detail.oppBase} label="Opponent" initiative={detail.wentFirst === false} align="right" />
     </div>
   );
