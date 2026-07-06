@@ -530,6 +530,14 @@ function MemberPicks({
           <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#ff7b72'}`, color: decisionMatch ? '#6bd968' : '#ff7b72' }}>{recorderRec.name ?? 'Recorder'} {recorderRec.decision}</span>
         </div>
       )}
+      {responses.length > 1 && (() => {
+        const keeps = responses.filter((r) => r.decision === 'keep').length;
+        return (
+          <div style={{ textAlign: 'center', fontSize: 11.5, color: '#8a93a3' }}>
+            The team kept {keeps} · mulliganed {responses.length - keeps}
+          </div>
+        );
+      })()}
 
       {/* THE ANSWER on top, YOUR pick right under it — same size, stacked for
           a straight up/down comparison. */}
@@ -543,7 +551,6 @@ function MemberPicks({
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {discussion && (
           <div style={{ flex: '1 1 360px', minWidth: 0 }}>
-            {label('Discussion')}
             {discussion}
           </div>
         )}
@@ -741,8 +748,6 @@ function RevealPanel({
   onWatch: () => void;
 }) {
   const mine = response;
-  const keeps = reveal.responses.filter((r) => r.decision === 'keep').length;
-  const mulls = reveal.responses.length - keeps;
 
   // The action bar sits right under the you-vs-uploader comparison — the
   // primary Next on the right, the secondary Watch/Redo on the left, so the
@@ -755,14 +760,9 @@ function RevealPanel({
           <button type="button" data-testid="opening-retry" onClick={onRetry} style={{ ...glowButtonStyle, fontSize: 12.5, padding: '0.5rem 0.9rem', background: 'transparent', boxShadow: 'none', color: '#a0a8b8', borderColor: '#2e333c' }}>↺ Redo</button>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        {reveal.responses.length > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', whiteSpace: 'nowrap' }}>Keep {keeps} · Mull {mulls}</span>
-        )}
-        <GradientBorderButton testId="opening-next" onClick={onNext} style={{ padding: '0.55rem 1.3rem' }}>
-          {hasNext ? 'Next opening' : finishLabel} <Kbd>⏎</Kbd>
-        </GradientBorderButton>
-      </div>
+      <GradientBorderButton testId="opening-next" onClick={onNext} style={{ padding: '0.55rem 1.3rem' }}>
+        {hasNext ? 'Next opening' : finishLabel} <Kbd>⏎</Kbd>
+      </GradientBorderButton>
     </div>
   );
 
