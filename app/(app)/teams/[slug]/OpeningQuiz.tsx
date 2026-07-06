@@ -499,7 +499,7 @@ function MemberPicks({
             </svg>
           </button>
           {open && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginTop: 8 }}>
               {others.map((rec) => (
                 <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
               ))}
@@ -551,23 +551,40 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
 
 // One hand of six, resourced cards lifted and colored (verdict) vs your picks.
 // `spread` is the gap between cards: positive spaces them out (no overlap),
-// negative overlaps (mobile, to keep cards large). `mini` (the small grid):
-// no verdict text + soft glow; full-size keeps both.
+// negative overlaps (mobile). SCALES TO FIT its container so a hand never
+// spills out of its grid cell. `mini` (the small grid): no verdict text + soft
+// glow; full-size keeps both.
 function TeamHand({ rec, width, spread, mini }: { rec: MemberRecord; width: number; spread: number; mini?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const n = rec.hand.length;
+  const natural = width * n + spread * (n - 1); // full row width at 1:1
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setScale(Math.min(1, el.clientWidth / (natural + 4)));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [natural]);
+  const naturalH = width * 1.4 + 14 /* lift */ + 18 /* paddingTop */;
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', paddingTop: 18, justifyContent: 'center' }}>
-      {rec.hand.map((c, i) => {
-        const isR = rec.resourcedIdx.has(i);
-        return (
-          <div
-            key={`${c.id}-${i}`}
-            data-testid={isR ? 'opening-member-pick' : undefined}
-            style={{ marginLeft: i === 0 ? 0 : spread, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-14px)' : 'none' }}
-          >
-            <QuizCard card={c} width={width} verdict={rec.verdictByIdx.get(i)} noPreview mini={mini} />
-          </div>
-        );
-      })}
+    <div ref={ref} style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', height: naturalH * scale, overflow: 'hidden' }}>
+      <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', display: 'flex', alignItems: 'flex-end', paddingTop: 18 }}>
+        {rec.hand.map((c, i) => {
+          const isR = rec.resourcedIdx.has(i);
+          return (
+            <div
+              key={`${c.id}-${i}`}
+              data-testid={isR ? 'opening-member-pick' : undefined}
+              style={{ marginLeft: i === 0 ? 0 : spread, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-14px)' : 'none' }}
+            >
+              <QuizCard card={c} width={width} verdict={rec.verdictByIdx.get(i)} noPreview mini={mini} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
