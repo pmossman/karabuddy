@@ -531,13 +531,15 @@ function MemberPicks({
         </div>
       )}
 
-      {/* THE ANSWER: the uploader's pick, full width. */}
+      {/* THE ANSWER on top, YOUR pick right under it — same size, stacked for
+          a straight up/down comparison. */}
       <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} variant="wide" />
+      {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} variant="wide" />}
 
       {actions}
 
-      {/* Lower half: discussion on the left, everyone's picks on the right
-          (you first). Stacks single-column on narrow screens. */}
+      {/* Lower half: discussion on the left, the rest of the team on the right.
+          Stacks single-column on narrow screens. */}
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {discussion && (
           <div style={{ flex: '1 1 360px', minWidth: 0 }}>
@@ -545,11 +547,10 @@ function MemberPicks({
             {discussion}
           </div>
         )}
-        {(viewerRec || others.length > 0) && (
+        {others.length > 0 && (
           <div data-testid="opening-rest-of-team" style={{ flex: '1.5 1 460px', minWidth: 0 }}>
-            {label(`Team picks · ${(viewerRec ? 1 : 0) + others.length}`)}
+            {label(`Rest of the team · ${others.length}`)}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
-              {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} />}
               {others.map((rec) => (
                 <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
               ))}
