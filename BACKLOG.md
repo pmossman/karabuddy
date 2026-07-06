@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B223] Opening matchup header shows how long ago the match was
+_completed: 2026-07-06 by claude_
+The opening reveal's matchup header now carries the match age under the "VS" — `relativeTime` on the replay's upload time ("3d ago", date fallback past a week). `buildDetail` sends `playedAt`; `MatchupHeader` renders it (`opening-match-age`).
+
 ### [B221] Viewer: step-by-action blows through post-initiative-claim actions
 _completed: 2026-07-02 by claude_
 User report (Lostrian, r_n5zhum f=77): one forward step played out the rest of the turn. Root cause is original to B108, not a B217 regression: after "{p} claims initiative and passes", the opponent takes every remaining action while karabast keeps isActionPhaseActivePlayer on them, so the active-flip rule sees no boundary until the regroup pile-growth stop. Fix: the B217 log-delta detector also treats action DECLARATIONS as stops — "plays" / "attacks" / "claims initiative" ("uses" deliberately excluded: ability lines are sub-steps of the action they resolve). Verified against the prod replay: f=77 → the Krennic attack; only the two missed beats gained stops in the affected range.
