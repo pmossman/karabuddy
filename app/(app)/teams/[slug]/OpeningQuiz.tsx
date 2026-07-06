@@ -21,7 +21,7 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 import { multisetContains, multisetEquals, multisetOverlap } from '@/lib/multiset';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { relativeTime } from '@/lib/datetime';
+import { coarseAge, formatTimestamp } from '@/lib/datetime';
 import { OpeningWatchModal, prepareWatch } from './OpeningWatchModal';
 import { MentionInput, type MentionData } from '@/app/(app)/r/[slug]/MentionInput';
 import {
@@ -712,6 +712,16 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
 // The reveal's matchup header: horizontal, leader overlapping its base to save
 // vertical space (the board is gone). Recorder's deck vs the opponent's, with
 // who had initiative.
+// "3 days ago" for recent matches; "6/27/26 · 2 weeks ago" once the exact
+// date starts to matter (a week+ out) — the age reads at a glance, the date
+// pins it.
+function matchAgeLabel(iso: string | null | undefined): string {
+  const age = coarseAge(iso);
+  if (!age) return '';
+  const old = Date.now() - new Date(iso!).getTime() >= 7 * 86_400_000;
+  return old ? `${formatTimestamp(iso, { time: false })} · ${age}` : age;
+}
+
 function MatchupHeader({ detail, recorderName }: { detail: Detail; recorderName: string | null }) {
   const compact = useMediaQuery('(max-width: 860px)');
   const w = compact ? 108 : 168;
@@ -733,7 +743,7 @@ function MatchupHeader({ detail, recorderName }: { detail: Detail; recorderName:
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
         <span style={{ fontSize: compact ? 13 : 16, fontWeight: 800, letterSpacing: '0.1em', color: '#6c7588' }}>VS</span>
         {detail.playedAt && (
-          <span data-testid="opening-match-age" style={{ fontSize: compact ? 10 : 11, color: '#6c7588', whiteSpace: 'nowrap' }}>{relativeTime(detail.playedAt, { fallbackToDate: true })}</span>
+          <span data-testid="opening-match-age" style={{ fontSize: compact ? 10 : 11, color: '#6c7588', whiteSpace: 'nowrap' }}>{matchAgeLabel(detail.playedAt)}</span>
         )}
       </div>
       <Side leader={detail.oppLeader} base={detail.oppBase} label="Opponent" initiative={detail.wentFirst === false} align="right" />

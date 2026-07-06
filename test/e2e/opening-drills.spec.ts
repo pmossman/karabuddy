@@ -127,7 +127,7 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(reveal).toContainText('You keep');
   await expect(reveal).toContainText('DrillOwner keep');
   // The matchup header shows how long ago the match was played.
-  await expect(page2.getByTestId('opening-match-age')).toHaveText(/ago|just now|\d{1,2}\/\d{1,2}\/\d{2,4}/);
+  await expect(page2.getByTestId('opening-match-age')).toHaveText(/ago|today|yesterday/);
   // The result: your hand next to the uploader's, always shown (no toggle).
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('recorded keep');
   // Uploader + you sit side by side; each is a single 6-card hand with the 2
