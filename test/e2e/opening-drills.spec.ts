@@ -135,19 +135,20 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(reveal).toContainText('so did you');
   await expect(reveal).toContainText('One pick matched.');
   await expect(reveal).toContainText('Team so far — Keep 1 · Mulligan 0');
-  // Per-member picks: expand → this responder's resourced + kept cards.
+  // Per-member picks: expand → each participant's single 6-card hand.
   await expect(page2.getByTestId('opening-member-picks-toggle')).toContainText('Team picks · 1');
   await page2.getByTestId('opening-member-picks-toggle').click();
-  await expect(page2.getByTestId('opening-member-picks')).toContainText('Resourced');
-  await expect(page2.getByTestId('opening-member-picks')).toContainText('In hand');
-  await expect(page2.getByTestId('opening-member-picks')).toContainText('DrillMate');
   // The recorder's actual selection anchors the comparison at the top.
-  await expect(page2.getByTestId('opening-member-recorder')).toContainText('DrillOwner');
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('recorded keep');
-  // The eye icon opens the whole-hand preview (6 large cards); click-out closes.
+  // Uploader + you sit side by side at the top; each is a single 6-card hand
+  // with the 2 resourced lifted + colored vs your picks.
+  await expect(page2.getByTestId('opening-member-recorder')).toContainText('DrillOwner');
+  await expect(page2.getByTestId('opening-member-you')).toContainText('You');
+  await expect(page2.getByTestId('opening-member-recorder').locator('img[alt]')).toHaveCount(6);
+  await expect(page2.getByTestId('opening-member-recorder').getByTestId('opening-member-pick')).toHaveCount(2);
+  // The eye opens the full-size hand; click-out closes.
   await page2.getByTestId('opening-member-recorder').getByTestId('opening-member-view').click();
   await expect(page2.getByTestId('opening-hand-preview')).toBeVisible();
-  await expect(page2.getByTestId('opening-hand-preview')).toContainText('DrillOwner');
   await expect(page2.getByTestId('opening-hand-preview').locator('img[alt]')).toHaveCount(6);
   await page2.getByTestId('opening-hand-preview-close').click();
   await expect(page2.getByTestId('opening-hand-preview')).toHaveCount(0);
@@ -400,5 +401,5 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   // Per-member picks show BOTH resourced cards even in the fork (keep answer
   // vs recorded mulligan) — the source-hand resolution finds the right hand.
   await page2.getByTestId('opening-member-picks-toggle').click();
-  await expect(page2.getByTestId('opening-member-resourced').locator('button[aria-label]')).toHaveCount(2);
+  await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-pick')).toHaveCount(2);
 });

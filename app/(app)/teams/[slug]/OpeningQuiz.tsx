@@ -41,6 +41,7 @@ interface ResponseView {
   name: string | null;
   decision: 'keep' | 'mulligan';
   resourced: string[];
+  isMine: boolean;
 }
 interface Reveal {
   decision: 'keep' | 'mulligan';
@@ -616,12 +617,21 @@ function sameHand(d: Detail): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
-// Per-member RESOURCE SUMMARY (B221): each participating teammate's final
-// selection as its own little view — the two cards they resourced and the
-// four they kept. Their source hand is deterministic from THEIR decision
-// (keep → the dealt hand, mulligan → the redraw), matching what they picked
-// from; the server validated the picks against it. Collapsed by default so
-// solo reveals stay compact.
+// Per-member RESOURCE SUMMARY (B221): each participant's opening as ONE hand
+// of six, with the two cards they resourced lifted up and colored by how they
+// match YOUR picks (green = you both took it, yellow = they took it and you
+// didn't, cyan = it's your own pick). Layout: the uploader and you side by
+// side up top (the two anchors), the rest of the team in a grid below.
+interface MemberRecord {
+  key: string;
+  name: string | null;
+  decision: 'keep' | 'mulligan';
+  hand: QuizCardRef[]; // the full six they picked from
+  resourcedIdx: Set<number>; // which of the six were resourced
+  verdictByIdx: Map<number, PickVerdict>; // color per resourced card, vs your picks
+  tone: 'recorder' | 'viewer' | 'other';
+}
+
 function MemberPicks({
   responses,
   dealtHand,
@@ -631,56 +641,54 @@ function MemberPicks({
   responses: ResponseView[];
   dealtHand: QuizCardRef[];
   keptHand: QuizCardRef[];
-  // The original player's actual selection — the comparison anchor at the top.
   recorder: { name: string | null; decision: 'keep' | 'mulligan'; resourced: QuizCardRef[] };
 }) {
   const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState<MemberRecord | null>(null);
   if (responses.length === 0) return null;
 
-  // The recorder kept `keptHand`; split it into what they resourced vs held.
-  const recResourcedIds = recorder.resourced.map((c) => c.id);
-  const recResourced: QuizCardRef[] = [];
-  const recKept: QuizCardRef[] = [];
-  {
-    const pool = [...recResourcedIds];
-    for (const c of keptHand) {
-      const at = pool.indexOf(c.id);
-      if (at >= 0) { pool.splice(at, 1); recResourced.push(c); } else { recKept.push(c); }
-    }
-  }
-
   const holdsBoth = (hand: QuizCardRef[], picks: string[]) => {
     const pool = hand.map((c) => c.id);
-    for (const id of picks) {
-      const at = pool.indexOf(id);
-      if (at < 0) return false;
-      pool.splice(at, 1);
-    }
+    for (const id of picks) { const at = pool.indexOf(id); if (at < 0) return false; pool.splice(at, 1); }
     return true;
   };
-  const split = (r: ResponseView) => {
-    // The hand they picked from: normally decision-implied (keep → dealt,
-    // mulligan → redraw), but a legacy keep-answer sourced from the redraw —
-    // so use whichever hand actually contains both picks.
-    const primary = r.decision === 'keep' ? dealtHand : keptHand;
-    const other = r.decision === 'keep' ? keptHand : dealtHand;
-    const source = holdsBoth(primary, r.resourced) ? primary : holdsBoth(other, r.resourced) ? other : primary;
-    const pool = [...r.resourced];
-    const resourced: QuizCardRef[] = [];
-    const kept: QuizCardRef[] = [];
-    for (const c of source) {
-      const at = pool.indexOf(c.id);
-      if (at >= 0) { pool.splice(at, 1); resourced.push(c); } else { kept.push(c); }
-    }
-    return { resourced, kept };
+  // The six they picked from — decision-implied, with a legacy fallback.
+  const sourceHand = (decision: 'keep' | 'mulligan', picks: string[]) => {
+    const primary = decision === 'keep' ? dealtHand : keptHand;
+    const other = decision === 'keep' ? keptHand : dealtHand;
+    return holdsBoth(primary, picks) ? primary : holdsBoth(other, picks) ? other : primary;
+  };
+  const resourcedIndices = (hand: QuizCardRef[], picks: string[]) => {
+    const pool = [...picks];
+    const set = new Set<number>();
+    hand.forEach((c, i) => { const at = pool.indexOf(c.id); if (at >= 0) { pool.splice(at, 1); set.add(i); } });
+    return set;
   };
 
-  // Normalized records — the recorder first (the reference), then responders.
-  const records: MemberRecord[] = [
-    { key: '__recorder__', name: recorder.name, decision: recorder.decision, resourced: recResourced, kept: recKept, verdict: 'match', isRecorder: true },
-    ...responses.map((r) => { const sp = split(r); return { key: r.userId, name: r.name, decision: r.decision, resourced: sp.resourced, kept: sp.kept, verdict: 'mine' as const, isRecorder: false }; }),
-  ];
+  // Your picks are the comparison reference. If you didn't answer (you're the
+  // uploader), the recorder's own picks are the reference instead.
+  const mine = responses.find((r) => r.isMine);
+  const referencePicks = mine?.resourced ?? recorder.resourced.map((c) => c.id);
+
+  const buildVerdicts = (hand: QuizCardRef[], idx: Set<number>, tone: MemberRecord['tone']) => {
+    const map = new Map<number, PickVerdict>();
+    if (tone === 'viewer') { idx.forEach((i) => map.set(i, 'mine')); return map; }
+    const pool = [...referencePicks];
+    [...idx].sort((a, b) => a - b).forEach((i) => {
+      const at = pool.indexOf(hand[i].id);
+      if (at >= 0) { pool.splice(at, 1); map.set(i, 'match'); } else { map.set(i, 'theirs'); }
+    });
+    return map;
+  };
+
+  const makeRecord = (key: string, name: string | null, decision: 'keep' | 'mulligan', picks: string[], hand: QuizCardRef[], tone: MemberRecord['tone']): MemberRecord => {
+    const idx = resourcedIndices(hand, picks);
+    return { key, name, decision, hand, resourcedIdx: idx, verdictByIdx: buildVerdicts(hand, idx, tone), tone };
+  };
+
+  const recorderRec = makeRecord('__recorder__', recorder.name, recorder.decision, recorder.resourced.map((c) => c.id), keptHand, 'recorder');
+  const viewerRec = mine ? makeRecord(mine.userId, mine.name, mine.decision, mine.resourced, sourceHand(mine.decision, mine.resourced), 'viewer') : null;
+  const others = responses.filter((r) => !r.isMine).map((r) => makeRecord(r.userId, r.name, r.decision, r.resourced, sourceHand(r.decision, r.resourced), 'other'));
 
   return (
     <div data-testid="opening-member-picks" style={{ marginTop: 12, textAlign: 'left' }}>
@@ -697,9 +705,19 @@ function MemberPicks({
       </button>
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-          {records.map((rec) => (
-            <MemberRow key={rec.key} rec={rec} onView={() => setViewing(rec)} />
-          ))}
+          {/* The two anchors: the uploader and you, side by side. */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} grow />
+            {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} grow />}
+          </div>
+          {/* The rest of the team. */}
+          {others.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12 }}>
+              {others.map((rec) => (
+                <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
+              ))}
+            </div>
+          )}
         </div>
       )}
       {viewing && <HandPreview rec={viewing} onClose={() => setViewing(null)} />}
@@ -707,38 +725,29 @@ function MemberPicks({
   );
 }
 
-interface MemberRecord {
-  key: string;
-  name: string | null;
-  decision: 'keep' | 'mulligan';
-  resourced: QuizCardRef[];
-  kept: QuizCardRef[];
-  verdict: PickVerdict;
-  isRecorder: boolean;
-}
-
-// One member's row. Hovering ANYWHERE on it previews their WHOLE hand large
-// (not the individual card) — that's the whole point of the per-member view.
-function MemberRow({ rec, onView }: { rec: MemberRecord; onView: () => void }) {
-  const style: React.CSSProperties = rec.isRecorder
-    ? { display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center', padding: '8px 10px', background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)', borderRadius: 8 }
-    : { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c', borderRadius: 8 };
+function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => void; grow?: boolean }) {
+  const tint = rec.tone === 'recorder'
+    ? { background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)' }
+    : rec.tone === 'viewer'
+      ? { background: 'rgba(102,229,255,0.06)', border: '1px solid rgba(102,229,255,0.35)' }
+      : { background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c' };
+  const suffix = rec.tone === 'recorder' ? `· recorded ${rec.decision}` : `· ${rec.decision}`;
+  const nameText = rec.tone === 'viewer' ? 'You' : rec.name ?? (rec.tone === 'recorder' ? 'Recorder' : 'Teammate');
   return (
-    <div data-testid={rec.isRecorder ? 'opening-member-recorder' : undefined} style={style}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: rec.isRecorder ? 'center' : 'stretch' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
-          {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}{' '}
-          <span style={{ color: rec.isRecorder ? '#6bd968' : '#6c7588', fontWeight: rec.isRecorder ? 700 : 400 }}>
-            {rec.isRecorder ? `· recorded ${rec.decision}` : `· ${rec.decision}`}
-          </span>
+    <div
+      data-testid={rec.tone === 'recorder' ? 'opening-member-recorder' : rec.tone === 'viewer' ? 'opening-member-you' : undefined}
+      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(grow ? { flex: '1 1 260px', minWidth: 0 } : {}) }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {nameText} <span style={{ color: rec.tone === 'recorder' ? '#6bd968' : rec.tone === 'viewer' ? '#66E5FF' : '#6c7588', fontWeight: rec.tone === 'other' ? 400 : 700 }}>{suffix}</span>
         </span>
-        {/* Click to enlarge — an eye rather than a jumpy hover preview. */}
         <button
           type="button"
           data-testid="opening-member-view"
-          aria-label={`View ${rec.name ?? 'this'} full size`}
+          aria-label={`View ${nameText} full size`}
           onClick={onView}
-          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, background: 'transparent', border: 'none', color: '#6c7588', cursor: 'pointer', padding: 0 }}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, background: 'transparent', border: 'none', color: '#6c7588', cursor: 'pointer', padding: 0, flexShrink: 0 }}
           onMouseEnter={(e) => { e.currentTarget.style.color = '#e6e6e6'; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = '#6c7588'; }}
         >
@@ -747,32 +756,32 @@ function MemberRow({ rec, onView }: { rec: MemberRecord; onView: () => void }) {
           </svg>
         </button>
       </div>
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: rec.isRecorder ? 'center' : 'flex-start' }}>
-        <MiniHand label="Resourced" cards={rec.resourced} verdict={rec.verdict} testId={rec.isRecorder ? undefined : 'opening-member-resourced'} />
-        <MiniHand label="In hand" cards={rec.kept} />
-      </div>
+      <TeamHand rec={rec} width={50} overlap={26} />
     </div>
   );
 }
 
-// A tiny labeled row of cards. Per-card preview is OFF here (noPreview) — the
-// parent row previews the whole hand instead.
-function MiniHand({ label, cards, verdict, testId }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; testId?: string }) {
-  if (cards.length === 0) return null;
+// One hand of six, resourced cards lifted and colored (verdict) vs your picks.
+function TeamHand({ rec, width, overlap }: { rec: MemberRecord; width: number; overlap: number }) {
   return (
-    <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588' }}>{label}</span>
-      <HandRow cardWidth={44} overlap={22}>
-        {cards.map((c, i) => (
-          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} noPreview />
-        ))}
-      </HandRow>
+    <div style={{ display: 'flex', alignItems: 'flex-end', paddingTop: 20, justifyContent: 'center' }}>
+      {rec.hand.map((c, i) => {
+        const isR = rec.resourcedIdx.has(i);
+        return (
+          <div
+            key={`${c.id}-${i}`}
+            data-testid={isR ? 'opening-member-pick' : undefined}
+            style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-16px)' : 'none' }}
+          >
+            <QuizCard card={c} width={width} verdict={rec.verdictByIdx.get(i)} noPreview />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// The whole-hand preview: hovering a member's row floats their FULL selection
-// large — Resourced + In hand at readable size — centered on screen.
+// The full-size view (eye click): the same six-card hand, large.
 function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -780,28 +789,7 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   if (typeof document === 'undefined') return null;
-  const bigCard = (c: QuizCardRef, verdict?: PickVerdict) => {
-    const url = cardImageUrl({ set: c.set, number: c.number });
-    const color = verdict ? VERDICT_STYLE[verdict].color : null;
-    return (
-      <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-        {url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={c.name ?? c.id} style={{ width: 118, aspectRatio: '1/1.4', objectFit: 'cover', borderRadius: 9, border: color ? `2px solid ${color}` : '1px solid rgba(255,255,255,0.14)', boxShadow: color ? `0 0 12px 2px ${color}80` : 'none', display: 'block' }} />
-        ) : (
-          <div style={{ width: 118, aspectRatio: '1/1.4', borderRadius: 9, background: '#101720', color: '#8a93a3', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6, textAlign: 'center' }}>{c.name ?? c.id}</div>
-        )}
-      </div>
-    );
-  };
-  const group = (label: string, cards: QuizCardRef[], verdict?: PickVerdict) => (
-    cards.length === 0 ? null : (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', textAlign: 'center' }}>{label}</span>
-        <div style={{ display: 'flex', gap: 8 }}>{cards.map((c) => bigCard(c, verdict))}</div>
-      </div>
-    )
-  );
+  const nameText = rec.tone === 'viewer' ? 'You' : rec.name ?? (rec.tone === 'recorder' ? 'Recorder' : 'Teammate');
   return createPortal(
     <div
       data-testid="opening-hand-preview"
@@ -819,12 +807,11 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
         </button>
         <div style={{ fontSize: 14, fontWeight: 800, color: '#e6ebf2', textAlign: 'center', padding: '0 24px' }}>
-          {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}
-          <span style={{ color: rec.isRecorder ? '#6bd968' : '#a0a8b8', fontWeight: 600 }}> · {rec.isRecorder ? `recorded ${rec.decision}` : rec.decision}</span>
+          {nameText}
+          <span style={{ color: rec.tone === 'recorder' ? '#6bd968' : rec.tone === 'viewer' ? '#66E5FF' : '#a0a8b8', fontWeight: 600 }}> · {rec.tone === 'recorder' ? `recorded ${rec.decision}` : rec.decision}</span>
         </div>
-        <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', justifyContent: 'center', flexWrap: 'wrap' }}>
-          {group('Resourced', rec.resourced, rec.verdict)}
-          {group('In hand', rec.kept)}
+        <div style={{ overflowX: 'auto', maxWidth: '92vw' }}>
+          <TeamHand rec={rec} width={110} overlap={40} />
         </div>
       </div>
     </div>,

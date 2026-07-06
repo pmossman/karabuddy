@@ -43,6 +43,7 @@ export interface OpeningResponseView {
   decision: 'keep' | 'mulligan';
   resourced: string[];
   createdAt: string;
+  isMine: boolean; // this is the viewer's own response
 }
 
 const cardRef = (id: string, byId: Map<string, any>): OpeningCardRef => {
@@ -123,6 +124,7 @@ export async function visibleResponses(
       decision: r.decision as 'keep' | 'mulligan',
       resourced: (r.resourced as string[]) ?? [],
       createdAt: r.createdAt.toISOString(),
+      isMine: r.userId === viewerId,
     }));
 }
 
