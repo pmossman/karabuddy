@@ -141,6 +141,9 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-member-picks')).toContainText('Resourced');
   await expect(page2.getByTestId('opening-member-picks')).toContainText('In hand');
   await expect(page2.getByTestId('opening-member-picks')).toContainText('DrillMate');
+  // The recorder's actual selection anchors the comparison at the top.
+  await expect(page2.getByTestId('opening-member-recorder')).toContainText('DrillOwner');
+  await expect(page2.getByTestId('opening-member-recorder')).toContainText('recorded keep');
   await page2.getByTestId('opening-member-picks-toggle').click(); // collapse again
 
   // The resource diff is painted on the hand, each card self-labeled:

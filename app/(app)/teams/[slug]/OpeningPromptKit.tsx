@@ -190,7 +190,6 @@ export function QuizCard({
   selected,
   selectable,
   verdict,
-  dimmed,
   onClick,
   width = 104,
   testId,
@@ -199,8 +198,6 @@ export function QuizCard({
   selected?: boolean;
   selectable?: boolean;
   verdict?: PickVerdict;
-  // Whole-card gray-out with no label — the "hand you'd have kept" timeline.
-  dimmed?: boolean;
   onClick?: () => void;
   width?: number;
   testId?: string;
@@ -208,7 +205,6 @@ export function QuizCard({
   const url = cardImageUrl({ set: card.set, number: card.number });
   const { show, anchor, handlers } = useCardPreview();
   const v = verdict ? VERDICT_STYLE[verdict] : null;
-  const dark = !!dimmed;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
       {/* NOT the disabled attribute — a disabled button swallows the hover /
@@ -227,7 +223,7 @@ export function QuizCard({
           background: 'transparent',
           // forceteki selectedCardBorderStyle: cyan ring when selected;
           // verdict colors take over on the reveal.
-          border: v ? `2px solid ${v.color}` : dimmed ? '2px solid #4a5361' : selected ? '2px solid #66E5FF' : '2px solid transparent',
+          border: v ? `2px solid ${v.color}` : selected ? '2px solid #66E5FF' : '2px solid transparent',
           borderRadius: 10,
           boxShadow: v ? `0 0 11px 3px ${v.color}b0` : selected ? '0 0 9px 2px rgba(102,229,255,0.55)' : 'none',
           cursor: selectable ? 'pointer' : 'default',
@@ -243,7 +239,7 @@ export function QuizCard({
             alt={card.name ?? card.id}
             // Background + border so a still-loading (or failed) card art
             // reads as a card back, not an invisible hole in the hand.
-            style={{ width, aspectRatio: '1/1.4', objectFit: 'cover', borderRadius: 8, display: 'block', background: '#101720', border: '1px solid rgba(255,255,255,0.12)', boxSizing: 'border-box', filter: dark ? 'brightness(0.45) saturate(0.6)' : 'none' }}
+            style={{ width, aspectRatio: '1/1.4', objectFit: 'cover', borderRadius: 8, display: 'block', background: '#101720', border: '1px solid rgba(255,255,255,0.12)', boxSizing: 'border-box' }}
           />
         ) : (
           <div
@@ -264,18 +260,17 @@ export function QuizCard({
             {card.name ?? card.id}
           </div>
         )}
-        {(v || dimmed) && (
+        {v && (
           <>
             <span
               style={{
                 position: 'absolute',
                 inset: 0,
-                background: dark ? 'rgba(0,0,0,0.35)' : `${v!.color}3d`,
+                background: `${v.color}3d`,
                 borderRadius: 8,
                 pointerEvents: 'none',
               }}
             />
-            {v && (
             <span
               style={{
                 position: 'absolute',
@@ -295,7 +290,6 @@ export function QuizCard({
             >
               {v.label}
             </span>
-            )}
           </>
         )}
       </button>

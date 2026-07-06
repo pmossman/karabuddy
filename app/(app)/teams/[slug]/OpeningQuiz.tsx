@@ -567,10 +567,9 @@ export function OpeningStage({
                 key={`kept-${c.id}-${i}`}
                 card={c}
                 width={compact ? 88 : 92}
-                // YOUR two picks in this world render cyan at full strength —
-                // the rest stays dimmed (the timeline that didn't happen).
+                // YOUR two picks in this world get the cyan ring; the rest of
+                // the hand stays at full brightness (no darkening).
                 verdict={keptWorldPickIdx.has(i) ? 'mine' : undefined}
-                dimmed={!keptWorldPickIdx.has(i)}
               />
             ))}
           </HandRow>
@@ -632,13 +631,28 @@ function MemberPicks({
   responses,
   dealtHand,
   keptHand,
+  recorder,
 }: {
   responses: ResponseView[];
   dealtHand: QuizCardRef[];
   keptHand: QuizCardRef[];
+  // The original player's actual selection — the comparison anchor at the top.
+  recorder: { name: string | null; decision: 'keep' | 'mulligan'; resourced: QuizCardRef[] };
 }) {
   const [open, setOpen] = useState(false);
   if (responses.length === 0) return null;
+
+  // The recorder kept `keptHand`; split it into what they resourced vs held.
+  const recResourcedIds = recorder.resourced.map((c) => c.id);
+  const recResourced: QuizCardRef[] = [];
+  const recKept: QuizCardRef[] = [];
+  {
+    const pool = [...recResourcedIds];
+    for (const c of keptHand) {
+      const at = pool.indexOf(c.id);
+      if (at >= 0) { pool.splice(at, 1); recResourced.push(c); } else { recKept.push(c); }
+    }
+  }
 
   const holdsBoth = (hand: QuizCardRef[], picks: string[]) => {
     const pool = hand.map((c) => c.id);
@@ -681,6 +695,15 @@ function MemberPicks({
       </button>
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+          <div data-testid="opening-member-recorder" style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center', padding: '8px 10px', background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)', borderRadius: 8 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
+              {recorder.name ?? 'Recorder'} <span style={{ color: '#6bd968', fontWeight: 700 }}>· recorded {recorder.decision}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'center' }}>
+              <MiniHand label="Resourced" cards={recResourced} verdict="match" />
+              <MiniHand label="In hand" cards={recKept} />
+            </div>
+          </div>
           {responses.map((r) => {
             const { resourced, kept } = split(r);
             return (
@@ -690,7 +713,7 @@ function MemberPicks({
                 </div>
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   <MiniHand label="Resourced" cards={resourced} verdict="mine" testId="opening-member-resourced" />
-                  <MiniHand label="In hand" cards={kept} dimmed />
+                  <MiniHand label="In hand" cards={kept} />
                 </div>
               </div>
             );
@@ -703,14 +726,14 @@ function MemberPicks({
 
 // A tiny labeled row of cards for the per-member summary. Cards keep the
 // hover/long-press full preview (QuizCard's built-in useCardPreview).
-function MiniHand({ label, cards, verdict, dimmed, testId }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; dimmed?: boolean; testId?: string }) {
+function MiniHand({ label, cards, verdict, testId }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; testId?: string }) {
   if (cards.length === 0) return null;
   return (
     <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588' }}>{label}</span>
       <HandRow cardWidth={44} overlap={22}>
         {cards.map((c, i) => (
-          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} dimmed={dimmed} />
+          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} />
         ))}
       </HandRow>
     </div>
@@ -805,7 +828,12 @@ function RevealPanel({
         )}
       </div>
 
-      <MemberPicks responses={reveal.responses} dealtHand={detail.dealtHand} keptHand={detail.keptHand} />
+      <MemberPicks
+        responses={reveal.responses}
+        dealtHand={detail.dealtHand}
+        keptHand={detail.keptHand}
+        recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
+      />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
         <button
