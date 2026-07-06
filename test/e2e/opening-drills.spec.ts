@@ -134,16 +134,14 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(reveal).toContainText('You keep');
   await expect(reveal).toContainText('DrillOwner keep');
   await expect(reveal).toContainText('Team · Keep 1 · Mulligan 0');
-  // Per-member picks: expand → each participant's single 6-card hand.
-  await expect(page2.getByTestId('opening-member-picks-toggle')).toContainText('Team picks · 1');
-  await page2.getByTestId('opening-member-picks-toggle').click();
-  // The recorder's actual selection anchors the comparison at the top.
+  // The result: your hand next to the uploader's, always shown (no toggle).
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('recorded keep');
-  // Uploader + you sit side by side at the top; each is a single 6-card hand
-  // with the 2 resourced lifted + colored vs your picks.
+  // Uploader + you sit side by side; each is a single 6-card hand with the 2
+  // resourced lifted + colored vs your picks.
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('DrillOwner');
   await expect(page2.getByTestId('opening-member-you')).toContainText('You');
   await expect(page2.getByTestId('opening-member-recorder').locator('img[alt]')).toHaveCount(6);
+  await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-pick')).toHaveCount(2);
   await expect(page2.getByTestId('opening-member-recorder').getByTestId('opening-member-pick')).toHaveCount(2);
   // The eye opens the full-size hand; click-out closes.
   await page2.getByTestId('opening-member-recorder').getByTestId('opening-member-view').click();
@@ -151,7 +149,6 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await expect(page2.getByTestId('opening-hand-preview').locator('img[alt]')).toHaveCount(6);
   await page2.getByTestId('opening-hand-preview-close').click();
   await expect(page2.getByTestId('opening-hand-preview')).toHaveCount(0);
-  await page2.getByTestId('opening-member-picks-toggle').click(); // collapse again
 
   // The resource diff is painted on the hand, each card self-labeled:
   // green shared pick, yellow theirs-only, cyan yours-only. No legend.
@@ -390,7 +387,6 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
   // matched-picks claim.
   await expect(page2.getByTestId('opening-reveal')).toContainText('You keep');
   await expect(page2.getByTestId('opening-reveal')).toContainText('ForkOwner mulligan');
-  await expect(page2.getByTestId('opening-reveal')).toContainText('Different mulligan');
   await expect(page2.getByText('Their redraw', { exact: true })).toBeVisible();
   await expect(page2.getByText('Their pick', { exact: true })).toHaveCount(2);
   const keptWorld = page2.getByTestId('opening-kept-world');
@@ -399,6 +395,5 @@ test('the fork: they mulliganed, you kept — both timelines render', async ({ p
 
   // Per-member picks show BOTH resourced cards even in the fork (keep answer
   // vs recorded mulligan) — the source-hand resolution finds the right hand.
-  await page2.getByTestId('opening-member-picks-toggle').click();
   await expect(page2.getByTestId('opening-member-you').getByTestId('opening-member-pick')).toHaveCount(2);
 });

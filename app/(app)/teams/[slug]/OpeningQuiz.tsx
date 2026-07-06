@@ -608,43 +608,6 @@ function picksMapOnto(hand: QuizCardRef[], picks: string[]): boolean {
   return true;
 }
 
-// Which indices of `hand` are resourced (multiset-consuming, dup-safe).
-function resourcedIndexSet(hand: QuizCardRef[], picks: string[]): Set<number> {
-  const pool = [...picks];
-  const set = new Set<number>();
-  hand.forEach((c, i) => { const at = pool.indexOf(c.id); if (at >= 0) { pool.splice(at, 1); set.add(i); } });
-  return set;
-}
-
-// YOUR opening's outcome as one hand of six, resourced lifted + 3-color diff
-// vs the recorder (green = you both took it, cyan = you only, yellow = the
-// recorder only). When you diverged on the mulligan (you kept, they
-// mulliganed) the picks aren't comparable — show your kept hand (cyan picks)
-// and let the fork banner carry the decision mismatch.
-function yourResult(
-  detail: { dealtHand: QuizCardRef[]; keptHand: QuizCardRef[] },
-  yourPicks: string[],
-  recorderPicks: string[],
-): { hand: QuizCardRef[]; resourcedIdx: Set<number>; verdictByIdx: Map<number, PickVerdict>; comparable: boolean } {
-  const comparable = picksMapOnto(detail.keptHand, yourPicks);
-  const hand = comparable ? detail.keptHand : (picksMapOnto(detail.dealtHand, yourPicks) ? detail.dealtHand : detail.keptHand);
-  const yourIdx = resourcedIndexSet(hand, yourPicks);
-  const verdictByIdx = new Map<number, PickVerdict>();
-  const lift = new Set<number>(yourIdx);
-  if (comparable) {
-    const recIdx = resourcedIndexSet(hand, recorderPicks);
-    hand.forEach((_, i) => {
-      const mine = yourIdx.has(i), theirs = recIdx.has(i);
-      if (mine && theirs) verdictByIdx.set(i, 'match');
-      else if (mine) verdictByIdx.set(i, 'mine');
-      else if (theirs) { verdictByIdx.set(i, 'theirs'); lift.add(i); }
-    });
-  } else {
-    yourIdx.forEach((i) => verdictByIdx.set(i, 'mine'));
-  }
-  return { hand, resourcedIdx: lift, verdictByIdx, comparable };
-}
-
 // On a keep, dealt === kept, so the stage-2 helper copy shouldn't spoil
 // anything: only call out "they actually mulliganed" when the hands differ.
 // (Comparing by multiset of ids — same rule the server validates with.)
@@ -674,22 +637,24 @@ function MemberPicks({
   dealtHand,
   keptHand,
   recorder,
+  viewerResponse,
 }: {
   responses: ResponseView[];
   dealtHand: QuizCardRef[];
   keptHand: QuizCardRef[];
   recorder: { name: string | null; decision: 'keep' | 'mulligan'; resourced: QuizCardRef[] };
+  // The viewer's EFFECTIVE answer (practice run overrides the stored one), or
+  // null when the viewer is the uploader and never answered.
+  viewerResponse: { decision: 'keep' | 'mulligan'; resourced: string[] } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState<MemberRecord | null>(null);
-  if (responses.length === 0) return null;
 
   const holdsBoth = (hand: QuizCardRef[], picks: string[]) => {
     const pool = hand.map((c) => c.id);
     for (const id of picks) { const at = pool.indexOf(id); if (at < 0) return false; pool.splice(at, 1); }
     return true;
   };
-  // The six they picked from — decision-implied, with a legacy fallback.
   const sourceHand = (decision: 'keep' | 'mulligan', picks: string[]) => {
     const primary = decision === 'keep' ? dealtHand : keptHand;
     const other = decision === 'keep' ? keptHand : dealtHand;
@@ -702,10 +667,8 @@ function MemberPicks({
     return set;
   };
 
-  // Your picks are the comparison reference. If you didn't answer (you're the
-  // uploader), the recorder's own picks are the reference instead.
-  const mine = responses.find((r) => r.isMine);
-  const referencePicks = mine?.resourced ?? recorder.resourced.map((c) => c.id);
+  // Your picks are the comparison reference; the uploader falls back to their own.
+  const referencePicks = viewerResponse?.resourced ?? recorder.resourced.map((c) => c.id);
 
   const buildVerdicts = (hand: QuizCardRef[], idx: Set<number>, tone: MemberRecord['tone']) => {
     const map = new Map<number, PickVerdict>();
@@ -724,32 +687,44 @@ function MemberPicks({
   };
 
   const recorderRec = makeRecord('__recorder__', recorder.name, recorder.decision, recorder.resourced.map((c) => c.id), keptHand, 'recorder');
-  const viewerRec = mine ? makeRecord(mine.userId, mine.name, mine.decision, mine.resourced, sourceHand(mine.decision, mine.resourced), 'viewer') : null;
+  const viewerRec = viewerResponse ? makeRecord('__you__', 'You', viewerResponse.decision, viewerResponse.resourced, sourceHand(viewerResponse.decision, viewerResponse.resourced), 'viewer') : null;
+  // Everyone else — the viewer's own stored response is already shown as the
+  // "you" block above, so drop it here.
   const others = responses.filter((r) => !r.isMine).map((r) => makeRecord(r.userId, r.name, r.decision, r.resourced, sourceHand(r.decision, r.resourced), 'other'));
 
+  const decisionMatch = viewerRec ? viewerRec.decision === recorderRec.decision : null;
+
   return (
-    <div data-testid="opening-member-picks" style={{ marginTop: 12, textAlign: 'left' }}>
-      <button
-        type="button"
-        data-testid="opening-member-picks-toggle"
-        onClick={() => setOpen((v) => !v)}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: '#8a93a3', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', padding: 0 }}
-      >
-        Team picks · {responses.length}
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms' }}>
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
-      {open && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-          {/* The two anchors: the uploader and you, side by side. */}
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} grow />
-            {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} grow />}
-          </div>
-          {/* The rest of the team. */}
-          {others.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12 }}>
+    <div data-testid="opening-member-picks" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* THE RESULT: your full end state next to the uploader's, side by side. */}
+      {decisionMatch !== null && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#66E5FF'}`, color: decisionMatch ? '#6bd968' : '#66E5FF' }}>You {viewerRec!.decision}</span>
+          <span style={{ color: decisionMatch ? '#6bd968' : '#ff7b72', fontWeight: 800, fontSize: 13 }}>{decisionMatch ? '✓' : '✗'}</span>
+          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#ff7b72'}`, color: decisionMatch ? '#6bd968' : '#ff7b72' }}>{recorderRec.name ?? 'Recorder'} {recorderRec.decision}</span>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+        {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} grow />}
+        <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} grow />
+      </div>
+
+      {/* The rest of the team, behind a toggle. */}
+      {others.length > 0 && (
+        <div>
+          <button
+            type="button"
+            data-testid="opening-member-picks-toggle"
+            onClick={() => setOpen((v) => !v)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: '#8a93a3', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', padding: 0 }}
+          >
+            Rest of the team · {others.length}
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms' }}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {open && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12, marginTop: 8 }}>
               {others.map((rec) => (
                 <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
               ))}
@@ -857,44 +832,6 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
   );
 }
 
-// The reveal's instant read: a keep/mulligan verdict chip pair + YOUR hand of
-// six with the resource diff painted on it (green both / cyan you / yellow
-// them). The mulligan mismatch (you kept, they mulliganed) shows as a red
-// decision chip and a fork note — the picks live on different hands.
-function ResultSummary({
-  detail,
-  mine,
-  recorderDecision,
-  recorderPicks,
-  recorderName,
-}: {
-  detail: Detail;
-  mine: { decision: 'keep' | 'mulligan'; resourced: string[] };
-  recorderDecision: 'keep' | 'mulligan';
-  recorderPicks: string[];
-  recorderName: string;
-}) {
-  const res = yourResult(detail, mine.resourced, recorderPicks);
-  const decisionMatch = mine.decision === recorderDecision;
-  const rec: MemberRecord = { key: 'you', name: 'You', decision: mine.decision, hand: res.hand, resourcedIdx: res.resourcedIdx, verdictByIdx: res.verdictByIdx, tone: 'viewer' };
-  const chip = (label: string, on: boolean, color: string) => (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, background: on ? `${color}22` : 'transparent', border: `1px solid ${on ? color : '#2e333c'}`, color: on ? color : '#8a93a3' }}>{label}</span>
-  );
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {chip(`You ${mine.decision}`, true, decisionMatch ? '#00E25B' : '#66E5FF')}
-        <span style={{ color: decisionMatch ? '#6bd968' : '#ff7b72', fontWeight: 800, fontSize: 13 }}>{decisionMatch ? '✓' : '✗'}</span>
-        {chip(`${recorderName} ${recorderDecision}`, true, decisionMatch ? '#00E25B' : '#ff7b72')}
-      </div>
-      <TeamHand rec={rec} width={62} overlap={30} mini />
-      {!res.comparable && (
-        <div style={{ fontSize: 11.5, color: '#ff7b72', fontWeight: 600 }}>Different mulligan — your kept hand shown; their redraw is in Team picks.</div>
-      )}
-    </div>
-  );
-}
-
 function RevealPanel({
   teamSlug,
   detail,
@@ -923,8 +860,6 @@ function RevealPanel({
   onWatch: () => void;
 }) {
   const mine = response;
-  const theirPicks = reveal.resourced.map((c) => c.id);
-  const who = reveal.recorder.name ?? 'Your teammate';
   const keeps = reveal.responses.filter((r) => r.decision === 'keep').length;
   const mulls = reveal.responses.length - keeps;
 
@@ -936,27 +871,22 @@ function RevealPanel({
         </p>
       )}
 
-      {/* The result AT A GLANCE — your hand with the diff painted on, plus the
-          keep/mulligan verdict. No prose needed. Owner (no answer) just sees
-          the recorded pick. */}
-      {mine ? (
-        <ResultSummary detail={detail} mine={mine} recorderDecision={reveal.decision} recorderPicks={theirPicks} recorderName={who} />
-      ) : (
-        <div style={{ ...promptTitleStyle }}>{who} {reveal.decision === 'keep' ? 'kept this hand' : 'mulliganed'}</div>
-      )}
+      {/* THE RESULT: your full end state next to the uploader's, side by side —
+          reads at a glance, no prose. The uploader (no answer) just sees the
+          recorded hand. */}
+      <MemberPicks
+        responses={reveal.responses}
+        dealtHand={detail.dealtHand}
+        keptHand={detail.keptHand}
+        recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
+        viewerResponse={mine}
+      />
 
       {reveal.responses.length > 0 && (
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', textAlign: 'center', marginTop: 10 }}>
           Team · Keep {keeps} · Mulligan {mulls}
         </div>
       )}
-
-      <MemberPicks
-        responses={reveal.responses}
-        dealtHand={detail.dealtHand}
-        keptHand={detail.keptHand}
-        recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
-      />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
         <button
