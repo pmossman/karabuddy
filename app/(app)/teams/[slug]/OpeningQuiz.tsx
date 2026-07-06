@@ -451,22 +451,33 @@ function MemberPicks({
   // colored by whether YOU kept them too. Comparison only holds when both
   // picked from the same six.
   const referencePicks = viewerResponse?.resourced ?? recorder.resourced.map((c) => c.id);
+  const recorderCut = recorder.resourced.map((c) => c.id);
   const viewerHand = viewerResponse ? sourceHand(viewerResponse.decision, viewerResponse.resourced) : keptHand;
-  const sameHandIds = (hand: QuizCardRef[]) => {
-    const a = hand.map((c) => c.id).slice().sort();
-    const b = viewerHand.map((c) => c.id).slice().sort();
-    return a.length === b.length && a.every((x, i) => x === b[i]);
+  const sameIds = (a: QuizCardRef[], b: QuizCardRef[]) => {
+    const x = a.map((c) => c.id).slice().sort();
+    const y = b.map((c) => c.id).slice().sort();
+    return x.length === y.length && x.every((v, i) => v === y[i]);
   };
 
-  // KEPT-card colors: green = you both kept it, yellow = they kept it but you
-  // cut it, cyan = your own kept cards. Resourced indices get no color (muted).
+  // KEPT-card colors. YOUR hand is measured against the RECORDER (the ground
+  // truth): green = they kept it too, cyan = only you kept it (they cut it).
+  // Everyone ELSE is measured against YOU: green = you both kept it, yellow =
+  // they kept it but you cut it. Resourced cards get no color (muted).
   const buildVerdicts = (hand: QuizCardRef[], resourcedIdx: Set<number>, tone: MemberRecord['tone']) => {
     const map = new Map<number, PickVerdict>();
     if (tone === 'viewer') {
-      hand.forEach((_, i) => { if (!resourcedIdx.has(i)) map.set(i, 'mine'); });
+      const cut = [...recorderCut]; // what the RECORDER resourced
+      const comparable = sameIds(hand, keptHand); // your hand == recorder's hand
+      hand.forEach((c, i) => {
+        if (resourcedIdx.has(i)) return; // your cut — muted
+        if (!comparable) { map.set(i, 'mine'); return; } // fork: your own world
+        const at = cut.indexOf(c.id);
+        if (at >= 0) { cut.splice(at, 1); map.set(i, 'mine'); } // you kept, they cut → cyan
+        else { map.set(i, 'match'); } // you both kept → green
+      });
       return map;
     }
-    if (!sameHandIds(hand)) return map; // fork: different hands, no kept diff
+    if (!sameIds(hand, viewerHand)) return map; // fork: different hands, no kept diff
     const youCut = [...referencePicks]; // the cards YOU resourced
     hand.forEach((c, i) => {
       if (resourcedIdx.has(i)) return; // they cut it — muted, no color
