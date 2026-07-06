@@ -191,8 +191,12 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // Finish → session summary → back to setup, where the item is re-filed
   // under Answered with its badges.
   await page2.getByTestId('opening-next').click(); // "Finish session" (last item)
-  await expect(page2.getByTestId('opening-summary')).toContainText('Session complete');
-  await expect(page2.getByTestId('opening-summary')).toContainText('1 opening · 1 matched');
+  const summary = page2.getByTestId('opening-summary');
+  await expect(summary).toContainText('Session complete');
+  // A different second pick = a "different take", not a wrong answer — the
+  // summary is neutral (no "matched"/score, no ✓/✗).
+  await expect(summary).toContainText('1 opening · 1 different take');
+  await expect(summary).not.toContainText('matched');
   await page2.getByTestId('opening-new-session').click();
   await expect(page2.getByTestId('opening-match-count')).toContainText('0 unanswered openings');
   const row = page2.getByTestId('opening-row');

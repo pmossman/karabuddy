@@ -83,8 +83,9 @@ export function OpeningStage({
   viewerName: string;
   // Whether the session has another opening after this one (Next vs Finish).
   hasNext: boolean;
-  // Fired once when a response lands: (slug, agreedWithRecordedDecision).
-  onAnswered: (slug: string, agreed: boolean) => void;
+  // Fired once when a response lands: (slug, sameTake) — sameTake = the same
+  // opening as the recorder (decision AND resources), not a "correct" flag.
+  onAnswered: (slug: string, sameTake: boolean) => void;
   onNext: () => void;
   // The last-item button label — "Finish session" in a session, "Done" when
   // revisiting a single opening (no session framing).
@@ -151,7 +152,14 @@ export function OpeningStage({
       if (!j.ok) { setError(j.error || 'submit failed'); return; }
       setDetail(j.data);
       setStage('reveal');
-      if (j.data.reveal) onAnswered(replaySlug, j.data.reveal.decision === myMulligan);
+      if (j.data.reveal) {
+        // "Same take" = the SAME opening, not just the same call: the decision
+        // AND the resources. A different take (either) is the discussion-worthy
+        // signal — not a wrong answer.
+        const recorderPicks = (j.data.reveal.resourced as { id: string }[]).map((c) => c.id);
+        const sameTake = j.data.reveal.decision === myMulligan && multisetEquals(resourced, recorderPicks);
+        onAnswered(replaySlug, sameTake);
+      }
     } catch {
       setError('submit failed');
     } finally {
@@ -528,12 +536,14 @@ function MemberPicks({
 
   return (
     <div data-testid="opening-member-picks" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Verdict chip pair — how your call compared to the uploader's. */}
+      {/* The two calls, stated side by side — no ✓/✗ verdict. The recorder is
+          "what was played", not an answer key; you read whether the calls line
+          up, and the card-agreement badge below carries the detail. */}
       {decisionMatch !== null && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#66E5FF'}`, color: decisionMatch ? '#6bd968' : '#66E5FF' }}>You {viewerRec!.decision}</span>
-          <span style={{ color: decisionMatch ? '#6bd968' : '#ff7b72', fontWeight: 800, fontSize: 13 }}>{decisionMatch ? '✓' : '✗'}</span>
-          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#ff7b72'}`, color: decisionMatch ? '#6bd968' : '#ff7b72' }}>{recorderRec.name ?? 'Recorder'} {recorderRec.decision}</span>
+          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: '1px solid #66E5FF', color: '#66E5FF' }}>You {viewerRec!.decision}</span>
+          <span style={{ color: '#6c7588', fontWeight: 700, fontSize: 12 }}>·</span>
+          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: '1px solid #2e333c', color: '#c8cdd8' }}>{recorderRec.name ?? 'Recorder'} {recorderRec.decision}</span>
         </div>
       )}
 
