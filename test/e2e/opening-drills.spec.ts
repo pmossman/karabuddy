@@ -328,6 +328,50 @@ test('consensus: matching the decision AND both picks earns the green badge', as
 });
 
 
+test('rest of the team: identical answers collapse into one grouped cell', async ({ page, browser }) => {
+  await signInAsTestUser(page, { name: 'GrpOwner', email: 'grp-owner@example.com' });
+  const { slug: teamSlug } = await createTeam(page, 'Group Squad');
+  const { code } = await generateInvite(page, teamSlug);
+  const tok = `kbx_${randomUUID()}`;
+  await claimInstallToken(page, tok);
+  await page.request.post('/api/replays', { data: { installToken: tok, payload: drillPayload(`g-${randomUUID()}`), shareTeamSlugs: [teamSlug] } });
+
+  // Two teammates answer IDENTICALLY (keep + the same two picks).
+  for (const [name, email] of [['Aa Bb', 'grp-a@example.com'], ['Cc Dd', 'grp-c@example.com']]) {
+    const ctx = await browser.newContext();
+    const pg = await ctx.newPage();
+    await signInAsTestUser(pg, { name, email });
+    await pg.goto(`/teams/join?code=${code}`);
+    await pg.waitForURL(new RegExp(`/teams/${teamSlug}`));
+    await pg.goto(`/teams/${teamSlug}?tab=openings`);
+    await pg.getByTestId('opening-begin').click();
+    await pg.getByTestId('opening-keep').click();
+    await pg.getByTestId('opening-pick-1').click();
+    await pg.getByTestId('opening-pick-4').click();
+    await pg.getByTestId('opening-confirm').click();
+  }
+
+  // A third answers differently.
+  const ctx3 = await browser.newContext();
+  const p3 = await ctx3.newPage();
+  await signInAsTestUser(p3, { name: 'Ee Ff', email: 'grp-e@example.com' });
+  await p3.goto(`/teams/join?code=${code}`);
+  await p3.waitForURL(new RegExp(`/teams/${teamSlug}`));
+  await p3.goto(`/teams/${teamSlug}?tab=openings`);
+  await p3.getByTestId('opening-begin').click();
+  await p3.getByTestId('opening-keep').click();
+  await p3.getByTestId('opening-pick-1').click();
+  await p3.getByTestId('opening-pick-3').click();
+  await p3.getByTestId('opening-confirm').click();
+  // p3 sees the rest of the team: the two identical answers as ONE ×2 cell,
+  // and no fourth cell for its own answer.
+  await p3.getByTestId('opening-member-picks-toggle').click();
+  const grouped = p3.getByText('Aa Bb, Cc Dd');
+  await expect(grouped).toBeVisible();
+  await expect(p3.getByText('×2')).toBeVisible();
+});
+
+
 test('the fork: they mulliganed, you kept — both timelines render', async ({ page, browser }) => {
   await signInAsTestUser(page, { name: 'ForkOwner', email: 'fork-owner@example.com' });
   const { slug: teamSlug } = await createTeam(page, 'Fork Squad');

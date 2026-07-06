@@ -400,6 +400,7 @@ function sameHand(d: Detail): boolean {
 interface MemberRecord {
   key: string;
   name: string | null;
+  names?: string[]; // >1 when identical answers are grouped into one cell
   decision: 'keep' | 'mulligan';
   hand: QuizCardRef[]; // the full six they picked from
   resourcedIdx: Set<number>; // which of the six were resourced
@@ -465,7 +466,19 @@ function MemberPicks({
   const viewerRec = viewerResponse ? makeRecord('__you__', 'You', viewerResponse.decision, viewerResponse.resourced, sourceHand(viewerResponse.decision, viewerResponse.resourced), 'viewer') : null;
   // Everyone else — the viewer's own stored response is already shown as the
   // "you" block above, so drop it here.
-  const others = responses.filter((r) => !r.isMine).map((r) => makeRecord(r.userId, r.name, r.decision, r.resourced, sourceHand(r.decision, r.resourced), 'other'));
+  const groups = new Map<string, { rep: ResponseView; names: string[] }>();
+  for (const r of responses) {
+    if (r.isMine) continue;
+    const key = `${r.decision}|${[...r.resourced].sort().join(',')}`;
+    const g = groups.get(key);
+    if (g) g.names.push(r.name ?? 'Teammate');
+    else groups.set(key, { rep: r, names: [r.name ?? 'Teammate'] });
+  }
+  const others = [...groups.values()].map(({ rep, names }) => {
+    const rec = makeRecord(rep.userId, names[0], rep.decision, rep.resourced, sourceHand(rep.decision, rep.resourced), 'other');
+    rec.names = names;
+    return rec;
+  });
 
   const decisionMatch = viewerRec ? viewerRec.decision === recorderRec.decision : null;
 
@@ -520,14 +533,18 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
       ? { background: 'rgba(102,229,255,0.06)', border: '1px solid rgba(102,229,255,0.35)' }
       : { background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c' };
   const suffix = rec.tone === 'recorder' ? `· recorded ${rec.decision}` : `· ${rec.decision}`;
-  const nameText = rec.tone === 'viewer' ? 'You' : rec.name ?? (rec.tone === 'recorder' ? 'Recorder' : 'Teammate');
+  const grouped = (rec.names?.length ?? 1) > 1;
+  const nameText = rec.tone === 'viewer' ? 'You' : grouped ? rec.names!.join(', ') : rec.name ?? (rec.tone === 'recorder' ? 'Recorder' : 'Teammate');
   return (
     <div
       data-testid={rec.tone === 'recorder' ? 'opening-member-recorder' : rec.tone === 'viewer' ? 'opening-member-you' : undefined}
       style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(grow ? { flex: '1 1 460px', minWidth: 0 } : {}) }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {grouped && (
+          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#e6ebf2', background: 'rgba(255,255,255,0.08)', borderRadius: 999, padding: '1px 8px' }}>×{rec.names!.length}</span>
+        )}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={grouped ? rec.names!.join(', ') : undefined}>
           {nameText} <span style={{ color: rec.tone === 'recorder' ? '#6bd968' : rec.tone === 'viewer' ? '#66E5FF' : '#6c7588', fontWeight: rec.tone === 'other' ? 400 : 700 }}>{suffix}</span>
         </span>
         <button
