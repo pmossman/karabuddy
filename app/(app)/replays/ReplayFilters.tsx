@@ -1130,6 +1130,7 @@ interface SeriesGroup {
   key: string;
   rows: Row[];        // games in play order (createdAt asc)
   isSeries: boolean;  // 2+ games sharing a lobby
+  format: string;     // effective match format (conversion-aware), for the Bo3 label
 }
 
 // B158: group by lobby, then SEGMENT each lobby's games into individual matches
@@ -1150,9 +1151,9 @@ function buildSeriesGroups(rows: Row[]): SeriesGroup[] {
       if (!winners || !r.viewerPlayerId) return null;
       return winners.includes(r.viewerPlayerId);
     };
-    const matches = segmentMatches(ordered, wonOf, ordered[0]?.match?.gamesToWinMode ?? null);
+    const matches = segmentMatches(ordered, wonOf, (r) => r.match?.gamesToWinMode);
     matches.forEach((match, i) => {
-      groups.push({ key: matches.length > 1 ? `${key}#${i}` : key, rows: match, isSeries: match.length > 1 });
+      groups.push({ key: matches.length > 1 ? `${key}#${i}` : key, rows: match.games, isSeries: match.games.length > 1, format: match.format });
     });
   }
   return groups;
@@ -1180,7 +1181,9 @@ function seriesHeadline(group: SeriesGroup): string {
   // B158: "Best of N" from the match FORMAT (the BO3 badge), not the number of
   // games the viewer happens to have — a 2-0 sweep is still "Best of 3", and a
   // viewer missing a game (opponent recorded it) shouldn't read as "Best of 2".
-  const label = bestOfLabel(first?.match?.gamesToWinMode) ?? `Best of ${group.rows.length}`;
+  // B224: the effective (conversion-aware) format, so a converted Bo1→Bo3 reads
+  // "Best of 3", not the recorded-bestOfOne of its first game.
+  const label = bestOfLabel(group.format) ?? `Best of ${group.rows.length}`;
   return `${label} · ${matchup}${rec}`;
 }
 

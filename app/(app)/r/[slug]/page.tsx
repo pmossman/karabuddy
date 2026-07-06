@@ -73,8 +73,8 @@ function currentMatchGames(all: LobbyGame[], currentSlug: string): LobbyGame[] {
     if (!w || !g.ownerPlayerId) return null;
     return w.includes(g.ownerPlayerId);
   };
-  const matches = segmentMatches(mine, wonOf, current.fmt);
-  return matches.find((m) => m.some((g) => g.slug === currentSlug)) ?? mine;
+  const matches = segmentMatches(mine, wonOf, (g) => g.fmt);
+  return matches.find((m) => m.games.some((g) => g.slug === currentSlug))?.games ?? mine;
 }
 
 async function seriesFor(row: { slug: string; match: unknown }, anonymize: boolean) {
