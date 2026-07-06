@@ -415,6 +415,7 @@ function MemberPicks({
   recorder,
   viewerResponse,
   actions,
+  discussion,
 }: {
   responses: ResponseView[];
   dealtHand: QuizCardRef[];
@@ -423,8 +424,10 @@ function MemberPicks({
   // The viewer's EFFECTIVE answer (practice run overrides the stored one), or
   // null when the viewer is the uploader and never answered.
   viewerResponse: { decision: 'keep' | 'mulligan'; resourced: string[] } | null;
-  // The action bar, slotted between the hero comparison and the team grid.
+  // The action bar (between the uploader's pick and the two lower columns).
   actions?: React.ReactNode;
+  // The discussion feed, rendered in the lower-left column.
+  discussion?: React.ReactNode;
 }) {
   const [viewing, setViewing] = useState<MemberRecord | null>(null);
 
@@ -513,9 +516,13 @@ function MemberPicks({
 
   const decisionMatch = viewerRec ? viewerRec.decision === recorderRec.decision : null;
 
+  const label = (t: string) => (
+    <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 8 }}>{t}</div>
+  );
+
   return (
-    <div data-testid="opening-member-picks" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {/* THE RESULT: your full end state next to the uploader's, side by side. */}
+    <div data-testid="opening-member-picks" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Verdict chip pair — how your call compared to the uploader's. */}
       {decisionMatch !== null && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#66E5FF'}`, color: decisionMatch ? '#6bd968' : '#66E5FF' }}>You {viewerRec!.decision}</span>
@@ -523,33 +530,41 @@ function MemberPicks({
           <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#ff7b72'}`, color: decisionMatch ? '#6bd968' : '#ff7b72' }}>{recorderRec.name ?? 'Recorder'} {recorderRec.decision}</span>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} hero />}
-        <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} hero />
-      </div>
+
+      {/* THE ANSWER: the uploader's pick, full width. */}
+      <MemberBlock rec={recorderRec} onView={() => setViewing(recorderRec)} variant="wide" />
 
       {actions}
 
-      {/* The rest of the team — always shown, grouped by identical answer. */}
-      {others.length > 0 && (
-        <div data-testid="opening-rest-of-team">
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', margin: '2px 0 8px' }}>
-            Rest of the team · {others.length}
+      {/* Lower half: discussion on the left, everyone's picks on the right
+          (you first). Stacks single-column on narrow screens. */}
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        {discussion && (
+          <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+            {label('Discussion')}
+            {discussion}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
-            {others.map((rec) => (
-              <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
-            ))}
+        )}
+        {(viewerRec || others.length > 0) && (
+          <div data-testid="opening-rest-of-team" style={{ flex: '1.5 1 460px', minWidth: 0 }}>
+            {label(`Team picks · ${(viewerRec ? 1 : 0) + others.length}`)}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
+              {viewerRec && <MemberBlock rec={viewerRec} onView={() => setViewing(viewerRec)} />}
+              {others.map((rec) => (
+                <MemberBlock key={rec.key} rec={rec} onView={() => setViewing(rec)} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
       {viewing && <HandPreview rec={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
 
-function MemberBlock({ rec, onView, hero }: { rec: MemberRecord; onView: () => void; hero?: boolean }) {
+function MemberBlock({ rec, onView, variant = 'grid' }: { rec: MemberRecord; onView: () => void; variant?: 'wide' | 'grid' }) {
   const compact = useMediaQuery('(max-width: 860px)');
+  const wide = variant === 'wide';
   const tint = rec.tone === 'recorder'
     ? { background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)' }
     : rec.tone === 'viewer'
@@ -561,7 +576,7 @@ function MemberBlock({ rec, onView, hero }: { rec: MemberRecord; onView: () => v
   return (
     <div
       data-testid={rec.tone === 'recorder' ? 'opening-member-recorder' : rec.tone === 'viewer' ? 'opening-member-you' : undefined}
-      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(hero ? { flex: '1 1 300px', minWidth: 0 } : {}) }}
+      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: wide ? '10px 14px' : '8px 10px', borderRadius: 8, width: '100%', minWidth: 0 }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {grouped && (
@@ -584,7 +599,7 @@ function MemberBlock({ rec, onView, hero }: { rec: MemberRecord; onView: () => v
           </svg>
         </button>
       </div>
-      <TeamHand rec={rec} width={hero ? (compact ? 56 : 84) : (compact ? 44 : 56)} spread={compact ? -24 : 6} mini />
+      <TeamHand rec={rec} width={wide ? (compact ? 62 : 116) : (compact ? 44 : 56)} spread={compact ? -24 : (wide ? 8 : 6)} mini />
     </div>
   );
 }
@@ -758,9 +773,9 @@ function RevealPanel({
         </p>
       )}
 
-      {/* Verdict chips → you-vs-uploader hero → action bar → the rest of the
-          team → the discussion. One column, capped width, everything stacks
-          cleanly on mobile. */}
+      {/* Chips → the uploader's pick (full width) → actions → discussion (left)
+          + everyone's picks (right, you first). Capped width; stacks on
+          mobile. */}
       <MemberPicks
         responses={reveal.responses}
         dealtHand={detail.dealtHand}
@@ -768,16 +783,17 @@ function RevealPanel({
         recorder={{ name: reveal.recorder.name, decision: reveal.decision, resourced: reveal.resourced }}
         viewerResponse={mine}
         actions={actions}
-      />
-
-      <OpeningDiscussion
-        teamSlug={teamSlug}
-        replaySlug={detail.replaySlug}
-        decisionFrames={[reveal.mulliganFrameIndex, reveal.resourceFrameIndex]}
-        composeFrame={reveal.mulliganFrameIndex}
-        recorder={reveal.recorder}
-        viewerName={viewerName}
-        isOwner={detail.isOwner}
+        discussion={
+          <OpeningDiscussion
+            teamSlug={teamSlug}
+            replaySlug={detail.replaySlug}
+            decisionFrames={[reveal.mulliganFrameIndex, reveal.resourceFrameIndex]}
+            composeFrame={reveal.mulliganFrameIndex}
+            recorder={reveal.recorder}
+            viewerName={viewerName}
+            isOwner={detail.isOwner}
+          />
+        }
       />
     </section>
   );
