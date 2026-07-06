@@ -18,7 +18,7 @@ import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { glowButtonStyle } from '@/app/_components/glowButton';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { multisetContains, multisetEquals } from '@/lib/multiset';
+import { multisetContains, multisetEquals, multisetOverlap } from '@/lib/multiset';
 import { getOrCreateInstallToken } from '@/lib/installToken';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { OpeningWatchModal, prepareWatch } from './OpeningWatchModal';
@@ -508,6 +508,18 @@ function MemberPicks({
 
   const decisionMatch = viewerRec ? viewerRec.decision === recorderRec.decision : null;
 
+  // Card-level agreement: matching the keep/mulligan CALL isn't the same as
+  // agreeing on the opening — you can both keep but resource different cards.
+  // Compare the KEPT sets (hand minus resourced) when both made the same call
+  // on the same six. null = no comparison (uploader viewing / fork).
+  const keptIdsOf = (rec: MemberRecord) => rec.hand.filter((_, i) => !rec.resourcedIdx.has(i)).map((c) => c.id);
+  const cardAgreement = (() => {
+    if (!viewerRec || !decisionMatch || !sameIds(viewerRec.hand, recorderRec.hand)) return null;
+    const vk = keptIdsOf(viewerRec);
+    const shared = multisetOverlap(vk, keptIdsOf(recorderRec));
+    return { shared, total: vk.length };
+  })();
+
   const label = (t: string) => (
     <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 8 }}>{t}</div>
   );
@@ -522,6 +534,25 @@ function MemberPicks({
           <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${decisionMatch ? '#00E25B' : '#ff7b72'}`, color: decisionMatch ? '#6bd968' : '#ff7b72' }}>{recorderRec.name ?? 'Recorder'} {recorderRec.decision}</span>
         </div>
       )}
+
+      {/* Card-level agreement — the same call can hide different keeps. Green
+          only when you kept the exact same cards; amber flags a divergence. */}
+      {cardAgreement && (() => {
+        const full = cardAgreement.shared === cardAgreement.total;
+        const differ = cardAgreement.total - cardAgreement.shared;
+        return (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <span
+              data-testid="opening-card-agreement"
+              style={{ padding: '3px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${full ? '#00E25B' : '#FFD60A'}`, color: full ? '#6bd968' : '#FFD60A', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              {full
+                ? `Same ${cardAgreement.total} cards kept`
+                : `${cardAgreement.shared}/${cardAgreement.total} kept cards agree · differ on ${differ}`}
+            </span>
+          </div>
+        );
+      })()}
       {responses.length > 1 && (() => {
         const keeps = responses.filter((r) => r.decision === 'keep').length;
         return (
@@ -576,7 +607,7 @@ function MemberBlock({ rec, onView, variant = 'grid' }: { rec: MemberRecord; onV
   return (
     <div
       data-testid={rec.tone === 'recorder' ? 'opening-member-recorder' : rec.tone === 'viewer' ? 'opening-member-you' : undefined}
-      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: wide ? '10px 14px' : '8px 10px', borderRadius: 8, width: '100%', minWidth: 0 }}
+      style={{ ...tint, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 4, padding: wide ? '10px 14px' : '8px 10px', borderRadius: 8, width: '100%', minWidth: 0 }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {grouped && (

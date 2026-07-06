@@ -317,6 +317,8 @@ test('consensus: matching the decision AND both picks earns the green badge', as
   await page2.getByTestId('opening-pick-4').click();
   await page2.getByTestId('opening-confirm').click();
   await expect(page2.getByTestId('opening-reveal')).toContainText('You keep');
+  // Matching the call AND both picks = full card agreement: the green badge.
+  await expect(page2.getByTestId('opening-card-agreement')).toContainText('Same 4 cards kept');
   await page2.getByTestId('opening-next').click(); // Finish session
   await page2.getByTestId('opening-new-session').click();
   const row = page2.getByTestId('opening-row');
@@ -367,6 +369,10 @@ test('rest of the team: identical answers collapse into one grouped cell', async
   await expect(p3.getByText('×2')).toBeVisible();
   // The team-decision line reads plainly (3 answered, all kept).
   await expect(p3.getByTestId('opening-reveal')).toContainText('The team kept 3 · mulliganed 0');
+  // p3 kept the same CALL as the recorder but resourced a different card
+  // (pick 3 vs the recorded pick 4) — the amber "cards differ" badge, not
+  // full agreement, is the whole point: same call ≠ same opening.
+  await expect(p3.getByTestId('opening-card-agreement')).toContainText('kept cards agree · differ on 1');
 });
 
 
