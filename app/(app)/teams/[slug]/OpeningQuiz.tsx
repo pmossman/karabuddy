@@ -600,7 +600,7 @@ function MemberBlock({ rec, onView, variant = 'grid' }: { rec: MemberRecord; onV
           </svg>
         </button>
       </div>
-      <TeamHand rec={rec} width={wide ? (compact ? 62 : 116) : (compact ? 44 : 56)} spread={compact ? -24 : (wide ? 8 : 6)} mini />
+      <TeamHand rec={rec} width={wide ? (compact ? 62 : 116) : (compact ? 44 : 50)} spread={wide ? (compact ? -24 : 8) : -20} mini={!wide} />
     </div>
   );
 }
@@ -626,7 +626,7 @@ function TeamHand({ rec, width, spread, mini }: { rec: MemberRecord; width: numb
   }, [natural]);
   const naturalH = width * 1.4 + 14 /* lift */ + 18 /* paddingTop */;
   return (
-    <div ref={ref} style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', height: naturalH * scale, overflow: 'hidden' }}>
+    <div ref={ref} style={{ width: '100%', minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', height: naturalH * scale, overflow: 'hidden' }}>
       <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', display: 'flex', alignItems: 'flex-end', paddingTop: 18 }}>
         {rec.hand.map((c, i) => {
           const isResourced = rec.resourcedIdx.has(i);

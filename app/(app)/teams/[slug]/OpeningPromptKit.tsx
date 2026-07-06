@@ -176,13 +176,13 @@ export function GradientBorderButton({
 // resourced it, red = only they did, gray = only you did.
 export type PickVerdict = 'match' | 'theirs' | 'mine';
 export const VERDICT_STYLE: Record<PickVerdict, { color: string; label: string }> = {
-  match: { color: '#00E25B', label: 'Both picked' },
-  // Yellow, deliberately not red: their pick isn't WRONG, it's the
+  match: { color: '#00E25B', label: 'Both kept' },
+  // Yellow, deliberately not red: keeping it isn't WRONG, it's the
   // difference worth discussing.
-  theirs: { color: '#FFD60A', label: 'Their pick' },
+  theirs: { color: '#FFD60A', label: 'They kept' },
   // Cyan = the game's own "your selection" color (stage-2 picks ring cyan) —
   // "yours" without any correctness implication. Symmetric with yellow.
-  mine: { color: '#66E5FF', label: 'Your pick' },
+  mine: { color: '#66E5FF', label: 'You kept' },
 };
 
 export function QuizCard({
@@ -284,7 +284,7 @@ export function QuizCard({
                 transform: 'translateX(-50%)',
                 background: 'rgba(0,0,0,0.85)',
                 color: v.color,
-                fontSize: Math.max(9, width * 0.08),
+                fontSize: Math.max(10, Math.round(width * 0.11)),
                 fontWeight: 700,
                 lineHeight: 1.4,
                 padding: '1px 7px',
