@@ -803,8 +803,9 @@ function Badge({ color, children }: { color: string; children: React.ReactNode }
 }
 
 // The compact outcome glyph, in the reveal's visual language: three tiny
-// card shapes — [mulligan call][pick][pick]. Green = you matched them;
-// a cyan/yellow split = you diverged (cyan your side, yellow theirs).
+// card shapes — [mulligan call][pick][pick]. Same palette as the reveal:
+// green = you matched them; a yellow/salmon split = you diverged (yellow your
+// side, salmon theirs).
 function OutcomeGlyph({ item }: { item: PoolItem }) {
   if (item.myDecision === undefined || item.recordedDecision === undefined) return null;
   const chip = (matched: boolean, key: string) => (
@@ -817,7 +818,7 @@ function OutcomeGlyph({ item }: { item: PoolItem }) {
         display: 'inline-block',
         background: matched
           ? '#00E25B'
-          : 'linear-gradient(135deg, #66E5FF 50%, #FFD60A 50%)',
+          : 'linear-gradient(135deg, #FFD60A 50%, #FF8E7A 50%)',
       }}
     />
   );
