@@ -607,7 +607,7 @@ function MemberBlock({ rec, onView, variant = 'grid' }: { rec: MemberRecord; onV
           </svg>
         </button>
       </div>
-      <TeamHand rec={rec} width={wide ? (compact ? 62 : 116) : (compact ? 44 : 50)} spread={wide ? (compact ? -24 : 8) : -20} mini={!wide} />
+      <TeamHand rec={rec} width={wide ? (compact ? 58 : 116) : (compact ? 44 : 50)} spread={wide ? (compact ? -30 : 8) : -20} mini={!wide} />
     </div>
   );
 }
@@ -625,7 +625,7 @@ function TeamHand({ rec, width, spread, mini }: { rec: MemberRecord; width: numb
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const update = () => setScale(Math.min(1, el.clientWidth / (natural + 4)));
+    const update = () => setScale(Math.min(1, el.clientWidth / (natural + 10)));
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
