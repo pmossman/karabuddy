@@ -635,7 +635,7 @@ function MemberPicks({
   recorder: { name: string | null; decision: 'keep' | 'mulligan'; resourced: QuizCardRef[] };
 }) {
   const [open, setOpen] = useState(false);
-  const [hovered, setHovered] = useState<MemberRecord | null>(null);
+  const [viewing, setViewing] = useState<MemberRecord | null>(null);
   if (responses.length === 0) return null;
 
   // The recorder kept `keptHand`; split it into what they resourced vs held.
@@ -698,11 +698,11 @@ function MemberPicks({
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
           {records.map((rec) => (
-            <MemberRow key={rec.key} rec={rec} onHover={setHovered} />
+            <MemberRow key={rec.key} rec={rec} onView={() => setViewing(rec)} />
           ))}
         </div>
       )}
-      {hovered && <HandPreview rec={hovered} />}
+      {viewing && <HandPreview rec={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
@@ -719,35 +719,37 @@ interface MemberRecord {
 
 // One member's row. Hovering ANYWHERE on it previews their WHOLE hand large
 // (not the individual card) — that's the whole point of the per-member view.
-function MemberRow({ rec, onHover }: { rec: MemberRecord; onHover: (r: MemberRecord | null) => void }) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clear = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; };
-  useEffect(() => clear, []);
-  const coarse = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
-  // Hover fires only on a CARD, not the whole row. A short leave delay
-  // bridges the gap while moving between overlapping cards in the same hand
-  // (both hands set the same rec, so it never flickers).
-  const cardHandlers = {
-    onMouseEnter: () => { if (coarse()) return; clear(); onHover(rec); },
-    onMouseLeave: () => { clear(); timer.current = setTimeout(() => onHover(null), 80); },
-    onTouchStart: () => { clear(); timer.current = setTimeout(() => onHover(rec), 350); },
-    onTouchEnd: () => { clear(); onHover(null); },
-    onTouchMove: () => { clear(); onHover(null); },
-  };
+function MemberRow({ rec, onView }: { rec: MemberRecord; onView: () => void }) {
   const style: React.CSSProperties = rec.isRecorder
     ? { display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center', padding: '8px 10px', background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)', borderRadius: 8 }
     : { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c', borderRadius: 8 };
   return (
     <div data-testid={rec.isRecorder ? 'opening-member-recorder' : undefined} style={style}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
-        {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}{' '}
-        <span style={{ color: rec.isRecorder ? '#6bd968' : '#6c7588', fontWeight: rec.isRecorder ? 700 : 400 }}>
-          {rec.isRecorder ? `· recorded ${rec.decision}` : `· ${rec.decision}`}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: rec.isRecorder ? 'center' : 'stretch' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>
+          {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}{' '}
+          <span style={{ color: rec.isRecorder ? '#6bd968' : '#6c7588', fontWeight: rec.isRecorder ? 700 : 400 }}>
+            {rec.isRecorder ? `· recorded ${rec.decision}` : `· ${rec.decision}`}
+          </span>
         </span>
+        {/* Click to enlarge — an eye rather than a jumpy hover preview. */}
+        <button
+          type="button"
+          data-testid="opening-member-view"
+          aria-label={`View ${rec.name ?? 'this'} full size`}
+          onClick={onView}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, background: 'transparent', border: 'none', color: '#6c7588', cursor: 'pointer', padding: 0 }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#e6e6e6'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#6c7588'; }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
       </div>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: rec.isRecorder ? 'center' : 'flex-start' }}>
-        <MiniHand label="Resourced" cards={rec.resourced} verdict={rec.verdict} testId={rec.isRecorder ? undefined : 'opening-member-resourced'} cardHandlers={cardHandlers} />
-        <MiniHand label="In hand" cards={rec.kept} cardHandlers={cardHandlers} />
+        <MiniHand label="Resourced" cards={rec.resourced} verdict={rec.verdict} testId={rec.isRecorder ? undefined : 'opening-member-resourced'} />
+        <MiniHand label="In hand" cards={rec.kept} />
       </div>
     </div>
   );
@@ -755,18 +757,14 @@ function MemberRow({ rec, onHover }: { rec: MemberRecord; onHover: (r: MemberRec
 
 // A tiny labeled row of cards. Per-card preview is OFF here (noPreview) — the
 // parent row previews the whole hand instead.
-function MiniHand({ label, cards, verdict, testId, cardHandlers }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; testId?: string; cardHandlers?: React.HTMLAttributes<HTMLSpanElement> }) {
+function MiniHand({ label, cards, verdict, testId }: { label: string; cards: QuizCardRef[]; verdict?: PickVerdict; testId?: string }) {
   if (cards.length === 0) return null;
   return (
     <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588' }}>{label}</span>
       <HandRow cardWidth={44} overlap={22}>
         {cards.map((c, i) => (
-          // The hover trigger is this tight per-card wrapper — hovering the
-          // CARD (not the row/labels/padding) opens the whole-hand preview.
-          <span key={`${c.id}-${i}`} style={{ display: 'inline-block', lineHeight: 0, cursor: 'pointer' }} {...cardHandlers}>
-            <QuizCard card={c} width={44} verdict={verdict} noPreview />
-          </span>
+          <QuizCard key={`${c.id}-${i}`} card={c} width={44} verdict={verdict} noPreview />
         ))}
       </HandRow>
     </div>
@@ -775,7 +773,12 @@ function MiniHand({ label, cards, verdict, testId, cardHandlers }: { label: stri
 
 // The whole-hand preview: hovering a member's row floats their FULL selection
 // large — Resourced + In hand at readable size — centered on screen.
-function HandPreview({ rec }: { rec: MemberRecord }) {
+function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   if (typeof document === 'undefined') return null;
   const bigCard = (c: QuizCardRef, verdict?: PickVerdict) => {
     const url = cardImageUrl({ set: c.set, number: c.number });
@@ -800,9 +803,22 @@ function HandPreview({ rec }: { rec: MemberRecord }) {
     )
   );
   return createPortal(
-    <div data-testid="opening-hand-preview" style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', padding: 16 }}>
-      <div style={{ ...promptPanelStyle, padding: '16px 20px', maxWidth: '95vw', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 20px 70px rgba(0,0,0,0.85)' }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: '#e6ebf2', textAlign: 'center' }}>
+    <div
+      data-testid="opening-hand-preview"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,8,12,0.6)', padding: 16 }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{ ...promptPanelStyle, position: 'relative', padding: '16px 20px', maxWidth: '95vw', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 20px 70px rgba(0,0,0,0.85)' }}>
+        <button
+          type="button"
+          data-testid="opening-hand-preview-close"
+          aria-label="Close"
+          onClick={onClose}
+          style={{ position: 'absolute', top: 8, right: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'transparent', border: 'none', color: '#a0a8b8', cursor: 'pointer', padding: 0 }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
+        </button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#e6ebf2', textAlign: 'center', padding: '0 24px' }}>
           {rec.name ?? (rec.isRecorder ? 'Recorder' : 'Teammate')}
           <span style={{ color: rec.isRecorder ? '#6bd968' : '#a0a8b8', fontWeight: 600 }}> · {rec.isRecorder ? `recorded ${rec.decision}` : rec.decision}</span>
         </div>

@@ -144,15 +144,13 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   // The recorder's actual selection anchors the comparison at the top.
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('DrillOwner');
   await expect(page2.getByTestId('opening-member-recorder')).toContainText('recorded keep');
-  // The whole-hand preview triggers on a CARD, not the row chrome. Hovering
-  // the member's NAME does nothing…
-  await page2.getByTestId('opening-member-recorder').getByText('recorded keep').hover();
-  await expect(page2.getByTestId('opening-hand-preview')).toHaveCount(0);
-  // …hovering a card floats their WHOLE hand large (6 cards).
-  await page2.getByTestId('opening-member-recorder').locator('img[alt]').first().hover();
+  // The eye icon opens the whole-hand preview (6 large cards); click-out closes.
+  await page2.getByTestId('opening-member-recorder').getByTestId('opening-member-view').click();
   await expect(page2.getByTestId('opening-hand-preview')).toBeVisible();
   await expect(page2.getByTestId('opening-hand-preview')).toContainText('DrillOwner');
   await expect(page2.getByTestId('opening-hand-preview').locator('img[alt]')).toHaveCount(6);
+  await page2.getByTestId('opening-hand-preview-close').click();
+  await expect(page2.getByTestId('opening-hand-preview')).toHaveCount(0);
   await page2.getByTestId('opening-member-picks-toggle').click(); // collapse again
 
   // The resource diff is painted on the hand, each card self-labeled:
