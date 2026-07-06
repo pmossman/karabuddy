@@ -304,7 +304,7 @@ export function OpeningStage({
   const fanShrunk = dualHand || stage === 'reveal';
   const fanW = compact ? (fanShrunk ? 112 : 132) : (fanShrunk ? 126 : 150);
   const fan = (
-    <HandRow cardWidth={fanW} overlap={compact ? 56 : fanShrunk ? 30 : 24}>
+    <HandRow cardWidth={fanW} overlap={compact ? 56 : -10}>
       {hand.map((c, i) => (
         <QuizCard
           key={`${c.id}-${i}`}
@@ -557,7 +557,7 @@ export function OpeningStage({
           <div style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588', marginBottom: -2 }}>
             Your kept hand
           </div>
-          <HandRow cardWidth={compact ? 88 : 92} overlap={compact ? 46 : 42}>
+          <HandRow cardWidth={compact ? 88 : 92} overlap={compact ? 46 : -10}>
             {detail.dealtHand.map((c, i) => (
               <QuizCard
                 key={`kept-${c.id}-${i}`}
