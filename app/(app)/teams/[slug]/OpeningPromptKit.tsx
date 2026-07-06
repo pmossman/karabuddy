@@ -274,18 +274,8 @@ export function QuizCard({
             {card.name ?? card.id}
           </div>
         )}
-        {v && (
+        {v && !mini && (
           <>
-            <span
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: `${v.color}3d`,
-                borderRadius: 8,
-                pointerEvents: 'none',
-              }}
-            />
-            {!mini && (
             <span
               style={{
                 position: 'absolute',
@@ -305,7 +295,6 @@ export function QuizCard({
             >
               {v.label}
             </span>
-            )}
           </>
         )}
       </button>
