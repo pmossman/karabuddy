@@ -532,7 +532,7 @@ export function OpeningStage({
           // preview portal renders above at z-500). Panel scrolls internally.
           style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(6,8,12,0.5)', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: compact ? 12 : 24 }}
         >
-          <div style={{ position: 'relative', width: compact ? 'min(560px, 100%)' : 'min(680px, 100%)', minHeight: 0, maxHeight: '100%', overflowY: 'auto', pointerEvents: 'auto', filter: compact ? 'none' : 'drop-shadow(0 18px 50px rgba(0,0,0,0.8))' }}>
+          <div style={{ position: 'relative', width: compact ? 'min(560px, 100%)' : 'min(960px, 100%)', minHeight: 0, maxHeight: '100%', overflowY: 'auto', pointerEvents: 'auto', filter: compact ? 'none' : 'drop-shadow(0 18px 50px rgba(0,0,0,0.8))' }}>
             {minimizeGlyph}
             {revealPanel}
           </div>
@@ -738,6 +738,7 @@ function MemberPicks({
 }
 
 function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => void; grow?: boolean }) {
+  const compact = useMediaQuery('(max-width: 860px)');
   const tint = rec.tone === 'recorder'
     ? { background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)' }
     : rec.tone === 'viewer'
@@ -748,7 +749,7 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
   return (
     <div
       data-testid={rec.tone === 'recorder' ? 'opening-member-recorder' : rec.tone === 'viewer' ? 'opening-member-you' : undefined}
-      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(grow ? { flex: '1 1 260px', minWidth: 0 } : {}) }}
+      style={{ ...tint, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, ...(grow ? { flex: '1 1 400px', minWidth: 0 } : {}) }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -768,14 +769,16 @@ function MemberBlock({ rec, onView, grow }: { rec: MemberRecord; onView: () => v
           </svg>
         </button>
       </div>
-      <TeamHand rec={rec} width={50} overlap={26} mini />
+      <TeamHand rec={rec} width={compact ? 50 : 58} spread={compact ? -26 : 4} mini />
     </div>
   );
 }
 
 // One hand of six, resourced cards lifted and colored (verdict) vs your picks.
-// `mini` (the small grid): no verdict text + soft glow; full-size keeps both.
-function TeamHand({ rec, width, overlap, mini }: { rec: MemberRecord; width: number; overlap: number; mini?: boolean }) {
+// `spread` is the gap between cards: positive spaces them out (no overlap),
+// negative overlaps (mobile, to keep cards large). `mini` (the small grid):
+// no verdict text + soft glow; full-size keeps both.
+function TeamHand({ rec, width, spread, mini }: { rec: MemberRecord; width: number; spread: number; mini?: boolean }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', paddingTop: 18, justifyContent: 'center' }}>
       {rec.hand.map((c, i) => {
@@ -784,7 +787,7 @@ function TeamHand({ rec, width, overlap, mini }: { rec: MemberRecord; width: num
           <div
             key={`${c.id}-${i}`}
             data-testid={isR ? 'opening-member-pick' : undefined}
-            style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-14px)' : 'none' }}
+            style={{ marginLeft: i === 0 ? 0 : spread, zIndex: isR ? 30 : i, transform: isR ? 'translateY(-14px)' : 'none' }}
           >
             <QuizCard card={c} width={width} verdict={rec.verdictByIdx.get(i)} noPreview mini={mini} />
           </div>
@@ -824,7 +827,7 @@ function HandPreview({ rec, onClose }: { rec: MemberRecord; onClose: () => void 
           <span style={{ color: rec.tone === 'recorder' ? '#6bd968' : rec.tone === 'viewer' ? '#66E5FF' : '#a0a8b8', fontWeight: 600 }}> · {rec.tone === 'recorder' ? `recorded ${rec.decision}` : rec.decision}</span>
         </div>
         <div style={{ overflowX: 'auto', maxWidth: '92vw' }}>
-          <TeamHand rec={rec} width={110} overlap={40} />
+          <TeamHand rec={rec} width={110} spread={8} />
         </div>
       </div>
     </div>,
