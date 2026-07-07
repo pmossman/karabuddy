@@ -13,6 +13,7 @@ import { decodeReplay, extractWinners, reconstructFinalState } from '@/lib/repla
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayFacts } from '@/lib/statsPersist';
 import { reconcileBo3ForReplay } from '@/lib/bo3Reconcile';
+import { reconcileSideboardsForReplay } from '@/lib/sideboardPersist';
 import { persistOpening } from '@/lib/openingPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
@@ -97,6 +98,9 @@ async function persistStatsSafe(slug: string, parsed: any, gameId: string, winne
   // bestOfOne. Reconcile the whole lobby's stored bo3 flags conversion-aware —
   // self-heals the moment game 2 (bestOfThree) lands. Best-effort (swallows).
   await reconcileBo3ForReplay(parsed.match);
+  // B227: sideboard decisions for the Bo3 drill pool — a game completes the
+  // transition off its predecessor. Same self-healing lobby reconcile.
+  await reconcileSideboardsForReplay(parsed.match);
   // B221: opening facts for the drill pool ride the same decode. Guarded
   // separately so an opening quirk can't cost the match facts (or vice versa).
   try {

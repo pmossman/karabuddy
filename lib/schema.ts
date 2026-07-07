@@ -906,3 +906,49 @@ export const openingResponses = pgTable(
 
 export type ReplayOpening = typeof replayOpenings.$inferSelect;
 export type OpeningResponse = typeof openingResponses.$inferSelect;
+
+// ----- B227: Team Sideboarding Drills -----
+// A sideboard DECISION: the transition into a Bo3 game (2 or 3) — what the
+// recorder swapped from their game-N deck going into game N+1. Keyed by the
+// game N+1 replay; the deck/sideboard are the game-N pool the swap chose from.
+type SideCard = { id: string; count: number; cost?: number | null };
+export const replaySideboards = pgTable('replay_sideboards', {
+  replaySlug: text('replay_slug') // the game AFTER sideboarding (N+1)
+    .primaryKey()
+    .references(() => replays.slug, { onDelete: 'cascade' }),
+  previousSlug: text('previous_slug').notNull(), // game N
+  recorderId: text('recorder_id').notNull(), // ownerPlayerId in the payload
+  lobbyId: text('lobby_id').notNull(),
+  gameNumber: integer('game_number').notNull(), // position in the match (2, 3, …)
+  deck: jsonb('deck').$type<SideCard[]>().notNull(), // game-N maindeck (cut-from pool)
+  sideboard: jsonb('sideboard').$type<SideCard[]>().notNull(), // game-N sideboard (bring-in pool)
+  swappedIn: jsonb('swapped_in').$type<string[]>().notNull(), // cardId multiset brought in
+  swappedOut: jsonb('swapped_out').$type<string[]>().notNull(), // cardId multiset taken out
+  wonPrevious: boolean('won_previous'), // did the recorder win game N (null = unknown)
+  extractorVersion: integer('extractor_version').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A member's answer to a sideboard drill. Same shape/scoping rules as
+// openingResponses (keyed (replay, responder), read-scoped, immutable).
+export const sideboardResponses = pgTable(
+  'sideboard_responses',
+  {
+    replaySlug: text('replay_slug')
+      .notNull()
+      .references(() => replays.slug, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    swappedIn: jsonb('swapped_in').$type<string[]>().notNull(),
+    swappedOut: jsonb('swapped_out').$type<string[]>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.replaySlug, t.userId] }),
+    userIdx: index('sideboard_responses_user_idx').on(t.userId),
+  })
+);
+
+export type ReplaySideboard = typeof replaySideboards.$inferSelect;
+export type SideboardResponse = typeof sideboardResponses.$inferSelect;
