@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B226] Card finder — filter team replays by a card, jump to the play
+_completed: 2026-07-07 by claude_
+On the team Replays tab, a card autocomplete narrows the grid to replays where a teammate (the recorder) played that card, each deep-linking to the frame it was played. Reused existing plumbing: `cardEvents` (every `played` event + `frameIndex`), the viewer's `?f=N`, and `replayTeamShares`. New: `/api/cards?q=` name autocomplete (playable types; leaders/bases excluded), `/api/teams/[slug]/card-plays?cardId=` (slug → first play frame, team-scoped, recorder-side via `cardEvents.playerId = replay.ownerPlayerId`), `CardSearch` component, and an optional `cardPlayFrames` prop on `ReplayFilters` (grid card + table row jump link). v0 = "played" only; overperform heuristics (stuck N turns, 2-for-1) are the noted next layer. No migration.
+
 ### [B225] Reframe openings from match-scoring to neutral "takes"
 _completed: 2026-07-06 by claude_
 Feedback: the green ✓ / "N matched" scoring made the reveal feel like a mini-game where you should guess the recorder's play — but the recorder is "what was played", not an answer key. Removed the win/lose framing across the reveal chips (side-by-side calls, no ✓/✗, neutral recorder chip), the session summary ("N different takes", muted "same" / amber "different take"), the HUD counter, the answered-list glyph, and the OutcomeGlyph (muted where the take matched, amber where it differed). `onAnswered` now reports the full take (decision AND resources). Divergence is the discussion signal, not a wrong answer. Team-consensus badges unchanged (they describe the team, not your score).
