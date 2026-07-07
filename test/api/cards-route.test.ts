@@ -19,4 +19,20 @@ describe('GET /api/cards', () => {
     const empty = await (await GET(new Request('http://t/api/cards'))).json();
     expect(empty.cards).toEqual({});
   });
+
+  it('?q= name search returns playable cards, prefix-first, excluding leaders/bases', async () => {
+    await getDb().insert(cards).values([
+      { cardId: 'X_1', name: 'Ninth Sister', subtitle: 'Hulking Inquisitor', type: 'unit', source: 'seed' },
+      { cardId: 'X_2', name: 'The Ninth Squad', type: 'unit', source: 'seed' },
+      { cardId: 'X_3', name: 'Ninth Inquisitor', subtitle: 'a leader', type: 'leader', source: 'seed' }, // leader → excluded
+    ]);
+    const body = await (await GET(new Request('http://t/api/cards?q=ninth'))).json();
+    expect(body.ok).toBe(true);
+    const names = body.results.map((r: any) => r.name);
+    expect(names).toContain('Ninth Sister');
+    expect(names).toContain('The Ninth Squad');
+    expect(names).not.toContain('Ninth Inquisitor'); // leader excluded
+    // prefix match ("Ninth …") ranks before the mid-string match ("The Ninth …")
+    expect(names.indexOf('Ninth Sister')).toBeLessThan(names.indexOf('The Ninth Squad'));
+  });
 });

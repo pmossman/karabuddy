@@ -58,12 +58,15 @@ interface ReplayRow {
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
 // matchChips() helper used everywhere.
 
-export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRow; canManage: boolean; gameNumber?: number }) {
+export function ReplayCard({ replay, canManage, gameNumber, jumpFrame, jumpLabel }: { replay: ReplayRow; canManage: boolean; gameNumber?: number; jumpFrame?: number; jumpLabel?: string }) {
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
   const sel = useReplaySelection();
   const canSelect = !!sel?.selectMode && sel.selectable(replay);
   const isSel = !!sel?.selected.has(replay.slug);
+  // B226: card finder — deep-link straight to the frame where the card was
+  // played (`?f=` is 1-based), and surface a "jump to play" hint on the card.
+  const href = jumpFrame != null ? `/r/${replay.slug}?f=${jumpFrame + 1}` : `/r/${replay.slug}`;
 
   return (
     <div
@@ -95,7 +98,7 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
           </span>
         </>
       )}
-      <Link href={`/r/${replay.slug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <Link href={href} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {replay.encrypted ? (
           // B170: private replay — decrypt the matchup client-side (leaders/bases
           // + result). The deck/name sub-lines come from the same summary, so the
@@ -124,6 +127,12 @@ export function ReplayCard({ replay, canManage, gameNumber }: { replay: ReplayRo
               {playerHandle(p1)} vs {playerHandle(p2)}
             </div>
           </>
+        )}
+        {/* B226: card finder — jump straight to the frame the card was played. */}
+        {jumpFrame != null && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start', fontSize: 11.5, fontWeight: 700, color: '#4dd2ff', background: 'rgba(77,210,255,0.10)', border: '1px solid rgba(77,210,255,0.3)', borderRadius: 999, padding: '2px 9px' }}>
+            ▶ Jump to {jumpLabel ?? 'the play'}
+          </div>
         )}
         {/* B53: user-set labels as small chips below the names. */}
         {Array.isArray(replay.labels) && replay.labels.length > 0 && (

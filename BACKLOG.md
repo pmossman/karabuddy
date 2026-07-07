@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B226] Card finder — find replays featuring a card, jump to the moment
+_completed: 2026-07-07 by claude_
+A card autocomplete (with art thumbnails) narrows the replay browser to games where the RECORDER did an event with that card, each deep-linking to the frame just BEFORE it (step forward to see it happen). An event toggle picks Played / Resourced / Drawn / Discarded. Lives in the shared `ReplayFilters` (via the self-contained `app/(app)/replays/cardFinder.tsx` — `useCardFinder` hook + `CardFinderBar`), enabled by a single `cardFinder` flag, so BOTH the team Replays tab and the personal My-replays library get it identically. Reused existing plumbing: `cardEvents` (every event + `frameIndex`), the viewer's `?f=N`, `replayTeamShares`. New: `/api/cards?q=` name autocomplete (leaders/bases excluded), unified `/api/card-plays?cardId=&event=&team=?` (team-surface OR the signed-in viewer's own replays; recorder-side via `cardEvents.playerId = replay.ownerPlayerId`), `CardSearch` component. v0 = the four event types; overperform heuristics (stuck N turns, 2-for-1) are the noted next layer. No migration.
+
 ### [B225] Reframe openings from match-scoring to neutral "takes"
 _completed: 2026-07-06 by claude_
 Feedback: the green ✓ / "N matched" scoring made the reveal feel like a mini-game where you should guess the recorder's play — but the recorder is "what was played", not an answer key. Removed the win/lose framing across the reveal chips (side-by-side calls, no ✓/✗, neutral recorder chip), the session summary ("N different takes", muted "same" / amber "different take"), the HUD counter, the answered-list glyph, and the OutcomeGlyph (muted where the take matched, amber where it differed). `onAnswered` now reports the full take (decision AND resources). Divergence is the discussion signal, not a wrong answer. Team-consensus badges unchanged (they describe the team, not your score).

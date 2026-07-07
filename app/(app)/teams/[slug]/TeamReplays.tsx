@@ -72,6 +72,7 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
         showUploaderFilter
         pageSize={60}
         teamSlug={teamSlug}
+        cardFinder
         onMutated={load}
         emptyState={
           <div style={{ fontSize: 12, color: '#a0a8b8', lineHeight: 1.5 }}>
