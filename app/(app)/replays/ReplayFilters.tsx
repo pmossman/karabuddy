@@ -4,6 +4,7 @@ import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useState }
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ReplayCard } from './ReplayCard';
+import { useCardFinder } from './cardFinder';
 import { RowActions } from './RowActions';
 import { ReplaySelectionProvider, SelectBox, useReplaySelection, type ReplaySelectionApi } from './selection';
 import { ResponsiveMenu } from '@/app/_components/ResponsiveMenu';
@@ -132,8 +133,7 @@ export function ReplayFilters({
   myTeams = [],
   teamSlug,
   onMutated,
-  cardPlayFrames,
-  cardPlayLabel,
+  cardFinder = false,
 }: {
   rows: Row[];
   canManage: boolean;
@@ -158,11 +158,11 @@ export function ReplayFilters({
   // entire shared history (hundreds–thousands of games), so it opts in. Off
   // (undefined) on the personal library → byte-identical behavior there.
   pageSize?: number;
-  // B226: card finder — slug → the frame the searched card was played. When
-  // present, each matching card deep-links to that frame + shows a jump hint.
-  cardPlayFrames?: Record<string, number>;
-  // B226: the verb for the jump hint ("the play" / "the resource" / …).
-  cardPlayLabel?: string;
+  // B226: enable the shared card finder (search a card → narrow to replays
+  // where the recorder did an event with it + jump to the frame). Scope is
+  // teamSlug when set, else the signed-in viewer's own replays. Off by default
+  // (anonymous / public surfaces).
+  cardFinder?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -244,6 +244,7 @@ export function ReplayFilters({
   const oppLeaders = useMemo(() => leaderSelectOptions(rows, (r) => r.oppLeader), [rows]);
   const ownBases = useMemo(() => baseKindSelectOptions(rows, (r) => r.ownBaseKind), [rows]);
   const oppBases = useMemo(() => baseKindSelectOptions(rows, (r) => r.oppBaseKind), [rows]);
+  const cf = useCardFinder({ teamSlug, enabled: cardFinder });
 
   // B116: uploader options for the team grid's "Uploaded by" filter.
   const uploaders = useMemo(() => {
@@ -271,6 +272,7 @@ export function ReplayFilters({
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (removed.has(r.slug)) return false; // optimistic post-bulk-op hide
+      if (cf.active && cf.frames && !(r.slug in cf.frames)) return false;
       if (tab === 'shared' && !isShared(r)) return false;
       if (tab === 'unlisted' && isShared(r)) return false;
       if (myLeader && r.ownLeader?.name !== myLeader) return false;
@@ -296,7 +298,7 @@ export function ReplayFilters({
       }
       return true;
     });
-  }, [rows, removed, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result]);
+  }, [rows, removed, tab, myLeader, vsLeader, uploadedBy, since, format, mode, label, result, cf.active, cf.frames]);
 
   // B187: incremental render (opt-in via pageSize). Reset to the first page
   // whenever the filtered set changes so a new filter starts from the top.
@@ -406,6 +408,9 @@ export function ReplayFilters({
     <ReplaySelectionProvider value={selectionApi}>
       {showShareTabs && <ShareTabs tab={tab} setTab={setTab} counts={tabCounts} />}
 
+      {/* B226: the card finder — a primary filter, so it sits above the rest. */}
+      {cf.bar && <div style={{ marginTop: 14 }}>{cf.bar}</div>}
+
       {/* Toolbar: collapsible Filters toggle + active-filter chips on the left,
           result count + view switcher on the right. Filters panel is hidden by
           default to keep the browser uncluttered. */}
@@ -504,8 +509,8 @@ export function ReplayFilters({
         // ticking many rows quickly. Desktop keeps the table (it has its own
         // checkbox column).
         isNarrow
-          ? (deferredSelectMode ? <CompactSelectList rows={display} /> : <CardGrid rows={display} canManage={canManage} group cardPlayFrames={cardPlayFrames} cardPlayLabel={cardPlayLabel} />)
-          : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} cardPlayFrames={cardPlayFrames} cardPlayLabel={cardPlayLabel} />
+          ? (deferredSelectMode ? <CompactSelectList rows={display} /> : <CardGrid rows={display} canManage={canManage} group cardPlayFrames={cf.frames ?? undefined} cardPlayLabel={cf.label} />)
+          : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} cardPlayFrames={cf.frames ?? undefined} cardPlayLabel={cf.label} />
       )}
 
       {pageSize && !grouped && filtered.length > display.length && (

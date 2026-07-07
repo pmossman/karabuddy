@@ -155,6 +155,7 @@ async function MyReplays({ userId }: { userId: string }) {
       showShareTabs
       myTeams={myTeams}
       pageSize={60}
+      cardFinder
       emptyState={<MineEmpty />}
     />
   );

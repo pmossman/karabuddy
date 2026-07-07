@@ -1,19 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { GET as cardPlays } from '@/app/api/teams/[slug]/card-plays/route';
+import { GET as cardPlays } from '@/app/api/card-plays/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, matches, cardEvents, replayTeamShares } from '@/lib/schema';
 
-// B226: card finder — the team's replays where a TEAMMATE (recorder) played a
-// card, mapped to the first play frame; team-scoped and member-only.
+// B226: card finder — replays where the RECORDER did an event with a card,
+// mapped to the frame just before it. One endpoint, two scopes: a team's
+// surfaced replays (team=<slug>, member-only) OR the signed-in viewer's own.
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
 const { auth } = await import('@/auth');
 const as = (id: string | null) => vi.mocked(auth).mockResolvedValue(id ? ({ user: { id } } as any) : (null as any));
 
-const params = (slug: string) => ({ params: Promise.resolve({ slug }) });
-const call = async (team: string, cardId: string) =>
-  (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays?cardId=${cardId}`), params(team))).json();
+// GET /api/card-plays — team is a query param now (not a path segment).
+const req = (qs: string) => cardPlays(new Request(`http://t/api/card-plays?${qs}`));
+const call = async (team: string, cardId: string, event?: string) =>
+  (await req(`cardId=${cardId}&team=${team}${event ? `&event=${event}` : ''}`)).json();
 
 async function seedUser() {
   const id = randomUUID();
@@ -50,7 +52,7 @@ async function seedGame(opts: {
 
 beforeEach(() => vi.mocked(auth).mockReset());
 
-describe('GET /api/teams/[slug]/card-plays', () => {
+describe('GET /api/card-plays', () => {
   it('returns the recorder-side plays scoped to the team, at the first frame', async () => {
     const owner = await seedUser();
     const team = await seedTeam(owner);
@@ -86,14 +88,14 @@ describe('GET /api/teams/[slug]/card-plays', () => {
     const resGame = await seedGame({ owner, team, ownerPlayerId: 'P', plays: [{ cardId: CARD, playerId: 'P', frame: 6, event: 'resourced' }] });
     const playGame = await seedGame({ owner, team, ownerPlayerId: 'P', plays: [{ cardId: CARD, playerId: 'P', frame: 20, event: 'played' }] });
 
-    const resourced = await (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays?cardId=${CARD}&event=resourced`), params(team))).json();
+    const resourced = await (await req(`cardId=${CARD}&team=${team}&event=resourced`)).json();
     expect(Object.keys(resourced.plays)).toEqual([resGame]);
     expect(resourced.plays[resGame]).toBe(5); // one before frame 6
 
-    const played = await (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays?cardId=${CARD}&event=played`), params(team))).json();
+    const played = await (await req(`cardId=${CARD}&team=${team}&event=played`)).json();
     expect(Object.keys(played.plays)).toEqual([playGame]);
 
-    const bad = await (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays?cardId=${CARD}&event=bogus`), params(team))).json();
+    const bad = await (await req(`cardId=${CARD}&team=${team}&event=bogus`)).json();
     expect(bad.ok).toBe(false);
   });
 
@@ -109,7 +111,27 @@ describe('GET /api/teams/[slug]/card-plays', () => {
     expect((await call(team, 'ASH_148')).ok).toBeFalsy();
 
     as(owner);
-    const noCard = await (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays`), params(team))).json();
+    const noCard = await (await req(`team=${team}`)).json();
     expect(noCard.ok).toBe(false);
+  });
+
+  it('personal scope (no team) = the signed-in viewer\'s OWN replays only', async () => {
+    const me = await seedUser();
+    const other = await seedUser();
+    const CARD = 'ASH_148';
+    // mine (no team share) + someone else's — same card, both recorder-side
+    const mine = await seedGame({ owner: me, ownerPlayerId: 'P', plays: [{ cardId: CARD, playerId: 'P', frame: 30 }] });
+    const theirs = await seedGame({ owner: other, ownerPlayerId: 'Q', plays: [{ cardId: CARD, playerId: 'Q', frame: 9 }] });
+
+    as(me);
+    const j = await (await req(`cardId=${CARD}`)).json(); // no team → personal
+    expect(j.ok).toBe(true);
+    expect(Object.keys(j.plays)).toEqual([mine]);
+    expect(j.plays[mine]).toBe(29);
+    expect(j.plays[theirs]).toBeUndefined();
+
+    // signed out → not allowed
+    as(null);
+    expect((await (await req(`cardId=${CARD}`)).json()).ok).toBeFalsy();
   });
 });
