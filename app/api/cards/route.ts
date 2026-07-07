@@ -37,6 +37,37 @@ export async function GET(req: Request) {
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 400);
+
+  // B226: name search for the card-finder autocomplete. `?q=<name>` → a ranked
+  // list of playable cards (units/events/upgrades — leaders/bases aren't "played"
+  // as card events). Answered from the same cached catalog, no DB hit.
+  const q = (new URL(req.url).searchParams.get('q') || '').trim().toLowerCase();
+  if (q) {
+    const catalog = await getCatalog();
+    const hits: { cardId: string; name: string; subtitle: string | null; type: string | null; aspects: string[] | null }[] = [];
+    for (const [cardId, m] of Object.entries(catalog)) {
+      if (!m.name || m.type === 'leader' || m.type === 'base') continue;
+      const name = m.name.toLowerCase();
+      if (name.includes(q)) {
+        hits.push({ cardId, name: m.name, subtitle: m.subtitle, type: m.type, aspects: m.aspects });
+      }
+    }
+    // Prefix matches first, then alphabetical; de-dupe reprints by name+subtitle.
+    hits.sort((a, b) => {
+      const ap = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+      const bp = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+      return ap - bp || a.name.localeCompare(b.name) || (a.subtitle ?? '').localeCompare(b.subtitle ?? '');
+    });
+    const seen = new Set<string>();
+    const results = hits.filter((h) => {
+      const key = `${h.name}|${h.subtitle ?? ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 20);
+    return NextResponse.json({ ok: true, results });
+  }
+
   if (ids.length === 0) return NextResponse.json({ ok: true, cards: {} });
   const catalog = await getCatalog();
   const map: Record<string, CardMeta> = {};

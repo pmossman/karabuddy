@@ -132,6 +132,7 @@ export function ReplayFilters({
   myTeams = [],
   teamSlug,
   onMutated,
+  cardPlayFrames,
 }: {
   rows: Row[];
   canManage: boolean;
@@ -156,6 +157,9 @@ export function ReplayFilters({
   // entire shared history (hundreds–thousands of games), so it opts in. Off
   // (undefined) on the personal library → byte-identical behavior there.
   pageSize?: number;
+  // B226: card finder — slug → the frame the searched card was played. When
+  // present, each matching card deep-links to that frame + shows a jump hint.
+  cardPlayFrames?: Record<string, number>;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -497,8 +501,8 @@ export function ReplayFilters({
         // ticking many rows quickly. Desktop keeps the table (it has its own
         // checkbox column).
         isNarrow
-          ? (deferredSelectMode ? <CompactSelectList rows={display} /> : <CardGrid rows={display} canManage={canManage} group />)
-          : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} />
+          ? (deferredSelectMode ? <CompactSelectList rows={display} /> : <CardGrid rows={display} canManage={canManage} group cardPlayFrames={cardPlayFrames} />)
+          : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} cardPlayFrames={cardPlayFrames} />
       )}
 
       {pageSize && !grouped && filtered.length > display.length && (
@@ -751,7 +755,7 @@ function CompactSelectRow({ r }: { r: Row }) {
   );
 }
 
-function CardGrid({ rows, canManage, group = false }: { rows: Row[]; canManage: boolean; group?: boolean }) {
+function CardGrid({ rows, canManage, group = false, cardPlayFrames }: { rows: Row[]; canManage: boolean; group?: boolean; cardPlayFrames?: Record<string, number> }) {
   // B116: when grouping is on (the flat Grid view), collapse Bo3 series into a
   // bordered cluster with a header; singletons render as plain cards. By-leader
   // / Timeline pass group=false (they already group by their own key).
@@ -768,11 +772,11 @@ function CardGrid({ rows, canManage, group = false }: { rows: Row[]; canManage: 
               {seriesHeadline(g)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-              {g.rows.map((r, i) => <ReplayCard key={r.slug} replay={r as any} canManage={canManage} gameNumber={i + 1} />)}
+              {g.rows.map((r, i) => <ReplayCard key={r.slug} replay={r as any} canManage={canManage} gameNumber={i + 1} jumpFrame={cardPlayFrames?.[r.slug]} />)}
             </div>
           </div>
         ) : (
-          <ReplayCard key={g.key} replay={g.rows[0] as any} canManage={canManage} />
+          <ReplayCard key={g.key} replay={g.rows[0] as any} canManage={canManage} jumpFrame={cardPlayFrames?.[g.rows[0]?.slug]} />
         ))}
       </div>
     );
@@ -780,7 +784,7 @@ function CardGrid({ rows, canManage, group = false }: { rows: Row[]; canManage: 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 16 }}>
       {rows.map((r) => (
-        <ReplayCard key={r.slug} replay={r as any} canManage={canManage} />
+        <ReplayCard key={r.slug} replay={r as any} canManage={canManage} jumpFrame={cardPlayFrames?.[r.slug]} />
       ))}
     </div>
   );
@@ -1268,7 +1272,7 @@ const TABLE_COMPARATORS: Record<SortKey, (a: SeriesGroup, b: SeriesGroup, dir: '
   comments: byRep((r) => r.commentCount ?? 0),
 };
 
-function TableView({ rows, canManage = false, showShareColumn = true }: { rows: Row[]; canManage?: boolean; showShareColumn?: boolean }) {
+function TableView({ rows, canManage = false, showShareColumn = true, cardPlayFrames }: { rows: Row[]; canManage?: boolean; showShareColumn?: boolean; cardPlayFrames?: Record<string, number> }) {
   const sel = useReplaySelection();
   const showSel = !!sel?.selectMode;
 
@@ -1348,7 +1352,7 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
                 )}
                 <td style={inSeries ? { ...cellStyle, paddingLeft: 30 } : cellStyle}>{formatTimestamp(r.createdAt)}</td>
                 <td style={cellStyle} data-testid="replay-cell">
-                  <ReplayCellLink replay={r} gameNumber={gameNumber} />
+                  <ReplayCellLink replay={r} gameNumber={gameNumber} jumpFrame={cardPlayFrames?.[r.slug]} />
                 </td>
                 {showShared && (
                   <td style={cellStyle} data-testid="shared-cell">
@@ -1400,12 +1404,14 @@ function TableView({ rows, canManage = false, showShareColumn = true }: { rows: 
 // Replay cell: leader+base mini thumbnails for each player, separated by
 // "vs", with the matchup text below. Wrapped in <Link> so the whole cell
 // (text + thumbs) navigates to /r/<slug>.
-function ReplayCellLink({ replay, gameNumber }: { replay: Row; gameNumber?: number }) {
+function ReplayCellLink({ replay, gameNumber, jumpFrame }: { replay: Row; gameNumber?: number; jumpFrame?: number }) {
+  // B226: card finder — deep-link the row straight to the play frame.
+  const href = jumpFrame != null ? `/r/${replay.slug}?f=${jumpFrame + 1}` : `/r/${replay.slug}`;
   // B170: an encrypted replay has no server-side matchup — decrypt the summary
   // client-side (key loaded) or show a clean lock, instead of blank art + "anon".
   if (replay.encrypted) {
     return (
-      <Link href={`/r/${replay.slug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+      <Link href={href} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
         {gameNumber != null && <GameNumberChip n={gameNumber} />}
         <PrivateMatchup row={replay as any} thumb={26} />
       </Link>
@@ -1414,7 +1420,7 @@ function ReplayCellLink({ replay, gameNumber }: { replay: Row; gameNumber?: numb
   // Perspective order: my/the-uploader's side first, opponent second.
   const [p1, p2] = perspectivePlayers(replay);
   return (
-    <Link href={`/r/${replay.slug}`} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <Link href={href} prefetch={false} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <PlayerThumbs player={p1} />
         <span style={{ fontSize: 10, color: '#6c7588', fontWeight: 700, letterSpacing: '0.08em' }}>VS</span>
@@ -1426,6 +1432,9 @@ function ReplayCellLink({ replay, gameNumber }: { replay: Row; gameNumber?: numb
         <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
         {replay.doubleSided && <DoubleSidedChip />}
+        {jumpFrame != null && (
+          <span data-testid="jump-to-play" style={{ fontSize: 10, fontWeight: 700, color: '#4dd2ff', background: 'rgba(77,210,255,0.12)', border: '1px solid rgba(77,210,255,0.3)', borderRadius: 999, padding: '0 7px', whiteSpace: 'nowrap' }}>▶ jump to play</span>
+        )}
       </div>
       {/* B116: usernames demoted to small secondary text. */}
       <div style={{ fontSize: 10, color: '#6c7588' }}>{playerHandle(p1)} vs {playerHandle(p2)}</div>
