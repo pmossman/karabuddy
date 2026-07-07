@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { cardImageUrl } from '@/lib/cardImage';
 
 // B226: card-name autocomplete for the team Replays card finder. Free-text →
 // debounced /api/cards?q= search → pick a card. Same popover interaction
@@ -10,6 +11,31 @@ interface CardHit { cardId: string; name: string; subtitle: string | null; type:
 export interface SelectedCard { cardId: string; name: string; subtitle: string | null }
 
 const cardLabel = (c: { name: string; subtitle: string | null }) => (c.subtitle ? `${c.name} · ${c.subtitle}` : c.name);
+
+// cardId ("ASH_148") → the card-art URL. The art is portrait; the thumbnail
+// crops to the character's face at the top (objectPosition) so a small square
+// still reads.
+function cardArt(cardId: string): string | null {
+  const m = cardId.match(/^(.+)_(\d+)$/);
+  return m ? cardImageUrl({ set: m[1], number: m[2] }) : null;
+}
+
+function CardThumb({ cardId, size = 26 }: { cardId: string; size?: number }) {
+  const src = cardArt(cardId);
+  if (!src) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      width={size}
+      height={Math.round(size * 1.4)}
+      loading="lazy"
+      onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
+      style={{ flexShrink: 0, objectFit: 'cover', objectPosition: 'top center', borderRadius: 3, background: '#101720', border: '1px solid rgba(255,255,255,0.1)' }}
+    />
+  );
+}
 
 export function CardSearch({ value, onChange, testId }: { value: SelectedCard | null; onChange: (c: SelectedCard | null) => void; testId?: string }) {
   const [q, setQ] = useState('');
@@ -47,7 +73,8 @@ export function CardSearch({ value, onChange, testId }: { value: SelectedCard | 
   // Selected → a clearable chip.
   if (value) {
     return (
-      <span data-testid={testId} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 8px 6px 12px', background: 'rgba(77,210,255,0.10)', border: '1px solid rgba(77,210,255,0.45)', borderRadius: 8, color: '#cfe4ff', fontSize: 13, fontWeight: 600 }}>
+      <span data-testid={testId} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 8px 4px 6px', background: 'rgba(77,210,255,0.10)', border: '1px solid rgba(77,210,255,0.45)', borderRadius: 8, color: '#cfe4ff', fontSize: 13, fontWeight: 600 }}>
+        <CardThumb cardId={value.cardId} size={22} />
         <span style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cardLabel(value)}</span>
         <button type="button" aria-label="Clear card filter" data-testid={testId ? `${testId}-clear` : undefined} onClick={() => onChange(null)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, border: 0, background: 'rgba(255,255,255,0.12)', color: '#cfe4ff', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
       </span>
@@ -75,12 +102,15 @@ export function CardSearch({ value, onChange, testId }: { value: SelectedCard | 
               type="button"
               data-testid="card-search-hit"
               onClick={() => pick(h)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', background: 'transparent', border: 0, borderRadius: 6, color: '#e6e6e6', fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '5px 8px', background: 'transparent', border: 0, borderRadius: 6, color: '#e6e6e6', fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
-              {h.name}
-              {h.subtitle && <span style={{ color: '#8a93a3' }}> · {h.subtitle}</span>}
+              <CardThumb cardId={h.cardId} size={30} />
+              <span style={{ minWidth: 0 }}>
+                {h.name}
+                {h.subtitle && <span style={{ color: '#8a93a3' }}> · {h.subtitle}</span>}
+              </span>
             </button>
           ))}
         </div>

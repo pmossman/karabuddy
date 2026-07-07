@@ -10,8 +10,9 @@ export const runtime = 'nodejs';
 // B226: card finder. GET /api/teams/[slug]/card-plays?cardId=SOR_001 →
 //   { ok, plays: { <replaySlug>: <frameIndex> } }
 // The team's surfaced replays in which the RECORDER (a team member) played that
-// card, mapped to the FIRST frame it was played — so the Replays tab can narrow
-// to those games and deep-link straight to the play (`/r/<slug>?f=frame+1`).
+// card, mapped to the frame JUST BEFORE it was first played — so the Replays tab
+// can narrow to those games and deep-link to the moment of the play (stepping
+// one frame forward plays the card, rather than opening on the aftermath).
 // Member-only. "Team side" = cardEvents.playerId === the replay's ownerPlayerId.
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -42,6 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     .groupBy(replays.slug);
 
   const plays: Record<string, number> = {};
-  for (const r of rows) plays[r.slug] = Number(r.frame);
+  // Open one frame BEFORE the play so stepping forward shows the card go down.
+  for (const r of rows) plays[r.slug] = Math.max(0, Number(r.frame) - 1);
   return NextResponse.json({ ok: true, plays });
 }

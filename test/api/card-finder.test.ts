@@ -70,7 +70,7 @@ describe('GET /api/teams/[slug]/card-plays', () => {
 
     const j = await call(team, CARD);
     expect(j.ok).toBe(true);
-    expect(j.plays[a]).toBe(12); // first play frame
+    expect(j.plays[a]).toBe(11); // one frame BEFORE the first play (12)
     expect(j.plays[b]).toBeUndefined();
     expect(j.plays[c]).toBeUndefined();
     expect(j.plays[d]).toBeUndefined();
