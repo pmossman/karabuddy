@@ -7,20 +7,25 @@ import { requireTeamMember } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
-// B226: card finder. GET /api/teams/[slug]/card-plays?cardId=SOR_001 →
-//   { ok, plays: { <replaySlug>: <frameIndex> } }
-// The team's surfaced replays in which the RECORDER (a team member) played that
-// card, mapped to the frame JUST BEFORE it was first played — so the Replays tab
-// can narrow to those games and deep-link to the moment of the play (stepping
-// one frame forward plays the card, rather than opening on the aftermath).
-// Member-only. "Team side" = cardEvents.playerId === the replay's ownerPlayerId.
+// B226: card finder. GET /api/teams/[slug]/card-plays?cardId=SOR_001&event=played
+//   → { ok, plays: { <replaySlug>: <frameIndex> } }
+// The team's surfaced replays in which the RECORDER (a team member) did `event`
+// with that card (played | resourced | drawn | discarded), mapped to the frame
+// JUST BEFORE the first occurrence — so the Replays tab can narrow to those games
+// and deep-link to the moment (stepping one frame forward does the thing, rather
+// than opening on the aftermath). Member-only. "Team side" = cardEvents.playerId
+// === the replay's ownerPlayerId.
+const CARD_EVENTS = new Set(['played', 'resourced', 'drawn', 'discarded']);
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const m = await requireTeamMember(slug);
   if (m instanceof NextResponse) return m;
 
-  const cardId = (new URL(req.url).searchParams.get('cardId') || '').trim();
+  const url = new URL(req.url);
+  const cardId = (url.searchParams.get('cardId') || '').trim();
   if (!cardId) return NextResponse.json({ ok: false, error: 'cardId required' }, { status: 400 });
+  const event = (url.searchParams.get('event') || 'played').trim();
+  if (!CARD_EVENTS.has(event)) return NextResponse.json({ ok: false, error: 'invalid event' }, { status: 400 });
 
   const surfaceSlugs = await surfacedReplaySlugs([slug]);
   if (surfaceSlugs.length === 0) return NextResponse.json({ ok: true, plays: {} });
@@ -37,7 +42,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     )
     .where(and(
       eq(cardEvents.cardId, cardId),
-      eq(cardEvents.event, 'played'),
+      eq(cardEvents.event, event),
       inArray(replays.slug, surfaceSlugs),
     ))
     .groupBy(replays.slug);

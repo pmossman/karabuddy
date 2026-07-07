@@ -30,7 +30,7 @@ async function seedTeam(owner: string) {
 // stats match, optionally shared to a team, with a set of card plays.
 async function seedGame(opts: {
   owner: string; team?: string; ownerPlayerId: string;
-  plays: { cardId: string; playerId: string; frame: number }[];
+  plays: { cardId: string; playerId: string; frame: number; event?: string }[];
 }) {
   const slug = randomUUID().slice(0, 8);
   const gameId = randomUUID();
@@ -41,7 +41,7 @@ async function seedGame(opts: {
   await getDb().insert(matches).values({ gameId, replaySlug: slug, result: 'decisive' });
   if (opts.plays.length) {
     await getDb().insert(cardEvents).values(opts.plays.map((p) => ({
-      gameId, playerId: p.playerId, cardId: p.cardId, event: 'played', frameIndex: p.frame, attribution: 'both',
+      gameId, playerId: p.playerId, cardId: p.cardId, event: p.event ?? 'played', frameIndex: p.frame, attribution: 'both',
     })));
   }
   if (opts.team) await getDb().insert(replayTeamShares).values({ replaySlug: slug, teamSlug: opts.team, sharedBy: opts.owner });
@@ -75,6 +75,26 @@ describe('GET /api/teams/[slug]/card-plays', () => {
     expect(j.plays[c]).toBeUndefined();
     expect(j.plays[d]).toBeUndefined();
     expect(Object.keys(j.plays)).toEqual([a]);
+  });
+
+  it('filters by event — resourced vs played are separate', async () => {
+    const owner = await seedUser();
+    const team = await seedTeam(owner);
+    as(owner);
+    const CARD = 'ASH_148';
+    // one game the recorder RESOURCED the card (frame 6), another PLAYED it (frame 20)
+    const resGame = await seedGame({ owner, team, ownerPlayerId: 'P', plays: [{ cardId: CARD, playerId: 'P', frame: 6, event: 'resourced' }] });
+    const playGame = await seedGame({ owner, team, ownerPlayerId: 'P', plays: [{ cardId: CARD, playerId: 'P', frame: 20, event: 'played' }] });
+
+    const resourced = await (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays?cardId=${CARD}&event=resourced`), params(team))).json();
+    expect(Object.keys(resourced.plays)).toEqual([resGame]);
+    expect(resourced.plays[resGame]).toBe(5); // one before frame 6
+
+    const played = await (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays?cardId=${CARD}&event=played`), params(team))).json();
+    expect(Object.keys(played.plays)).toEqual([playGame]);
+
+    const bad = await (await cardPlays(new Request(`http://t/api/teams/${team}/card-plays?cardId=${CARD}&event=bogus`), params(team))).json();
+    expect(bad.ok).toBe(false);
   });
 
   it('is member-only and requires a cardId', async () => {

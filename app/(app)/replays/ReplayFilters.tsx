@@ -133,6 +133,7 @@ export function ReplayFilters({
   teamSlug,
   onMutated,
   cardPlayFrames,
+  cardPlayLabel,
 }: {
   rows: Row[];
   canManage: boolean;
@@ -160,6 +161,8 @@ export function ReplayFilters({
   // B226: card finder — slug → the frame the searched card was played. When
   // present, each matching card deep-links to that frame + shows a jump hint.
   cardPlayFrames?: Record<string, number>;
+  // B226: the verb for the jump hint ("the play" / "the resource" / …).
+  cardPlayLabel?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -501,8 +504,8 @@ export function ReplayFilters({
         // ticking many rows quickly. Desktop keeps the table (it has its own
         // checkbox column).
         isNarrow
-          ? (deferredSelectMode ? <CompactSelectList rows={display} /> : <CardGrid rows={display} canManage={canManage} group cardPlayFrames={cardPlayFrames} />)
-          : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} cardPlayFrames={cardPlayFrames} />
+          ? (deferredSelectMode ? <CompactSelectList rows={display} /> : <CardGrid rows={display} canManage={canManage} group cardPlayFrames={cardPlayFrames} cardPlayLabel={cardPlayLabel} />)
+          : <TableView rows={display} canManage={canManage} showShareColumn={tab !== 'unlisted'} cardPlayFrames={cardPlayFrames} cardPlayLabel={cardPlayLabel} />
       )}
 
       {pageSize && !grouped && filtered.length > display.length && (
@@ -755,7 +758,7 @@ function CompactSelectRow({ r }: { r: Row }) {
   );
 }
 
-function CardGrid({ rows, canManage, group = false, cardPlayFrames }: { rows: Row[]; canManage: boolean; group?: boolean; cardPlayFrames?: Record<string, number> }) {
+function CardGrid({ rows, canManage, group = false, cardPlayFrames, cardPlayLabel }: { rows: Row[]; canManage: boolean; group?: boolean; cardPlayFrames?: Record<string, number>; cardPlayLabel?: string }) {
   // B116: when grouping is on (the flat Grid view), collapse Bo3 series into a
   // bordered cluster with a header; singletons render as plain cards. By-leader
   // / Timeline pass group=false (they already group by their own key).
@@ -772,11 +775,11 @@ function CardGrid({ rows, canManage, group = false, cardPlayFrames }: { rows: Ro
               {seriesHeadline(g)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-              {g.rows.map((r, i) => <ReplayCard key={r.slug} replay={r as any} canManage={canManage} gameNumber={i + 1} jumpFrame={cardPlayFrames?.[r.slug]} />)}
+              {g.rows.map((r, i) => <ReplayCard key={r.slug} replay={r as any} canManage={canManage} gameNumber={i + 1} jumpFrame={cardPlayFrames?.[r.slug]} jumpLabel={cardPlayLabel} />)}
             </div>
           </div>
         ) : (
-          <ReplayCard key={g.key} replay={g.rows[0] as any} canManage={canManage} jumpFrame={cardPlayFrames?.[g.rows[0]?.slug]} />
+          <ReplayCard key={g.key} replay={g.rows[0] as any} canManage={canManage} jumpFrame={cardPlayFrames?.[g.rows[0]?.slug]} jumpLabel={cardPlayLabel} />
         ))}
       </div>
     );
@@ -784,7 +787,7 @@ function CardGrid({ rows, canManage, group = false, cardPlayFrames }: { rows: Ro
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginTop: 16 }}>
       {rows.map((r) => (
-        <ReplayCard key={r.slug} replay={r as any} canManage={canManage} jumpFrame={cardPlayFrames?.[r.slug]} />
+        <ReplayCard key={r.slug} replay={r as any} canManage={canManage} jumpFrame={cardPlayFrames?.[r.slug]} jumpLabel={cardPlayLabel} />
       ))}
     </div>
   );
@@ -1272,7 +1275,7 @@ const TABLE_COMPARATORS: Record<SortKey, (a: SeriesGroup, b: SeriesGroup, dir: '
   comments: byRep((r) => r.commentCount ?? 0),
 };
 
-function TableView({ rows, canManage = false, showShareColumn = true, cardPlayFrames }: { rows: Row[]; canManage?: boolean; showShareColumn?: boolean; cardPlayFrames?: Record<string, number> }) {
+function TableView({ rows, canManage = false, showShareColumn = true, cardPlayFrames, cardPlayLabel }: { rows: Row[]; canManage?: boolean; showShareColumn?: boolean; cardPlayFrames?: Record<string, number>; cardPlayLabel?: string }) {
   const sel = useReplaySelection();
   const showSel = !!sel?.selectMode;
 
@@ -1352,7 +1355,7 @@ function TableView({ rows, canManage = false, showShareColumn = true, cardPlayFr
                 )}
                 <td style={inSeries ? { ...cellStyle, paddingLeft: 30 } : cellStyle}>{formatTimestamp(r.createdAt)}</td>
                 <td style={cellStyle} data-testid="replay-cell">
-                  <ReplayCellLink replay={r} gameNumber={gameNumber} jumpFrame={cardPlayFrames?.[r.slug]} />
+                  <ReplayCellLink replay={r} gameNumber={gameNumber} jumpFrame={cardPlayFrames?.[r.slug]} jumpLabel={cardPlayLabel} />
                 </td>
                 {showShared && (
                   <td style={cellStyle} data-testid="shared-cell">
@@ -1404,7 +1407,7 @@ function TableView({ rows, canManage = false, showShareColumn = true, cardPlayFr
 // Replay cell: leader+base mini thumbnails for each player, separated by
 // "vs", with the matchup text below. Wrapped in <Link> so the whole cell
 // (text + thumbs) navigates to /r/<slug>.
-function ReplayCellLink({ replay, gameNumber, jumpFrame }: { replay: Row; gameNumber?: number; jumpFrame?: number }) {
+function ReplayCellLink({ replay, gameNumber, jumpFrame, jumpLabel }: { replay: Row; gameNumber?: number; jumpFrame?: number; jumpLabel?: string }) {
   // B226: card finder — deep-link the row straight to the play frame.
   const href = jumpFrame != null ? `/r/${replay.slug}?f=${jumpFrame + 1}` : `/r/${replay.slug}`;
   // B170: an encrypted replay has no server-side matchup — decrypt the summary
@@ -1433,7 +1436,7 @@ function ReplayCellLink({ replay, gameNumber, jumpFrame }: { replay: Row; gameNu
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
         {replay.doubleSided && <DoubleSidedChip />}
         {jumpFrame != null && (
-          <span data-testid="jump-to-play" style={{ fontSize: 10, fontWeight: 700, color: '#4dd2ff', background: 'rgba(77,210,255,0.12)', border: '1px solid rgba(77,210,255,0.3)', borderRadius: 999, padding: '0 7px', whiteSpace: 'nowrap' }}>▶ jump to play</span>
+          <span data-testid="jump-to-play" style={{ fontSize: 10, fontWeight: 700, color: '#4dd2ff', background: 'rgba(77,210,255,0.12)', border: '1px solid rgba(77,210,255,0.3)', borderRadius: 999, padding: '0 7px', whiteSpace: 'nowrap' }}>▶ jump to {jumpLabel ?? 'the play'}</span>
         )}
       </div>
       {/* B116: usernames demoted to small secondary text. */}

@@ -58,7 +58,7 @@ interface ReplayRow {
 // B42 chip labels live in lib/matchMetadata.ts; see the shared
 // matchChips() helper used everywhere.
 
-export function ReplayCard({ replay, canManage, gameNumber, jumpFrame }: { replay: ReplayRow; canManage: boolean; gameNumber?: number; jumpFrame?: number }) {
+export function ReplayCard({ replay, canManage, gameNumber, jumpFrame, jumpLabel }: { replay: ReplayRow; canManage: boolean; gameNumber?: number; jumpFrame?: number; jumpLabel?: string }) {
   const players = (replay.players as any[]) || [];
   const [p1, p2] = players;
   const sel = useReplaySelection();
@@ -131,7 +131,7 @@ export function ReplayCard({ replay, canManage, gameNumber, jumpFrame }: { repla
         {/* B226: card finder — jump straight to the frame the card was played. */}
         {jumpFrame != null && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start', fontSize: 11.5, fontWeight: 700, color: '#4dd2ff', background: 'rgba(77,210,255,0.10)', border: '1px solid rgba(77,210,255,0.3)', borderRadius: 999, padding: '2px 9px' }}>
-            ▶ Jump to the play
+            ▶ Jump to {jumpLabel ?? 'the play'}
           </div>
         )}
         {/* B53: user-set labels as small chips below the names. */}
