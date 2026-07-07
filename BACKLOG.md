@@ -121,9 +121,9 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
-### [B226] Card finder — filter team replays by a card, jump to the play
+### [B226] Card finder — find replays featuring a card, jump to the moment
 _completed: 2026-07-07 by claude_
-On the team Replays tab, a card autocomplete narrows the grid to replays where a teammate (the recorder) played that card, each deep-linking to the frame it was played. Reused existing plumbing: `cardEvents` (every `played` event + `frameIndex`), the viewer's `?f=N`, and `replayTeamShares`. New: `/api/cards?q=` name autocomplete (playable types; leaders/bases excluded), `/api/teams/[slug]/card-plays?cardId=` (slug → first play frame, team-scoped, recorder-side via `cardEvents.playerId = replay.ownerPlayerId`), `CardSearch` component, and an optional `cardPlayFrames` prop on `ReplayFilters` (grid card + table row jump link). v0 = "played" only; overperform heuristics (stuck N turns, 2-for-1) are the noted next layer. No migration.
+A card autocomplete (with art thumbnails) narrows the replay browser to games where the RECORDER did an event with that card, each deep-linking to the frame just BEFORE it (step forward to see it happen). An event toggle picks Played / Resourced / Drawn / Discarded. Lives in the shared `ReplayFilters` (via the self-contained `app/(app)/replays/cardFinder.tsx` — `useCardFinder` hook + `CardFinderBar`), enabled by a single `cardFinder` flag, so BOTH the team Replays tab and the personal My-replays library get it identically. Reused existing plumbing: `cardEvents` (every event + `frameIndex`), the viewer's `?f=N`, `replayTeamShares`. New: `/api/cards?q=` name autocomplete (leaders/bases excluded), unified `/api/card-plays?cardId=&event=&team=?` (team-surface OR the signed-in viewer's own replays; recorder-side via `cardEvents.playerId = replay.ownerPlayerId`), `CardSearch` component. v0 = the four event types; overperform heuristics (stuck N turns, 2-for-1) are the noted next layer. No migration.
 
 ### [B225] Reframe openings from match-scoring to neutral "takes"
 _completed: 2026-07-06 by claude_
