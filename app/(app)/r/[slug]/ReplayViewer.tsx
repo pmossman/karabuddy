@@ -7,6 +7,7 @@ import { CosmeticsProvider } from '@/app/_contexts/CosmeticsContext';
 import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
+import { buildNamedCardMap, stampNamedCards } from '@/lib/namedCards';
 import { FrameAnimator } from './FrameAnimator';
 import { computeActionStops, nextActionStop } from './actionStops';
 import { EndGameSummary } from './EndGameSummary';
@@ -21,7 +22,7 @@ import { getCompanionInfo, extensionPresent, loadedTeamKeyIds, resolvePrivateRep
 import { useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { mapFrameIndex } from '@/lib/replaySignature';
-import type { SeriesInfo } from './seriesTypes';
+import { nextSeriesGame, type SeriesInfo } from './seriesTypes';
 import type { SideboardChanges } from '@/lib/sideboardDiff';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import type { ClipSummary } from './ClipsList';
@@ -179,6 +180,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   const [pov, setPov] = useState<'canonical' | 'alt'>('canonical');
   const [altDecoded, setAltDecoded] = useState<CollapsedReplay | null>(null);
   const activeDecoded = pov === 'alt' && altDecoded ? altDecoded : decoded;
+  // B229: the next game of this Bo3 series (if recorded) — offered at game end.
+  const nextGame = useMemo(() => nextSeriesGame(series), [series]);
   const [currentIndex, setCurrentIndexRaw] = useState(0);
   // B11: track the most recent frame transition so FrameLog can highlight
   // the range of frames a single action stepped across. Null on initial
@@ -197,6 +200,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // closures), + the active playback (interval) handle.
   const currentIndexRef = useRef(0);
   useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
+  // B228: uuid → named card, parsed once from the active POV's game log.
+  const namedCardMapRef = useRef<Record<string, string>>({});
+  useEffect(() => { namedCardMapRef.current = buildNamedCardMap(activeDecoded?.messagesByFrame); }, [activeDecoded]);
   const playRef = useRef<{ timer: number; target: number; dir: 1 | -1 } | null>(null);
   const lastStepAt = useRef(0); // timestamp of the last action step (held vs deliberate)
   const stopPlayback = useCallback(() => {
@@ -818,6 +824,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       // actually changed.
       if (i === lastPushedIndexRef.current) return;
       lastPushedIndexRef.current = i;
+      // B228: stamp any "named card" (Ryder Azadi et al) onto the board cards
+      // so GameCard can show a persistent bubble — the log-only signal is easy
+      // to miss.
+      stampNamedCards(src[i].state, namedCardMapRef.current);
       setGameState(src[i].state);
     });
   }, [frames, displayFrames, currentIndex, setGameState]);
@@ -929,6 +939,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 players={(replay.players as any[]) || []}
                 localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
                 onClose={() => setSummaryDismissed(true)}
+                nextGame={nextGame}
               />
             )}
             {showSideboard && sideboard && (

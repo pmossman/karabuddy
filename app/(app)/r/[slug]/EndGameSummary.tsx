@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import type { EndGameStats, PlayerEndStats } from '@/lib/endGameStats';
 
@@ -18,11 +19,15 @@ export function EndGameSummary({
   players,
   localPlayerId,
   onClose,
+  nextGame,
 }: {
   stats: EndGameStats;
   players: any[];
   localPlayerId: string | null;
   onClose: () => void;
+  // B229: when this replay is a Bo3 game with a NEXT game recorded, offer to
+  // jump straight to it from the end-of-game summary.
+  nextGame?: { slug: string; gameNumber: number } | null;
 }) {
   // Order columns to match the matchup header (replay.players order), falling
   // back to the stats order. Map each column to its computed stats by id.
@@ -149,6 +154,22 @@ export function EndGameSummary({
             );
           })}
         </div>
+
+        {/* B229: series continuation — jump to the next game of the Bo3. */}
+        {nextGame && (
+          <Link
+            href={`/r/${nextGame.slug}`}
+            data-testid="next-game-cta"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              marginTop: 16, padding: '10px 16px', borderRadius: 8,
+              background: 'rgba(77,210,255,0.12)', border: '1px solid #4dd2ff',
+              color: '#cfe4ff', fontSize: 14, fontWeight: 800, textDecoration: 'none',
+            }}
+          >
+            Go to Game {nextGame.gameNumber} <span aria-hidden="true">→</span>
+          </Link>
+        )}
       </div>
 
       <style>{`

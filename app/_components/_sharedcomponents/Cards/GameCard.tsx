@@ -470,6 +470,38 @@ const GameCard: React.FC<IGameCardProps> = ({
                 inset 0 0 16px rgba(150, 255, 150, 0.3)
             `,
         },
+        // B228: the "named card" speech bubble — floats just above the card's
+        // top edge; a cyan pill + a little tail. Non-interactive.
+        namedBubble: {
+            position: 'absolute',
+            bottom: 'calc(100% - 8px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 6,
+            maxWidth: '200%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            background: 'rgba(13,17,24,0.96)',
+            border: '1px solid #4dd2ff',
+            color: '#cfe4ff',
+            borderRadius: '8px',
+            padding: '2px 7px',
+            fontSize: 'clamp(5px, .62vw, 11px)',
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.6)',
+            '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                border: '4px solid transparent',
+                borderTopColor: '#4dd2ff',
+            },
+        },
         cloneName: {
             fontSize: 'clamp(4px, .65vw, 12px)',
             marginTop: '2px',
@@ -655,6 +687,11 @@ const GameCard: React.FC<IGameCardProps> = ({
         // B104: data-card-uuid lets the replay viewer's FrameAnimator measure a
         // card's on-screen position by identity across frames (FLIP animation).
         <Box sx={styles.cardContainer} data-card-uuid={card.uuid}>
+            {cardStyle === CardStyle.InPlay && card.namedCard && (
+                <Box sx={styles.namedBubble} data-testid="named-card-bubble" title={`Named ${card.namedCard}`}>
+                    🗣 {card.namedCard}
+                </Box>
+            )}
             {cardStyle === CardStyle.InPlay && card.clonedCardId && (
                 <Box
                     sx={styles.cloneIcon}

@@ -14,3 +14,11 @@ export interface SeriesInfo {
   current: number; // 1-based game number of THIS replay
   games: SeriesGame[];
 }
+
+// B229: the game AFTER the one being viewed (for the end-of-game "next game"
+// prompt), or null on the last recorded game / a non-series replay.
+export function nextSeriesGame(series: SeriesInfo | null | undefined): { slug: string; gameNumber: number } | null {
+  if (!series) return null;
+  const next = series.games.find((g) => g.gameNumber === series.current + 1);
+  return next ? { slug: next.slug, gameNumber: next.gameNumber } : null;
+}
