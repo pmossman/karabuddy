@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B229] End-of-game prompt to jump to the next Bo3 game
+_completed: 2026-07-08 by claude_
+When a replay is part of a recorded Bo3 series and a next game exists, the end-of-game summary (`EndGameSummary`) shows a "Go to Game N →" CTA linking to it. `nextSeriesGame(series)` (pure, in `seriesTypes.ts`, unit-tested) picks the game after the current one — null on the last recorded game or a non-series replay. Uses the existing identity-entitled `series` prop; no new data, no migration.
+
 ### [B228] Speech bubble showing what a card named (Ryder Azadi et al)
 _completed: 2026-07-08 by claude_
 Cards that name another card keep it only in the game-log message stream (`<player> names <NamedCard> using <card>`), never on the card object — so it scrolls away. `lib/namedCards` (`buildNamedCardMap` + `stampNamedCards`) recovers `cardUuid → named card` from the log; `ReplayViewer` stamps it onto each frame's board state; `GameCard` shows a persistent cyan "🗣 &lt;named card&gt;" bubble above any in-play unit that named something (`ICardData.namedCard`). Covers units (GameCard); leaders (LeaderBaseCard) + non-board naming events are the noted follow-ups. No migration.
