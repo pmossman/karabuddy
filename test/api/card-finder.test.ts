@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { GET as cardPlays } from '@/app/api/card-plays/route';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, replays, matches, cardEvents, replayTeamShares } from '@/lib/schema';
+import { users, teams, teamMembers, replays, matches, cardEvents, replayTeamShares, cards } from '@/lib/schema';
 
 // B226: card finder — replays where the RECORDER did an event with a card,
 // mapped to the frame just before it. One endpoint, two scopes: a team's
@@ -97,6 +97,24 @@ describe('GET /api/card-plays', () => {
 
     const bad = await (await req(`cardId=${CARD}&team=${team}&event=bogus`)).json();
     expect(bad.ok).toBe(false);
+  });
+
+  it('matches across PRINTINGS — a card played as one printing is found via another (B226 fix)', async () => {
+    // Same logical card, two printings: the deck-legal base + a promo variant.
+    await getDb().insert(cards).values([
+      { cardId: 'SEC_068', name: 'Lando Calrissian', subtitle: 'Trust Me', type: 'unit', source: 'seed' },
+      { cardId: 'SECOP_003', name: 'Lando Calrissian', subtitle: 'Trust Me', type: 'unit', source: 'seed' },
+    ]);
+    const owner = await seedUser();
+    const team = await seedTeam(owner);
+    as(owner);
+    // the recorder PLAYED the base printing
+    const g = await seedGame({ owner, team, ownerPlayerId: 'P', plays: [{ cardId: 'SEC_068', playerId: 'P', frame: 15 }] });
+
+    // searching the OTHER printing still finds it (identity, not exact cardId)
+    const j = await call(team, 'SECOP_003');
+    expect(j.ok).toBe(true);
+    expect(Object.keys(j.plays)).toEqual([g]);
   });
 
   it('is member-only and requires a cardId', async () => {

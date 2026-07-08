@@ -35,4 +35,17 @@ describe('GET /api/cards', () => {
     // prefix match ("Ninth …") ranks before the mid-string match ("The Ninth …")
     expect(names.indexOf('Ninth Sister')).toBeLessThan(names.indexOf('The Ninth Squad'));
   });
+
+  it('?q= de-dupes reprints to the canonical base printing (B226 fix)', async () => {
+    // One logical card, several printings — the base + variants/promos.
+    await getDb().insert(cards).values([
+      { cardId: 'SECOP_003', name: 'Zed Card', subtitle: 'Trust Me', type: 'unit', source: 'seed' },
+      { cardId: 'SEC_332', name: 'Zed Card', subtitle: 'Trust Me', type: 'unit', source: 'seed' },
+      { cardId: 'SEC_068', name: 'Zed Card', subtitle: 'Trust Me', type: 'unit', source: 'seed' }, // base
+    ]);
+    const body = await (await GET(new Request('http://t/api/cards?q=zed'))).json();
+    const zed = body.results.filter((r: any) => r.name === 'Zed Card');
+    expect(zed).toHaveLength(1); // one result, not three
+    expect(zed[0].cardId).toBe('SEC_068'); // the base printing (real art)
+  });
 });
