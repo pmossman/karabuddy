@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { replays, cardEvents } from '@/lib/schema';
 import { surfacedReplaySlugs } from '@/lib/teamSurface';
 import { requireSession, requireTeamMember } from '@/lib/apiAuth';
+import { cardPrintings } from '@/lib/cardPrintings';
 
 export const runtime = 'nodejs';
 
@@ -41,6 +42,10 @@ export async function GET(req: Request) {
 
   // cardEvents is indexed on (cardId, event), so filtering the card first is
   // cheap; the join to the recorder's own plays + the scope narrows the rest.
+  // B226 fix: match EVERY printing of the card (reprints/variants share a
+  // name+subtitle), not just the one cardId the search happened to pick.
+  const printings = await cardPrintings(cardId);
+
   const rows = await getDb()
     .select({ slug: replays.slug, frame: sql<number>`min(${cardEvents.frameIndex})` })
     .from(cardEvents)
@@ -48,7 +53,7 @@ export async function GET(req: Request) {
       replays,
       and(eq(replays.gameId, cardEvents.gameId), eq(replays.ownerPlayerId, cardEvents.playerId)),
     )
-    .where(and(eq(cardEvents.cardId, cardId), eq(cardEvents.event, event), scope))
+    .where(and(inArray(cardEvents.cardId, printings), eq(cardEvents.event, event), scope))
     .groupBy(replays.slug);
 
   const plays: Record<string, number> = {};
