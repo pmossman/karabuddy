@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { cards } from '@/lib/schema';
 import { cachedRead, CACHE_TAGS } from '@/lib/cached';
+import { canonicalCardId } from '@/lib/cardPrintings';
 
 // B101/Phase1: card-catalog lookup for the viewer's resourcing analysis (which
 // runs client-side on the already-decoded frames and only needs costs/names) and
@@ -44,27 +45,26 @@ export async function GET(req: Request) {
   const q = (new URL(req.url).searchParams.get('q') || '').trim().toLowerCase();
   if (q) {
     const catalog = await getCatalog();
-    const hits: { cardId: string; name: string; subtitle: string | null; type: string | null; aspects: string[] | null }[] = [];
+    // Group every matching printing by the card's IDENTITY (name+subtitle), so
+    // one logical card appears once — and its representative cardId is the
+    // canonical (base-art) printing, not an arbitrary variant with no art.
+    const groups = new Map<string, { ids: string[]; name: string; subtitle: string | null; type: string | null; aspects: string[] | null }>();
     for (const [cardId, m] of Object.entries(catalog)) {
       if (!m.name || m.type === 'leader' || m.type === 'base') continue;
-      const name = m.name.toLowerCase();
-      if (name.includes(q)) {
-        hits.push({ cardId, name: m.name, subtitle: m.subtitle, type: m.type, aspects: m.aspects });
-      }
+      if (!m.name.toLowerCase().includes(q)) continue;
+      const key = `${m.name}|${m.subtitle ?? ''}`;
+      const g = groups.get(key);
+      if (g) g.ids.push(cardId);
+      else groups.set(key, { ids: [cardId], name: m.name, subtitle: m.subtitle, type: m.type, aspects: m.aspects });
     }
-    // Prefix matches first, then alphabetical; de-dupe reprints by name+subtitle.
-    hits.sort((a, b) => {
-      const ap = a.name.toLowerCase().startsWith(q) ? 0 : 1;
-      const bp = b.name.toLowerCase().startsWith(q) ? 0 : 1;
-      return ap - bp || a.name.localeCompare(b.name) || (a.subtitle ?? '').localeCompare(b.subtitle ?? '');
-    });
-    const seen = new Set<string>();
-    const results = hits.filter((h) => {
-      const key = `${h.name}|${h.subtitle ?? ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(0, 20);
+    const results = [...groups.values()]
+      .sort((a, b) => {
+        const ap = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bp = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return ap - bp || a.name.localeCompare(b.name) || (a.subtitle ?? '').localeCompare(b.subtitle ?? '');
+      })
+      .slice(0, 20)
+      .map((g) => ({ cardId: canonicalCardId(g.ids), name: g.name, subtitle: g.subtitle, type: g.type, aspects: g.aspects }));
     return NextResponse.json({ ok: true, results });
   }
 
