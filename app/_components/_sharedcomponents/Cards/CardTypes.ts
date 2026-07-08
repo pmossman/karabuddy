@@ -69,6 +69,10 @@ export interface ICardData {
     clonedCardId?: ICardSetId;
     clonedCardName?: string;
     blockedFromPlayReason?: string;
+    // B228 (karabuddy): a card this one NAMED (Ryder Azadi et al). Stamped by the
+    // replay viewer from the game log — karabast keeps it only in the message
+    // stream, not on the card — so the viewer can show a persistent bubble.
+    namedCard?: string;
 }
 
 export interface IServerCardData {

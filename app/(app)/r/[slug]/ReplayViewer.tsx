@@ -7,6 +7,7 @@ import { CosmeticsProvider } from '@/app/_contexts/CosmeticsContext';
 import { UserProvider } from '@/app/_contexts/User.context';
 import { PopupProvider } from '@/app/_contexts/Popup.context';
 import { GameProvider, useGame } from '@/app/_contexts/Game.context';
+import { buildNamedCardMap, stampNamedCards } from '@/lib/namedCards';
 import { FrameAnimator } from './FrameAnimator';
 import { computeActionStops, nextActionStop } from './actionStops';
 import { EndGameSummary } from './EndGameSummary';
@@ -197,6 +198,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   // closures), + the active playback (interval) handle.
   const currentIndexRef = useRef(0);
   useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
+  // B228: uuid → named card, parsed once from the active POV's game log.
+  const namedCardMapRef = useRef<Record<string, string>>({});
+  useEffect(() => { namedCardMapRef.current = buildNamedCardMap(activeDecoded?.messagesByFrame); }, [activeDecoded]);
   const playRef = useRef<{ timer: number; target: number; dir: 1 | -1 } | null>(null);
   const lastStepAt = useRef(0); // timestamp of the last action step (held vs deliberate)
   const stopPlayback = useCallback(() => {
@@ -818,6 +822,10 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
       // actually changed.
       if (i === lastPushedIndexRef.current) return;
       lastPushedIndexRef.current = i;
+      // B228: stamp any "named card" (Ryder Azadi et al) onto the board cards
+      // so GameCard can show a persistent bubble — the log-only signal is easy
+      // to miss.
+      stampNamedCards(src[i].state, namedCardMapRef.current);
       setGameState(src[i].state);
     });
   }, [frames, displayFrames, currentIndex, setGameState]);
