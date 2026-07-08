@@ -19,7 +19,7 @@ export const VIEWER_BAR_H = 46; // px — slim top bar on the immersive viewer
 const MOBILE_BP = 860; // px — below this the column becomes a top bar + drawer
 
 type IconName =
-  | 'dashboard' | 'discussion' | 'replays' | 'reviews' | 'openings' | 'tournaments' | 'members' | 'settings'
+  | 'dashboard' | 'discussion' | 'replays' | 'reviews' | 'openings' | 'sideboarding' | 'tournaments' | 'members' | 'settings'
   | 'stats' | 'clips' | 'mentions' | 'addTeam';
 
 interface NavItem { href: string; label: string; icon: IconName; active: boolean; badge?: string }
@@ -64,6 +64,7 @@ export function Sidebar({
     { href: `/teams/${activeTeam.slug}?tab=clips`, label: 'Clips', icon: 'clips', active: onTeam && tab === 'clips' },
     { href: `/teams/${activeTeam.slug}?tab=review`, label: 'Reviews', icon: 'reviews', active: onTeam && tab === 'review' },
     { href: `/teams/${activeTeam.slug}?tab=openings`, label: 'Openings', icon: 'openings', active: onTeam && tab === 'openings', badge: 'beta' },
+    { href: `/teams/${activeTeam.slug}?tab=sideboarding`, label: 'Sideboarding', icon: 'sideboarding', active: onTeam && tab === 'sideboarding', badge: 'beta' },
     { href: `/teams/${activeTeam.slug}?tab=tournaments`, label: 'Tournaments', icon: 'tournaments', active: onTeam && tab === 'tournaments' },
     { href: `/teams/${activeTeam.slug}?tab=stats`, label: 'Stats', icon: 'stats', active: onTeam && tab === 'stats' },
     { href: `/teams/${activeTeam.slug}?tab=members`, label: 'Members', icon: 'members', active: onTeam && tab === 'members' },
@@ -537,6 +538,7 @@ function Icon({ name, active }: { name: IconName; active: boolean }) {
     case 'reviews': return <svg {...common}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>;
     // A fanned hand of cards — the opening-drills tab.
     case 'openings': return <svg {...common}><rect x="3.5" y="6" width="9" height="13" rx="1.5" transform="rotate(-8 8 12.5)" /><rect x="11.5" y="5" width="9" height="13" rx="1.5" transform="rotate(8 16 11.5)" /></svg>;
+    case 'sideboarding': return <svg {...common}><rect x="4" y="4" width="7" height="16" rx="1.5" /><rect x="13" y="4" width="7" height="16" rx="1.5" /><path d="M9 10l2 2-2 2M15 10l-2 2 2 2" /></svg>;
     case 'tournaments': return <svg {...common}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>;
     case 'members': return <svg {...common}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
     case 'settings': return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>;

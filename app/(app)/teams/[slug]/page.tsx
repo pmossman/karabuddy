@@ -18,6 +18,7 @@ import { TeamDiscussion } from './TeamDiscussion';
 import { TeamTournaments } from './TeamTournaments';
 import { ReviewQueue } from './ReviewQueue';
 import { TeamOpenings } from './TeamOpenings';
+import { TeamSideboarding } from './TeamSideboarding';
 import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
 import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
@@ -36,7 +37,7 @@ interface PageProps {
 // Overview is the default landing "hub"; the rest stay as drill-in tabs. The
 // clean-URL rule maps the default tab to bare /teams/<slug>, so old ?tab= deep
 // links keep working — only change: bare /teams/<slug> now lands on Overview.
-const VALID_TABS = ['overview', 'discussion', 'replays', 'clips', 'review', 'openings', 'tournaments', 'stats', 'members', 'settings'] as const;
+const VALID_TABS = ['overview', 'discussion', 'replays', 'clips', 'review', 'openings', 'sideboarding', 'tournaments', 'stats', 'members', 'settings'] as const;
 type Tab = (typeof VALID_TABS)[number];
 const DEFAULT_TAB: Tab = 'overview';
 
@@ -194,6 +195,26 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
             </div>
           ) : (
             <TeamOpenings
+              teamSlug={slug}
+              members={members.map((m) => ({ userId: m.userId, name: m.name }))}
+              viewerName={session?.user?.name || 'You'}
+            />
+          )
+        )}
+        {tab === 'sideboarding' && (
+          (team as any).privateMode ? (
+            // B227: sideboards diff the recorder's plaintext decklists across
+            // games — a private team's encrypted replays never expose them.
+            <div style={{ padding: 32, textAlign: 'center', color: '#8a93a3', maxWidth: 460, margin: '0 auto', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 32 }}>🔒</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#e6ebf2', marginTop: 8 }}>Sideboard drills are off for private teams</div>
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                This team’s replays are end-to-end encrypted, so the server can’t read the decklists
+                to build drills from them.
+              </div>
+            </div>
+          ) : (
+            <TeamSideboarding
               teamSlug={slug}
               members={members.map((m) => ({ userId: m.userId, name: m.name }))}
               viewerName={session?.user?.name || 'You'}
