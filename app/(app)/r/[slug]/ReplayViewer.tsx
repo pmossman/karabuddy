@@ -22,7 +22,7 @@ import { getCompanionInfo, extensionPresent, loadedTeamKeyIds, resolvePrivateRep
 import { useSearchParams } from 'next/navigation';
 import { decodeReplay, collapseReplay, type Frame, type CollapsedReplay } from '@/lib/replayDecoder';
 import { mapFrameIndex } from '@/lib/replaySignature';
-import type { SeriesInfo } from './seriesTypes';
+import { nextSeriesGame, type SeriesInfo } from './seriesTypes';
 import type { SideboardChanges } from '@/lib/sideboardDiff';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import type { ClipSummary } from './ClipsList';
@@ -180,6 +180,8 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
   const [pov, setPov] = useState<'canonical' | 'alt'>('canonical');
   const [altDecoded, setAltDecoded] = useState<CollapsedReplay | null>(null);
   const activeDecoded = pov === 'alt' && altDecoded ? altDecoded : decoded;
+  // B229: the next game of this Bo3 series (if recorded) — offered at game end.
+  const nextGame = useMemo(() => nextSeriesGame(series), [series]);
   const [currentIndex, setCurrentIndexRaw] = useState(0);
   // B11: track the most recent frame transition so FrameLog can highlight
   // the range of frames a single action stepped across. Null on initial
@@ -937,6 +939,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
                 players={(replay.players as any[]) || []}
                 localPlayerId={anonymize ? null : (activeDecoded?.meta.localPlayerId ?? null)}
                 onClose={() => setSummaryDismissed(true)}
+                nextGame={nextGame}
               />
             )}
             {showSideboard && sideboard && (
