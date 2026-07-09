@@ -13,6 +13,7 @@ import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { multisetEquals } from '@/lib/multiset';
 import { QuizCard, GradientBorderButton, type QuizCardRef, type PickVerdict } from './OpeningPromptKit';
+import { DeckList } from '@/app/(app)/r/[slug]/Decks';
 import type { DrillStageProps } from './TeamDrills';
 
 interface SideCard extends QuizCardRef { count: number }
@@ -253,9 +254,37 @@ function Reveal({ detail, hasNext, onNext, finishLabel }: { detail: Detail; hasN
         <Legend color="#FF8E7A" text="only them" />
       </div>
 
+      {/* The full game-N list, for context — collapsed so the swap stays the focus. */}
+      <FullDeck detail={detail} />
+
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <GradientBorderButton testId="sideboard-next" onClick={onNext} style={{ padding: '0.55rem 1.3rem' }}>{hasNext ? 'Next decision' : finishLabel}</GradientBorderButton>
       </div>
+    </div>
+  );
+}
+
+// The full game-N maindeck + sideboard, collapsed by default. Reuses the
+// viewer's DeckList (cost-sorted card thumbs + count badges) — a SideCard is
+// structurally a DeckCardRef.
+function FullDeck({ detail }: { detail: Detail }) {
+  const [open, setOpen] = useState(false);
+  const deckCount = detail.deck.reduce((s, c) => s + (c.count || 1), 0);
+  const sbCount = detail.sideboard.reduce((s, c) => s + (c.count || 1), 0);
+  return (
+    <div style={{ ...panel, padding: open ? 14 : '11px 14px' }}>
+      <button type="button" data-testid="sideboard-full-deck-toggle" onClick={() => setOpen((o) => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'transparent', border: 0, color: '#c8cdd8', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+        <span style={{ color: '#6c7588', width: 12 }}>{open ? '▾' : '▸'}</span>
+        Full game {detail.gameNumber} deck
+        <span style={{ color: '#6c7588', fontWeight: 400 }}>· {deckCount} cards · {sbCount} sideboard</span>
+      </button>
+      {open && (
+        <div data-testid="sideboard-full-deck" style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <DeckList title={`Deck · ${deckCount}`} cards={detail.deck} />
+          {detail.sideboard.length > 0 && <DeckList title={`Sideboard · ${sbCount}`} cards={detail.sideboard} />}
+        </div>
+      )}
     </div>
   );
 }
