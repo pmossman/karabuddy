@@ -1,17 +1,18 @@
 'use client';
 
-// B227: the Sideboarding drill STAGE — the sibling of OpeningQuiz's OpeningStage.
-// Implements the shared DrillStageProps: matchup context → a swap builder (cut
-// from the deck, bring in from the sideboard) → reveal (the recorder's actual
-// swap + your swap with matches outlined + the team). The outer HUD / session
-// rail / summary are the shared TeamDrills framework's job.
+// B227: the Sideboarding drill STAGE — the sibling of OpeningQuiz's OpeningStage,
+// sharing its VISUAL LANGUAGE: cyan selection while you build the swap, then a
+// reveal where every card is colored by agreement (green = you AND the recorder
+// made this exact move, yellow = only you, salmon = only them), with the
+// recorder's swap and yours stacked as tinted anchor blocks and the rest of the
+// team grouped below. Matches Openings so the two drills feel like one tool.
 
 import { useEffect, useState } from 'react';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { multisetEquals } from '@/lib/multiset';
-import { QuizCard, GradientBorderButton, type QuizCardRef } from './OpeningPromptKit';
+import { QuizCard, GradientBorderButton, type QuizCardRef, type PickVerdict } from './OpeningPromptKit';
 import type { DrillStageProps } from './TeamDrills';
 
 interface SideCard extends QuizCardRef { count: number }
@@ -26,6 +27,7 @@ interface Detail {
 }
 
 const panel: React.CSSProperties = { background: tokens.surface.panel, border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.md, padding: 18 };
+const CYAN = '#66E5FF';
 
 export function SideboardStage({ replaySlug, hasNext, onAnswered, onNext, finishLabel }: DrillStageProps) {
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -71,7 +73,6 @@ export function SideboardStage({ replaySlug, hasNext, onAnswered, onNext, finish
 
   const cutTotal = Object.values(cut).reduce((a, b) => a + b, 0);
   const bringTotal = Object.values(bring).reduce((a, b) => a + b, 0);
-
   const matchup = <Matchup detail={detail} />;
 
   if (detail.reveal) {
@@ -88,8 +89,8 @@ export function SideboardStage({ replaySlug, hasNext, onAnswered, onNext, finish
         {detail.wonPrevious == null ? 'Going into the next game.' : detail.wonPrevious ? 'You WON the previous game.' : 'You LOST the previous game.'}{' '}
         What do you change? Click cards to cut from your deck and bring in from your sideboard.
       </div>
-      <CardZone label={`Sideboard — bring in (${bringTotal})`} cards={detail.sideboard} counts={bring} tone="in" onClick={(id, max) => cycle(setBring, id, max)} testId="sideboard-in" />
-      <CardZone label={`Your deck — cut (${cutTotal})`} cards={detail.deck} counts={cut} tone="out" onClick={(id, max) => cycle(setCut, id, max)} testId="sideboard-out" />
+      <PickZone label={`Bring in from sideboard · ${bringTotal}`} cards={detail.sideboard} counts={bring} onClick={(id, max) => cycle(setBring, id, max)} testId="sideboard-in" />
+      <PickZone label={`Cut from your deck · ${cutTotal}`} cards={detail.deck} counts={cut} onClick={(id, max) => cycle(setCut, id, max)} testId="sideboard-out" />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', position: 'sticky', bottom: 0, ...panel, padding: '10px 14px' }}>
         <span style={{ fontSize: 12.5, color: '#8a93a3' }}>{cutTotal === 0 && bringTotal === 0 ? 'No changes — keep the same 75' : `Cutting ${cutTotal} · bringing in ${bringTotal}`}</span>
         <span style={{ flex: 1 }} />
@@ -120,13 +121,15 @@ function Matchup({ detail }: { detail: Detail }) {
   );
 }
 
-function CardZone({ label, cards, counts, tone, onClick, testId }: { label: string; cards: SideCard[]; counts: Record<string, number>; tone: 'in' | 'out'; onClick: (id: string, max: number) => void; testId: string }) {
-  const color = tone === 'in' ? '#00E25B' : '#FF8E7A';
+// The swap builder: click cards to add copies to the swap. Selection is CYAN
+// (Openings' picking glow) — the section already says in vs out, so color is
+// free to mean "selected", matching Openings.
+function PickZone({ label, cards, counts, onClick, testId }: { label: string; cards: SideCard[]; counts: Record<string, number>; onClick: (id: string, max: number) => void; testId: string }) {
   return (
     <div>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 8 }}>{label}</div>
       {cards.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#6c7588' }}>{tone === 'in' ? 'No sideboard recorded.' : 'No deck recorded.'}</div>
+        <div style={{ fontSize: 12, color: '#6c7588' }}>Nothing recorded.</div>
       ) : (
         <div data-testid={testId} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {cards.map((c) => {
@@ -134,9 +137,9 @@ function CardZone({ label, cards, counts, tone, onClick, testId }: { label: stri
             return (
               <button key={c.id} type="button" onClick={() => onClick(c.id, c.count)} data-picked={n > 0 ? '1' : undefined}
                 style={{ position: 'relative', background: 'transparent', border: 0, padding: 0, cursor: 'pointer', transform: n > 0 ? 'translateY(-6px)' : 'none', transition: 'transform 90ms' }}>
-                <QuizCard card={c} width={58} noPreview mini verdict={n > 0 ? ({ color, label: tone } as any) : undefined} />
+                <QuizCard card={c} width={58} noPreview mini selected={n > 0} />
                 {c.count > 1 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 9, fontWeight: 800, color: '#e6ebf2', background: 'rgba(0,0,0,0.75)', borderRadius: 4, padding: '0 4px' }}>×{c.count}</span>}
-                {n > 0 && <span style={{ position: 'absolute', bottom: 2, right: 2, fontSize: 10, fontWeight: 800, color: '#0b0e13', background: color, borderRadius: 4, padding: '0 5px' }}>{tone === 'in' ? '+' : '−'}{n}</span>}
+                {n > 0 && <span style={{ position: 'absolute', bottom: 2, right: 2, fontSize: 10, fontWeight: 800, color: '#0b0e13', background: CYAN, borderRadius: 4, padding: '0 5px' }}>×{n}</span>}
               </button>
             );
           })}
@@ -146,57 +149,109 @@ function CardZone({ label, cards, counts, tone, onClick, testId }: { label: stri
   );
 }
 
+// ── Reveal — the Openings visual language applied to swaps ────────────────
+
+type Tone = 'recorder' | 'viewer' | 'other';
+interface SwapRecord {
+  key: string; name: string; names?: string[]; tone: Tone; kept: boolean;
+  out: { card: SideCard; verdict?: PickVerdict }[];
+  in: { card: SideCard; verdict?: PickVerdict }[];
+}
+
+// Match `cards` against a reference multiset: a card in the reference → 'match'
+// (green), otherwise `elseV` (yellow for the viewer, salmon for others).
+function judge(cards: SideCard[], refIds: string[] | null, elseV: PickVerdict): { card: SideCard; verdict?: PickVerdict }[] {
+  if (!refIds) return cards.map((card) => ({ card }));
+  const pool = [...refIds];
+  return cards.map((card) => {
+    const at = pool.indexOf(card.id);
+    if (at >= 0) { pool.splice(at, 1); return { card, verdict: 'match' as PickVerdict }; }
+    return { card, verdict: elseV };
+  });
+}
+
 function Reveal({ detail, hasNext, onNext, finishLabel }: { detail: Detail; hasNext: boolean; onNext: () => void; finishLabel: string }) {
   const rv = detail.reveal!;
   const mine = detail.myResponse;
   const idToCard = new Map<string, SideCard>();
   for (const c of [...detail.deck, ...detail.sideboard]) idToCard.set(c.id, c);
   const cardsFor = (ids: string[]) => ids.map((id) => idToCard.get(id)).filter(Boolean) as SideCard[];
-  const recIn = new Set(rv.swappedIn), recOut = new Set(rv.swappedOut);
-  const kept = rv.swappedIn.length === 0 && rv.swappedOut.length === 0;
+
+  // The viewer's swap is the comparison reference (like Openings): the recorder
+  // is measured against YOU (theirs = they moved it, you didn't), you against
+  // the recorder (mine = only you), and teammates against you.
+  const myOut = mine?.swappedOut ?? null;
+  const myIn = mine?.swappedIn ?? null;
+
+  const recorderRec: SwapRecord = {
+    key: '__rec__', name: rv.recorder.name ?? 'Recorder', tone: 'recorder',
+    kept: rv.swappedOut.length === 0 && rv.swappedIn.length === 0,
+    out: judge(cardsFor(rv.swappedOut), myOut, 'theirs'),
+    in: judge(cardsFor(rv.swappedIn), myIn, 'theirs'),
+  };
+  const viewerRec: SwapRecord | null = mine ? {
+    key: '__you__', name: 'You', tone: 'viewer',
+    kept: mine.swappedOut.length === 0 && mine.swappedIn.length === 0,
+    out: judge(cardsFor(mine.swappedOut), rv.swappedOut, 'mine'),
+    in: judge(cardsFor(mine.swappedIn), rv.swappedIn, 'mine'),
+  } : null;
+
+  // Group teammates with the identical swap into one cell (Openings pattern).
+  const groups = new Map<string, { rep: ResponseView; names: string[] }>();
+  for (const r of rv.responses) {
+    if (r.isMine) continue;
+    const key = `${[...r.swappedOut].sort().join(',')}|${[...r.swappedIn].sort().join(',')}`;
+    const g = groups.get(key);
+    if (g) g.names.push(r.name ?? 'Teammate');
+    else groups.set(key, { rep: r, names: [r.name ?? 'Teammate'] });
+  }
+  const refOut = myOut ?? rv.swappedOut;
+  const refIn = myIn ?? rv.swappedIn;
+  const others: SwapRecord[] = [...groups.values()].map(({ rep, names }) => ({
+    key: rep.userId, name: names[0], names, tone: 'other',
+    kept: rep.swappedOut.length === 0 && rep.swappedIn.length === 0,
+    out: judge(cardsFor(rep.swappedOut), refOut, 'theirs'),
+    in: judge(cardsFor(rep.swappedIn), refIn, 'theirs'),
+  }));
+
+  const sameAsRecorder = mine ? multisetEquals(mine.swappedOut, rv.swappedOut) && multisetEquals(mine.swappedIn, rv.swappedIn) : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={panel}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: '#e6ebf2', marginBottom: 10 }}>
-          {rv.recorder.name ?? 'The recorder'} {kept ? 'kept the same 75' : `swapped ${rv.swappedOut.length} out, ${rv.swappedIn.length} in`}
+    <div data-testid="sideboard-reveal" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* The two calls + agreement, stated like Openings — no right/wrong. */}
+      {viewerRec && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${CYAN}`, color: CYAN }}>{swapText(viewerRec, 'You')}</span>
+          <span style={{ color: '#6c7588', fontWeight: 700, fontSize: 12 }}>·</span>
+          <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: '1px solid #2e333c', color: '#c8cdd8' }}>{swapText(recorderRec, recorderRec.name)}</span>
         </div>
-        {!kept && (
-          <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
-            <SwapCol title="Out" tone="#FF8E7A" cards={cardsFor(rv.swappedOut)} matchSet={new Set(mine?.swappedOut ?? [])} />
-            <SwapCol title="In" tone="#00E25B" cards={cardsFor(rv.swappedIn)} matchSet={new Set(mine?.swappedIn ?? [])} />
+      )}
+      {sameAsRecorder !== null && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <span data-testid="sideboard-agreement" style={{ padding: '3px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, border: `1px solid ${sameAsRecorder ? '#00E25B' : '#FFD60A'}`, color: sameAsRecorder ? '#6bd968' : '#FFD60A' }}>
+            {sameAsRecorder ? '✓ Same swap as the recorder' : '≈ Different swap'}
+          </span>
+        </div>
+      )}
+
+      {/* Anchors: the recorder's actual call, then yours, stacked full width. */}
+      <SwapBlock rec={recorderRec} wide />
+      {viewerRec && <SwapBlock rec={viewerRec} wide />}
+
+      {others.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 8 }}>Rest of the team · {others.length}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
+            {others.map((rec) => <SwapBlock key={rec.key} rec={rec} />)}
           </div>
-        )}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11.5, color: '#8a93a3', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        <Legend color="#00E25B" text="you both made this move" />
+        <Legend color="#FFD60A" text="only you" />
+        <Legend color="#FF8E7A" text="only them" />
       </div>
-
-      {mine && (
-        <div style={panel}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#e6ebf2', marginBottom: 10 }}>Your swap</div>
-          {mine.swappedIn.length === 0 && mine.swappedOut.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: '#8a93a3' }}>You kept the same 75.{kept ? ' Same as the recorder.' : ''}</div>
-          ) : (
-            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
-              <SwapCol title="You cut" tone="#FF8E7A" cards={cardsFor(mine.swappedOut)} matchSet={recOut} showMatch />
-              <SwapCol title="You brought in" tone="#00E25B" cards={cardsFor(mine.swappedIn)} matchSet={recIn} showMatch />
-            </div>
-          )}
-          <div style={{ fontSize: 11.5, color: '#8a93a3', marginTop: 8 }}>Green outline = the recorder made the same move.</div>
-        </div>
-      )}
-
-      {rv.responses.filter((r) => !r.isMine).length > 0 && (
-        <div style={panel}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 10 }}>Rest of the team</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rv.responses.filter((r) => !r.isMine).map((r) => (
-              <div key={r.userId} style={{ fontSize: 12.5, color: '#c8cdd8' }}>
-                <span style={{ fontWeight: 700 }}>{r.name ?? 'Teammate'}</span>{' — '}
-                {r.swappedIn.length === 0 && r.swappedOut.length === 0 ? 'kept the same' : `${r.swappedOut.length} out / ${r.swappedIn.length} in`}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <GradientBorderButton testId="sideboard-next" onClick={onNext} style={{ padding: '0.55rem 1.3rem' }}>{hasNext ? 'Next decision' : finishLabel}</GradientBorderButton>
@@ -205,19 +260,60 @@ function Reveal({ detail, hasNext, onNext, finishLabel }: { detail: Detail; hasN
   );
 }
 
-function SwapCol({ title, tone, cards, matchSet, showMatch }: { title: string; tone: string; cards: SideCard[]; matchSet: Set<string>; showMatch?: boolean }) {
+function swapText(rec: SwapRecord, who: string): string {
+  if (rec.kept) return `${who} kept the same`;
+  return `${who} swapped ${rec.out.length} out, ${rec.in.length} in`;
+}
+
+function Legend({ color, text }: { color: string; text: string }) {
   return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 800, color: tone, marginBottom: 6 }}>{title}</div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {cards.length === 0 ? <span style={{ fontSize: 12, color: '#6c7588' }}>—</span> : cards.map((c, i) => {
-          const match = matchSet.has(c.id);
-          return (
-            <div key={`${c.id}-${i}`} data-testid={showMatch && match ? 'sideboard-match' : undefined} style={{ borderRadius: 8, outline: match ? '2px solid #00E25B' : 'none', outlineOffset: 1 }}>
-              <QuizCard card={c} width={56} noPreview mini />
-            </div>
-          );
-        })}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ width: 11, height: 15, borderRadius: 3, border: `2px solid ${color}`, boxShadow: `0 0 5px 1px ${color}66`, display: 'inline-block' }} /> {text}
+    </span>
+  );
+}
+
+// One participant's swap, tinted by tone (recorder green / you cyan / other
+// neutral) — the MemberBlock analogue.
+function SwapBlock({ rec, wide }: { rec: SwapRecord; wide?: boolean }) {
+  const tint = rec.tone === 'recorder'
+    ? { background: 'rgba(0,226,91,0.06)', border: '1px solid rgba(0,226,91,0.35)' }
+    : rec.tone === 'viewer'
+      ? { background: 'rgba(102,229,255,0.06)', border: '1px solid rgba(102,229,255,0.35)' }
+      : { background: 'rgba(255,255,255,0.03)', border: '1px solid #2e333c' };
+  const suffixColor = rec.tone === 'recorder' ? '#6bd968' : rec.tone === 'viewer' ? CYAN : '#6c7588';
+  const grouped = (rec.names?.length ?? 1) > 1;
+  const w = wide ? 62 : 50;
+  return (
+    <div data-testid={rec.tone === 'recorder' ? 'sideboard-block-recorder' : rec.tone === 'viewer' ? 'sideboard-block-you' : undefined}
+      style={{ ...tint, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 8, padding: wide ? '12px 14px' : '10px', borderRadius: 8, width: '100%', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {grouped && <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#e6ebf2', background: 'rgba(255,255,255,0.08)', borderRadius: 999, padding: '1px 8px' }}>×{rec.names!.length}</span>}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#e6ebf2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={grouped ? rec.names!.join(', ') : undefined}>
+          {grouped ? rec.names!.join(', ') : rec.name}{' '}
+          <span style={{ color: suffixColor, fontWeight: rec.tone === 'other' ? 400 : 700 }}>· {rec.kept ? 'kept the same' : `${rec.out.length} out, ${rec.in.length} in`}</span>
+        </span>
+      </div>
+      {rec.kept ? (
+        <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>No changes — same 75.</div>
+      ) : (
+        <div style={{ display: 'flex', gap: wide ? 20 : 12, flexWrap: 'wrap' }}>
+          <SwapDir label="Out" arrow="↓" cards={rec.out} width={w} />
+          <SwapDir label="In" arrow="↑" cards={rec.in} width={w} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SwapDir({ label, arrow, cards, width }: { label: string; arrow: string; cards: { card: SideCard; verdict?: PickVerdict }[]; width: number }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#6c7588', marginBottom: 5 }}>{arrow} {label}</div>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        {cards.length === 0 ? <span style={{ fontSize: 12, color: '#4a5160' }}>—</span> : cards.map(({ card, verdict }, i) => (
+          <QuizCard key={`${card.id}-${i}`} card={card} width={width} verdict={verdict} noPreview mini />
+        ))}
       </div>
     </div>
   );
