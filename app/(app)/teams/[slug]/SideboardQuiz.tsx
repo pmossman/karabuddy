@@ -281,8 +281,10 @@ function FullDeck({ detail }: { detail: Detail }) {
       </button>
       {open && (
         <div data-testid="sideboard-full-deck" style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <DeckList title={`Deck · ${deckCount}`} cards={detail.deck} />
-          {detail.sideboard.length > 0 && <DeckList title={`Sideboard · ${sbCount}`} cards={detail.sideboard} />}
+          {/* Small thumbs so most/all of the deck is visible at once; auto-fill
+              packs more columns as the screen widens. */}
+          <DeckList title={`Deck · ${deckCount}`} cards={detail.deck} minCardWidth={72} />
+          {detail.sideboard.length > 0 && <DeckList title={`Sideboard · ${sbCount}`} cards={detail.sideboard} minCardWidth={72} />}
         </div>
       )}
     </div>

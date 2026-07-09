@@ -180,11 +180,12 @@ export function DeckBlock({ deck, isLocal, fullPageHref, seenCards }: { deck: Us
   );
 }
 
-export function DeckList({ title, cards, fitWidth, containerW }: { title: string; cards: DeckCardRef[]; fitWidth?: number | null; containerW?: number }) {
+export function DeckList({ title, cards, fitWidth, containerW, minCardWidth }: { title: string; cards: DeckCardRef[]; fitWidth?: number | null; containerW?: number; minCardWidth?: number }) {
   // B208: "Fit all" (fitWidth set) → a fixed solver-chosen card width with
   // balanced row lengths, centered, so the whole deck fits the viewport at the
   // largest size possible. "Larger" (no fitWidth) → auto-fill at a roomy size
-  // that scrolls, for reading card text.
+  // that scrolls, for reading card text. B227: `minCardWidth` overrides the
+  // auto-fill min so a caller can pack the whole list compactly (small thumbs).
   const narrow = useMediaQuery('(max-width: 640px)');
   // Sort by cost asc, then by id for stable ordering. Matches karabast's
   // deckbuilder display order.
@@ -196,7 +197,8 @@ export function DeckList({ title, cards, fitWidth, containerW }: { title: string
   });
   const fitted = !!fitWidth && !!containerW;
   const cols = fitted ? balancedCols(containerW!, fitWidth!, sorted.length) : 0;
-  const compact = !!fitWidth && fitWidth < 92;
+  const autoMin = minCardWidth ?? (narrow ? 120 : 180);
+  const compact = (!!fitWidth && fitWidth < 92) || (!fitted && autoMin < 100);
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <h3 style={{ margin: 0, fontSize: 11, color: '#a0a8b8', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
@@ -206,7 +208,7 @@ export function DeckList({ title, cards, fitWidth, containerW }: { title: string
         display: 'grid',
         gridTemplateColumns: fitted
           ? `repeat(${cols}, ${fitWidth}px)`
-          : `repeat(auto-fill, minmax(${narrow ? 120 : 180}px, 1fr))`,
+          : `repeat(auto-fill, minmax(${autoMin}px, 1fr))`,
         gap: fitted && fitWidth! < 88 ? 5 : 8,
         justifyContent: fitted ? 'center' : undefined,
       }}>
