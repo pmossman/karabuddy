@@ -267,6 +267,13 @@
       "when": 1783104743860,
       "tag": "0037_replays_lobby_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1783104744860,
+      "tag": "0038_sideboard_drills",
+      "breakpoints": true
     }
   ]
 }
