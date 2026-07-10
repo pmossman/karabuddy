@@ -21,6 +21,13 @@ const card = (set: string, num: number, uuid: string, extra: any = {}) => ({
 const frame = (players: Record<string, any>, t = 0): Frame => ({ t, state: { players } });
 const piles = (zones: Record<string, any[]>) => ({ cardPiles: zones });
 
+// B230: a game-log "plays" entry, mirroring karabast: [player, ' plays ', card].
+// `newMessages` is CUMULATIVE, so callers pass the whole log-so-far per frame.
+const playsMsg = (controllerId: string, c: { setId: any; uuid: string }) =>
+  ({ message: [{ type: 'player', uuid: 'pl' }, ' plays ', { setId: c.setId, uuid: c.uuid, controllerId }] });
+const frameWithLog = (players: Record<string, any>, log: any[], t = 0): Frame =>
+  ({ t, state: { players, newMessages: log } });
+
 function decodedFrom(frames: Frame[]): DecodedReplay {
   return {
     frames,
@@ -93,8 +100,8 @@ describe('extractReplayFacts — card events', () => {
       frame({ p1: { ...piles({ deck: [draw, res, play], hand: [], resources: [], groundArena: [] }) }, p2: { ...piles({}) } }),
       // f1: drawn into hand
       frame({ p1: { ...piles({ deck: [], hand: [draw, res, play], resources: [], groundArena: [] }) }, p2: { ...piles({}) } }, 1),
-      // f2: one resourced, one played to ground
-      frame({ p1: { ...piles({ deck: [], hand: [draw], resources: [res], groundArena: [play] }) }, p2: { ...piles({}) } }, 2),
+      // f2: one resourced (zone), one played (game log)
+      frameWithLog({ p1: { ...piles({ deck: [], hand: [draw], resources: [res], groundArena: [play] }) }, p2: { ...piles({}) } }, [playsMsg('p1', play)], 2),
     ];
     const { cardEvents } = extractReplayFacts(decodedFrom(frames), { gameId: 'g3', winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
     const kinds = (cardId: string) => cardEvents.filter((e) => e.cardId === cardId).map((e) => e.event).sort();
@@ -117,7 +124,7 @@ describe('extractReplayFacts — card events', () => {
       // NOT visible to us until it hits the board (that's the whole point of
       // masking). It first appears, as a real card, in the arena on f1.
       frame({ p1: { ...piles({}) }, p2: { ...piles({ hand: [masked], groundArena: [] }) } }),
-      frame({ p1: { ...piles({}) }, p2: { ...piles({ hand: [masked], groundArena: [oppPlay] }) } }, 1),
+      frameWithLog({ p1: { ...piles({}) }, p2: { ...piles({ hand: [masked], groundArena: [oppPlay] }) } }, [playsMsg('p2', oppPlay)], 1),
     ];
     const { cardEvents } = extractReplayFacts(decodedFrom(frames), { gameId: 'g4', winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
     const oppEvents = cardEvents.filter((e) => e.playerId === 'p2');
@@ -135,7 +142,7 @@ describe('extractReplayFacts — card events', () => {
     const frames = [
       // p2 holds a real hand card → p2 is the recorder, even with no ownerPlayerId.
       frame({ p1: { ...piles({}) }, p2: { ...piles({ deck: [own], hand: [] }) } }),
-      frame({ p1: { ...piles({ groundArena: [oppPlay] }) }, p2: { ...piles({ deck: [], hand: [own] }) } }, 1),
+      frameWithLog({ p1: { ...piles({ groundArena: [oppPlay] }) }, p2: { ...piles({ deck: [], hand: [own] }) } }, [playsMsg('p1', oppPlay)], 1),
     ];
     const { cardEvents, matchFact } = extractReplayFacts(decodedFrom(frames), { gameId: 'g8', winners: null, ownerPlayerId: null, durationMs: 1 });
     const drawn = cardEvents.find((e) => e.event === 'drawn')!;
@@ -148,13 +155,54 @@ describe('extractReplayFacts — card events', () => {
 
   it('emits each (uuid,event) once even across many frames', () => {
     const c = card('SOR', 7, 'u7');
+    const log = [playsMsg('p1', c)]; // cumulative — repeated on every frame
     const frames = [
-      frame({ p1: { ...piles({ groundArena: [c] }) } }),
-      frame({ p1: { ...piles({ groundArena: [c] }) } }, 1),
-      frame({ p1: { ...piles({ groundArena: [c] }) } }, 2),
+      frameWithLog({ p1: { ...piles({ groundArena: [c] }) } }, log),
+      frameWithLog({ p1: { ...piles({ groundArena: [c] }) } }, log, 1),
+      frameWithLog({ p1: { ...piles({ groundArena: [c] }) } }, log, 2),
     ];
     const { cardEvents } = extractReplayFacts(decodedFrom(frames), { gameId: 'g5', winners: null, ownerPlayerId: 'p1', durationMs: 1 });
     expect(cardEvents.filter((e) => e.cardId === 'SOR_007' && e.event === 'played')).toHaveLength(1);
+  });
+
+  // B230: events resolve hand -> discard (never an arena), so log-based 'played'
+  // is the only way they register. The played event's discard is suppressed.
+  it('an EVENT played (hand -> discard) is played, not discarded', () => {
+    const ev = card('ASH', 103, 'c-ev'); // Long Live the Empire (event)
+    const log = [playsMsg('p1', ev)];
+    const frames = [
+      frameWithLog({ p1: { ...piles({ hand: [ev], discard: [] }) } }, []),
+      frameWithLog({ p1: { ...piles({ hand: [], discard: [ev] }) } }, log, 1),
+    ];
+    const { cardEvents } = extractReplayFacts(decodedFrom(frames), { gameId: 'ge', winners: null, ownerPlayerId: 'p1', durationMs: 1 });
+    const kinds = cardEvents.filter((e) => e.cardId === 'ASH_103').map((e) => e.event);
+    expect(kinds).toContain('played');
+    expect(kinds).not.toContain('discarded');
+  });
+
+  it('an event milled (deck -> discard) with no play stays discarded, not played', () => {
+    const milled = card('ASH', 200, 'c-mill');
+    const frames = [
+      frameWithLog({ p1: { ...piles({ deck: [milled], discard: [] }) } }, []),
+      frameWithLog({ p1: { ...piles({ deck: [], discard: [milled] }) } }, [], 1),
+    ];
+    const { cardEvents } = extractReplayFacts(decodedFrom(frames), { gameId: 'gm', winners: null, ownerPlayerId: 'p1', durationMs: 1 });
+    const kinds = cardEvents.filter((e) => e.cardId === 'ASH_200').map((e) => e.event);
+    expect(kinds).toContain('discarded');
+    expect(kinds).not.toContain('played');
+  });
+
+  it('a unit played then defeated is BOTH played and discarded (arena -> discard)', () => {
+    const u = card('SOR', 5, 'c-u');
+    const log = [playsMsg('p1', u)];
+    const frames = [
+      frameWithLog({ p1: { ...piles({ hand: [u], groundArena: [], discard: [] }) } }, []),
+      frameWithLog({ p1: { ...piles({ hand: [], groundArena: [u], discard: [] }) } }, log, 1),
+      frameWithLog({ p1: { ...piles({ hand: [], groundArena: [], discard: [u] }) } }, log, 2),
+    ];
+    const { cardEvents } = extractReplayFacts(decodedFrom(frames), { gameId: 'gu', winners: null, ownerPlayerId: 'p1', durationMs: 1 });
+    const kinds = cardEvents.filter((e) => e.cardId === 'SOR_005').map((e) => e.event).sort();
+    expect(kinds).toEqual(['discarded', 'drawn', 'played']);
   });
 
   it('collects observedCards for catalog self-heal (real visible cards only)', () => {

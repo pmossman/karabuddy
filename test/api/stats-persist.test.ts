@@ -52,6 +52,8 @@ function decodedFixture() {
     {
       t: 2,
       state: {
+        // B230: 'played' now comes from the game log ("plays <card>"), not arena entry.
+        newMessages: [{ message: [{ type: 'player' }, ' plays ', { setId: { set: 'SOR', number: 102 }, uuid: 'p', controllerId: 'p1' }] }],
         players: {
           // Real gamestates carry leader/base/user on every frame; the match
           // fact reads the FINAL frame, so identity must be present here.
