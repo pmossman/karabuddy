@@ -26,6 +26,10 @@ const OPENINGS_KIND: DrillKind = {
     answeredTitle: 'Answered',
     answeredHistoryTitle: 'Answered openings',
   },
+  explainer: {
+    headline: 'Practice your team’s opening decisions',
+    body: 'You’re dealt a real opening hand from a teammate’s game — blind. Call keep or mulligan, pick your two resources, then see what was actually played and how the rest of the team called it. It’s not a test: where you diverge is the discussion.',
+  },
   sessionMetric: (results) => {
     const different = Object.values(results).filter((v) => !v).length;
     return different > 0 ? `${different} different ${different === 1 ? 'take' : 'takes'}` : null;

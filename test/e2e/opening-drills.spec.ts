@@ -87,6 +87,17 @@ test('opening gauntlet: setup → play → reveal → tag → summary → upload
   await page2.goto(`/teams/${teamSlug}?tab=openings`);
   await expect(page2.getByTestId('opening-match-count')).toContainText('1 unanswered opening');
   await expect(page2.getByTestId('opening-stage')).toHaveCount(0);
+
+  // B227: the one-time explainer banner — visible on first visit, dismissable,
+  // and it STAYS dismissed across a reload (with a low-footprint reopener).
+  await expect(page2.getByTestId('opening-explainer')).toBeVisible();
+  await page2.getByTestId('opening-explainer-dismiss').click();
+  await expect(page2.getByTestId('opening-explainer-reopen')).toBeVisible();
+  await page2.reload();
+  await expect(page2.getByTestId('opening-match-count')).toContainText('1 unanswered opening');
+  await expect(page2.getByTestId('opening-explainer')).toHaveCount(0);
+  await page2.getByTestId('opening-explainer-reopen').click();
+  await expect(page2.getByTestId('opening-explainer')).toBeVisible();
   await page2.getByTestId('opening-filter-deck').click();
   const deckBox = page2.getByPlaceholder('Type to filter…');
   await deckBox.fill('own');

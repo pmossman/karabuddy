@@ -70,6 +70,8 @@ export interface DrillKind {
     answeredTitle: string;               // 'Answered'
     answeredHistoryTitle: string;        // 'Answered openings'
   };
+  // A one-time dismissable "what is this" banner on the setup screen.
+  explainer?: { headline: string; body: string };
   // The per-session "how many diverged" HUD/summary metric (amber count).
   sessionMetric?: (results: Record<string, boolean>) => React.ReactNode | null;
   summaryMark?: (sameAsRecorder: boolean) => React.ReactNode; // 'same' / 'different take'
@@ -311,6 +313,7 @@ export function TeamDrills({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 680, margin: '0 auto', width: '100%' }}>
       {hideFooter}
+      <DrillExplainer kind={kind} />
       <section style={{ padding: '18px 20px 20px', background: tokens.surface.panel, border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.md, boxShadow: tokens.surface.panelShadow, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: '#e6ebf2' }}>{kind.copy.setupTitle}</div>
         {filterControls}
@@ -346,6 +349,43 @@ export function TeamDrills({
 }
 
 const pillBtn: React.CSSProperties = { background: 'transparent', border: '1px solid #2e333c', borderRadius: tokens.radius.sm, color: '#a0a8b8', fontFamily: 'inherit', fontSize: 12, padding: '5px 10px', cursor: 'pointer' };
+
+// A one-time "what is this" banner on the setup screen: shown on first visit,
+// dismissable, and remembered per drill in localStorage so it never nags again.
+// Dismissing leaves a low-footprint "How it works" link to bring it back.
+function DrillExplainer({ kind }: { kind: DrillKind }) {
+  const key = `kb-drill-explainer-dismissed:${kind.poolPath}`;
+  // Client-only subtree (rendered after the loading gate), so reading storage in
+  // the initializer is safe — no SSR/hydration mismatch.
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try { return localStorage.getItem(key) !== '1'; } catch { return true; }
+  });
+  if (!kind.explainer) return null;
+  const dismiss = () => { try { localStorage.setItem(key, '1'); } catch {} setOpen(false); };
+
+  if (!open) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -14 }}>
+        <button type="button" data-testid={`${kind.testPrefix}-explainer-reopen`} onClick={() => setOpen(true)}
+          style={{ background: 'transparent', border: 0, color: '#6c7588', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, padding: 2 }}>
+          <span aria-hidden="true">ⓘ</span> How it works
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div data-testid={`${kind.testPrefix}-explainer`} style={{ position: 'relative', display: 'flex', gap: 12, padding: '14px 16px', borderRadius: tokens.radius.md, background: 'rgba(77,210,255,0.06)', border: '1px solid rgba(77,210,255,0.3)' }}>
+      <div style={{ fontSize: 20, lineHeight: 1.1 }} aria-hidden="true">💡</div>
+      <div style={{ flex: 1, minWidth: 0, paddingRight: 16 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: '#e6ebf2', marginBottom: 3 }}>{kind.explainer.headline}</div>
+        <div style={{ fontSize: 12.5, color: '#a0a8b8', lineHeight: 1.55 }}>{kind.explainer.body}</div>
+      </div>
+      <button type="button" data-testid={`${kind.testPrefix}-explainer-dismiss`} onClick={dismiss} aria-label="Dismiss"
+        style={{ position: 'absolute', top: 6, right: 9, background: 'transparent', border: 0, color: '#6c7588', fontSize: 18, lineHeight: 1, cursor: 'pointer', padding: 4 }}>×</button>
+    </div>
+  );
+}
 
 function SessionRail({ kind, queue, index, results, items, onJump, drawer = false }: { kind: DrillKind; queue: string[]; index: number; results: Record<string, boolean>; items: DrillItem[] | null; onJump: (i: number) => void; drawer?: boolean }) {
   const byId = new Map((items ?? []).map((i) => [i.replaySlug, i]));

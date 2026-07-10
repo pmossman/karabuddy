@@ -25,6 +25,10 @@ const SIDEBOARDING_KIND: DrillKind = {
     answeredTitle: 'Answered',
     answeredHistoryTitle: 'Answered sideboards',
   },
+  explainer: {
+    headline: 'Practice your team’s between-games sideboarding',
+    body: 'You get a real Bo3 matchup and who won the previous game. Decide what to cut from your deck and bring in from your sideboard, then see the recorder’s actual swap and the rest of the team. It’s not a test: a different swap is worth talking about.',
+  },
   sessionMetric: (results) => {
     const different = Object.values(results).filter((v) => !v).length;
     return different > 0 ? `${different} different ${different === 1 ? 'swap' : 'swaps'}` : null;
