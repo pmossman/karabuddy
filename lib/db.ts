@@ -32,7 +32,10 @@ function pgDb() {
   const { Pool } = require('pg');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { drizzle } = require('drizzle-orm/node-postgres');
-  pgPool ||= new Pool({ connectionString: process.env.POSTGRES_URL! });
+  // KARABUDDY_PG_POOL_MAX lets batch scripts widen the pool for concurrency
+  // (default = node-postgres' 10). No effect on the app, which never sets it.
+  const max = Number(process.env.KARABUDDY_PG_POOL_MAX) || undefined;
+  pgPool ||= new Pool({ connectionString: process.env.POSTGRES_URL!, max });
   return drizzle(pgPool, { schema });
 }
 
