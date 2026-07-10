@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B227] Team Sideboarding Drills
+_completed: 2026-07-10 by claude_
+The sibling of Opening Drills, for between-games sideboarding. A Bo3 game after the first yields a "what would you swap" decision, diffed from the previous game's decklist (`lib/sideboardExtract` + `lib/sideboardPersist`, self-healing on upload like bo3Reconcile; `replay_sideboards` + `sideboard_responses`, migration 0038). Built on a new shared **`TeamDrills`** framework extracted from Openings — setup filters, gauntlet, session rail, summary, pool/history lists live there once; Openings and Sideboarding are thin `DrillKind` adapters (each a Stage + labels + badges). The sideboard Stage is a swap builder (cut from deck / bring in from sideboard, cyan selection) → reveal in the Openings visual language (cards colored by agreement — green both / yellow only-you / salmon only-them, tinted recorder/you/team anchor blocks, grouped identical swaps, agreement badge) + a collapsible compact full decklist (reuses the viewer's `DeckList`, new `minCardWidth`). Both drills get a one-time dismissable explainer banner. Team tab + beta nav. Backfill: `scripts/backfill-sideboards.ts`. Tests: extraction unit, pool/response API (anonymity + validation + immutability), openings e2e extended.
+
 ### [B229] End-of-game prompt to jump to the next Bo3 game
 _completed: 2026-07-08 by claude_
 When a replay is part of a recorded Bo3 series and a next game exists, the end-of-game summary (`EndGameSummary`) shows a "Go to Game N →" CTA linking to it. `nextSeriesGame(series)` (pure, in `seriesTypes.ts`, unit-tested) picks the game after the current one — null on the last recorded game or a non-series replay. Uses the existing identity-entitled `series` prop; no new data, no migration.
