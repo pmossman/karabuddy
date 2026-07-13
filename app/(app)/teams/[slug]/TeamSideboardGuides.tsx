@@ -149,6 +149,18 @@ function MatchupSide({ leader, baseKey, leaderArt, baseKinds, w, big, reverse }:
   );
 }
 
+// One of the reserved swap rows (Bring in / Take out) above the pool.
+function ReservedSection({ title, tone, cards, render, empty }: { title: string; tone: string; cards: PoolCard[]; render: (c: PoolCard, w: number) => React.ReactNode; empty: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: tone, marginBottom: 8 }}>{title} · {cards.length}</div>
+      {cards.length === 0
+        ? <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>{empty}</div>
+        : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>{cards.map((c) => render(c, 76))}</div>}
+    </div>
+  );
+}
+
 // ── Form (create / edit) ────────────────────────────────────────────────────
 function GuideForm({ teamSlug, guideId, onDone, onSaved }: { teamSlug: string; guideId?: string; onDone: () => void; onSaved: (id: string) => void }) {
   const [matchups, setMatchups] = useState<Matchups | null>(null);
@@ -242,7 +254,23 @@ function GuideForm({ teamSlug, guideId, onDone, onSaved }: { teamSlug: string; g
     } catch { setError('save failed'); } finally { setSaving(false); }
   };
 
-  const visible = showAll ? allCards : allCards.slice(0, 60);
+  // Marking a card moves it OUT of the pool into the reserved IN/OUT area.
+  const inCards = allCards.filter((c) => marks[c.cardId] === 'in');
+  const outCards = allCards.filter((c) => marks[c.cardId] === 'out');
+  const poolCards = allCards.filter((c) => !marks[c.cardId]);
+  const poolVisible = showAll ? poolCards : poolCards.slice(0, 48);
+
+  const renderCard = (c: PoolCard, w: number) => {
+    const mk = marks[c.cardId];
+    const verdict: PickVerdict | undefined = mk === 'in' ? 'match' : mk === 'out' ? 'theirs' : undefined;
+    return (
+      <button key={c.cardId} type="button" data-testid="guide-pool-card" onClick={() => cycle(c.cardId)}
+        style={{ position: 'relative', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>
+        <QuizCard card={ref(c)} width={w} noPreview mini verdict={verdict} />
+        {c.count > 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 9, fontWeight: 800, color: '#cfe4ff', background: 'rgba(0,0,0,0.72)', borderRadius: 4, padding: '0 4px' }}>{Math.round(c.fraction * 100)}%</span>}
+      </button>
+    );
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900, margin: '0 auto', width: '100%' }}>
@@ -270,16 +298,22 @@ function GuideForm({ teamSlug, guideId, onDone, onSaved }: { teamSlug: string; g
           style={inputStyle} />
       </div>
 
-      {/* Palette */}
+      {/* Reserved IN / OUT — the guide's actual swap; cards live here once marked. */}
+      <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <ReservedSection title="Bring in" tone="#6bd968" cards={inCards} render={renderCard} empty="Click cards in the pool below to bring them in." />
+        <ReservedSection title="Take out" tone="#FF8E7A" cards={outCards} render={renderCard} empty="Click a card again to move it here (cards you're cutting)." />
+        <div style={{ maxWidth: 340 }}>
+          <CardSearch value={null} onChange={addCard} testId="guide-card-search" />
+        </div>
+      </div>
+
+      {/* The pool below — unmarked archetype cards, staples first. */}
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>
             Your card pool {pool ? `· ${pool.totalLists} lists` : ''}
           </div>
-          <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Click a card to cycle <span style={{ color: '#6bd968', fontWeight: 700 }}>IN</span> → <span style={{ color: '#FF8E7A', fontWeight: 700 }}>OUT</span> → off.</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 10, fontSize: 12, fontWeight: 700 }}>
-            <span style={{ color: '#6bd968' }}>{inCount} in</span><span style={{ color: '#FF8E7A' }}>{outCount} out</span>
-          </span>
+          <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Click to bring <span style={{ color: '#6bd968', fontWeight: 700 }}>IN</span>; again to move <span style={{ color: '#FF8E7A', fontWeight: 700 }}>OUT</span>; again to return it.</span>
         </div>
         {!ownLeader ? (
           <div style={{ fontSize: 12.5, color: '#6c7588' }}>Pick your leader to load the team&apos;s card pool for this archetype.</div>
@@ -287,25 +321,10 @@ function GuideForm({ teamSlug, guideId, onDone, onSaved }: { teamSlug: string; g
           <Loading label="the card pool" />
         ) : (
           <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {visible.map((c) => {
-                const mk = marks[c.cardId];
-                const verdict: PickVerdict | undefined = mk === 'in' ? 'match' : mk === 'out' ? 'theirs' : undefined;
-                return (
-                  <button key={c.cardId} type="button" data-testid="guide-pool-card" onClick={() => cycle(c.cardId)}
-                    style={{ position: 'relative', background: 'transparent', border: 0, padding: 0, cursor: 'pointer', transform: mk ? 'translateY(-4px)' : 'none', transition: 'transform 90ms' }}>
-                    <QuizCard card={ref(c)} width={56} noPreview mini verdict={verdict} />
-                    {c.count > 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 8.5, fontWeight: 800, color: '#cfe4ff', background: 'rgba(0,0,0,0.7)', borderRadius: 4, padding: '0 3px' }}>{Math.round(c.fraction * 100)}%</span>}
-                  </button>
-                );
-              })}
-            </div>
-            {allCards.length > visible.length && (
-              <button type="button" onClick={() => setShowAll(true)} style={{ alignSelf: 'flex-start', ...linkBtn }}>Show all {allCards.length} cards</button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>{poolVisible.map((c) => renderCard(c, 72))}</div>
+            {poolCards.length > poolVisible.length && (
+              <button type="button" onClick={() => setShowAll(true)} style={{ alignSelf: 'flex-start', ...linkBtn }}>Show all {poolCards.length} cards</button>
             )}
-            <div style={{ maxWidth: 320 }}>
-              <CardSearch value={null} onChange={addCard} testId="guide-card-search" />
-            </div>
           </>
         )}
       </div>
