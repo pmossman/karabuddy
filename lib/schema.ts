@@ -952,3 +952,34 @@ export const sideboardResponses = pgTable(
 
 export type ReplaySideboard = typeof replaySideboards.$inferSelect;
 export type SideboardResponse = typeof sideboardResponses.$inferSelect;
+
+// B231: a team's sideboard GUIDE for a matchup — "cards that are good (IN) / bad
+// (OUT) in this matchup" + notes, keyed by the full leader+base of both sides by
+// NAME (printing-agnostic, matching how the drills aggregate matchups; art is
+// resolved at render). Not tied to a decklist; applied to one on demand. Many
+// per matchup (per-author takes).
+type GuideCard = { cardId: string; note?: string | null };
+export const sideboardGuides = pgTable(
+  'sideboard_guides',
+  {
+    id: text('id').primaryKey(), // uuid
+    teamSlug: text('team_slug').notNull().references(() => teams.slug, { onDelete: 'cascade' }),
+    authorId: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    // Matchup key — canonical (base-printing) leader/base cardIds, both sides.
+    ownLeader: text('own_leader').notNull(),
+    ownBase: text('own_base').notNull(),
+    oppLeader: text('opp_leader').notNull(),
+    oppBase: text('opp_base').notNull(),
+    title: text('title'),
+    notes: text('notes').notNull().default(''),
+    cardsIn: jsonb('cards_in').$type<GuideCard[]>().notNull().default([]), // bring in
+    cardsOut: jsonb('cards_out').$type<GuideCard[]>().notNull().default([]), // take out
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    teamIdx: index('sideboard_guides_team_idx').on(t.teamSlug),
+    matchupIdx: index('sideboard_guides_matchup_idx').on(t.teamSlug, t.ownLeader, t.oppLeader),
+  })
+);
+export type SideboardGuide = typeof sideboardGuides.$inferSelect;
