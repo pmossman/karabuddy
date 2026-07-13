@@ -22,12 +22,12 @@ async function seedReplayAt(userId: string, daysAgo: number) {
 }
 
 describe('loadAdminMetrics', () => {
-  it('counts totals, last-7d deltas, and zero-fills a 30-day series', async () => {
+  it('totals + 30d deltas, all-time weekly signups, 90d activity + active users, features', async () => {
     const now = new Date();
     const u1 = await seedUserAt(0);   // today
-    const u2 = await seedUserAt(2);   // within 7d
+    const u2 = await seedUserAt(2);   // within 30d
     await seedUserAt(40);             // old (outside 30d window)
-    await seedReplayAt(u1, 0);
+    await seedReplayAt(u1, 0);        // u1 active today
     await seedReplayAt(u1, 1);
     await seedReplayAt(u2, 50);       // old game
 
@@ -39,22 +39,29 @@ describe('loadAdminMetrics', () => {
 
     expect(m.counters.users).toBeGreaterThanOrEqual(3);
     expect(m.counters.games).toBeGreaterThanOrEqual(3);
-    expect(m.counters.usersLast7).toBeGreaterThanOrEqual(2); // u1 + u2, not the 40-day-old one
-    expect(m.counters.gamesLast7).toBeGreaterThanOrEqual(2); // the 2 recent games
+    expect(m.counters).toHaveProperty('privateTeams');
+    expect(m.deltas.users).toBeGreaterThanOrEqual(2); // u1 + u2 within 30d
+    expect(m.deltas.games).toBeGreaterThanOrEqual(2);
 
-    // Series are continuous 30-long, oldest→newest, today last.
-    expect(m.signupsByDay).toHaveLength(30);
-    expect(m.gamesByDay).toHaveLength(30);
-    expect(m.signupsByDay[29].day).toBe(now.toISOString().slice(0, 10));
-    expect(m.cumulativeUsers).toHaveLength(30);
-    // Cumulative is non-decreasing.
-    for (let i = 1; i < m.cumulativeUsers.length; i++) {
-      expect(m.cumulativeUsers[i].n).toBeGreaterThanOrEqual(m.cumulativeUsers[i - 1].n);
+    // All-time weekly signups; cumulative non-decreasing.
+    expect(m.signupsWeekly.length).toBeGreaterThan(0);
+    for (let i = 1; i < m.signupsCumulative.length; i++) {
+      expect(m.signupsCumulative[i].n).toBeGreaterThanOrEqual(m.signupsCumulative[i - 1].n);
     }
 
-    // Top teams includes our seeded team with 2 members.
+    // 90-day daily activity, oldest→newest, today last, with an active column.
+    expect(m.activity).toHaveLength(90);
+    expect(m.activity[89].day).toBe(now.toISOString().slice(0, 10));
+    expect(m.activity[89].active).toBeGreaterThanOrEqual(1); // u1 uploaded today
+    expect(m.activeUsers.dau).toBeGreaterThanOrEqual(1);
+
+    // Per-feature adoption present with weekly series.
+    const keys = m.features.map((f) => f.key);
+    expect(keys).toEqual(expect.arrayContaining(['comments', 'shares', 'sideboards', 'installs']));
+    m.features.forEach((f) => expect(Array.isArray(f.weekly)).toBe(true));
+
     const t = m.topTeams.find((x) => x.slug === slug);
     expect(t?.members).toBe(2);
-    expect(m.recentUsers.length).toBeGreaterThan(0);
+    expect(m.recentSignups.length).toBeGreaterThan(0);
   });
 });
