@@ -953,24 +953,23 @@ export const sideboardResponses = pgTable(
 export type ReplaySideboard = typeof replaySideboards.$inferSelect;
 export type SideboardResponse = typeof sideboardResponses.$inferSelect;
 
-// B231: a team's sideboard GUIDE for a matchup — "cards that are good (IN) / bad
-// (OUT) in this matchup" + notes, keyed by the full leader+base of both sides by
-// NAME (printing-agnostic, matching how the drills aggregate matchups; art is
-// resolved at render). Not tied to a decklist; applied to one on demand. Many
-// per matchup (per-author takes).
+// B231: Sideboard Guides — a MATCHUP is the top-level unit (full leader+base of
+// both sides, by NAME for leaders / functional key for bases). Within it, each
+// team member has ONE "take" (their good-IN / bad-OUT cards + notes), and the
+// matchup view aggregates them into a consensus + shows divergence. Not tied to
+// a decklist; applied to one on demand.
 type GuideCard = { cardId: string; note?: string | null };
-export const sideboardGuides = pgTable(
-  'sideboard_guides',
+export const sideboardTakes = pgTable(
+  'sideboard_takes',
   {
     id: text('id').primaryKey(), // uuid
     teamSlug: text('team_slug').notNull().references(() => teams.slug, { onDelete: 'cascade' }),
     authorId: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    // Matchup key — canonical (base-printing) leader/base cardIds, both sides.
+    // Matchup key (leaders by name, bases by functional identity key).
     ownLeader: text('own_leader').notNull(),
     ownBase: text('own_base').notNull(),
     oppLeader: text('opp_leader').notNull(),
     oppBase: text('opp_base').notNull(),
-    title: text('title'),
     notes: text('notes').notNull().default(''),
     cardsIn: jsonb('cards_in').$type<GuideCard[]>().notNull().default([]), // bring in
     cardsOut: jsonb('cards_out').$type<GuideCard[]>().notNull().default([]), // take out
@@ -978,24 +977,28 @@ export const sideboardGuides = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    teamIdx: index('sideboard_guides_team_idx').on(t.teamSlug),
-    matchupIdx: index('sideboard_guides_matchup_idx').on(t.teamSlug, t.ownLeader, t.oppLeader),
+    // ONE take per member per matchup — the evolving personal take.
+    memberMatchup: uniqueIndex('sideboard_takes_member_matchup_idx').on(t.teamSlug, t.ownLeader, t.ownBase, t.oppLeader, t.oppBase, t.authorId),
+    matchupIdx: index('sideboard_takes_matchup_idx').on(t.teamSlug, t.ownLeader, t.oppLeader),
   })
 );
-export type SideboardGuide = typeof sideboardGuides.$inferSelect;
+export type SideboardTake = typeof sideboardTakes.$inferSelect;
 
-// B231: comments on a guide — any TEAM MEMBER can add one (unlike editing the
-// guide, which is author-only). A guide is a shared team artifact; feedback
-// isn't gated by authorship.
-export const sideboardGuideComments = pgTable(
-  'sideboard_guide_comments',
+// Matchup-level discussion — any TEAM MEMBER, keyed by the matchup (not a single
+// take). Feedback on a matchup isn't gated by whose take it is.
+export const sideboardMatchupComments = pgTable(
+  'sideboard_matchup_comments',
   {
     id: text('id').primaryKey(),
-    guideId: text('guide_id').notNull().references(() => sideboardGuides.id, { onDelete: 'cascade' }),
+    teamSlug: text('team_slug').notNull().references(() => teams.slug, { onDelete: 'cascade' }),
+    ownLeader: text('own_leader').notNull(),
+    ownBase: text('own_base').notNull(),
+    oppLeader: text('opp_leader').notNull(),
+    oppBase: text('opp_base').notNull(),
     authorId: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     body: text('body').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => ({ guideIdx: index('sideboard_guide_comments_guide_idx').on(t.guideId) })
+  (t) => ({ matchupIdx: index('sideboard_matchup_comments_matchup_idx').on(t.teamSlug, t.ownLeader, t.ownBase, t.oppLeader, t.oppBase) })
 );
-export type SideboardGuideComment = typeof sideboardGuideComments.$inferSelect;
+export type SideboardMatchupComment = typeof sideboardMatchupComments.$inferSelect;
