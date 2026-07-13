@@ -28,6 +28,7 @@ export function AdminDashboard({ metrics }: { metrics: AdminMetrics }) {
         <Counter label="Users" value={c.users} delta={metrics.deltas.users} />
         <Counter label="Games recorded" value={c.games} delta={metrics.deltas.games} sub={`${c.recordings.toLocaleString()} recordings`} />
         <Counter label="Teams" value={c.teams} delta={metrics.deltas.teams} sub={`${c.privateTeams} private`} />
+        <Counter label="Private replays" value={c.privateReplays} sub={`${c.privateTeams} private teams`} />
         <Counter label="Extension installs" value={c.installs} />
         <Counter label="Comments" value={c.comments} />
         <Counter label="Team shares" value={c.shares} />

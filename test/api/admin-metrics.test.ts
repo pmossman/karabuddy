@@ -30,6 +30,12 @@ describe('loadAdminMetrics', () => {
     await seedReplayAt(u1, 0);        // u1 active today
     await seedReplayAt(u1, 1);
     await seedReplayAt(u2, 50);       // old game
+    // A private (E2EE) replay — should count toward the privateReplays feature.
+    await getDb().insert(replays).values({
+      slug: `r_${randomUUID().slice(0, 8)}`, gameId: randomUUID(), userId: u1, ownerToken: `kbx_${randomUUID()}`,
+      players: [], payloadBlobUrl: 'https://b.test/enc.json', encrypted: true, teamKeyId: 'k1', encryptedSummary: '{}',
+      createdAt: new Date(Date.now() - 2 * DAY),
+    });
 
     const slug = randomUUID().slice(0, 6);
     await getDb().insert(teams).values({ slug, name: 'T', createdBy: u1, createdAt: now });
@@ -58,10 +64,13 @@ describe('loadAdminMetrics', () => {
     expect(m.activity[89].active).toBeGreaterThanOrEqual(1); // u1 uploaded today
     expect(m.activeUsers.dau).toBeGreaterThanOrEqual(1);
 
-    // Per-feature adoption present with weekly series.
+    // Per-feature adoption present with weekly series — incl. the private
+    // (E2EE) feature, scoped to encrypted rows.
     const keys = m.features.map((f) => f.key);
-    expect(keys).toEqual(expect.arrayContaining(['comments', 'shares', 'sideboards', 'installs']));
+    expect(keys).toEqual(expect.arrayContaining(['comments', 'shares', 'sideboards', 'installs', 'privateReplays', 'privateTeams']));
     m.features.forEach((f) => expect(Array.isArray(f.weekly)).toBe(true));
+    expect(m.counters.privateReplays).toBeGreaterThanOrEqual(1);
+    expect(m.features.find((f) => f.key === 'privateReplays')?.total).toBeGreaterThanOrEqual(1);
 
     const t = m.topTeams.find((x) => x.slug === slug);
     expect(t?.members).toBe(2);

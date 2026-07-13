@@ -44,8 +44,10 @@ export async function loadAdminMetrics(now: Date = new Date()): Promise<AdminMet
   const c = (table: any, where?: any) => db.select({ c: count() }).from(table).where(where).then((r) => num(r[0]?.c));
 
   // Per-feature adoption: total + last7 + last30 + weekly (last 16 weeks). One
-  // helper so adding a feature is one row below.
-  const FEATURES: { key: string; label: string; table: any; ts: any }[] = [
+  // helper so adding a feature is one row below. `filter` scopes a feature to a
+  // subset of its table (private replays = encrypted rows; private teams =
+  // privateMode) so E2EE/private adoption shows up as its own trend.
+  const FEATURES: { key: string; label: string; table: any; ts: any; filter?: any }[] = [
     { key: 'comments', label: 'Comments', table: tags, ts: tags.createdAt },
     { key: 'reviews', label: 'Reviews', table: replayReviews, ts: replayReviews.reviewedAt },
     { key: 'shares', label: 'Team shares', table: replayTeamShares, ts: replayTeamShares.sharedAt },
@@ -55,14 +57,17 @@ export async function loadAdminMetrics(now: Date = new Date()): Promise<AdminMet
     { key: 'tournaments', label: 'Tournaments', table: tournaments, ts: tournaments.createdAt },
     { key: 'joins', label: 'Team joins', table: teamMembers, ts: teamMembers.joinedAt },
     { key: 'installs', label: 'Extension installs', table: extensionTokens, ts: extensionTokens.linkedAt },
+    { key: 'privateTeams', label: 'Private teams', table: teams, ts: teams.createdAt, filter: eq(teams.privateMode, true) },
+    { key: 'privateReplays', label: 'Private replays', table: replays, ts: replays.createdAt, filter: eq(replays.encrypted, true) },
   ];
   const featureStats = async (f: (typeof FEATURES)[number]): Promise<FeatureUsage> => {
     const wk = sql<string>`to_char(date_trunc('week', ${f.ts}), 'YYYY-MM-DD')`;
+    const w = (extra: any) => (f.filter ? and(extra, f.filter) : extra);
     const [total, last7, last30, weekRows] = await Promise.all([
-      c(f.table),
-      c(f.table, gte(f.ts, since7)),
-      c(f.table, gte(f.ts, since30)),
-      db.select({ week: wk, n: count() }).from(f.table).where(gte(f.ts, since16w)).groupBy(wk).orderBy(wk),
+      c(f.table, f.filter),
+      c(f.table, w(gte(f.ts, since7))),
+      c(f.table, w(gte(f.ts, since30))),
+      db.select({ week: wk, n: count() }).from(f.table).where(w(gte(f.ts, since16w))).groupBy(wk).orderBy(wk),
     ]);
     return { key: f.key, label: f.label, total, last7, last30, weekly: (weekRows as any[]).map((r) => ({ week: r.week, n: num(r.n) })) };
   };
@@ -135,6 +140,7 @@ export async function loadAdminMetrics(now: Date = new Date()): Promise<AdminMet
   return {
     counters: {
       users: usersTotal, games: gamesTotal, recordings: recordingsTotal, teams: teamsTotal, privateTeams: privateTeamsTotal,
+      privateReplays: feat('privateReplays'),
       tournaments: feat('tournaments'), clips: feat('clips'), comments: feat('comments'),
       reviews: feat('reviews'), shares: feat('shares'), openings: feat('openings'),
       sideboards: feat('sideboards'), installs: feat('installs'),
