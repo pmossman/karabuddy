@@ -14,9 +14,10 @@ const num = (v: unknown) => Number(v ?? 0);
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? '' : String(v));
 const CNT = sql<number>`count(*)::int`;
 
-// Per-feature source config: table, timestamp, the acting account, and the
-// team column when the event is team-scoped. Mirrors lib/adminMetrics FEATURES.
-type FeatureCfg = { label: string; table: any; ts: any; actor: any; team?: any };
+// Per-feature source config: table, timestamp, the acting account, the team
+// column when team-scoped, and an optional `filter` scoping to a subset (private
+// replays = encrypted). Mirrors lib/adminMetrics FEATURES.
+type FeatureCfg = { label: string; table: any; ts: any; actor: any; team?: any; filter?: any };
 const FEATURE: Record<string, FeatureCfg> = {
   comments: { label: 'Comments', table: tags, ts: tags.createdAt, actor: tags.userId },
   reviews: { label: 'Reviews', table: replayReviews, ts: replayReviews.reviewedAt, actor: replayReviews.reviewerUserId, team: replayReviews.teamSlug },
@@ -27,6 +28,8 @@ const FEATURE: Record<string, FeatureCfg> = {
   tournaments: { label: 'Tournaments', table: tournaments, ts: tournaments.createdAt, actor: tournaments.createdBy, team: tournaments.teamSlug },
   joins: { label: 'Team joins', table: teamMembers, ts: teamMembers.joinedAt, actor: teamMembers.userId, team: teamMembers.teamSlug },
   installs: { label: 'Extension installs', table: extensionTokens, ts: extensionTokens.linkedAt, actor: extensionTokens.userId },
+  privateTeams: { label: 'Private teams', table: teams, ts: teams.createdAt, actor: teams.createdBy, filter: eq(teams.privateMode, true) },
+  privateReplays: { label: 'Private replays', table: replays, ts: replays.createdAt, actor: replays.userId, filter: eq(replays.encrypted, true) },
 };
 export const isFeatureKey = (k: string): boolean => k in FEATURE;
 
@@ -43,19 +46,21 @@ export async function featureDetail(key: string): Promise<FeatureDetail | null> 
   if (!cfg) return null;
   const db = getDb();
   const wk = sql<string>`to_char(date_trunc('week', ${cfg.ts}), 'YYYY-MM-DD')`;
+  const flt = cfg.filter;
+  const w = (extra?: any) => (flt && extra ? and(extra, flt) : (extra ?? flt));
 
   const [weekRows, userRows, teamRows, recentRows] = await Promise.all([
-    db.select({ week: wk, n: count() }).from(cfg.table).groupBy(wk).orderBy(wk),
+    db.select({ week: wk, n: count() }).from(cfg.table).where(w()).groupBy(wk).orderBy(wk),
     db.select({ id: cfg.actor, name: users.name, n: CNT })
       .from(cfg.table).leftJoin(users, eq(users.id, cfg.actor))
-      .where(isNotNull(cfg.actor)).groupBy(cfg.actor, users.name).orderBy(sql`count(*) desc`).limit(10),
+      .where(w(isNotNull(cfg.actor))).groupBy(cfg.actor, users.name).orderBy(sql`count(*) desc`).limit(10),
     cfg.team
       ? db.select({ slug: cfg.team, name: teams.name, n: CNT })
           .from(cfg.table).leftJoin(teams, eq(teams.slug, cfg.team))
-          .groupBy(cfg.team, teams.name).orderBy(sql`count(*) desc`).limit(10)
+          .where(w()).groupBy(cfg.team, teams.name).orderBy(sql`count(*) desc`).limit(10)
       : Promise.resolve([] as any[]),
     db.select({ when: cfg.ts, actorId: cfg.actor, actorName: users.name, ...(cfg.team ? { team: cfg.team } : {}) } as any)
-      .from(cfg.table).leftJoin(users, eq(users.id, cfg.actor)).orderBy(desc(cfg.ts)).limit(15),
+      .from(cfg.table).leftJoin(users, eq(users.id, cfg.actor)).where(w()).orderBy(desc(cfg.ts)).limit(15),
   ]);
 
   return {
