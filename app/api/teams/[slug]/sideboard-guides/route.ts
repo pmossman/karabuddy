@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireTeamMember } from '@/lib/apiAuth';
-import { listGuides, createGuide, teamMatchupOptions, sanitizeGuideCards, resolveMatchupArt } from '@/lib/sideboardGuides';
+import { listGuides, createGuide, teamMatchupOptions, sanitizeGuideCards, buildArtFromMatchups } from '@/lib/sideboardGuides';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +11,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   const m = await requireTeamMember(slug);
   if (m instanceof NextResponse) return m;
   const [guides, matchups] = await Promise.all([listGuides(slug), teamMatchupOptions(slug)]);
-  const art = await resolveMatchupArt(guides.flatMap((g) => [g.ownLeader, g.ownBase, g.oppLeader, g.oppBase]));
+  const art = buildArtFromMatchups(matchups);
   return NextResponse.json({ ok: true, data: { guides, matchups, art, viewerId: m.userId } });
 }
 

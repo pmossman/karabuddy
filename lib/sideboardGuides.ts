@@ -127,22 +127,18 @@ export async function teamMatchupOptions(teamSlug: string): Promise<{
   };
 }
 
-// Leader/base NAME -> a representative printing's art, so the client can render
-// a guide's matchup (guides store names, not printings). One query per payload.
-export async function resolveMatchupArt(names: string[]): Promise<Record<string, { set: string | null; number: number | null }>> {
-  const uniq = [...new Set(names.filter(Boolean))];
-  if (uniq.length === 0) return {};
-  const rows = await getDb()
-    .select({ name: cards.name, set: cards.set, number: cards.number })
-    .from(cards)
-    .where(and(inArray(cards.name, uniq), inArray(cards.type, ['leader', 'base'])));
+// Leader/base NAME -> art. Guides store names, not printings; the reliable art
+// source is the REPLAYS (their player refs carry {name,set,number} for both
+// leaders and bases, both players) — the same source the matchup selectors use.
+// The cards catalog doesn't reliably hold leaders/bases, so we don't use it.
+export function buildArtFromMatchups(m: Awaited<ReturnType<typeof teamMatchupOptions>>): Record<string, { set: string | null; number: number | null }> {
   const map: Record<string, { set: string | null; number: number | null }> = {};
-  for (const r of rows) {
-    if (!r.name) continue;
-    const cur = map[r.name];
-    if (!cur || (r.number ?? 9999) < (cur.number ?? 9999)) map[r.name] = { set: r.set, number: r.number };
-  }
+  for (const list of [m.ownLeaders, m.ownBases, m.oppLeaders, m.oppBases])
+    for (const o of list) if (!map[o.name]) map[o.name] = { set: o.set, number: o.number };
   return map;
+}
+export async function matchupArtForTeam(teamSlug: string): Promise<Record<string, { set: string | null; number: number | null }>> {
+  return buildArtFromMatchups(await teamMatchupOptions(teamSlug));
 }
 
 // ── Guide CRUD ────────────────────────────────────────────────────────────
