@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireTeamMember } from '@/lib/apiAuth';
-import { listGuides, createGuide, teamMatchupOptions, sanitizeGuideCards, buildArtFromMatchups } from '@/lib/sideboardGuides';
+import { listGuides, createGuide, teamMatchupOptions, sanitizeGuideCards, buildArtFromMatchups, resolveBaseAspects } from '@/lib/sideboardGuides';
 
 export const runtime = 'nodejs';
 
@@ -12,7 +12,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   if (m instanceof NextResponse) return m;
   const [guides, matchups] = await Promise.all([listGuides(slug), teamMatchupOptions(slug)]);
   const art = buildArtFromMatchups(matchups);
-  return NextResponse.json({ ok: true, data: { guides, matchups, art, viewerId: m.userId } });
+  const baseAspects = await resolveBaseAspects(guides.flatMap((g) => [g.ownBase, g.oppBase]));
+  return NextResponse.json({ ok: true, data: { guides, matchups, art, baseAspects, viewerId: m.userId } });
 }
 
 // POST — create a guide authored by the caller.

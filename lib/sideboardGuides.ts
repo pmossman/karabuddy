@@ -141,6 +141,25 @@ export async function matchupArtForTeam(teamSlug: string): Promise<Record<string
   return buildArtFromMatchups(await teamMatchupOptions(teamSlug));
 }
 
+// Base NAME -> its aspect (the deck's "color": cunning=yellow, vigilance=blue,
+// command=green, aggression=red, plus heroism/villainy). From the cards
+// catalog where present (partial coverage — the client just omits the dot when
+// missing).
+export async function resolveBaseAspects(names: string[]): Promise<Record<string, string>> {
+  const uniq = [...new Set(names.filter(Boolean))];
+  if (uniq.length === 0) return {};
+  const rows = await getDb()
+    .select({ name: cards.name, aspects: cards.aspects })
+    .from(cards)
+    .where(and(inArray(cards.name, uniq), eq(cards.type, 'base')));
+  const map: Record<string, string> = {};
+  for (const r of rows) {
+    const a = Array.isArray(r.aspects) ? r.aspects.find((x) => x !== 'heroism' && x !== 'villainy') ?? r.aspects[0] : null;
+    if (r.name && a && !map[r.name]) map[r.name] = a;
+  }
+  return map;
+}
+
 // ── Guide CRUD ────────────────────────────────────────────────────────────
 
 export interface GuideCard { cardId: string; note?: string | null }

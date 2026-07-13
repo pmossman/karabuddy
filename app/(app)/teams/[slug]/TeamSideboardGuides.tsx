@@ -53,14 +53,14 @@ export function TeamSideboardGuides({ teamSlug, viewerName }: { teamSlug: string
 
 // ── List ──────────────────────────────────────────────────────────────────
 function GuidesList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () => void; onOpen: (id: string) => void }) {
-  const [data, setData] = useState<{ guides: GuideSummary[]; art: Art } | null>(null);
+  const [data, setData] = useState<{ guides: GuideSummary[]; art: Art; baseAspects: Record<string, string> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
       try {
         const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides`)).json();
         if (!j.ok) { setError(j.error || 'failed'); return; }
-        setData({ guides: j.data.guides, art: j.data.art });
+        setData({ guides: j.data.guides, art: j.data.art, baseAspects: j.data.baseAspects ?? {} });
       } catch { setError('failed to load'); }
     })();
   }, [teamSlug]);
@@ -84,7 +84,7 @@ function GuidesList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () =
           {data.guides.map((g) => (
             <button key={g.id} type="button" data-testid="guide-row" onClick={() => onOpen(g.id)}
               style={{ ...panel, padding: 12, cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <MatchupRow g={g} art={data.art} />
+              <MatchupRow g={g} art={data.art} baseAspects={data.baseAspects} />
               {g.title && <div style={{ fontSize: 13, fontWeight: 700, color: '#e6ebf2' }}>{g.title}</div>}
               <div style={{ display: 'flex', gap: 10, fontSize: 11.5, color: '#8a93a3' }}>
                 <span style={{ color: '#6bd968', fontWeight: 700 }}>{g.cardsIn.length} in</span>
@@ -99,13 +99,35 @@ function GuidesList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () =
   );
 }
 
-function MatchupRow({ g, art }: { g: { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }; art: Art }) {
+// The base aspect = the deck's "color". Small dot so a matchup reads as e.g.
+// "Cad Bane · yellow vs Ahsoka Tano · blue" at a glance.
+const ASPECT_COLOR: Record<string, string> = {
+  command: '#4aa564', cunning: '#e8c13a', aggression: '#d0483f', vigilance: '#4a90d9', heroism: '#e8e2c0', villainy: '#9aa0ac',
+};
+
+interface MatchupG { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
+function MatchupRow({ g, art, baseAspects = {}, big }: { g: MatchupG; art: Art; baseAspects?: Record<string, string>; big?: boolean }) {
+  const w = big ? 50 : 40;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-      <LeaderBasePair leader={leaderArt(g.ownLeader, art, true)} base={leaderArt(g.ownBase, art, false)} orientation="overlap" width={44} height={31} fit="cover" radius={4} fallback="hide" />
-      <span style={{ fontSize: 10, fontWeight: 800, color: '#6c7588' }}>VS</span>
-      <LeaderBasePair leader={leaderArt(g.oppLeader, art, true)} base={leaderArt(g.oppBase, art, false)} orientation="overlap" reverse width={44} height={31} fit="cover" radius={4} fallback="hide" />
-      <span style={{ fontSize: 12, color: '#c8cdd8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.ownLeader} <span style={{ color: '#6c7588' }}>vs</span> {g.oppLeader}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: big ? 18 : 12, flexWrap: 'wrap' }}>
+      <MatchupSide leader={g.ownLeader} base={g.ownBase} art={art} aspect={baseAspects[g.ownBase]} w={w} big={big} />
+      <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
+      <MatchupSide leader={g.oppLeader} base={g.oppBase} art={art} aspect={baseAspects[g.oppBase]} w={w} big={big} reverse />
+    </div>
+  );
+}
+function MatchupSide({ leader, base, art, aspect, w, big, reverse }: { leader: string; base: string; art: Art; aspect?: string; w: number; big?: boolean; reverse?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexDirection: reverse ? 'row-reverse' : 'row', minWidth: 0 }}>
+      {/* row = leader + base fully side-by-side (not the hard-to-read overlap) */}
+      <LeaderBasePair leader={leaderArt(leader, art, true)} base={leaderArt(base, art, false)} orientation="row" width={w} height={Math.round(w * 0.72)} fit="cover" radius={4} fallback="hide" />
+      <div style={{ minWidth: 0, textAlign: reverse ? 'right' : 'left' }}>
+        <div style={{ fontSize: big ? 14 : 12.5, fontWeight: 700, color: '#e6ebf2', whiteSpace: 'nowrap' }}>{leader}</div>
+        <div style={{ fontSize: big ? 12 : 11, color: '#8a93a3', display: 'inline-flex', gap: 5, alignItems: 'center', flexDirection: reverse ? 'row-reverse' : 'row' }}>
+          {aspect && <span style={{ width: 8, height: 8, borderRadius: '50%', background: ASPECT_COLOR[aspect] ?? '#6c7588', flexShrink: 0 }} title={aspect} />}
+          <span style={{ whiteSpace: 'nowrap' }}>{base}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -316,7 +338,7 @@ function GuideView({ guideId, onBack, onEdit }: { guideId: string; onBack: () =>
       </div>
 
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <MatchupRow g={g} art={g.art} />
+        <MatchupRow g={g} art={g.art} baseAspects={g.baseAspects} big />
         {g.title && <div style={{ fontSize: 17, fontWeight: 800, color: '#e6ebf2', marginTop: 2 }}>{g.title}</div>}
         <div style={{ fontSize: 11.5, color: '#6c7588' }}>by {g.authorName ?? 'Teammate'}</div>
       </div>
