@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/lib/apiAuth';
-import { getGuide, updateGuide, deleteGuide, isTeamMember, sanitizeGuideCards } from '@/lib/sideboardGuides';
+import { getGuide, updateGuide, deleteGuide, isTeamMember, sanitizeGuideCards, resolveMatchupArt } from '@/lib/sideboardGuides';
 
 export const runtime = 'nodejs';
 
@@ -15,7 +15,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const guide = await getGuide(id);
   if (!guide) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   if (!(await isTeamMember(guide.teamSlug, s.userId))) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 });
-  return NextResponse.json({ ok: true, data: { ...guide, canEdit: guide.authorId === s.userId } });
+  const art = await resolveMatchupArt([guide.ownLeader, guide.ownBase, guide.oppLeader, guide.oppBase]);
+  return NextResponse.json({ ok: true, data: { ...guide, art, canEdit: guide.authorId === s.userId } });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

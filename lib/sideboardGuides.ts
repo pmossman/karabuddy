@@ -127,6 +127,24 @@ export async function teamMatchupOptions(teamSlug: string): Promise<{
   };
 }
 
+// Leader/base NAME -> a representative printing's art, so the client can render
+// a guide's matchup (guides store names, not printings). One query per payload.
+export async function resolveMatchupArt(names: string[]): Promise<Record<string, { set: string | null; number: number | null }>> {
+  const uniq = [...new Set(names.filter(Boolean))];
+  if (uniq.length === 0) return {};
+  const rows = await getDb()
+    .select({ name: cards.name, set: cards.set, number: cards.number })
+    .from(cards)
+    .where(and(inArray(cards.name, uniq), inArray(cards.type, ['leader', 'base'])));
+  const map: Record<string, { set: string | null; number: number | null }> = {};
+  for (const r of rows) {
+    if (!r.name) continue;
+    const cur = map[r.name];
+    if (!cur || (r.number ?? 9999) < (cur.number ?? 9999)) map[r.name] = { set: r.set, number: r.number };
+  }
+  return map;
+}
+
 // ── Guide CRUD ────────────────────────────────────────────────────────────
 
 export interface GuideCard { cardId: string; note?: string | null }
