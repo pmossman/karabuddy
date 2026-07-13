@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, desc } from 'drizzle-orm';
 import { getDb } from './db';
 import { replays, replayTeamShares, teamMembers, sideboardGuides, cards, users } from './schema';
+import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
 
 export interface PoolCard {
   cardId: string;
@@ -89,75 +90,60 @@ export async function matchupCardPool(
   return { totalLists, cards: list };
 }
 
-export interface LeaderBaseOption {
-  name: string;
-  set: string | null;
-  number: number | null; // a representative printing for art
+export interface LeaderOption { name: string; set: string | null; number: number | null }
+export interface MatchupOptions {
+  ownLeaders: LeaderOption[]; oppLeaders: LeaderOption[];
+  // Bases use the ONE base identity system (lib/baseIdentity): vanilla bases
+  // collapse to their aspect (rendered as the aspect icon, no name), unique
+  // bases stay themselves (own art + name). Keyed by functional identity.
+  ownBaseKinds: BaseIdentity[]; oppBaseKinds: BaseIdentity[];
 }
-// Distinct leader/base identities the team has played, split by side, for the
-// authoring matchup selectors. Own side = the recorder's; opp side = the other.
-export async function teamMatchupOptions(teamSlug: string): Promise<{
-  ownLeaders: LeaderBaseOption[]; ownBases: LeaderBaseOption[];
-  oppLeaders: LeaderBaseOption[]; oppBases: LeaderBaseOption[];
-}> {
+// The team's played leaders (by name) + base functional KINDS, split by side,
+// for the authoring matchup selectors. Own = the recorder's; opp = the other.
+export async function teamMatchupOptions(teamSlug: string): Promise<MatchupOptions> {
   const rows = await getDb()
     .select({ ownerPlayerId: replays.ownerPlayerId, players: replays.players })
     .from(replays)
     .innerJoin(replayTeamShares, eq(replayTeamShares.replaySlug, replays.slug))
     .where(eq(replayTeamShares.teamSlug, teamSlug));
 
-  const own = { leaders: new Map<string, LeaderBaseOption>(), bases: new Map<string, LeaderBaseOption>() };
-  const opp = { leaders: new Map<string, LeaderBaseOption>(), bases: new Map<string, LeaderBaseOption>() };
-  const add = (m: Map<string, LeaderBaseOption>, card: any) => {
-    const name = card?.name;
-    if (name && !m.has(name)) m.set(name, { name, set: card.set ?? null, number: card.number ?? null });
-  };
+  const ownLeaders = new Map<string, LeaderOption>(), oppLeaders = new Map<string, LeaderOption>();
+  const ownBaseRefs: any[] = [], oppBaseRefs: any[] = [];
+  const addLeader = (m: Map<string, LeaderOption>, c: any) => { if (c?.name && !m.has(c.name)) m.set(c.name, { name: c.name, set: c.set ?? null, number: c.number ?? null }); };
   for (const r of rows) {
-    const players = Array.isArray(r.players) ? (r.players as any[]) : [];
-    for (const p of players) {
-      const side = p?.id === r.ownerPlayerId ? own : opp;
-      add(side.leaders, p?.leader);
-      add(side.bases, p?.base);
+    for (const p of (Array.isArray(r.players) ? (r.players as any[]) : [])) {
+      const own = p?.id === r.ownerPlayerId;
+      addLeader(own ? ownLeaders : oppLeaders, p?.leader);
+      if (p?.base) (own ? ownBaseRefs : oppBaseRefs).push(p.base);
     }
   }
-  const sorted = (m: Map<string, LeaderBaseOption>) => [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
-  return {
-    ownLeaders: sorted(own.leaders), ownBases: sorted(own.bases),
-    oppLeaders: sorted(opp.leaders), oppBases: sorted(opp.bases),
+  const [ownIds, oppIds] = await Promise.all([resolveBaseIdentities(ownBaseRefs), resolveBaseIdentities(oppBaseRefs)]);
+  const distinctKinds = (ids: Map<string, BaseIdentity>) => {
+    const byKey = new Map<string, BaseIdentity>();
+    for (const k of ids.values()) if (!byKey.has(k.key)) byKey.set(k.key, k);
+    return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label));
   };
+  const sortLeaders = (m: Map<string, LeaderOption>) => [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return { ownLeaders: sortLeaders(ownLeaders), oppLeaders: sortLeaders(oppLeaders), ownBaseKinds: distinctKinds(ownIds), oppBaseKinds: distinctKinds(oppIds) };
 }
 
-// Leader/base NAME -> art. Guides store names, not printings; the reliable art
-// source is the REPLAYS (their player refs carry {name,set,number} for both
-// leaders and bases, both players) — the same source the matchup selectors use.
-// The cards catalog doesn't reliably hold leaders/bases, so we don't use it.
-export function buildArtFromMatchups(m: Awaited<ReturnType<typeof teamMatchupOptions>>): Record<string, { set: string | null; number: number | null }> {
+// Leader NAME -> art (leaders only; bases render from their kind, not name art).
+export function leaderArtFromMatchups(m: MatchupOptions): Record<string, { set: string | null; number: number | null }> {
   const map: Record<string, { set: string | null; number: number | null }> = {};
-  for (const list of [m.ownLeaders, m.ownBases, m.oppLeaders, m.oppBases])
-    for (const o of list) if (!map[o.name]) map[o.name] = { set: o.set, number: o.number };
+  for (const list of [m.ownLeaders, m.oppLeaders]) for (const o of list) if (!map[o.name]) map[o.name] = { set: o.set, number: o.number };
   return map;
 }
-export async function matchupArtForTeam(teamSlug: string): Promise<Record<string, { set: string | null; number: number | null }>> {
-  return buildArtFromMatchups(await teamMatchupOptions(teamSlug));
-}
-
-// Base NAME -> its aspect (the deck's "color": cunning=yellow, vigilance=blue,
-// command=green, aggression=red, plus heroism/villainy). From the cards
-// catalog where present (partial coverage — the client just omits the dot when
-// missing).
-export async function resolveBaseAspects(names: string[]): Promise<Record<string, string>> {
-  const uniq = [...new Set(names.filter(Boolean))];
-  if (uniq.length === 0) return {};
-  const rows = await getDb()
-    .select({ name: cards.name, aspects: cards.aspects })
-    .from(cards)
-    .where(and(inArray(cards.name, uniq), eq(cards.type, 'base')));
-  const map: Record<string, string> = {};
-  for (const r of rows) {
-    const a = Array.isArray(r.aspects) ? r.aspects.find((x) => x !== 'heroism' && x !== 'villainy') ?? r.aspects[0] : null;
-    if (r.name && a && !map[r.name]) map[r.name] = a;
-  }
+// Base functional-identity KEY -> its kind, for rendering a stored base.
+export function baseKindsByKey(m: MatchupOptions): Record<string, BaseIdentity> {
+  const map: Record<string, BaseIdentity> = {};
+  for (const list of [m.ownBaseKinds, m.oppBaseKinds]) for (const k of list) if (!map[k.key]) map[k.key] = k;
   return map;
+}
+// Everything the client needs to RENDER a guide's matchup — leader art + the
+// base-kind lookup keyed by the stored base key. One team-replay scan.
+export async function matchupContextForTeam(teamSlug: string): Promise<{ leaderArt: Record<string, { set: string | null; number: number | null }>; baseKinds: Record<string, BaseIdentity> }> {
+  const m = await teamMatchupOptions(teamSlug);
+  return { leaderArt: leaderArtFromMatchups(m), baseKinds: baseKindsByKey(m) };
 }
 
 // ── Guide CRUD ────────────────────────────────────────────────────────────

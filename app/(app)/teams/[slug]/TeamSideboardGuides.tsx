@@ -7,20 +7,23 @@
 // Speaks the drills' IN=green / OUT=salmon visual language.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { CardSearch, type SelectedCard } from '@/app/_components/CardSearch';
 import { AspectIcon } from '@/app/_components/AspectIcon';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { QuizCard, GradientBorderButton, type QuizCardRef, type PickVerdict } from './OpeningPromptKit';
+import { cardImageUrl } from '@/lib/cardImage';
 
 const CYAN = '#66E5FF';
 const panel: React.CSSProperties = { background: tokens.surface.panel, border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.md, padding: 16 };
 
-interface LBOpt { name: string; set: string | null; number: number | null }
-interface Matchups { ownLeaders: LBOpt[]; ownBases: LBOpt[]; oppLeaders: LBOpt[]; oppBases: LBOpt[] }
-type Art = Record<string, { set: string | null; number: number | null }>;
+interface LeaderOpt { name: string; set: string | null; number: number | null }
+// The one base identity system (lib/baseIdentity): vanilla → aspect icon, unique → art + name.
+interface BaseKind { key: string; label: string; kind: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null }
+interface Matchups { ownLeaders: LeaderOpt[]; oppLeaders: LeaderOpt[]; ownBaseKinds: BaseKind[]; oppBaseKinds: BaseKind[] }
+type Art = Record<string, { set: string | null; number: number | null }>; // leader name -> art
+type BaseKinds = Record<string, BaseKind>; // base key -> kind
 interface GuideCard { cardId: string; note?: string | null }
 interface GuideSummary {
   id: string; ownLeader: string; ownBase: string; oppLeader: string; oppBase: string;
@@ -40,9 +43,17 @@ function ref(c: { cardId: string; name?: string | null; set?: string | null; num
   }
   return { id: c.cardId, name: c.name ?? null, cost: c.cost ?? null, set, number };
 }
-function leaderArt(name: string, art: Art, isLeader: boolean) {
-  const a = art[name];
-  return a ? { name, set: a.set ?? undefined, number: a.number ?? undefined } : { name };
+const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+// A stored base KEY -> its kind: from the team map, or parsed from the key
+// (asp:/ab:<aspect> -> aspect icon; name:<x> -> text) so it renders even if the
+// base has since left the team's replays.
+function resolveBaseKind(key: string | undefined, kinds: BaseKinds): BaseKind | null {
+  if (!key) return null;
+  if (kinds[key]) return kinds[key];
+  const asp = /^(?:asp|ab):([a-z]+)/.exec(key);
+  if (asp) return { key, label: `${cap(asp[1])} base`, kind: 'vanilla', aspect: asp[1], art: null, iconAspect: asp[1] };
+  const nm = /^name:(.+)$/.exec(key);
+  return { key, label: nm ? nm[1] : key, kind: 'unknown', aspect: null, art: null, iconAspect: null };
 }
 
 export function TeamSideboardGuides({ teamSlug, viewerName }: { teamSlug: string; viewerName: string }) {
@@ -54,14 +65,14 @@ export function TeamSideboardGuides({ teamSlug, viewerName }: { teamSlug: string
 
 // ── List ──────────────────────────────────────────────────────────────────
 function GuidesList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () => void; onOpen: (id: string) => void }) {
-  const [data, setData] = useState<{ guides: GuideSummary[]; art: Art; baseAspects: Record<string, string> } | null>(null);
+  const [data, setData] = useState<{ guides: GuideSummary[]; leaderArt: Art; baseKinds: BaseKinds } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
       try {
         const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides`)).json();
         if (!j.ok) { setError(j.error || 'failed'); return; }
-        setData({ guides: j.data.guides, art: j.data.art, baseAspects: j.data.baseAspects ?? {} });
+        setData({ guides: j.data.guides, leaderArt: j.data.leaderArt ?? {}, baseKinds: j.data.baseKinds ?? {} });
       } catch { setError('failed to load'); }
     })();
   }, [teamSlug]);
@@ -85,7 +96,7 @@ function GuidesList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () =
           {data.guides.map((g) => (
             <button key={g.id} type="button" data-testid="guide-row" onClick={() => onOpen(g.id)}
               style={{ ...panel, padding: 12, cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <MatchupRow g={g} art={data.art} baseAspects={data.baseAspects} />
+              <MatchupRow g={g} leaderArt={data.leaderArt} baseKinds={data.baseKinds} />
               {g.title && <div style={{ fontSize: 13, fontWeight: 700, color: '#e6ebf2' }}>{g.title}</div>}
               <div style={{ display: 'flex', gap: 10, fontSize: 11.5, color: '#8a93a3' }}>
                 <span style={{ color: '#6bd968', fontWeight: 700 }}>{g.cardsIn.length} in</span>
@@ -101,27 +112,36 @@ function GuidesList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () =
 }
 
 interface MatchupG { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
-function MatchupRow({ g, art, baseAspects = {}, big }: { g: MatchupG; art: Art; baseAspects?: Record<string, string>; big?: boolean }) {
-  const w = big ? 50 : 40;
+function MatchupRow({ g, leaderArt, baseKinds, big }: { g: MatchupG; leaderArt: Art; baseKinds: BaseKinds; big?: boolean }) {
+  const w = big ? 60 : 44;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: big ? 18 : 12, flexWrap: 'wrap' }}>
-      <MatchupSide leader={g.ownLeader} base={g.ownBase} art={art} aspect={baseAspects[g.ownBase]} w={w} big={big} />
+      <MatchupSide leader={g.ownLeader} baseKey={g.ownBase} leaderArt={leaderArt} baseKinds={baseKinds} w={w} big={big} />
       <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
-      <MatchupSide leader={g.oppLeader} base={g.oppBase} art={art} aspect={baseAspects[g.oppBase]} w={w} big={big} reverse />
+      <MatchupSide leader={g.oppLeader} baseKey={g.oppBase} leaderArt={leaderArt} baseKinds={baseKinds} w={w} big={big} reverse />
     </div>
   );
 }
-function MatchupSide({ leader, base, art, aspect, w, big, reverse }: { leader: string; base: string; art: Art; aspect?: string; w: number; big?: boolean; reverse?: boolean }) {
+// leader = card art; base = the ONE base system: aspect icon (vanilla) or its
+// own card art + name (unique). No base name unless the base is unique.
+function MatchupSide({ leader, baseKey, leaderArt, baseKinds, w, big, reverse }: { leader: string; baseKey: string; leaderArt: Art; baseKinds: BaseKinds; w: number; big?: boolean; reverse?: boolean }) {
+  const la = leaderArt[leader];
+  const leaderUrl = la?.set && la?.number != null ? cardImageUrl({ set: la.set, number: la.number }, true) : null;
+  const kind = resolveBaseKind(baseKey, baseKinds);
+  const named = kind?.kind === 'unique' || kind?.kind === 'unknown';
+  const baseUrl = kind?.art ? cardImageUrl({ set: kind.art.set, number: kind.art.number }, true) : null;
+  const h = Math.round(w * 0.72);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexDirection: reverse ? 'row-reverse' : 'row', minWidth: 0 }}>
-      {/* row = leader + base fully side-by-side (not the hard-to-read overlap) */}
-      <LeaderBasePair leader={leaderArt(leader, art, true)} base={leaderArt(base, art, false)} orientation="row" width={w} height={Math.round(w * 0.72)} fit="cover" radius={4} fallback="hide" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexDirection: reverse ? 'row-reverse' : 'row' }}>
+        <div style={{ width: w, height: h, borderRadius: 4, background: leaderUrl ? `center/cover no-repeat url(${leaderUrl})` : '#1a1f28', flexShrink: 0 }} />
+        {kind?.iconAspect
+          ? <AspectIcon aspect={kind.iconAspect} size={big ? 30 : 24} />
+          : baseUrl && <div style={{ width: Math.round(w * 0.92), height: h, borderRadius: 4, background: `center/cover no-repeat url(${baseUrl})`, flexShrink: 0 }} />}
+      </div>
       <div style={{ minWidth: 0, textAlign: reverse ? 'right' : 'left' }}>
         <div style={{ fontSize: big ? 14 : 12.5, fontWeight: 700, color: '#e6ebf2', whiteSpace: 'nowrap' }}>{leader}</div>
-        <div style={{ fontSize: big ? 12 : 11, color: '#8a93a3', display: 'inline-flex', gap: 5, alignItems: 'center', flexDirection: reverse ? 'row-reverse' : 'row' }}>
-          {aspect && <AspectIcon aspect={aspect} size={big ? 15 : 13} />}
-          <span style={{ whiteSpace: 'nowrap' }}>{base}</span>
-        </div>
+        {named && <div style={{ fontSize: big ? 12 : 11, color: '#8a93a3', whiteSpace: 'nowrap' }}>{kind!.label}</div>}
       </div>
     </div>
   );
@@ -177,8 +197,12 @@ function GuideForm({ teamSlug, guideId, onDone, onSaved }: { teamSlug: string; g
   }, [teamSlug]);
   useEffect(() => { void loadPool(ownLeader); }, [ownLeader, loadPool]);
 
-  const opt = (arr: LBOpt[] | undefined, isLeader: boolean): LeaderSelectOption[] =>
-    (arr ?? []).map((o) => ({ value: o.name, label: o.name, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: isLeader }));
+  // Leaders pick by name (art thumb); bases pick by functional KEY — vanilla
+  // kinds show the aspect icon, unique kinds their card art (the one base system).
+  const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] =>
+    (arr ?? []).map((o) => ({ value: o.name, label: o.name, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
+  const baseOpts = (kinds: BaseKind[] | undefined): LeaderSelectOption[] =>
+    (kinds ?? []).map((k) => ({ value: k.key, label: k.label, art: k.art ? { set: k.art.set, number: k.art.number } : undefined, artIsLeader: false, iconAspect: k.iconAspect ?? undefined }));
 
   // Merge pool + extras, dropping extras that the pool already contains.
   const poolIds = useMemo(() => new Set((pool?.cards ?? []).map((c) => c.cardId)), [pool]);
@@ -231,13 +255,13 @@ function GuideForm({ teamSlug, guideId, onDone, onSaved }: { teamSlug: string; g
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>Matchup</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: '1 1 300px' }}>
-            <LeaderSelect value={ownLeader} onChange={setOwnLeader} ariaLabel="Your leader" anyLabel="Your leader" options={opt(matchups?.ownLeaders, true)} testId="guide-own-leader" fullWidth />
-            <LeaderSelect value={ownBase} onChange={setOwnBase} ariaLabel="Your base" anyLabel="Your base" options={opt(matchups?.ownBases, false)} testId="guide-own-base" fullWidth />
+            <LeaderSelect value={ownLeader} onChange={setOwnLeader} ariaLabel="Your leader" anyLabel="Your leader" options={leaderOpts(matchups?.ownLeaders)} testId="guide-own-leader" fullWidth />
+            <LeaderSelect value={ownBase} onChange={setOwnBase} ariaLabel="Your base" anyLabel="Your base" options={baseOpts(matchups?.ownBaseKinds)} testId="guide-own-base" fullWidth />
           </div>
           <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: '1 1 300px' }}>
-            <LeaderSelect value={oppLeader} onChange={setOppLeader} ariaLabel="Opponent leader" anyLabel="Opp leader" options={opt(matchups?.oppLeaders, true)} testId="guide-opp-leader" fullWidth />
-            <LeaderSelect value={oppBase} onChange={setOppBase} ariaLabel="Opponent base" anyLabel="Opp base" options={opt(matchups?.oppBases, false)} testId="guide-opp-base" fullWidth />
+            <LeaderSelect value={oppLeader} onChange={setOppLeader} ariaLabel="Opponent leader" anyLabel="Opp leader" options={leaderOpts(matchups?.oppLeaders)} testId="guide-opp-leader" fullWidth />
+            <LeaderSelect value={oppBase} onChange={setOppBase} ariaLabel="Opponent base" anyLabel="Opp base" options={baseOpts(matchups?.oppBaseKinds)} testId="guide-opp-base" fullWidth />
           </div>
         </div>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Guide title (optional) — e.g. 'vs aggro, on the play'" data-testid="guide-title"
@@ -333,7 +357,7 @@ function GuideView({ guideId, onBack, onEdit }: { guideId: string; onBack: () =>
       </div>
 
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <MatchupRow g={g} art={g.art} baseAspects={g.baseAspects} big />
+        <MatchupRow g={g} leaderArt={g.leaderArt ?? {}} baseKinds={g.baseKinds ?? {}} big />
         {g.title && <div style={{ fontSize: 17, fontWeight: 800, color: '#e6ebf2', marginTop: 2 }}>{g.title}</div>}
         <div style={{ fontSize: 11.5, color: '#6c7588' }}>by {g.authorName ?? 'Teammate'}</div>
       </div>
