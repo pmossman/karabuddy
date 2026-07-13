@@ -129,7 +129,9 @@ function MatchupSide({ leader, baseKey, leaderArt, baseKinds, w, big, reverse }:
   const leaderUrl = la?.set && la?.number != null ? cardImageUrl({ set: la.set, number: la.number }, true) : null;
   const kind = resolveBaseKind(baseKey, baseKinds);
   const named = kind?.kind === 'unique' || kind?.kind === 'unknown';
-  const baseUrl = kind?.art ? cardImageUrl({ set: kind.art.set, number: kind.art.number }, true) : null;
+  // A base card renders WITHOUT the leader's "-base" suffix (that's the leader's
+  // deployed landscape art, not a base image).
+  const baseUrl = kind?.art ? cardImageUrl({ set: kind.art.set, number: kind.art.number }, false) : null;
   const h = Math.round(w * 0.72);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexDirection: reverse ? 'row-reverse' : 'row', minWidth: 0 }}>
