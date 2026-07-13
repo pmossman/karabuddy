@@ -40,6 +40,9 @@ describe('loadAdminMetrics', () => {
     expect(m.counters.users).toBeGreaterThanOrEqual(3);
     expect(m.counters.games).toBeGreaterThanOrEqual(3);
     expect(m.counters).toHaveProperty('privateTeams');
+    // Games = DISTINCT game_id; recordings = raw rows (≥ games, since a game can
+    // be recorded by both players).
+    expect(m.counters.recordings).toBeGreaterThanOrEqual(m.counters.games);
     expect(m.deltas.users).toBeGreaterThanOrEqual(2); // u1 + u2 within 30d
     expect(m.deltas.games).toBeGreaterThanOrEqual(2);
 
@@ -62,6 +65,11 @@ describe('loadAdminMetrics', () => {
 
     const t = m.topTeams.find((x) => x.slug === slug);
     expect(t?.members).toBe(2);
+
+    // Most-active-people leaderboard — u1 uploaded today, so it's ranked.
+    expect(Array.isArray(m.topUsers)).toBe(true);
+    expect(m.topUsers.some((x) => x.id === u1 && x.activity >= 1)).toBe(true);
+
     expect(m.recentSignups.length).toBeGreaterThan(0);
   });
 });

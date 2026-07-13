@@ -24,6 +24,7 @@ export interface AdminMetrics {
   activeUsers: { dau: number; wau: number; mau: number };
   features: FeatureUsage[];
   topTeams: { slug: string; name: string; members: number; shares: number; private: boolean }[];
+  topUsers: { id: string; name: string | null; activity: number }[]; // most active people, last 30d
   recentSignups: { name: string | null; createdAt: string }[];
   generatedAt: string;
 }
@@ -69,6 +70,10 @@ export async function loadAdminMetrics(now: Date = new Date()): Promise<AdminMet
   const signupWeek = sql<string>`to_char(date_trunc('week', ${users.createdAt}), 'YYYY-MM-DD')`;
   const signupDay = sql<string>`to_char(date_trunc('day', ${users.createdAt}), 'YYYY-MM-DD')`;
   const gameDay = sql<string>`to_char(date_trunc('day', ${replays.createdAt}), 'YYYY-MM-DD')`;
+  // "Games recorded" = DISTINCT karabast games, not upload rows. Since B158 dedup
+  // is per-(gameId, owner), so a game both players record is TWO rows / ONE game.
+  // Count distinct game_id everywhere; keep the raw row count as `recordings`.
+  const distinctGames = sql<number>`count(distinct ${replays.gameId})::int`;
 
   // Active users = distinct accounts that did SOMETHING (uploaded, commented,
   // drilled) — one union over the user-attributed activity tables.
@@ -82,24 +87,36 @@ export async function loadAdminMetrics(now: Date = new Date()): Promise<AdminMet
   const shareCount = sql<number>`count(distinct ${replayTeamShares.replaySlug})`;
 
   const [
-    usersTotal, gamesTotal, teamsTotal, privateTeamsTotal,
-    usersLast30, gamesLast30, teamsLast30,
+    usersTotal, recordingsTotal, gamesTotalRows, teamsTotal, privateTeamsTotal,
+    usersLast30, gamesLast30Rows, teamsLast30,
     signupWeekRows, signupDayRows, gameDayRows, activeRows,
-    dau, wau, mau, features, topTeamRows, recentUserRows,
+    dau, wau, mau, features, topTeamRows, topUserRows, recentUserRows,
   ] = await Promise.all([
-    c(users), c(replays), c(teams), c(teams, eq(teams.privateMode, true)),
-    c(users, gte(users.createdAt, since30)), c(replays, gte(replays.createdAt, since30)), c(teams, gte(teams.createdAt, since30)),
+    c(users), c(replays),
+    db.select({ n: distinctGames }).from(replays).then((r) => num(r[0]?.n)),
+    c(teams), c(teams, eq(teams.privateMode, true)),
+    c(users, gte(users.createdAt, since30)),
+    db.select({ n: distinctGames }).from(replays).where(gte(replays.createdAt, since30)).then((r) => num(r[0]?.n)),
+    c(teams, gte(teams.createdAt, since30)),
     db.select({ week: signupWeek, n: count() }).from(users).groupBy(signupWeek).orderBy(signupWeek),
     db.select({ day: signupDay, n: count() }).from(users).where(gte(users.createdAt, since90Start)).groupBy(signupDay),
-    db.select({ day: gameDay, n: count() }).from(replays).where(gte(replays.createdAt, since90Start)).groupBy(gameDay),
+    db.select({ day: gameDay, n: distinctGames }).from(replays).where(gte(replays.createdAt, since90Start)).groupBy(gameDay),
     db.execute(sql`select to_char(d, 'YYYY-MM-DD') dd, count(distinct u)::int n from (${activeUnion(since90Start)}) t group by d`),
     activeInWindow(new Date(now.getTime() - DAY)), activeInWindow(since7), activeInWindow(since30),
     Promise.all(FEATURES.map(featureStats)),
     db.select({ slug: teams.slug, name: teams.name, private: teams.privateMode, members: memberCount, shares: shareCount })
       .from(teams).leftJoin(teamMembers, eq(teamMembers.teamSlug, teams.slug)).leftJoin(replayTeamShares, eq(replayTeamShares.teamSlug, teams.slug))
       .groupBy(teams.slug, teams.name, teams.privateMode).orderBy(desc(shareCount)).limit(12),
+    // Most active people, last 30d: total activity events (uploads + comments +
+    // drills) per account, joined to a display name.
+    db.execute(sql`
+      select us.name nm, us.id id, cnt.n n
+      from (select u, count(*)::int n from (${activeUnion(since30)}) z group by u order by n desc limit 15) cnt
+      join ${users} us on us.id = cnt.u order by cnt.n desc`),
     db.select({ name: users.name, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt)).limit(15),
   ]);
+  const gamesTotal = num(gamesTotalRows);
+  const gamesLast30 = num(gamesLast30Rows);
 
   const signupsWeekly = (signupWeekRows as any[]).map((r) => ({ week: r.week, n: num(r.n) }));
   let running = 0;
@@ -117,7 +134,7 @@ export async function loadAdminMetrics(now: Date = new Date()): Promise<AdminMet
   const feat = (k: string) => features.find((f) => f.key === k)?.total ?? 0;
   return {
     counters: {
-      users: usersTotal, games: gamesTotal, teams: teamsTotal, privateTeams: privateTeamsTotal,
+      users: usersTotal, games: gamesTotal, recordings: recordingsTotal, teams: teamsTotal, privateTeams: privateTeamsTotal,
       tournaments: feat('tournaments'), clips: feat('clips'), comments: feat('comments'),
       reviews: feat('reviews'), shares: feat('shares'), openings: feat('openings'),
       sideboards: feat('sideboards'), installs: feat('installs'),
@@ -127,6 +144,7 @@ export async function loadAdminMetrics(now: Date = new Date()): Promise<AdminMet
     activeUsers: { dau, wau, mau },
     features,
     topTeams: (topTeamRows as any[]).map((t) => ({ slug: t.slug, name: t.name, members: num(t.members), shares: num(t.shares), private: !!t.private })),
+    topUsers: (((topUserRows as any).rows ?? topUserRows) as any[]).map((u) => ({ id: u.id, name: u.nm ?? null, activity: num(u.n) })),
     recentSignups: (recentUserRows as any[]).map((u) => ({ name: u.name ?? null, createdAt: iso(u.createdAt) })),
     generatedAt: now.toISOString(),
   };
