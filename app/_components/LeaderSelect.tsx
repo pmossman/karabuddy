@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
+import { AspectIcon } from './AspectIcon';
 
 // Shared leader/base PICKER WITH ART (B221): a name-only dropdown is slow to
 // scan — the card image is recognizable at a glance even tiny. Options carry
@@ -105,8 +106,7 @@ export function LeaderSelect({
     if (o?.iconAspect) {
       return (
         <span style={{ width: 40, height: 29, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/aspect-icons/aspect-${o.iconAspect}.webp`} alt={o.iconAspect} style={{ width: 22, height: 22, display: 'block' }} />
+          <AspectIcon aspect={o.iconAspect} size={22} />
         </span>
       );
     }

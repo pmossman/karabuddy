@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { cardImageUrl } from '@/lib/cardImage';
+import { AspectIcon } from '@/app/_components/AspectIcon';
 import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/statsView';
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
@@ -794,10 +795,8 @@ function heatColor(p: number | null, decisive: number): string {
 function BaseChip({ baseId, baseAspect }: { baseId: string | null; baseAspect: string | null }) {
   if (baseId) return <CardThumb cardId={baseId} h={18} />;
   if (baseAspect) {
-    // Real SWU aspect icon (public/aspect-icons, lifted from karabast) — instantly
-    // readable to players, vs the old "VIN"/"CUN" text badges.
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={`/aspect-icons/aspect-${baseAspect}.webp`} alt={baseAspect} title={baseAspect} style={{ height: 18, width: 18, flex: '0 0 auto' }} />;
+    // Real SWU aspect icon — instantly readable to players, vs "VIN"/"CUN" text.
+    return <AspectIcon aspect={baseAspect} size={18} style={{ flex: '0 0 auto' }} />;
   }
   return <span style={{ fontSize: 8, color: '#6c7588' }}>?</span>;
 }

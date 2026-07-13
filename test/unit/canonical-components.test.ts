@@ -66,6 +66,16 @@ const GUARDS: Guard[] = [
     allowlist: [],
     fix: 'use the shared <LeaderSelect> (app/_components/LeaderSelect.tsx) — art thumbs + fuzzy search',
   },
+  {
+    // The SWU aspect glyph (base color) — a raw <img> at the well-known asset
+    // path is the tell. Was inlined in the stats picker + LeaderSelect before
+    // <AspectIcon> was extracted.
+    concept: 'aspect icon',
+    pattern: /\/aspect-icons\/aspect-/,
+    canonical: ['app/_components/AspectIcon.tsx'],
+    allowlist: [],
+    fix: 'use the shared <AspectIcon> (app/_components/AspectIcon.tsx)',
+  },
 ];
 
 describe('canonical components: a divergent path fails CI once a primitive exists', () => {

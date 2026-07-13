@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { CardSearch, type SelectedCard } from '@/app/_components/CardSearch';
+import { AspectIcon } from '@/app/_components/AspectIcon';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { QuizCard, GradientBorderButton, type QuizCardRef, type PickVerdict } from './OpeningPromptKit';
@@ -99,12 +100,6 @@ function GuidesList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () =
   );
 }
 
-// The base aspect = the deck's "color". Small dot so a matchup reads as e.g.
-// "Cad Bane · yellow vs Ahsoka Tano · blue" at a glance.
-const ASPECT_COLOR: Record<string, string> = {
-  command: '#4aa564', cunning: '#e8c13a', aggression: '#d0483f', vigilance: '#4a90d9', heroism: '#e8e2c0', villainy: '#9aa0ac',
-};
-
 interface MatchupG { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
 function MatchupRow({ g, art, baseAspects = {}, big }: { g: MatchupG; art: Art; baseAspects?: Record<string, string>; big?: boolean }) {
   const w = big ? 50 : 40;
@@ -124,7 +119,7 @@ function MatchupSide({ leader, base, art, aspect, w, big, reverse }: { leader: s
       <div style={{ minWidth: 0, textAlign: reverse ? 'right' : 'left' }}>
         <div style={{ fontSize: big ? 14 : 12.5, fontWeight: 700, color: '#e6ebf2', whiteSpace: 'nowrap' }}>{leader}</div>
         <div style={{ fontSize: big ? 12 : 11, color: '#8a93a3', display: 'inline-flex', gap: 5, alignItems: 'center', flexDirection: reverse ? 'row-reverse' : 'row' }}>
-          {aspect && <span style={{ width: 8, height: 8, borderRadius: '50%', background: ASPECT_COLOR[aspect] ?? '#6c7588', flexShrink: 0 }} title={aspect} />}
+          {aspect && <AspectIcon aspect={aspect} size={big ? 15 : 13} />}
           <span style={{ whiteSpace: 'nowrap' }}>{base}</span>
         </div>
       </div>

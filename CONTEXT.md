@@ -257,6 +257,7 @@ When building a surface that does one of these jobs, **use the canonical compone
 | Filter toolbar | `<FilterChip>` / `<Field>` (`FilterToolbar.tsx`) | |
 | Leader+base thumbnail | `<LeaderBasePair>` | mini matchup thumb (NOT the live-board `LeaderBaseCard`); `orientation="overlap"` (leader front, base peeking behind) is the canonical MATCHUP treatment |
 | Leader/base dropdown (art options) | `<LeaderSelect>` | name-only dropdowns don't scan — options carry card-art thumbs; native `<select>` can't render images |
+| Aspect glyph (base "color") | `<AspectIcon>` (`app/_components/AspectIcon.tsx`) | **CI-guarded** (canonical-components.test.ts) — one owner of the `/aspect-icons/aspect-*.webp` path; used by base colors, aspect filters, matchup labels |
 | Time / date-range filter | `<DateRangeSelect>` + `lib/dateRange` | rolling presets AND explicit from/to; ONE grammar ('' | '30d' | 'YYYY-MM-DD..YYYY-MM-DD') shared by openings, replay browser, stats (URL params, filter memory, and the stats API all parse it) |
 | Recent filter-sets (restore menu) | `useFilterMemory` + `<FilterMemoryMenu>` (`filterMemory.tsx`) | per-device localStorage; record at the MEANINGFUL moment (session start / search), not per keystroke; one compact Recent button, not scattered pills |
 | Comment box with @-mentions | `<MentionInput>` (`r/[slug]/MentionInput.tsx`) | ANY composer that can mention someone — autocomplete popover accumulates structured mentions; the server never parses free text, so a raw textarea = mentions silently don't work |
