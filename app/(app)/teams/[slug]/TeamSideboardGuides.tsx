@@ -14,6 +14,7 @@ import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { QuizCard, GradientBorderButton, type QuizCardRef, type PickVerdict } from './OpeningPromptKit';
 import { cardImageUrl } from '@/lib/cardImage';
+import { relativeTime } from '@/lib/datetime';
 
 const CYAN = '#66E5FF';
 const panel: React.CSSProperties = { background: tokens.surface.panel, border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.md, padding: 16 };
@@ -365,6 +366,22 @@ function GuideView({ guideId, onBack, onEdit }: { guideId: string; onBack: () =>
     if (j.ok) onBack();
   };
 
+  const [comment, setComment] = useState('');
+  const [posting, setPosting] = useState(false);
+  const postComment = async () => {
+    const text = comment.trim();
+    if (!text || posting) return;
+    setPosting(true);
+    try {
+      const j = await (await fetch(`/api/sideboard-guides/${guideId}/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body: text }) })).json();
+      if (j.ok) { setComment(''); void load(); }
+    } finally { setPosting(false); }
+  };
+  const delComment = async (cid: string) => {
+    const j = await (await fetch(`/api/sideboard-guides/${guideId}/comments/${cid}`, { method: 'DELETE' })).json();
+    if (j.ok) void load();
+  };
+
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!g) return <Loading label="guide" />;
 
@@ -394,6 +411,31 @@ function GuideView({ guideId, onBack, onEdit }: { guideId: string; onBack: () =>
           <div style={{ fontSize: 13.5, color: '#c8cdd8', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{g.notes}</div>
         </div>
       )}
+
+      {/* Comments — open to any team member, unlike editing the guide. */}
+      <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>
+          Comments{g.comments?.length ? ` · ${g.comments.length}` : ''}
+        </div>
+        {(g.comments ?? []).length === 0 && <div style={{ fontSize: 12.5, color: '#6c7588' }}>No comments yet — add the first note.</div>}
+        {(g.comments ?? []).map((c: any) => (
+          <div key={c.id} data-testid="guide-comment" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#e6ebf2' }}>{c.authorName ?? 'Teammate'}</span>
+              <span style={{ fontSize: 11, color: '#6c7588' }}>{relativeTime(c.createdAt, { fallbackToDate: true })}</span>
+              {c.authorId === g.viewerId && <button type="button" onClick={() => delComment(c.id)} style={{ ...linkBtn, marginLeft: 'auto', color: '#6c7588' }}>delete</button>}
+            </div>
+            <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.body}</div>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add a note or comment…" data-testid="guide-comment-input"
+            rows={2} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, flex: 1 }} />
+          <GradientBorderButton testId="guide-comment-post" onClick={postComment} disabled={!comment.trim() || posting} style={{ padding: '0.5rem 1rem' }}>
+            {posting ? '…' : 'Post'}
+          </GradientBorderButton>
+        </div>
+      </div>
     </div>
   );
 }

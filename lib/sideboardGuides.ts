@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, desc } from 'drizzle-orm';
 import { getDb } from './db';
-import { replays, replayTeamShares, teamMembers, sideboardGuides, cards, users } from './schema';
+import { replays, replayTeamShares, teamMembers, sideboardGuides, sideboardGuideComments, cards, users } from './schema';
 import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
 
 export interface PoolCard {
@@ -220,5 +220,33 @@ export async function deleteGuide(id: string, authorId: string): Promise<boolean
     .delete(sideboardGuides)
     .where(and(eq(sideboardGuides.id, id), eq(sideboardGuides.authorId, authorId)))
     .returning({ id: sideboardGuides.id });
+  return res.length > 0;
+}
+
+// ── Comments (any team member; not gated by guide authorship) ───────────────
+
+export async function listGuideComments(guideId: string) {
+  return getDb()
+    .select({
+      id: sideboardGuideComments.id, body: sideboardGuideComments.body,
+      authorId: sideboardGuideComments.authorId, authorName: users.name, createdAt: sideboardGuideComments.createdAt,
+    })
+    .from(sideboardGuideComments)
+    .leftJoin(users, eq(users.id, sideboardGuideComments.authorId))
+    .where(eq(sideboardGuideComments.guideId, guideId))
+    .orderBy(sideboardGuideComments.createdAt);
+}
+
+export async function addGuideComment(guideId: string, authorId: string, body: string): Promise<string> {
+  const id = randomUUID();
+  await getDb().insert(sideboardGuideComments).values({ id, guideId, authorId, body });
+  return id;
+}
+
+export async function deleteGuideComment(id: string, authorId: string): Promise<boolean> {
+  const res = await getDb()
+    .delete(sideboardGuideComments)
+    .where(and(eq(sideboardGuideComments.id, id), eq(sideboardGuideComments.authorId, authorId)))
+    .returning({ id: sideboardGuideComments.id });
   return res.length > 0;
 }

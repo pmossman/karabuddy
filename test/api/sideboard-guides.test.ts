@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { GET as listGet, POST as listPost } from '@/app/api/teams/[slug]/sideboard-guides/route';
 import { GET as poolGet } from '@/app/api/teams/[slug]/sideboard-guides/pool/route';
 import { GET as oneGet, PATCH as onePatch, DELETE as oneDel } from '@/app/api/sideboard-guides/[id]/route';
+import { POST as commentPost } from '@/app/api/sideboard-guides/[id]/comments/route';
+import { DELETE as commentDel } from '@/app/api/sideboard-guides/[id]/comments/[commentId]/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, replayTeamShares, cards } from '@/lib/schema';
 
@@ -105,6 +107,32 @@ describe('sideboard guides', () => {
     expect(after.data.canEdit).toBe(true);
     expect((await (await oneDel(new Request('http://t', { method: 'DELETE' }), pid(id))).json()).ok).toBe(true);
     expect((await (await oneGet(new Request('http://t'), pid(id))).json()).ok).toBeFalsy(); // gone
+  });
+
+  it('any team member can comment (not gated by authorship); comments are author-deletable', async () => {
+    const author = await seedUser();
+    const mate = await seedUser();
+    const team = await seedTeam(author, [author, mate]);
+    as(author);
+    const id = (await (await listPost(jreq({ ownLeader: 'Cad Bane', ownBase: 'asp:cunning', oppLeader: 'Ahsoka', oppBase: 'asp:command' }), p(team))).json()).data.id;
+
+    // the NON-author teammate comments
+    as(mate);
+    const c = await (await commentPost(jreq({ body: 'I keep 1 Devastator vs ramp' }), pid(id))).json();
+    expect(c.ok).toBe(true);
+    const got = await (await oneGet(new Request('http://t'), pid(id))).json();
+    expect(got.data.comments.map((x: any) => x.body)).toContain('I keep 1 Devastator vs ramp');
+
+    const delReq = (commentId: string) => ({ params: Promise.resolve({ commentId }) });
+    // the guide author cannot delete the teammate's comment; the poster can
+    as(author);
+    expect((await (await commentDel(new Request('http://t', { method: 'DELETE' }), delReq(c.data.id))).json()).ok).toBeFalsy();
+    as(mate);
+    expect((await (await commentDel(new Request('http://t', { method: 'DELETE' }), delReq(c.data.id))).json()).ok).toBe(true);
+
+    // a non-member cannot comment
+    as(await seedUser());
+    expect((await (await commentPost(jreq({ body: 'x' }), pid(id))).json()).ok).toBeFalsy();
   });
 
   it('rejects a create with an incomplete matchup', async () => {

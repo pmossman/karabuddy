@@ -281,6 +281,13 @@
       "when": 1783104745860,
       "tag": "0039_sideboard_guides",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1783104746860,
+      "tag": "0040_sideboard_guide_comments",
+      "breakpoints": true
     }
   ]
 }

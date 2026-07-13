@@ -983,3 +983,19 @@ export const sideboardGuides = pgTable(
   })
 );
 export type SideboardGuide = typeof sideboardGuides.$inferSelect;
+
+// B231: comments on a guide — any TEAM MEMBER can add one (unlike editing the
+// guide, which is author-only). A guide is a shared team artifact; feedback
+// isn't gated by authorship.
+export const sideboardGuideComments = pgTable(
+  'sideboard_guide_comments',
+  {
+    id: text('id').primaryKey(),
+    guideId: text('guide_id').notNull().references(() => sideboardGuides.id, { onDelete: 'cascade' }),
+    authorId: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ guideIdx: index('sideboard_guide_comments_guide_idx').on(t.guideId) })
+);
+export type SideboardGuideComment = typeof sideboardGuideComments.$inferSelect;
