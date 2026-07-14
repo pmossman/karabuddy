@@ -519,12 +519,15 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
           <MatchupRow m={{ ownLeader, ownBase, oppLeader, oppBase }} leaderArt={leaderArt} baseKinds={baseKinds} big />
         ) : (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: '1 1 300px' }}>
+            {/* auto-fit minmax(150,1fr): leader + base sit side by side when they
+                fit and STACK on narrow screens, so a select never overflows the
+                panel (the LeaderSelect trigger has a 150px min width). */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
               <LeaderSelect value={ownLeader} onChange={setOwnLeader} ariaLabel="Your leader" anyLabel="Your leader" options={leaderOpts(options?.ownLeaders)} testId="guide-own-leader" fullWidth />
               <LeaderSelect value={ownBase} onChange={setOwnBase} ariaLabel="Your base" anyLabel="Your base" options={baseOpts(options?.ownBaseKinds)} testId="guide-own-base" fullWidth />
             </div>
             <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: '1 1 300px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
               <LeaderSelect value={oppLeader} onChange={setOppLeader} ariaLabel="Opponent leader" anyLabel="Opp leader" options={leaderOpts(options?.oppLeaders)} testId="guide-opp-leader" fullWidth />
               <LeaderSelect value={oppBase} onChange={setOppBase} ariaLabel="Opponent base" anyLabel="Opp base" options={baseOpts(options?.oppBaseKinds)} testId="guide-opp-base" fullWidth />
             </div>
