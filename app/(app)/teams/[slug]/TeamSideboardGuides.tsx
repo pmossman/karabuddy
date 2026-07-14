@@ -561,6 +561,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
     value: `${a.leader.value}${ARCH_SEP}${a.base.key}`,
     label: `${a.leader.name}${a.leader.subtitle ? ` · ${a.leader.subtitle}` : ''}  ·  ${a.base.label}`,
     art: { set: a.leader.set ?? undefined, number: a.leader.number ?? undefined }, artIsLeader: true,
+    base: { iconAspect: a.base.iconAspect ?? undefined, overlay: a.base.overlay ?? null, art: a.base.art ? { set: a.base.art.set, number: a.base.art.number } : undefined },
   }));
   const archValue = (leader: string, base: string) => (leader && base ? `${leader}${ARCH_SEP}${base}` : '');
   const pickArch = (setLeader: (v: string) => void, setBase: (v: string) => void) => (v: string) => { const [l, b] = v.split(ARCH_SEP); setLeader(l); setBase(b ?? ''); };

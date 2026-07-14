@@ -23,6 +23,9 @@ export interface LeaderSelectOption {
   iconAspect?: string | null;
   // Force/splash base: renders the aspect icon + this glyph (lib/baseIdentity).
   overlay?: 'force' | 'splash' | null;
+  // ARCHETYPE options (leader + base as one deck) show the base glyph too —
+  // its aspect icon (+force/splash) or, for a unique base, its card art.
+  base?: { iconAspect?: string | null; overlay?: 'force' | 'splash' | null; art?: { set?: string; number?: number | string } | null } | null;
 }
 
 const ANY = '__all__';
@@ -104,6 +107,14 @@ export function LeaderSelect({
     setOpen(false);
   };
 
+  // The base half of an archetype option — its aspect glyph or (unique) card art.
+  const baseGlyph = (base?: LeaderSelectOption['base']) => {
+    if (!base) return null;
+    if (base.iconAspect) return <AspectIcon aspect={base.iconAspect} size={18} overlay={base.overlay ?? null} />;
+    const burl = base.art ? cardImageUrl(base.art, false) : null;
+    // eslint-disable-next-line @next/next/no-img-element
+    return burl ? <img src={burl} alt="" style={{ width: 26, height: 19, objectFit: 'cover', borderRadius: 3, border: '1px solid rgba(255,255,255,0.14)', flexShrink: 0, display: 'block' }} /> : null;
+  };
   const thumb = (o?: LeaderSelectOption) => {
     if (o?.iconAspect) {
       return (
@@ -113,16 +124,15 @@ export function LeaderSelect({
       );
     }
     const url = o?.art ? cardImageUrl(o.art, o.artIsLeader ?? true) : null;
-    return url ? (
+    const leaderImg = url ? (
       // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={url}
-        alt=""
-        style={{ width: 40, height: 29, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.14)', flexShrink: 0, display: 'block' }}
-      />
+      <img src={url} alt="" style={{ width: 40, height: 29, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.14)', flexShrink: 0, display: 'block' }} />
     ) : (
       <span style={{ width: 40, height: 29, borderRadius: 4, border: '1px dashed #2e333c', flexShrink: 0, display: 'inline-block' }} />
     );
+    const bg = baseGlyph(o?.base);
+    if (!bg) return leaderImg;
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>{leaderImg}{bg}</span>;
   };
 
   return (
