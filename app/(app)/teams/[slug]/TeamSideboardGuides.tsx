@@ -24,10 +24,10 @@ const SALMON = '#FF8E7A';
 const panel: React.CSSProperties = { background: tokens.surface.panel, border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.md, padding: 16 };
 
 interface Matchup { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
-interface LeaderOpt { name: string; set: string | null; number: number | null }
+interface LeaderOpt { value: string; name: string; subtitle: string | null; set: string | null; number: number | null }
 interface BaseKind { key: string; label: string; kind: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null; overlay?: 'force' | 'splash' | null }
 interface Options { ownLeaders: LeaderOpt[]; oppLeaders: LeaderOpt[]; ownBaseKinds: BaseKind[]; oppBaseKinds: BaseKind[] }
-type Art = Record<string, { set: string | null; number: number | null }>;
+type Art = Record<string, { set: string | null; number: number | null; name?: string | null; subtitle?: string | null }>;
 type BaseKinds = Record<string, BaseKind>;
 type GuideCard = LibGuideCard;
 interface PoolCard { cardId: string; name: string | null; set: string | null; number: number | null; cost: number | null; type: string | null; count: number; fraction: number }
@@ -90,6 +90,9 @@ function MatchupRow({ m, leaderArt, baseKinds, big }: { m: Matchup; leaderArt: A
 function MatchupSide({ leader, baseKey, leaderArt, baseKinds, w, big, reverse }: { leader: string; baseKey: string; leaderArt: Art; baseKinds: BaseKinds; w: number; big?: boolean; reverse?: boolean }) {
   const la = leaderArt[leader];
   const leaderUrl = la?.set && la?.number != null ? cardImageUrl({ set: la.set, number: la.number }, true) : null;
+  // Leader value is "name · subtitle"; prefer the resolved name/subtitle, else split.
+  const leaderName = la?.name ?? leader.split(' · ')[0];
+  const leaderSubtitle = la?.subtitle ?? (leader.includes(' · ') ? leader.split(' · ').slice(1).join(' · ') : null);
   const kind = resolveBaseKind(baseKey, baseKinds);
   const named = kind?.kind === 'unique' || kind?.kind === 'unknown';
   const baseUrl = kind?.art ? cardImageUrl({ set: kind.art.set, number: kind.art.number }, false) : null;
@@ -102,7 +105,8 @@ function MatchupSide({ leader, baseKey, leaderArt, baseKinds, w, big, reverse }:
           : baseUrl && <div style={{ width: Math.round(w * 0.92), height: h, borderRadius: 4, background: `center/cover no-repeat url(${baseUrl})`, flexShrink: 0 }} />}
       </div>
       <div style={{ minWidth: 0, textAlign: reverse ? 'right' : 'left' }}>
-        <div style={{ fontSize: big ? 14 : 12.5, fontWeight: 700, color: '#e6ebf2', whiteSpace: 'nowrap' }}>{leader}</div>
+        <div style={{ fontSize: big ? 14 : 12.5, fontWeight: 700, color: '#e6ebf2', whiteSpace: 'nowrap' }}>{leaderName}</div>
+        {leaderSubtitle && <div style={{ fontSize: big ? 11.5 : 10.5, color: '#8a93a3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{leaderSubtitle}</div>}
         {named && <div style={{ fontSize: big ? 12 : 11, color: '#8a93a3', whiteSpace: 'nowrap' }}>{kind!.label}</div>}
       </div>
     </div>
@@ -128,6 +132,7 @@ function useGuidesData(teamSlug: string) {
 // ── Level 1: your DECKS (leader/base) — the top-level lens ────────────────────
 function DecksList({ teamSlug, onOpen, onNew }: { teamSlug: string; onOpen: (d: Deck) => void; onNew: () => void }) {
   const { data, error } = useGuidesData(teamSlug);
+  const [q, setQ] = useState('');
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!data) return <Loading label="your decks" />;
 
@@ -142,6 +147,8 @@ function DecksList({ teamSlug, onOpen, onNew }: { teamSlug: string; onOpen: (d: 
     if (m.myTake) e.mine = true;
   }
   const decks = [...map.values()].sort((a, b) => b.matchups - a.matchups);
+  const query = q.trim().toLowerCase();
+  const shown = query ? decks.filter((d) => d.deck.ownLeader.toLowerCase().includes(query)) : decks;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -152,11 +159,17 @@ function DecksList({ teamSlug, onOpen, onNew }: { teamSlug: string; onOpen: (d: 
         </div>
         <GradientBorderButton testId="guide-new" onClick={onNew}>New guide</GradientBorderButton>
       </div>
+      {decks.length >= 2 && (
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your decks…" data-testid="guide-deck-search"
+          style={{ maxWidth: 360, boxSizing: 'border-box', padding: '9px 12px', fontSize: 13.5, fontFamily: 'inherit', background: '#0d1016', border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: 9, color: '#e6ebf2', outline: 'none' }} />
+      )}
       {decks.length === 0 ? (
         <EmptyState icon="🗒️">No guides yet — start one for a deck your team plays.</EmptyState>
+      ) : shown.length === 0 ? (
+        <EmptyState icon="🔍">No decks match &ldquo;{q}&rdquo;.</EmptyState>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
-          {decks.map((d) => (
+          {shown.map((d) => (
             <button key={`${d.deck.ownLeader}|${d.deck.ownBase}`} type="button" data-testid="deck-card" onClick={() => onOpen(d.deck)}
               style={{ ...panel, padding: 14, cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10 }}>
               <MatchupSide leader={d.deck.ownLeader} baseKey={d.deck.ownBase} leaderArt={data.leaderArt} baseKinds={data.baseKinds} w={54} big />
@@ -537,7 +550,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   }, [teamSlug]);
   useEffect(() => { void loadPool(ownLeader); }, [ownLeader, loadPool]);
 
-  const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] => (arr ?? []).map((o) => ({ value: o.name, label: o.name, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
+  const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] => (arr ?? []).map((o) => ({ value: o.value, label: o.subtitle ? `${o.name} · ${o.subtitle}` : o.name, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
   const baseOpts = (kinds: BaseKind[] | undefined): LeaderSelectOption[] => (kinds ?? []).map((k) => ({ value: k.key, label: k.label, art: k.art ? { set: k.art.set, number: k.art.number } : undefined, artIsLeader: false, iconAspect: k.iconAspect ?? undefined, overlay: k.overlay ?? null }));
 
   const poolIds = useMemo(() => new Set((pool?.cards ?? []).map((c) => c.cardId)), [pool]);

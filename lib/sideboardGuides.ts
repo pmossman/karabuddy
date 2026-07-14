@@ -42,6 +42,7 @@ export async function matchupCardPool(
   ownBaseName?: string | null,
 ): Promise<{ totalLists: number; cards: PoolCard[] }> {
   const db = getDb();
+  const wantName = leaderNameOf(ownLeaderName); // the pool keys on the leader NAME
   const rows = await db
     .select({ ownerPlayerId: replays.ownerPlayerId, players: replays.players, decks: replays.decks })
     .from(replays)
@@ -55,7 +56,7 @@ export async function matchupCardPool(
     if (!opid) continue;
     const players = Array.isArray(r.players) ? (r.players as any[]) : [];
     const me = players.find((p) => p?.id === opid);
-    if (!me || me.leader?.name !== ownLeaderName) continue;
+    if (!me || me.leader?.name !== wantName) continue;
     if (ownBaseName && me.base?.name !== ownBaseName) continue;
     const d = (r.decks as any)?.[opid];
     if (!d) continue;
@@ -90,7 +91,13 @@ export async function matchupCardPool(
   return { totalLists, cards: list };
 }
 
-export interface LeaderOption { name: string; set: string | null; number: number | null }
+// A leader is identified by name + SUBTITLE (like cards) — "Luke Skywalker" has
+// several versions. `value` (the "name · subtitle" identity) is what's stored on
+// a matchup; name/subtitle drive the display.
+export const LEADER_SEP = ' · ';
+export const leaderValue = (name: string, subtitle: string | null | undefined) => (subtitle ? `${name}${LEADER_SEP}${subtitle}` : name);
+export const leaderNameOf = (value: string) => value.split(LEADER_SEP)[0];
+export interface LeaderOption { value: string; name: string; subtitle: string | null; set: string | null; number: number | null }
 export interface MatchupOptions {
   ownLeaders: LeaderOption[]; oppLeaders: LeaderOption[];
   // Bases use the ONE base identity system (lib/baseIdentity): vanilla bases
@@ -107,30 +114,43 @@ export async function teamMatchupOptions(teamSlug: string): Promise<MatchupOptio
     .innerJoin(replayTeamShares, eq(replayTeamShares.replaySlug, replays.slug))
     .where(eq(replayTeamShares.teamSlug, teamSlug));
 
-  const ownLeaders = new Map<string, LeaderOption>(), oppLeaders = new Map<string, LeaderOption>();
+  const rawOwn: any[] = [], rawOpp: any[] = [];
   const ownBaseRefs: any[] = [], oppBaseRefs: any[] = [];
-  const addLeader = (m: Map<string, LeaderOption>, c: any) => { if (c?.name && !m.has(c.name)) m.set(c.name, { name: c.name, set: c.set ?? null, number: c.number ?? null }); };
   for (const r of rows) {
     for (const p of (Array.isArray(r.players) ? (r.players as any[]) : [])) {
       const own = p?.id === r.ownerPlayerId;
-      addLeader(own ? ownLeaders : oppLeaders, p?.leader);
+      if (p?.leader?.name) (own ? rawOwn : rawOpp).push(p.leader);
       if (p?.base) (own ? ownBaseRefs : oppBaseRefs).push(p.base);
     }
   }
+  // Resolve leader subtitles from the catalog (set+number → subtitle) so same-name
+  // leaders (multiple "Luke Skywalker"s) get distinct identities.
+  const db = getDb();
+  const leaderCards = await db.select({ set: cards.set, number: cards.number, subtitle: cards.subtitle }).from(cards).where(eq(cards.type, 'leader'));
+  const subMap = new Map(leaderCards.map((c) => [`${c.set}|${c.number}`, c.subtitle ?? null]));
+  const buildLeaders = (raw: any[]) => {
+    const m = new Map<string, LeaderOption>();
+    for (const c of raw) {
+      const subtitle = subMap.get(`${c.set}|${c.number}`) ?? null;
+      const value = leaderValue(c.name, subtitle);
+      if (!m.has(value)) m.set(value, { value, name: c.name, subtitle, set: c.set ?? null, number: c.number ?? null });
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name) || (a.subtitle ?? '').localeCompare(b.subtitle ?? ''));
+  };
   const [ownIds, oppIds] = await Promise.all([resolveBaseIdentities(ownBaseRefs), resolveBaseIdentities(oppBaseRefs)]);
   const distinctKinds = (ids: Map<string, BaseIdentity>) => {
     const byKey = new Map<string, BaseIdentity>();
     for (const k of ids.values()) if (!byKey.has(k.key)) byKey.set(k.key, k);
     return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label));
   };
-  const sortLeaders = (m: Map<string, LeaderOption>) => [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
-  return { ownLeaders: sortLeaders(ownLeaders), oppLeaders: sortLeaders(oppLeaders), ownBaseKinds: distinctKinds(ownIds), oppBaseKinds: distinctKinds(oppIds) };
+  return { ownLeaders: buildLeaders(rawOwn), oppLeaders: buildLeaders(rawOpp), ownBaseKinds: distinctKinds(ownIds), oppBaseKinds: distinctKinds(oppIds) };
 }
 
-// Leader NAME -> art (leaders only; bases render from their kind, not name art).
-export function leaderArtFromMatchups(m: MatchupOptions): Record<string, { set: string | null; number: number | null }> {
-  const map: Record<string, { set: string | null; number: number | null }> = {};
-  for (const list of [m.ownLeaders, m.oppLeaders]) for (const o of list) if (!map[o.name]) map[o.name] = { set: o.set, number: o.number };
+// Leader IDENTITY (name·subtitle) -> art + name/subtitle for display.
+export interface LeaderArt { set: string | null; number: number | null; name: string; subtitle: string | null }
+export function leaderArtFromMatchups(m: MatchupOptions): Record<string, LeaderArt> {
+  const map: Record<string, LeaderArt> = {};
+  for (const list of [m.ownLeaders, m.oppLeaders]) for (const o of list) if (!map[o.value]) map[o.value] = { set: o.set, number: o.number, name: o.name, subtitle: o.subtitle };
   return map;
 }
 // Base functional-identity KEY -> its kind, for rendering a stored base.
@@ -141,7 +161,7 @@ export function baseKindsByKey(m: MatchupOptions): Record<string, BaseIdentity> 
 }
 // Everything the client needs to RENDER a guide's matchup — leader art + the
 // base-kind lookup keyed by the stored base key. One team-replay scan.
-export async function matchupContextForTeam(teamSlug: string): Promise<{ leaderArt: Record<string, { set: string | null; number: number | null }>; baseKinds: Record<string, BaseIdentity> }> {
+export async function matchupContextForTeam(teamSlug: string): Promise<{ leaderArt: Record<string, LeaderArt>; baseKinds: Record<string, BaseIdentity> }> {
   const m = await teamMatchupOptions(teamSlug);
   return { leaderArt: leaderArtFromMatchups(m), baseKinds: baseKindsByKey(m) };
 }
