@@ -20,7 +20,7 @@ const CARD_ID = (setId: any): string | null =>
   setId?.set && setId?.number != null ? `${setId.set}_${String(setId.number).padStart(3, '0')}` : null;
 
 // ── karabast raw card → swuforge NormalizedCard ────────────────────────────
-function normCard(c: any, parentCardId: string | null = null): any {
+function normCard(c: any): any {
   return {
     uuid: c?.uuid ?? null,
     cardId: CARD_ID(c?.setId),
@@ -39,19 +39,17 @@ function normCard(c: any, parentCardId: string | null = null): any {
     cannotBeAttacked: !!c?.cannotBeAttacked,
     epicDeployActionSpent: !!c?.epicDeployActionSpent,
     epicActionSpent: !!c?.epicActionSpent,
-    parentCardId,
+    // karabast already stores an upgrade as a SEPARATE arena card carrying
+    // parentCardId = its host's uuid — swuforge's exact model. Carry it through
+    // (no flatten needed; the earlier "nested upgrades" assumption was wrong).
+    parentCardId: c?.parentCardId ?? null,
   };
 }
 
-// karabuddy NESTS upgrades under host.upgrades[]; swuforge FLATTENS them as
-// separate arena cards referencing the host via parentCardId. Flatten a zone.
+// Arena cards (units AND their attached upgrades) map straight across — upgrades
+// are already separate cards with parentCardId, not nested under a host.
 function normZone(zone: any[]): any[] {
-  const out: any[] = [];
-  for (const card of zone || []) {
-    out.push(normCard(card));
-    for (const up of card?.upgrades || []) out.push(normCard(up, card?.uuid ?? null));
-  }
-  return out;
+  return (zone || []).map((c) => normCard(c));
 }
 
 function normPlayer(p: any): any {
@@ -84,19 +82,40 @@ function normPlayer(p: any): any {
 // Scrub every non-recorder handle → "Opponent" (privacy; matches swuforge's
 // scrubPersistedOpponentName intent). karabuddy already masks opponent hidden
 // cards, so name is the only PII in a board-only (v2) blob.
-function normGamestate(s: any, meId: string | null, oppNames: Set<string>): any {
+// Scrub config: which playerId → forced display label, and which raw handle
+// strings → their label (for freeform winners/alert text). Built per-game.
+interface Scrub { labelById: Map<string, string>; replaceMap: Map<string, string>; }
+
+// Default (real migration): keep the recorder's handle, scrub the opponent.
+// anon=true (sample handoff of other users' games): scrub BOTH → Recorder/Opponent.
+function buildScrub(state: any, meId: string | null, anon: boolean): Scrub {
+  const labelById = new Map<string, string>();
+  const replaceMap = new Map<string, string>();
+  for (const pid of Object.keys(state?.players || {})) {
+    const p = state.players[pid];
+    const isMe = meId != null && pid === meId;
+    const label = isMe ? (anon ? 'Recorder' : null) : 'Opponent';
+    if (!label) continue;
+    labelById.set(pid, label);
+    for (const h of [p?.name, p?.user?.username]) if (h) replaceMap.set(h, label);
+  }
+  return { labelById, replaceMap };
+}
+
+function normGamestate(s: any, scrub: Scrub): any {
   const players: Record<string, any> = {};
   for (const pid of Object.keys(s?.players || {})) {
     const np = normPlayer(s.players[pid]);
-    if (meId && pid !== meId) np.name = 'Opponent';
+    const label = scrub.labelById.get(pid);
+    if (label) np.name = label;
     players[pid] = np;
   }
   return {
     gameId: s?.id ?? null,
     phase: s?.phase ?? null,
     initiativeClaimed: !!s?.initiativeClaimed,
-    // karabast winners are usernames; scrub the opponent's handle out.
-    winners: Array.isArray(s?.winners) ? s.winners.map((w: string) => (oppNames.has(w) ? 'Opponent' : w)) : [],
+    // karabast winners are usernames; map any scrubbed handle → its label.
+    winners: Array.isArray(s?.winners) ? s.winners.map((w: string) => scrub.replaceMap.get(w) ?? w) : [],
     playerUpdate: null,
     players,
   };
@@ -108,21 +127,24 @@ function normGamestate(s: any, meId: string | null, oppNames: Set<string>): any 
 //   { message: { alert: { type, message: [...] } } }.
 // swuforge ChatEntry: { ts, tokens: [ string | {kind:'player',name,uuid} |
 //   {kind:'card',name,cardId,setId,controllerId} | {kind:'alert',text} ] }.
-function scrubText(s: string, oppNames: Set<string>): string {
+function scrubText(s: string, replaceMap: Map<string, string>): string {
   let out = s;
-  for (const n of oppNames) if (n) out = out.split(n).join('Opponent');
+  for (const [h, label] of replaceMap) if (h) out = out.split(h).join(label);
   return out;
 }
-function partToText(part: any, meId: string | null, oppNames: Set<string>): string {
-  if (typeof part === 'string') return scrubText(part, oppNames);
-  if (part?.type === 'player') return meId && part.id !== meId ? 'Opponent' : (part.name ?? '');
+function playerTokenName(part: any, scrub: Scrub): string | null {
+  return scrub.labelById.get(part?.id) ?? part?.name ?? null;
+}
+function partToText(part: any, scrub: Scrub): string {
+  if (typeof part === 'string') return scrubText(part, scrub.replaceMap);
+  if (part?.type === 'player') return playerTokenName(part, scrub) ?? '';
   if (part?.name) return part.name; // card token → its (public) card name
   return '';
 }
-function toChatToken(part: any, meId: string | null, oppNames: Set<string>): any {
-  if (typeof part === 'string') return scrubText(part, oppNames);
+function toChatToken(part: any, scrub: Scrub): any {
+  if (typeof part === 'string') return scrubText(part, scrub.replaceMap);
   if (part?.type === 'player') {
-    return { kind: 'player', name: meId && part.id !== meId ? 'Opponent' : (part.name ?? null), uuid: part.uuid ?? null };
+    return { kind: 'player', name: playerTokenName(part, scrub), uuid: part?.uuid ?? null };
   }
   // card token (has controllerId / setId)
   return {
@@ -133,7 +155,7 @@ function toChatToken(part: any, meId: string | null, oppNames: Set<string>): any
     controllerId: part?.controllerId ?? null,
   };
 }
-function buildChat(frames: Array<{ t: number; state: any }>, meId: string | null, oppNames: Set<string>): any[] {
+function buildChat(frames: Array<{ t: number; state: any }>, scrub: Scrub): any[] {
   const chat: any[] = [];
   for (const f of frames) {
     for (const m of f.state?.newMessages || []) {
@@ -141,10 +163,10 @@ function buildChat(frames: Array<{ t: number; state: any }>, meId: string | null
       const msg = m?.message;
       if (msg && !Array.isArray(msg) && msg.alert) {
         const parts = Array.isArray(msg.alert.message) ? msg.alert.message : [msg.alert.message];
-        const text = scrubText(parts.map((p: any) => partToText(p, meId, oppNames)).join(''), oppNames).trim();
+        const text = scrubText(parts.map((p: any) => partToText(p, scrub)).join(''), scrub.replaceMap).trim();
         chat.push({ ts, tokens: [{ kind: 'alert', text }] });
       } else if (Array.isArray(msg)) {
-        chat.push({ ts, tokens: msg.map((p: any) => toChatToken(p, meId, oppNames)) });
+        chat.push({ ts, tokens: msg.map((p: any) => toChatToken(p, scrub)) });
       }
     }
   }
@@ -175,30 +197,17 @@ function applyPatch(state: any, patch: any): void {
   }
 }
 
-// Opponent handle strings to scrub from freeform log/winners (names + usernames
-// of every non-recorder player). Player/card TOKENS scrub by id; this catches
-// the plain-text leaks (alert lines, winners array).
-function opponentNames(state: any, meId: string | null): Set<string> {
-  const names = new Set<string>();
-  for (const pid of Object.keys(state?.players || {})) {
-    if (meId && pid === meId) continue;
-    const p = state.players[pid];
-    if (p?.name) names.add(p.name);
-    if (p?.user?.username) names.add(p.user.username);
-  }
-  return names;
-}
-
 // Convert one decoded payload → PersistedTimeline (v2 board or v3 +chat) +
 // round-trip verify the board. Returns the timeline plus verification stats.
-function convertAndVerify(file: any, pov: string | null, version = 3) {
+// anon=true fully anonymizes both players (for a sample handoff of others' games).
+function convertAndVerify(file: any, pov: string | null, version = 3, anon = false) {
   const decodeReplay = (globalThis as any).__decodeReplay as (f: any) => any;
   const decoded = decodeReplay(file);
   const meId: string | null = decoded.meta.localPlayerId ?? pov ?? null;
   const frames = decoded.frames as Array<{ t: number; state: any }>;
   if (frames.length === 0) return { empty: true, meId, frames: 0 } as any;
-  const oppNames = opponentNames(frames[0].state, meId);
-  const normed = frames.map((f) => normGamestate(f.state, meId, oppNames));
+  const scrub = buildScrub(frames[0].state, meId, anon);
+  const normed = frames.map((f) => normGamestate(f.state, scrub));
   const base = normed[0];
   const startedMs = file.startedAt ? Date.parse(file.startedAt) : null;
   const steps = normed.slice(1).map((s, i) => ({
@@ -207,7 +216,7 @@ function convertAndVerify(file: any, pov: string | null, version = 3) {
     patch: objectDiff(normed[i], s),
   }));
   // Chat is a TOP-LEVEL array (not board state), so it doesn't affect the fold.
-  const chat = version >= 3 ? buildChat(frames, meId, oppNames) : undefined;
+  const chat = version >= 3 ? buildChat(frames, scrub) : undefined;
   const timeline: any = { v: version, base, baseCapturedAt: file.startedAt ?? null, baseTimestamp: startedMs, steps };
   if (chat) timeline.chat = chat;
 
@@ -218,9 +227,81 @@ function convertAndVerify(file: any, pov: string | null, version = 3) {
     applyPatch(folded, steps[i].patch);
     if (!deepEq(folded, normed[i + 1])) { mismatches++; if (firstBad < 0) firstBad = i + 1; }
   }
+  const hasUpgrades = normed.some((g: any) => Object.values(g.players).some((p: any) =>
+    ['groundArena', 'spaceArena'].some((z) => (p.cardPiles[z] || []).some((c: any) => c.parentCardId))));
   return { empty: false, meId, timeline, frames: frames.length, steps: steps.length, mismatches, firstBad,
-    chatEntries: chat?.length ?? 0,
+    chatEntries: chat?.length ?? 0, hasUpgrades,
     emptyPatches: steps.filter((s) => Object.keys(s.patch).length === 0).length };
+}
+
+// README for the sample pack — tailored to Andy, mirrors his REPLAY-BLOB-SPEC.md.
+function buildPackReadme(manifest: any[]): string {
+  const rows = manifest.map((m) =>
+    `| \`${m.file}\` | ${m.matchup} | ${m.frames} | ${m.chat} | ${m.hasUpgrades ? 'yes' : '—'} | ${m.gzKB} KB |`).join('\n');
+  return `# karabuddy → swuforge: sample converted replays
+
+These are **real karabuddy replays converted into your \`PersistedTimeline\` v3
+format** (\`REPLAY-BLOB-SPEC.md\`). The mirror of what you sent us — one \`.json.gz\`
+per game (your stored shape) plus a pretty \`.json\` for reading.
+
+**Please try loading a couple in your renderer** — that's the one thing we can't
+verify on our side (below). If they render, the whole pipe is proven.
+
+## What these are
+
+karabuddy records the raw karabast/forceteki gamestate over a match (a \`{full}\`
+seed + \`{patch}\` deltas). Since your \`PersistedTimeline\` is a normalized version
+of the *same* gamestate, converting is a field normalization, not a translation:
+
+- \`setId:{set,number}\` → \`cardId:"SET_NNN"\`; card engine \`id\` → \`karabastId\`;
+  \`uuid\`/\`name\`/\`type\`/\`printedType\`/\`power\`/\`hp\`/\`damage\`/\`exhausted\`/\`sentinel\`/
+  \`isAttacker\`/\`isDefender\`/\`cannotBeAttacked\`/\`epicDeployActionSpent\` map directly.
+- **Upgrades:** karabast already stores them as separate arena cards carrying
+  \`parentCardId = host.uuid\` — your exact model — so they carry straight across,
+  no transform. The "upgrades?" column flags which samples contain one.
+- **Chat (v3):** karabast's game log → your \`chat:[{ts,tokens[]}]\` — \`string\` /
+  \`{kind:'player',name,uuid}\` / \`{kind:'card',name,cardId,setId,controllerId}\` /
+  \`{kind:'alert',text}\`.
+- **Steps:** \`base\` = frame 0; each \`steps[i].patch\` = object-diff of consecutive
+  normalized frames (objects merge, arrays/primitives replace — your \`applyPatch\`).
+
+## We round-trip verified every one of these
+
+Before writing each blob we fold \`base + steps\` back using **your documented
+\`applyPatch\` rule** and assert it reconstructs every frame byte-identical. So
+these are guaranteed valid + foldable. What we **can't** verify without your UI:
+that they *render* correctly (esp. upgrades attaching to the right host via
+\`parentCardId\`) — hence the ask.
+
+## Privacy
+
+**Fully anonymized** — unlike a real user migration (which keeps the recorder's
+handle as the perspective), these are diverse users' games, so BOTH handles are
+scrubbed: recorder → \`"Recorder"\`, opponent → \`"Opponent"\` (player names, chat
+player tokens, winners, alert text). karabast already masks opponents' hidden
+cards, so only face-up, publicly-played board cards carry identity.
+
+## The files
+
+| file | matchup (anonymized) | frames | chat | upgrades? | size |
+|---|---|---|---|---|---|
+${rows}
+
+Each carries \`v:3, base, steps[], chat[]\`. The "me"/perspective (a playerId)
+travels *outside* the blob in your model — say the word and we'll include which
+\`players[id]\` is the recorder for each.
+
+## A few questions (so we can pick the handoff shape)
+
+1. Do these **load + render** in your viewer as-is? Anything off (upgrades, zones,
+   card art, chat)?
+2. Is **v3 enough**, or does your renderer expect v4 ledgers (credits/force/
+   bounces)? We can derive those from the same chat.
+3. **Handoff mechanic:** blob POSTed to an endpoint, dropped in your R2
+   (\`games/{profileId}/{gameId}.json.gz\`), or fetched from a karabuddy URL?
+4. **Identity:** OK to match a user across apps by shared Google/Discord so a
+   pushed replay lands in the right swuforge profile automatically?
+`;
 }
 
 async function fetchPayload(url: string): Promise<any> {
@@ -234,6 +315,8 @@ async function main() {
   const args = process.argv.slice(2);
   const slugArg = args.find((a) => !a.startsWith('--'));
   const batchArg = args.find((a) => a.startsWith('--batch='));
+  const packArg = args.find((a) => a === '--pack' || a.startsWith('--pack='));
+  const SCRATCH = '/private/tmp/claude-501/-Users-parker-code-karabuddy/80c7818e-be24-4ca7-98d0-e8717f134146/scratchpad';
 
   const { getDb } = await import('../lib/db');
   const { replays } = await import('../lib/schema');
@@ -273,6 +356,50 @@ async function main() {
     console.log(`  frames converted: ${totalFrames}   chat entries mapped: ${totalChat}`);
     console.log(`  size: ${(inGz / 1024 / 1024).toFixed(1)}MB payloads in  →  ${(outGz / 1024).toFixed(0)}KB v3 blobs out (${rows.length - empty} games)`);
     if (failures.length) { console.log('\n  first 20 failures:'); failures.slice(0, 20).forEach((f) => console.log('   ', f)); }
+    return;
+  }
+
+  // ── PACK: build an anonymized sample of diverse converted replays + README, ──
+  // ── mirroring Andy's handoff; leaves a dir ready to zip. ─────────────────────
+  if (packArg) {
+    const N = Number(packArg.split('=')[1]) || 5;
+    const dir = `${SCRATCH}/swuforge-sample-pack`;
+    const fs = await import('node:fs');
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    const zlib = await import('node:zlib');
+    // Candidates: own-POV, decodable, substantial-but-not-huge; distinct own-leaders → variety.
+    const cands = await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players })
+      .from(replays)
+      .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), isNotNull(replays.decks),
+        sql`${replays.payloadSizeBytes} between 60000 and 450000`))
+      .orderBy(sql`random()`).limit(N * 10);
+    const manifest: any[] = [];
+    const seenLeaders = new Set<string>();
+    console.log(`Building sample pack (target ${N} distinct-leader games)…`);
+    for (const c of cands) {
+      if (manifest.length >= N) break;
+      const players = Array.isArray(c.players) ? (c.players as any[]) : [];
+      const owner = players.find((p) => p?.id === c.pov);
+      const opp = players.find((p) => p?.id !== c.pov);
+      const leaderName = owner?.leader?.name ?? '?';
+      if (seenLeaders.has(leaderName)) continue;
+      let file: any; try { file = await fetchPayload(c.url); } catch { continue; }
+      const res = convertAndVerify(file, c.pov, 3, true); // anon
+      if (res.empty || res.mismatches > 0 || res.frames < 8) continue;
+      seenLeaders.add(leaderName);
+      const gid = String(res.timeline.base.gameId || c.slug).replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+      const fname = `karabuddy-replay-${gid}`;
+      const json = JSON.stringify(res.timeline);
+      const gz = zlib.gzipSync(Buffer.from(json));
+      fs.writeFileSync(`${dir}/${fname}.json`, JSON.stringify(res.timeline, null, 2));
+      fs.writeFileSync(`${dir}/${fname}.json.gz`, gz);
+      const matchup = `${owner?.leader?.name ?? '?'} · ${owner?.base?.name ?? '?'} vs ${opp?.leader?.name ?? '?'} · ${opp?.base?.name ?? '?'}`;
+      manifest.push({ file: `${fname}.json.gz`, matchup, frames: res.frames, steps: res.steps, chat: res.chatEntries, hasUpgrades: res.hasUpgrades, gzKB: (gz.length / 1024).toFixed(1) });
+      console.log(`  + ${fname}.json.gz  ${matchup}  (${res.frames}f, ${res.chatEntries} chat${res.hasUpgrades ? ', upgrades' : ''})`);
+    }
+    fs.writeFileSync(`${dir}/README.md`, buildPackReadme(manifest));
+    console.log(`\nWrote ${manifest.length} converted replays + README → ${dir}`);
     return;
   }
 
