@@ -188,7 +188,7 @@ function DeckMatchups({ teamSlug, deck, onBack, onOpen, onNew }: { teamSlug: str
         <span style={{ flex: 1 }} />
         <GradientBorderButton testId="deck-add-matchup" onClick={onNew} style={{ padding: '0.5rem 1.1rem' }}>Add matchup</GradientBorderButton>
       </div>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>Matchups · {matchups.length}</div>
+      <div style={{ ...sectionLabel, marginBottom: 0 }}>Matchups · {matchups.length}</div>
       {matchups.length === 0 ? (
         <EmptyState icon="⚔️">No matchups yet for this deck — add one you expect to face.</EmptyState>
       ) : (
@@ -269,64 +269,57 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 860, margin: '0 auto', width: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" onClick={onBack} style={backBtn}>← Matchups</button>
         <span style={{ flex: 1 }} />
+        {/* All of YOUR-picks actions live together here — edit + remove. */}
+        {d.myTake && <button type="button" onClick={delMyTake} style={dangerGhostBtn}>Remove</button>}
         <GradientBorderButton testId="edit-my-take" onClick={() => onEditTake(matchup)} style={{ padding: '0.5rem 1.1rem' }}>{d.myTake ? 'Edit my picks' : 'Add my picks'}</GradientBorderButton>
       </div>
 
       <div style={panel}><MatchupRow m={matchup} leaderArt={leaderArt} baseKinds={baseKinds} big /></div>
 
-      {/* Consensus: THE PLAN (unanimous) + SPLIT (differences, with clickable names) */}
-      <div style={panel}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 12 }}>
-          Team consensus · {analysis.total} member{analysis.total === 1 ? '' : 's'}
-        </div>
-        {analysis.total === 0 ? (
-          <div style={{ fontSize: 12.5, color: '#6c7588' }}>No picks yet — add yours to start the consensus.</div>
-        ) : (
-          <>
-            {/* THE PLAN — cards everyone points the same way on */}
-            <div>
-              <SubHead>The plan <span style={{ color: '#6c7588', fontWeight: 700 }}>· everyone agrees</span></SubHead>
-              {analysis.planIn.length === 0 && analysis.planOut.length === 0 ? (
-                <div style={{ fontSize: 12.5, color: '#6c7588' }}>No unanimous picks yet{analysis.split.length ? ' — see the split below' : ''}.</div>
-              ) : (
-                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                  {analysis.planIn.length > 0 && (
-                    <PileGrid label="Bring in" color={GREEN} w={78}>
-                      {analysis.planIn.map((c) => <CardPile key={c.cardId} id={c.cardId} count={c.qty} color={GREEN} w={78} title={`${c.qty}× ${c.cardId} — all ${analysis.total} agree`} />)}
-                    </PileGrid>
-                  )}
-                  {analysis.planOut.length > 0 && (
-                    <PileGrid label="Take out" color={SALMON} w={78}>
-                      {analysis.planOut.map((c) => <CardPile key={c.cardId} id={c.cardId} count={c.qty} color={SALMON} w={78} title={`${c.qty}× ${c.cardId} — all ${analysis.total} agree`} />)}
-                    </PileGrid>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* SPLIT — where members differ; names click through to their picks */}
-            {analysis.split.length > 0 && (
-              <div style={{ marginTop: 18, borderTop: '1px solid #21262f', paddingTop: 14 }}>
-                <SubHead>Split <span style={{ color: '#6c7588', fontWeight: 700 }}>· where members differ — click a name to see their picks</span></SubHead>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))', gap: 10, alignItems: 'stretch' }}>
-                  {analysis.split.map((sc) => <SplitRow key={sc.cardId} card={sc} viewerId={d.viewerId} onSelect={selectMember} />)}
-                </div>
+      {/* Consensus (2+ contributors only): THE PLAN (unanimous) + SPLIT (differences). */}
+      {takes.length >= 2 && (
+        <div style={panel}>
+          <div style={sectionLabel}>Team consensus · {analysis.total} members</div>
+          <div>
+            <SubHead>The plan <span style={{ color: '#6c7588', fontWeight: 700 }}>· everyone agrees</span></SubHead>
+            {analysis.planIn.length === 0 && analysis.planOut.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: '#6c7588' }}>No unanimous picks yet{analysis.split.length ? ' — see the split below' : ''}.</div>
+            ) : (
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                {analysis.planIn.length > 0 && (
+                  <PileGrid label="Bring in" color={GREEN} w={78}>
+                    {analysis.planIn.map((c) => <CardPile key={c.cardId} id={c.cardId} count={c.qty} color={GREEN} w={78} title={`${c.qty}× ${c.cardId} — all ${analysis.total} agree`} />)}
+                  </PileGrid>
+                )}
+                {analysis.planOut.length > 0 && (
+                  <PileGrid label="Take out" color={SALMON} w={78}>
+                    {analysis.planOut.map((c) => <CardPile key={c.cardId} id={c.cardId} count={c.qty} color={SALMON} w={78} title={`${c.qty}× ${c.cardId} — all ${analysis.total} agree`} />)}
+                  </PileGrid>
+                )}
               </div>
             )}
-          </>
-        )}
-      </div>
+          </div>
+
+          {/* SPLIT — where members differ; names click through to their picks */}
+          {analysis.split.length > 0 && (
+            <div style={{ marginTop: 18, borderTop: '1px solid #21262f', paddingTop: 14 }}>
+              <SubHead>Split <span style={{ color: '#6c7588', fontWeight: 700 }}>· where members differ — click a name to see their picks</span></SubHead>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))', gap: 10, alignItems: 'stretch' }}>
+                {analysis.split.map((sc) => <SplitRow key={sc.cardId} card={sc} viewerId={d.viewerId} onSelect={selectMember} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 2+ contributors → a pill-per-member comparison. Exactly 1 → the pill
-          selector is pointless, so show the notes + a nudge to add more picks. */}
+          selector is pointless, so show the one plan + a nudge to add more picks. */}
       {takes.length >= 2 ? (
         <div ref={picksRef} style={panel}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 10 }}>
-            Team picks <span style={{ fontWeight: 700, textTransform: 'none', letterSpacing: 0, color: '#6c7588' }}>· whose to show</span>
-          </div>
+          <div style={sectionLabel}>Each member&apos;s picks <span style={{ fontWeight: 700, textTransform: 'none', letterSpacing: 0, color: '#6c7588' }}>· tap a name</span></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
             {takes.map((t) => {
               const mine = t.authorId === d.viewerId;
@@ -359,23 +352,22 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: activeTake.authorId === d.viewerId ? CYAN : '#e6ebf2' }}>{activeTake.authorId === d.viewerId ? 'Your picks' : `${activeTake.authorName ?? 'Teammate'}'s picks`}</span>
                 <span style={{ fontSize: 11, color: '#6c7588' }}>{relativeTime(activeTake.updatedAt, { fallbackToDate: true })}</span>
-                {activeTake.authorId === d.viewerId && <button type="button" onClick={delMyTake} style={{ ...linkBtn, marginLeft: 'auto', color: '#6c7588' }}>remove</button>}
               </div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                <TakeCol title="In" tone={GREEN} cards={activeTake.cardsIn} />
-                <TakeCol title="Out" tone={SALMON} cards={activeTake.cardsOut} />
+                <TakeCol title="Bring in" tone={GREEN} cards={activeTake.cardsIn} />
+                <TakeCol title="Take out" tone={SALMON} cards={activeTake.cardsOut} />
               </div>
               {activeTake.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginTop: 10 }}>{activeTake.notes}</div>}
             </div>
           )}
         </div>
       ) : takes.length === 1 ? (
-        <SoleTakeNudge take={takes[0]} viewerId={d.viewerId} onRemove={delMyTake} onAdd={() => onEditTake(matchup)} />
+        <SolePlan take={takes[0]} viewerId={d.viewerId} onAdd={() => onEditTake(matchup)} />
       ) : null}
 
       {/* Discussion */}
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>Discussion{d.comments?.length ? ` · ${d.comments.length}` : ''}</div>
+        <div style={{ ...sectionLabel, marginBottom: 0 }}>Discussion{d.comments?.length ? ` · ${d.comments.length}` : ''}</div>
         {(d.comments ?? []).length === 0 && <div style={{ fontSize: 12.5, color: '#6c7588' }}>No comments yet.</div>}
         {(d.comments ?? []).map((c: any) => (
           <div key={c.id} data-testid="matchup-comment" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -439,26 +431,30 @@ function ChipRow({ label, tone, members, viewerId, onSelect }: { label: string; 
     </span>
   );
 }
-// One contributor: no pill selector to show — just their notes + a nudge to grow
-// the guide into a team consensus.
-function SoleTakeNudge({ take, viewerId, onRemove, onAdd }: { take: Take; viewerId: string; onRemove: () => void; onAdd: () => void }) {
+// One contributor: no consensus / pill selector — just the single plan (cards +
+// notes) and a nudge to add more. (Remove lives in the header, with Edit.)
+function SolePlan({ take, viewerId, onAdd }: { take: Take; viewerId: string; onAdd: () => void }) {
   const mine = take.authorId === viewerId;
+  const empty = take.cardsIn.length === 0 && take.cardsOut.length === 0;
   return (
     <div style={panel}>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 10 }}>
+      <div style={sectionLabel}>
         {mine ? 'Your picks' : `${take.authorName ?? 'Teammate'}'s picks`} <span style={{ fontWeight: 700, textTransform: 'none', letterSpacing: 0, color: '#6c7588' }}>· the only plan so far</span>
       </div>
+      {!empty && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
+          <TakeCol title="Bring in" tone={GREEN} cards={take.cardsIn} />
+          <TakeCol title="Take out" tone={SALMON} cards={take.cardsOut} />
+        </div>
+      )}
       {take.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginBottom: 14 }}>{take.notes}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', border: '1px dashed #33414d', background: 'rgba(102,229,255,0.05)', borderRadius: 10, padding: '12px 14px' }}>
         {mine ? (
-          <>
-            <span style={{ fontSize: 12.5, color: '#8a93a3', flex: 1, minWidth: 180 }}>You&apos;re the first to weigh in — your teammates&apos; picks will show here to compare.</span>
-            <button type="button" onClick={onRemove} style={{ ...linkBtn, color: '#6c7588' }}>remove my picks</button>
-          </>
+          <span style={{ fontSize: 12.5, color: '#8a93a3' }}>You&apos;re the first to weigh in — your teammates&apos; picks will show here to compare.</span>
         ) : (
           <>
-            <span style={{ fontSize: 12.5, color: '#c8cdd8', flex: 1, minWidth: 180 }}>Only {take.authorName ?? 'one teammate'} has a plan here. Add yours to build a team consensus.</span>
-            <GradientBorderButton testId="sole-add-picks" onClick={onAdd}>Add your picks</GradientBorderButton>
+            <span style={{ fontSize: 12.5, color: '#c8cdd8', flex: 1, minWidth: 180 }}>Only {take.authorName ?? 'one teammate'} has a plan here — add yours to build a consensus.</span>
+            <GradientBorderButton testId="sole-add-picks" onClick={onAdd}>Add my picks</GradientBorderButton>
           </>
         )}
       </div>
@@ -619,7 +615,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>Matchup</div>
+        <div style={{ ...sectionLabel, marginBottom: 0 }}>Matchup</div>
         {locked ? (
           <MatchupRow m={{ ownLeader, ownBase, oppLeader, oppBase }} leaderArt={leaderArt} baseKinds={baseKinds} big />
         ) : (
@@ -659,7 +655,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
       {/* Pool */}
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>Your card pool {pool ? `· ${pool.totalLists} lists` : ''}</div>
+          <div style={{ ...sectionLabel, marginBottom: 0 }}>Your card pool {pool ? `· ${pool.totalLists} lists` : ''}</div>
           <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Click to bring <span style={{ color: GREEN, fontWeight: 700 }}>IN</span>; again to move <span style={{ color: SALMON, fontWeight: 700 }}>OUT</span>; again to return it.</span>
         </div>
         {!ownLeader ? <div style={{ fontSize: 12.5, color: '#6c7588' }}>Pick your leader to load the team&apos;s card pool for this archetype.</div>
@@ -671,7 +667,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
       </div>
 
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>Notes</div>
+        <div style={{ ...sectionLabel, marginBottom: 0 }}>Notes</div>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Your reasoning for this matchup — including play/draw nuance." data-testid="guide-notes" rows={5} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
       </div>
 
@@ -684,5 +680,9 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
 }
 
 const backBtn: React.CSSProperties = { background: 'transparent', border: '1px solid #2e333c', borderRadius: 6, color: '#a0a8b8', fontFamily: 'inherit', fontSize: 12, padding: '6px 12px', cursor: 'pointer' };
+// Subtle destructive action — sits beside the primary Edit button in the header.
+const dangerGhostBtn: React.CSSProperties = { background: 'transparent', border: '1px solid #3a2f34', borderRadius: 8, color: '#c08a92', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, padding: '0.5rem 0.9rem', cursor: 'pointer' };
+// The one panel-section header style (uppercase eyebrow). Used for every section.
+const sectionLabel: React.CSSProperties = { fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 10 };
 const linkBtn: React.CSSProperties = { background: 'transparent', border: 0, color: '#5db4ff', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', padding: '2px 0' };
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: '#10141b', border: '1px solid #2e333c', borderRadius: 8, color: '#e6e6e6', fontFamily: 'inherit', fontSize: 13, outline: 'none' };
