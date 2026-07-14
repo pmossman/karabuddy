@@ -553,13 +553,13 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   }, [teamSlug]);
   useEffect(() => { void loadPool(ownLeader); }, [ownLeader, loadPool]);
 
-  const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] => (arr ?? []).map((o) => ({ value: o.value, label: o.subtitle ? `${o.name} · ${o.subtitle}` : o.name, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
+  const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] => (arr ?? []).map((o) => ({ value: o.value, label: o.name, sublabel: o.subtitle, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
   const baseOpts = (kinds: BaseKind[] | undefined): LeaderSelectOption[] => (kinds ?? []).map((k) => ({ value: k.key, label: k.label, art: k.art ? { set: k.art.set, number: k.art.number } : undefined, artIsLeader: false, iconAspect: k.iconAspect ?? undefined, overlay: k.overlay ?? null }));
   // Archetype (leader+base) options — one pick sets both. Leader art thumb; label
   // names the leader (+ subtitle) and its base. Popularity order comes from the API.
   const archOpts = (arr: Archetype[] | undefined): LeaderSelectOption[] => (arr ?? []).map((a) => ({
     value: `${a.leader.value}${ARCH_SEP}${a.base.key}`,
-    label: `${a.leader.name}${a.leader.subtitle ? ` · ${a.leader.subtitle}` : ''}  ·  ${a.base.label}`,
+    label: a.leader.name, sublabel: a.leader.subtitle, // base is conveyed by its glyph, not text
     art: { set: a.leader.set ?? undefined, number: a.leader.number ?? undefined }, artIsLeader: true,
     base: { iconAspect: a.base.iconAspect ?? undefined, overlay: a.base.overlay ?? null, art: a.base.art ? { set: a.base.art.set, number: a.base.art.number } : undefined },
   }));

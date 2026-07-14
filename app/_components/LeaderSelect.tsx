@@ -16,6 +16,8 @@ import { AspectIcon } from './AspectIcon';
 export interface LeaderSelectOption {
   value: string;
   label: string;
+  // Optional second line under the label (smaller/gray) — e.g. a leader subtitle.
+  sublabel?: string | null;
   art?: { set?: string; number?: number | string; name?: string } | null;
   artIsLeader?: boolean; // default true — the landscape leader side
   // Aspect icon instead of card art — for base-identity GROUPS (vanilla /
@@ -96,7 +98,7 @@ export function LeaderSelect({
   const filtered = useMemo(() => {
     if (!query.trim()) return options;
     return options
-      .map((o) => ({ o, score: fuzzyScore(query.trim(), o.label) }))
+      .map((o) => ({ o, score: Math.max(fuzzyScore(query.trim(), o.label), o.sublabel ? fuzzyScore(query.trim(), o.sublabel) : 0) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score || a.o.label.localeCompare(b.o.label))
       .map((x) => x.o);
@@ -161,8 +163,9 @@ export function LeaderSelect({
         }}
       >
         {thumb(current)}
-        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: current ? '#e6e6e6' : '#a0a8b8' }}>
-          {current ? current.label : anyLabel}
+        <span style={{ flex: 1, minWidth: 0, textAlign: 'left', color: current ? '#e6e6e6' : '#a0a8b8' }}>
+          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current ? current.label : anyLabel}</span>
+          {current?.sublabel && <span style={{ display: 'block', fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current.sublabel}</span>}
         </span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ color: '#6c7588', flexShrink: 0 }}>
           <path d="M6 9l6 6 6-6" />
@@ -236,7 +239,10 @@ export function LeaderSelect({
               onClick={() => pick(o.value)}
             >
               {thumb(o)}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                {o.sublabel && <span style={{ display: 'block', fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.sublabel}</span>}
+              </span>
             </Row>
           ))}
           {filtered.length === 0 && (
