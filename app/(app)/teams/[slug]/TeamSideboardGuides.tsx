@@ -320,8 +320,9 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
         )}
       </div>
 
-      {/* Individual takes — a pill per member, one shown at a time */}
-      {takes.length > 0 && (
+      {/* 2+ contributors → a pill-per-member comparison. Exactly 1 → the pill
+          selector is pointless, so show the notes + a nudge to add more picks. */}
+      {takes.length >= 2 ? (
         <div ref={picksRef} style={panel}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 10 }}>
             Team picks <span style={{ fontWeight: 700, textTransform: 'none', letterSpacing: 0, color: '#6c7588' }}>· whose to show</span>
@@ -368,7 +369,9 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
             </div>
           )}
         </div>
-      )}
+      ) : takes.length === 1 ? (
+        <SoleTakeNudge take={takes[0]} viewerId={d.viewerId} onRemove={delMyTake} onAdd={() => onEditTake(matchup)} />
+      ) : null}
 
       {/* Discussion */}
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -434,6 +437,32 @@ function ChipRow({ label, tone, members, viewerId, onSelect }: { label: string; 
         );
       })}
     </span>
+  );
+}
+// One contributor: no pill selector to show — just their notes + a nudge to grow
+// the guide into a team consensus.
+function SoleTakeNudge({ take, viewerId, onRemove, onAdd }: { take: Take; viewerId: string; onRemove: () => void; onAdd: () => void }) {
+  const mine = take.authorId === viewerId;
+  return (
+    <div style={panel}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 10 }}>
+        {mine ? 'Your picks' : `${take.authorName ?? 'Teammate'}'s picks`} <span style={{ fontWeight: 700, textTransform: 'none', letterSpacing: 0, color: '#6c7588' }}>· the only plan so far</span>
+      </div>
+      {take.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginBottom: 14 }}>{take.notes}</div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', border: '1px dashed #33414d', background: 'rgba(102,229,255,0.05)', borderRadius: 10, padding: '12px 14px' }}>
+        {mine ? (
+          <>
+            <span style={{ fontSize: 12.5, color: '#8a93a3', flex: 1, minWidth: 180 }}>You&apos;re the first to weigh in — your teammates&apos; picks will show here to compare.</span>
+            <button type="button" onClick={onRemove} style={{ ...linkBtn, color: '#6c7588' }}>remove my picks</button>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 12.5, color: '#c8cdd8', flex: 1, minWidth: 180 }}>Only {take.authorName ?? 'one teammate'} has a plan here. Add yours to build a team consensus.</span>
+            <GradientBorderButton testId="sole-add-picks" onClick={onAdd}>Add your picks</GradientBorderButton>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 // Individual pick list: piles, copies = stack depth (no number needed).
