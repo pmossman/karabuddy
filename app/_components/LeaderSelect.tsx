@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cardImageUrl } from '@/lib/cardImage';
+import { AspectIcon } from './AspectIcon';
 
 // Shared leader/base PICKER WITH ART (B221): a name-only dropdown is slow to
 // scan — the card image is recognizable at a glance even tiny. Options carry
@@ -15,11 +16,18 @@ import { cardImageUrl } from '@/lib/cardImage';
 export interface LeaderSelectOption {
   value: string;
   label: string;
+  // Optional second line under the label (smaller/gray) — e.g. a leader subtitle.
+  sublabel?: string | null;
   art?: { set?: string; number?: number | string; name?: string } | null;
   artIsLeader?: boolean; // default true — the landscape leader side
   // Aspect icon instead of card art — for base-identity GROUPS (vanilla /
   // force-pair bases, lib/baseIdentity), where no single card IS the option.
   iconAspect?: string | null;
+  // Force/splash base: renders the aspect icon + this glyph (lib/baseIdentity).
+  overlay?: 'force' | 'splash' | null;
+  // ARCHETYPE options (leader + base as one deck) show the base glyph too —
+  // its aspect icon (+force/splash) or, for a unique base, its card art.
+  base?: { iconAspect?: string | null; overlay?: 'force' | 'splash' | null; art?: { set?: string; number?: number | string } | null } | null;
 }
 
 const ANY = '__all__';
@@ -90,7 +98,7 @@ export function LeaderSelect({
   const filtered = useMemo(() => {
     if (!query.trim()) return options;
     return options
-      .map((o) => ({ o, score: fuzzyScore(query.trim(), o.label) }))
+      .map((o) => ({ o, score: Math.max(fuzzyScore(query.trim(), o.label), o.sublabel ? fuzzyScore(query.trim(), o.sublabel) : 0) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score || a.o.label.localeCompare(b.o.label))
       .map((x) => x.o);
@@ -101,26 +109,32 @@ export function LeaderSelect({
     setOpen(false);
   };
 
+  // The base half of an archetype option — its aspect glyph or (unique) card art.
+  const baseGlyph = (base?: LeaderSelectOption['base']) => {
+    if (!base) return null;
+    if (base.iconAspect) return <AspectIcon aspect={base.iconAspect} size={18} overlay={base.overlay ?? null} />;
+    const burl = base.art ? cardImageUrl(base.art, false) : null;
+    // eslint-disable-next-line @next/next/no-img-element
+    return burl ? <img src={burl} alt="" style={{ width: 26, height: 19, objectFit: 'cover', borderRadius: 3, border: '1px solid rgba(255,255,255,0.14)', flexShrink: 0, display: 'block' }} /> : null;
+  };
   const thumb = (o?: LeaderSelectOption) => {
     if (o?.iconAspect) {
       return (
         <span style={{ width: 40, height: 29, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/aspect-icons/aspect-${o.iconAspect}.webp`} alt={o.iconAspect} style={{ width: 22, height: 22, display: 'block' }} />
+          <AspectIcon aspect={o.iconAspect} size={20} overlay={o.overlay ?? null} />
         </span>
       );
     }
     const url = o?.art ? cardImageUrl(o.art, o.artIsLeader ?? true) : null;
-    return url ? (
+    const leaderImg = url ? (
       // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={url}
-        alt=""
-        style={{ width: 40, height: 29, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.14)', flexShrink: 0, display: 'block' }}
-      />
+      <img src={url} alt="" style={{ width: 40, height: 29, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.14)', flexShrink: 0, display: 'block' }} />
     ) : (
       <span style={{ width: 40, height: 29, borderRadius: 4, border: '1px dashed #2e333c', flexShrink: 0, display: 'inline-block' }} />
     );
+    const bg = baseGlyph(o?.base);
+    if (!bg) return leaderImg;
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>{leaderImg}{bg}</span>;
   };
 
   return (
@@ -149,8 +163,9 @@ export function LeaderSelect({
         }}
       >
         {thumb(current)}
-        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: current ? '#e6e6e6' : '#a0a8b8' }}>
-          {current ? current.label : anyLabel}
+        <span style={{ flex: 1, minWidth: 0, textAlign: 'left', color: current ? '#e6e6e6' : '#a0a8b8' }}>
+          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current ? current.label : anyLabel}</span>
+          {current?.sublabel && <span style={{ display: 'block', fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current.sublabel}</span>}
         </span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ color: '#6c7588', flexShrink: 0 }}>
           <path d="M6 9l6 6 6-6" />
@@ -224,7 +239,10 @@ export function LeaderSelect({
               onClick={() => pick(o.value)}
             >
               {thumb(o)}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                {o.sublabel && <span style={{ display: 'block', fontSize: 11, color: '#8a93a3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.sublabel}</span>}
+              </span>
             </Row>
           ))}
           {filtered.length === 0 && (

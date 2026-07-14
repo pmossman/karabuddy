@@ -17,11 +17,12 @@ export function Footer() {
   const immersive = /^\/(r|c)\/[^/]+$/.test(pathname);
   return (
     <footer
+      // Sticky on DESKTOP only (non-immersive): pinned to the viewport bottom
+      // while long pages scroll, resting at the page end on short ones. On mobile
+      // (≤860px, the app-shell breakpoint) a pinned footer permanently eats scarce
+      // vertical space + covers content, so it drops to normal flow (scroll to it).
+      className={immersive ? undefined : 'kb-footer-sticky'}
       style={{
-        // Sticky (non-immersive pages only): stays pinned to the viewport bottom
-        // while long pages scroll, and rests naturally at the page end on short
-        // ones. Opaque background (body base) so content passes cleanly beneath.
-        ...(immersive ? {} : { position: 'sticky', bottom: 0, zIndex: 20 }),
         background: '#0b0e13',
         borderTop: '1px solid #2e333c',
         padding: '20px 28px',
@@ -34,6 +35,10 @@ export function Footer() {
         flexWrap: 'wrap',
       }}
     >
+      <style>{`
+        .kb-footer-sticky { position: sticky; bottom: 0; z-index: 20; }
+        @media (max-width: 860px) { .kb-footer-sticky { position: static; } }
+      `}</style>
       <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         <span>Fan project for{' '}
           <a href="https://karabast.net" target="_blank" rel="noreferrer" style={linkStyle}>karabast.net</a>.

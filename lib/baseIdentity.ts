@@ -24,12 +24,15 @@ import { cardIdFromSetNumber } from './cards';
 export interface BaseIdentity {
   key: string;
   label: string;
-  kind: 'vanilla' | 'shared' | 'unique' | 'unknown';
+  kind: 'vanilla' | 'force' | 'splash' | 'shared' | 'unique' | 'unknown';
   aspect: string | null;
-  // Art for pickers: unique bases get their card art; vanilla/shared groups
-  // are represented by the aspect icon instead (no single card IS the group).
+  // Art for pickers: unique bases get their card art; vanilla/force/splash/shared
+  // groups are represented by the aspect icon instead (no single card IS the group).
   art: { set: string; number: number } | null;
   iconAspect: string | null;
+  // Force/splash bases render the aspect icon + this overlay glyph
+  // (/aspect-icons/{force,splash}.webp) — the community convention.
+  overlay: 'force' | 'splash' | null;
 }
 
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -55,35 +58,50 @@ export async function resolveBaseIdentities(
     : [];
   const byId = new Map(rows.map((r) => [r.cardId, r]));
 
-  // Shared-group detection: an ability hash borne by >1 distinct NAME in the
-  // whole catalog is a functional group (the force pairs). Reprints of one
-  // name don't make a group by themselves.
+  // Shared-group detection, scoped to (ASPECT, ability hash) — NOT the bare hash.
+  // The same force-base ability text is borne by bases of MANY aspects, so a
+  // whole-catalog group mixes aspects (and the identity key is per-aspect anyway).
+  // Within one aspect a hash borne by >1 NAME is a force pair; the member names
+  // label it. Reprints of one name don't make a pair.
+  const groupKey = (aspect: string | null | undefined, hash: string) => `${aspect ?? '?'}::${hash}`;
   const hashes = Array.from(new Set(rows.map((r) => r.baseAbilityHash).filter((h): h is string => !!h)));
   const groupNames = new Map<string, Set<string>>();
   if (hashes.length) {
     const groupRows = await db
-      .select({ hash: cards.baseAbilityHash, name: cards.name })
+      .select({ hash: cards.baseAbilityHash, name: cards.name, aspects: cards.aspects })
       .from(cards)
       .where(and(eq(cards.type, 'base'), inArray(cards.baseAbilityHash, hashes)));
     for (const g of groupRows) {
       if (!g.hash || !g.name) continue;
-      if (!groupNames.has(g.hash)) groupNames.set(g.hash, new Set());
-      groupNames.get(g.hash)!.add(g.name);
+      const k = groupKey((g.aspects as string[] | null)?.[0], g.hash);
+      if (!groupNames.has(k)) groupNames.set(k, new Set());
+      groupNames.get(k)!.add(g.name);
     }
   }
 
   for (const [id, ref] of wanted) {
     const row = byId.get(id);
     const aspect = row?.aspects?.[0] ?? null;
+    const subtype = (row as any)?.baseSubtype as 'force' | 'splash' | null | undefined;
     if (row && row.hasAbility === false && aspect) {
-      out.set(id, { key: `asp:${aspect}`, label: `${cap(aspect)} base`, kind: 'vanilla', aspect, art: null, iconAspect: aspect });
+      out.set(id, { key: `asp:${aspect}`, label: `${cap(aspect)} base`, kind: 'vanilla', aspect, art: null, iconAspect: aspect, overlay: null });
+    } else if (row && row.hasAbility && row.baseAbilityHash && aspect && (subtype === 'force' || subtype === 'splash')) {
+      // The two community-recognized SHARED base kinds. Distinguished by TYPE
+      // (aspect icon + force/splash glyph), not by listing names — so the two
+      // aggression force-pairs read as "Aggression · Force" vs "Aggression · Splash".
+      out.set(id, {
+        key: `ab:${aspect}:${row.baseAbilityHash}`,
+        label: `${cap(aspect)} · ${cap(subtype)}`,
+        kind: subtype, aspect, art: null, iconAspect: aspect, overlay: subtype,
+      });
     } else if (row && row.hasAbility && row.baseAbilityHash && aspect) {
-      const names = groupNames.get(row.baseAbilityHash) ?? new Set([row.name ?? '']);
+      const names = groupNames.get(groupKey(aspect, row.baseAbilityHash)) ?? new Set([row.name ?? '']);
       if (names.size > 1) {
-        // Today every multi-name group is a LOF force pair; label accordingly.
-        // If a future set ships a non-force shared pair, revisit the label —
-        // the KEY stays correct either way.
-        out.set(id, { key: `ab:${aspect}:${row.baseAbilityHash}`, label: `${cap(aspect)} force base`, kind: 'shared', aspect, art: null, iconAspect: aspect });
+        // Fallback: an unclassified shared ability (not force/splash). Label by
+        // the member names so distinct groups don't collide. The KEY (ability
+        // hash) groups the printings; this just names the group.
+        const label = [...names].filter(Boolean).sort().join(' / ');
+        out.set(id, { key: `ab:${aspect}:${row.baseAbilityHash}`, label, kind: 'shared', aspect, art: null, iconAspect: aspect, overlay: null });
       } else {
         out.set(id, {
           key: `ab:${aspect}:${row.baseAbilityHash}`,
@@ -92,13 +110,14 @@ export async function resolveBaseIdentities(
           aspect,
           art: { set: ref.set, number: ref.number },
           iconAspect: null,
+          overlay: null,
         });
       }
     } else {
       // Catalog doesn't know this card (fresh spoiler / test data): fall back
       // to name identity so filtering still works, just ungrouped.
       const label = ref.name ?? id;
-      out.set(id, { key: `name:${label}`, label, kind: 'unknown', aspect: null, art: { set: ref.set, number: ref.number }, iconAspect: null });
+      out.set(id, { key: `name:${label}`, label, kind: 'unknown', aspect: null, art: { set: ref.set, number: ref.number }, iconAspect: null, overlay: null });
     }
   }
   return out;

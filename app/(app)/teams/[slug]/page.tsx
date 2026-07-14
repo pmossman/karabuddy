@@ -18,7 +18,7 @@ import { TeamDiscussion } from './TeamDiscussion';
 import { TeamTournaments } from './TeamTournaments';
 import { ReviewQueue } from './ReviewQueue';
 import { TeamOpenings } from './TeamOpenings';
-import { TeamSideboarding } from './TeamSideboarding';
+import { SideboardingHub } from './SideboardingHub';
 import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
 import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
@@ -214,7 +214,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
               </div>
             </div>
           ) : (
-            <TeamSideboarding
+            <SideboardingHub
               teamSlug={slug}
               members={members.map((m) => ({ userId: m.userId, name: m.name }))}
               viewerName={session?.user?.name || 'You'}

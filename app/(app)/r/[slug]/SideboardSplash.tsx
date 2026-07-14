@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useLayoutEffect, useState } from 'react';
-import { cardImageUrl } from '@/lib/cardImage';
 import { GLASS } from './redesign/ui';
+import { CardPile, PileGrid, cardArtFromId, PILE_RESERVE, PILE_CARD_ASPECT } from '@/app/_components/CardPile';
 import type { SideboardChanges, SideboardChange, SideboardPlayerChanges } from '@/lib/sideboardDiff';
 
 // B150: sideboard splash — what each player swapped vs the PREVIOUS game in this
@@ -16,7 +16,7 @@ import type { SideboardChanges, SideboardChange, SideboardPlayerChanges } from '
 const IN_COLOR = '#6bd968';
 const OUT_COLOR = '#ff6b6b';
 
-const CARD_ASPECT = 0.71;      // width / height (portrait card)
+const CARD_ASPECT = PILE_CARD_ASPECT; // width / height (portrait card)
 const CARD_GAP = 8;            // gap between cards in a group grid
 const COL_GAP = 24;            // gap between the IN and OUT columns
 const GROUP_LABEL_H = 34;      // "IN"/"OUT" label + gap
@@ -25,21 +25,11 @@ const NO_CHANGE_H = 24;        // "kept the same deck" line
 const HEADER_H = 118;          // splash header + grid padding (non-card vertical space)
 const MIN_CARD_W = 84;
 const MAX_CARD_W = 168;
-// Copies are shown as a "pile": N-1 copies stacked behind the front card (SWU caps
-// a deck at 3 of a card, so at most 2 behind). A fixed reserve (top+right) keeps
-// every grid cell uniform regardless of how deep its pile is.
-const STACK_OFF = 7;           // px each stacked copy is offset up + right
-const STACK_MAX = 2;
-const RESERVE = STACK_OFF * STACK_MAX;
-
+// Copies are shown as a "pile" (see CardPile): the reserve keeps every grid cell
+// uniform regardless of how deep its pile is.
+const RESERVE = PILE_RESERVE;
 
 interface PlayerCounts { inN: number; outN: number }
-
-// "SET_NNN" → { set, number } for the art proxy.
-function artFor(id: string): string | null {
-  const m = /^([A-Za-z0-9]+)_(\d+)$/.exec(id);
-  return m ? cardImageUrl({ set: m[1], number: m[2] }) : null;
-}
 
 // Largest uniform card width (px) such that every player fits within `availH`.
 // IN and OUT sit SIDE BY SIDE (two columns), so a player's grid height is the
@@ -68,48 +58,22 @@ function solveCardWidth(gridW: number, availH: number, players: PlayerCounts[]):
   return MIN_CARD_W;
 }
 
-// A "pile": the count as stacked copies (front card + count-1 offset behind it),
-// the whole stack outlined in the group color so IN/OUT reads at a glance. The
-// count is the depth of the pile, so the +N/−N badge is gone.
-function SideCard({ change, color, w }: { change: SideboardChange; color: string; w: number }) {
-  const url = artFor(change.id);
-  const cardH = w / CARD_ASPECT;
-  const behind = Math.min(Math.max(0, change.count - 1), STACK_MAX);
-  const face = (front: boolean): React.CSSProperties => ({
-    position: 'absolute', width: w, height: cardH, borderRadius: 8, overflow: 'hidden',
-    border: `2px solid ${color}`, background: '#0b0e14',
-    backgroundImage: url ? `url(${url})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center',
-    filter: front ? undefined : 'brightness(0.5)',
-    boxShadow: front ? '0 3px 12px rgba(0,0,0,0.55)' : 'none',
-  });
-  return (
-    <a href={`https://swudb.com/card/${change.id}`} target="_blank" rel="noreferrer"
-      title={`${change.count}× ${change.internalName || change.id}`}
-      style={{ position: 'relative', display: 'block', width: w + RESERVE, height: cardH + RESERVE, textDecoration: 'none' }}>
-      {Array.from({ length: behind }, (_, i) => i + 1).map((k) => (
-        <div key={k} style={{ ...face(false), left: k * STACK_OFF, bottom: k * STACK_OFF, zIndex: behind - k }} />
-      ))}
-      <div style={{ ...face(true), left: 0, bottom: 0, zIndex: behind + 1 }}>
-        {!url && <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 4, textAlign: 'center', fontSize: 10, color: '#8b93a5' }}>{change.id}</span>}
-      </div>
-    </a>
-  );
-}
-
+// Copies render as a "pile" (shared CardPile) — the count is the pile depth, so
+// there's no +N/−N badge; the swudb link + a title tooltip stay.
 function CardGrid({ label, cards, color, w }: { label: string; cards: SideboardChange[]; color: string; w: number }) {
   if (cards.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color }}>{label}</span>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, ${w + RESERVE}px)`, gap: CARD_GAP, justifyContent: 'start' }}>
-        {cards.map((c) => <SideCard key={`${label}-${c.id}`} change={c} color={color} w={w} />)}
-      </div>
-    </div>
+    <PileGrid label={label} color={color} w={w} gap={CARD_GAP}>
+      {cards.map((c) => (
+        <CardPile key={`${label}-${c.id}`} id={c.id} count={c.count} color={color} w={w}
+          href={`https://swudb.com/card/${c.id}`} title={`${c.count}× ${c.internalName || c.id}`} name={c.internalName} />
+      ))}
+    </PileGrid>
   );
 }
 
 function PlayerBlock({ p, isLocal, w }: { p: SideboardPlayerChanges; isLocal: boolean; w: number }) {
-  const leaderUrl = p.leader ? artFor(p.leader.id) : null;
+  const leaderUrl = p.leader ? cardArtFromId(p.leader.id) : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 14, borderTop: '1px solid #232834' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

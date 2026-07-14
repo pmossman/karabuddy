@@ -44,6 +44,7 @@ async function main() {
             name: sql`excluded.name`, subtitle: sql`excluded.subtitle`, set: sql`excluded.set`, number: sql`excluded.number`,
             aspects: sql`excluded.aspects`, cost: sql`excluded.cost`, type: sql`excluded.type`,
             arena: sql`excluded.arena`, traits: sql`excluded.traits`, hasAbility: sql`excluded.has_ability`, baseAbilityHash: sql`excluded.base_ability_hash`,
+            baseSubtype: sql`excluded.base_subtype`,
             source: sql`'seed'`, updatedAt: sql`now()`,
           },
         });

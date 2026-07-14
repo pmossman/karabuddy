@@ -600,6 +600,12 @@ export const cards = pgTable('cards', {
   // hash = functionally the same base (force pairs, reprints) — the input to
   // lib/baseIdentity's grouping. Null for vanilla bases / non-bases.
   baseAbilityHash: text('base_ability_hash'),
+  // The base's functional TYPE, derived from its ability text at sync
+  // (lib/cards.classifyBaseSubtype): 'force' (creates a Force token) or 'splash'
+  // (ignore an aspect penalty) — the two community-recognized shared base kinds,
+  // rendered as aspect icon + force/splash glyph. Null for vanilla / unique /
+  // non-base cards. Consumed by lib/baseIdentity.
+  baseSubtype: text('base_subtype'), // 'force' | 'splash' | null
   source: text('source').notNull().default('observed'), // 'seed' | 'observed'
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -952,3 +958,53 @@ export const sideboardResponses = pgTable(
 
 export type ReplaySideboard = typeof replaySideboards.$inferSelect;
 export type SideboardResponse = typeof sideboardResponses.$inferSelect;
+
+// B231: Sideboard Guides — a MATCHUP is the top-level unit (full leader+base of
+// both sides, by NAME for leaders / functional key for bases). Within it, each
+// team member has ONE "take" (their good-IN / bad-OUT cards + notes), and the
+// matchup view aggregates them into a consensus + shows divergence. Not tied to
+// a decklist; applied to one on demand.
+type GuideCard = { cardId: string; qty?: number; note?: string | null };
+export const sideboardTakes = pgTable(
+  'sideboard_takes',
+  {
+    id: text('id').primaryKey(), // uuid
+    teamSlug: text('team_slug').notNull().references(() => teams.slug, { onDelete: 'cascade' }),
+    authorId: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    // Matchup key (leaders by name, bases by functional identity key).
+    ownLeader: text('own_leader').notNull(),
+    ownBase: text('own_base').notNull(),
+    oppLeader: text('opp_leader').notNull(),
+    oppBase: text('opp_base').notNull(),
+    notes: text('notes').notNull().default(''),
+    cardsIn: jsonb('cards_in').$type<GuideCard[]>().notNull().default([]), // bring in
+    cardsOut: jsonb('cards_out').$type<GuideCard[]>().notNull().default([]), // take out
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // ONE take per member per matchup — the evolving personal take.
+    memberMatchup: uniqueIndex('sideboard_takes_member_matchup_idx').on(t.teamSlug, t.ownLeader, t.ownBase, t.oppLeader, t.oppBase, t.authorId),
+    matchupIdx: index('sideboard_takes_matchup_idx').on(t.teamSlug, t.ownLeader, t.oppLeader),
+  })
+);
+export type SideboardTake = typeof sideboardTakes.$inferSelect;
+
+// Matchup-level discussion — any TEAM MEMBER, keyed by the matchup (not a single
+// take). Feedback on a matchup isn't gated by whose take it is.
+export const sideboardMatchupComments = pgTable(
+  'sideboard_matchup_comments',
+  {
+    id: text('id').primaryKey(),
+    teamSlug: text('team_slug').notNull().references(() => teams.slug, { onDelete: 'cascade' }),
+    ownLeader: text('own_leader').notNull(),
+    ownBase: text('own_base').notNull(),
+    oppLeader: text('opp_leader').notNull(),
+    oppBase: text('opp_base').notNull(),
+    authorId: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ matchupIdx: index('sideboard_matchup_comments_matchup_idx').on(t.teamSlug, t.ownLeader, t.ownBase, t.oppLeader, t.oppBase) })
+);
+export type SideboardMatchupComment = typeof sideboardMatchupComments.$inferSelect;
