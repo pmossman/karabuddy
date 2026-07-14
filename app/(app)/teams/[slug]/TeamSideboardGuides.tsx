@@ -26,7 +26,9 @@ const panel: React.CSSProperties = { background: tokens.surface.panel, border: `
 interface Matchup { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
 interface LeaderOpt { value: string; name: string; subtitle: string | null; set: string | null; number: number | null }
 interface BaseKind { key: string; label: string; kind: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null; overlay?: 'force' | 'splash' | null }
-interface Options { ownLeaders: LeaderOpt[]; oppLeaders: LeaderOpt[]; ownBaseKinds: BaseKind[]; oppBaseKinds: BaseKind[] }
+interface Archetype { leader: LeaderOpt; base: BaseKind; count: number }
+interface Options { ownLeaders: LeaderOpt[]; oppLeaders: LeaderOpt[]; ownBaseKinds: BaseKind[]; oppBaseKinds: BaseKind[]; ownArchetypes: Archetype[]; oppArchetypes: Archetype[] }
+const ARCH_SEP = '|||';
 type Art = Record<string, { set: string | null; number: number | null; name?: string | null; subtitle?: string | null }>;
 type BaseKinds = Record<string, BaseKind>;
 type GuideCard = LibGuideCard;
@@ -521,6 +523,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [manual, setManual] = useState(false); // pick leader + base separately (fallback)
 
   useEffect(() => {
     (async () => {
@@ -552,6 +555,15 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
 
   const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] => (arr ?? []).map((o) => ({ value: o.value, label: o.subtitle ? `${o.name} · ${o.subtitle}` : o.name, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
   const baseOpts = (kinds: BaseKind[] | undefined): LeaderSelectOption[] => (kinds ?? []).map((k) => ({ value: k.key, label: k.label, art: k.art ? { set: k.art.set, number: k.art.number } : undefined, artIsLeader: false, iconAspect: k.iconAspect ?? undefined, overlay: k.overlay ?? null }));
+  // Archetype (leader+base) options — one pick sets both. Leader art thumb; label
+  // names the leader (+ subtitle) and its base. Popularity order comes from the API.
+  const archOpts = (arr: Archetype[] | undefined): LeaderSelectOption[] => (arr ?? []).map((a) => ({
+    value: `${a.leader.value}${ARCH_SEP}${a.base.key}`,
+    label: `${a.leader.name}${a.leader.subtitle ? ` · ${a.leader.subtitle}` : ''}  ·  ${a.base.label}`,
+    art: { set: a.leader.set ?? undefined, number: a.leader.number ?? undefined }, artIsLeader: true,
+  }));
+  const archValue = (leader: string, base: string) => (leader && base ? `${leader}${ARCH_SEP}${base}` : '');
+  const pickArch = (setLeader: (v: string) => void, setBase: (v: string) => void) => (v: string) => { const [l, b] = v.split(ARCH_SEP); setLeader(l); setBase(b ?? ''); };
 
   const poolIds = useMemo(() => new Set((pool?.cards ?? []).map((c) => c.cardId)), [pool]);
   const allCards = useMemo(() => [...(pool?.cards ?? []), ...extra.filter((e) => !poolIds.has(e.cardId))], [pool, extra, poolIds]);
@@ -632,26 +644,40 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
         {locked ? (
           <MatchupRow m={{ ownLeader, ownBase, oppLeader, oppBase }} leaderArt={leaderArt} baseKinds={baseKinds} big />
         ) : (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* Your side: fixed to the deck when adding a matchup for it; otherwise
-                selectable. auto-fit minmax(150,1fr) so leader + base stack on narrow
-                screens instead of overflowing (the trigger has a 150px min width). */}
-            {lockOwn ? (
-              <div style={{ flex: '1 1 300px', minWidth: 0 }}>
-                <MatchupSide leader={ownLeader} baseKey={ownBase} leaderArt={leaderArt} baseKinds={baseKinds} w={54} big />
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
-                <LeaderSelect value={ownLeader} onChange={setOwnLeader} ariaLabel="Your leader" anyLabel="Your leader" options={leaderOpts(options?.ownLeaders)} testId="guide-own-leader" fullWidth />
-                <LeaderSelect value={ownBase} onChange={setOwnBase} ariaLabel="Your base" anyLabel="Your base" options={baseOpts(options?.ownBaseKinds)} testId="guide-own-base" fullWidth />
-              </div>
-            )}
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
-              <LeaderSelect value={oppLeader} onChange={setOppLeader} ariaLabel="Opponent leader" anyLabel="Opp leader" options={leaderOpts(options?.oppLeaders)} testId="guide-opp-leader" fullWidth />
-              <LeaderSelect value={oppBase} onChange={setOppBase} ariaLabel="Opponent base" anyLabel="Opp base" options={baseOpts(options?.oppBaseKinds)} testId="guide-opp-base" fullWidth />
+          <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Your side: fixed when adding a matchup for a deck; else a single
+                  ARCHETYPE picker (a played deck) or, in manual mode, leader + base. */}
+              {lockOwn ? (
+                <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                  <MatchupSide leader={ownLeader} baseKey={ownBase} leaderArt={leaderArt} baseKinds={baseKinds} w={54} big />
+                </div>
+              ) : manual ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
+                  <LeaderSelect value={ownLeader} onChange={setOwnLeader} ariaLabel="Your leader" anyLabel="Your leader" options={leaderOpts(options?.ownLeaders)} testId="guide-own-leader" fullWidth />
+                  <LeaderSelect value={ownBase} onChange={setOwnBase} ariaLabel="Your base" anyLabel="Your base" options={baseOpts(options?.ownBaseKinds)} testId="guide-own-base" fullWidth />
+                </div>
+              ) : (
+                <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                  <LeaderSelect value={archValue(ownLeader, ownBase)} onChange={pickArch(setOwnLeader, setOwnBase)} ariaLabel="Your deck" anyLabel="Your deck" options={archOpts(options?.ownArchetypes)} testId="guide-own-archetype" fullWidth />
+                </div>
+              )}
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
+              {manual ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
+                  <LeaderSelect value={oppLeader} onChange={setOppLeader} ariaLabel="Opponent leader" anyLabel="Opp leader" options={leaderOpts(options?.oppLeaders)} testId="guide-opp-leader" fullWidth />
+                  <LeaderSelect value={oppBase} onChange={setOppBase} ariaLabel="Opponent base" anyLabel="Opp base" options={baseOpts(options?.oppBaseKinds)} testId="guide-opp-base" fullWidth />
+                </div>
+              ) : (
+                <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                  <LeaderSelect value={archValue(oppLeader, oppBase)} onChange={pickArch(setOppLeader, setOppBase)} ariaLabel="Opponent deck" anyLabel="Opp deck" options={archOpts(options?.oppArchetypes)} testId="guide-opp-archetype" fullWidth />
+                </div>
+              )}
             </div>
-          </div>
+            <button type="button" onClick={() => setManual((v) => !v)} style={{ ...linkBtn, alignSelf: 'flex-start' }}>
+              {manual ? '↤ Pick from a played deck' : 'Pick leader & base separately →'}
+            </button>
+          </>
         )}
       </div>
 

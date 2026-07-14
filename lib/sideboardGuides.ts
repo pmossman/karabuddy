@@ -9,6 +9,7 @@ import { and, eq, inArray, isNotNull, desc } from 'drizzle-orm';
 import { getDb } from './db';
 import { replays, replayTeamShares, teamMembers, sideboardTakes, sideboardMatchupComments, cards, users } from './schema';
 import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
+import { cardIdFromSetNumber } from './cards';
 
 export interface PoolCard {
   cardId: string;
@@ -98,12 +99,17 @@ export const LEADER_SEP = ' · ';
 export const leaderValue = (name: string, subtitle: string | null | undefined) => (subtitle ? `${name}${LEADER_SEP}${subtitle}` : name);
 export const leaderNameOf = (value: string) => value.split(LEADER_SEP)[0];
 export interface LeaderOption { value: string; name: string; subtitle: string | null; set: string | null; number: number | null }
+// A played ARCHETYPE = leader + base, with how often the team played/faced it —
+// the streamlined "pick your deck" option (vs picking leader + base separately).
+export interface Archetype { leader: LeaderOption; base: BaseIdentity; count: number }
 export interface MatchupOptions {
   ownLeaders: LeaderOption[]; oppLeaders: LeaderOption[];
   // Bases use the ONE base identity system (lib/baseIdentity): vanilla bases
   // collapse to their aspect (rendered as the aspect icon, no name), unique
   // bases stay themselves (own art + name). Keyed by functional identity.
   ownBaseKinds: BaseIdentity[]; oppBaseKinds: BaseIdentity[];
+  // Leader+base decks the team plays (own) / faces (opp), popularity-sorted.
+  ownArchetypes: Archetype[]; oppArchetypes: Archetype[];
 }
 // The team's played leaders (by name) + base functional KINDS, split by side,
 // for the authoring matchup selectors. Own = the recorder's; opp = the other.
@@ -116,11 +122,13 @@ export async function teamMatchupOptions(teamSlug: string): Promise<MatchupOptio
 
   const rawOwn: any[] = [], rawOpp: any[] = [];
   const ownBaseRefs: any[] = [], oppBaseRefs: any[] = [];
+  const ownPairs: { leader: any; base: any }[] = [], oppPairs: { leader: any; base: any }[] = [];
   for (const r of rows) {
     for (const p of (Array.isArray(r.players) ? (r.players as any[]) : [])) {
       const own = p?.id === r.ownerPlayerId;
       if (p?.leader?.name) (own ? rawOwn : rawOpp).push(p.leader);
       if (p?.base) (own ? ownBaseRefs : oppBaseRefs).push(p.base);
+      if (p?.leader?.name && p?.base?.set && p?.base?.number != null) (own ? ownPairs : oppPairs).push({ leader: p.leader, base: p.base });
     }
   }
   // Resolve leader subtitles from the catalog (set+number → subtitle) so same-name
@@ -143,7 +151,25 @@ export async function teamMatchupOptions(teamSlug: string): Promise<MatchupOptio
     for (const k of ids.values()) if (!byKey.has(k.key)) byKey.set(k.key, k);
     return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label));
   };
-  return { ownLeaders: buildLeaders(rawOwn), oppLeaders: buildLeaders(rawOpp), ownBaseKinds: distinctKinds(ownIds), oppBaseKinds: distinctKinds(oppIds) };
+  // Archetypes: (leader identity + base identity) pairs, counted for popularity.
+  const buildArchetypes = (pairs: { leader: any; base: any }[], baseIds: Map<string, BaseIdentity>): Archetype[] => {
+    const m = new Map<string, Archetype>();
+    for (const { leader, base } of pairs) {
+      const subtitle = subMap.get(`${leader.set}|${leader.number}`) ?? null;
+      const lo: LeaderOption = { value: leaderValue(leader.name, subtitle), name: leader.name, subtitle, set: leader.set ?? null, number: leader.number ?? null };
+      const baseId = baseIds.get(cardIdFromSetNumber(base.set, base.number));
+      if (!baseId) continue;
+      const key = `${lo.value}|${baseId.key}`;
+      const e = m.get(key);
+      if (e) e.count++; else m.set(key, { leader: lo, base: baseId, count: 1 });
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count || a.leader.name.localeCompare(b.leader.name));
+  };
+  return {
+    ownLeaders: buildLeaders(rawOwn), oppLeaders: buildLeaders(rawOpp),
+    ownBaseKinds: distinctKinds(ownIds), oppBaseKinds: distinctKinds(oppIds),
+    ownArchetypes: buildArchetypes(ownPairs, ownIds), oppArchetypes: buildArchetypes(oppPairs, oppIds),
+  };
 }
 
 // Leader IDENTITY (name·subtitle) -> art + name/subtitle for display.
