@@ -620,7 +620,10 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
     );
   };
 
-  const canSave = ownLeader && ownBase && oppLeader && oppBase && (inCards.length + outCards.length > 0 || notes.trim());
+  // A matchup must be fully specified before picking cards — a sideboard plan is
+  // meaningless without knowing which deck vs which opponent.
+  const matchupComplete = !!(ownLeader && ownBase && oppLeader && oppBase);
+  const canSave = matchupComplete && (inCards.length + outCards.length > 0 || notes.trim());
   const save = async () => {
     if (!canSave || saving) return;
     setSaving(true);
@@ -682,34 +685,41 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
         )}
       </div>
 
-      {/* Reserved IN / OUT */}
-      <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <ReservedSection title="Bring in" tone={GREEN} cards={inCards} count={inQty} render={renderReservedCard} empty="Click cards in the pool below to bring them in." />
-        <ReservedSection title="Take out" tone={SALMON} cards={outCards} count={outQty} render={renderReservedCard} empty="Click a card again to move it here (cards you're cutting)." />
-        {inQty > 0 && outQty > 0 && inQty !== outQty && (
-          <div style={{ fontSize: 12, color: '#d9a441' }}>Heads up: {inQty} in vs {outQty} out — a sideboard swap usually brings in and takes out the same number of cards.</div>
-        )}
-        <div style={{ maxWidth: 340 }}><CardSearch value={null} onChange={addCard} testId="guide-card-search" /></div>
-      </div>
-
-      {/* Pool */}
-      <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ ...sectionLabel, marginBottom: 0 }}>Your card pool {pool ? `· ${pool.totalLists} lists` : ''}</div>
-          <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Click to bring <span style={{ color: GREEN, fontWeight: 700 }}>IN</span>; again to move <span style={{ color: SALMON, fontWeight: 700 }}>OUT</span>; again to return it.</span>
+      {!matchupComplete ? (
+        <div style={{ ...panel, padding: '26px 18px', textAlign: 'center', color: '#8a93a3', fontSize: 13 }} data-testid="guide-pick-matchup-first">
+          Pick <span style={{ color: '#c8cdd8', fontWeight: 700 }}>your deck</span> and the <span style={{ color: '#c8cdd8', fontWeight: 700 }}>opponent</span> above to start adding cards.
         </div>
-        {!ownLeader ? <div style={{ fontSize: 12.5, color: '#6c7588' }}>Pick your leader to load the team&apos;s card pool for this archetype.</div>
-          : poolLoading ? <Loading label="the card pool" />
-            : <>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>{poolVisible.map((c) => renderCard(c, 72))}</div>
-              {poolCards.length > poolVisible.length && <button type="button" onClick={() => setShowAll(true)} style={{ alignSelf: 'flex-start', ...linkBtn }}>Show all {poolCards.length} cards</button>}
-            </>}
-      </div>
+      ) : (
+        <>
+          {/* Reserved IN / OUT */}
+          <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <ReservedSection title="Bring in" tone={GREEN} cards={inCards} count={inQty} render={renderReservedCard} empty="Click cards in the pool below to bring them in." />
+            <ReservedSection title="Take out" tone={SALMON} cards={outCards} count={outQty} render={renderReservedCard} empty="Click a card again to move it here (cards you're cutting)." />
+            {inQty > 0 && outQty > 0 && inQty !== outQty && (
+              <div style={{ fontSize: 12, color: '#d9a441' }}>Heads up: {inQty} in vs {outQty} out — a sideboard swap usually brings in and takes out the same number of cards.</div>
+            )}
+            <div style={{ maxWidth: 340 }}><CardSearch value={null} onChange={addCard} testId="guide-card-search" /></div>
+          </div>
 
-      <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ ...sectionLabel, marginBottom: 0 }}>Notes</div>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Your reasoning for this matchup — including play/draw nuance." data-testid="guide-notes" rows={5} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
-      </div>
+          {/* Pool */}
+          <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ ...sectionLabel, marginBottom: 0 }}>Your card pool {pool ? `· ${pool.totalLists} lists` : ''}</div>
+              <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Click to bring <span style={{ color: GREEN, fontWeight: 700 }}>IN</span>; again to move <span style={{ color: SALMON, fontWeight: 700 }}>OUT</span>; again to return it.</span>
+            </div>
+            {poolLoading ? <Loading label="the card pool" />
+              : <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>{poolVisible.map((c) => renderCard(c, 72))}</div>
+                {poolCards.length > poolVisible.length && <button type="button" onClick={() => setShowAll(true)} style={{ alignSelf: 'flex-start', ...linkBtn }}>Show all {poolCards.length} cards</button>}
+              </>}
+          </div>
+
+          <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ ...sectionLabel, marginBottom: 0 }}>Notes</div>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Your reasoning for this matchup — including play/draw nuance." data-testid="guide-notes" rows={5} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
+          </div>
+        </>
+      )}
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <button type="button" onClick={onDone} style={backBtn}>Cancel</button>
