@@ -594,9 +594,10 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
       // A div (not a button) — QuizCard renders its own <button>, so wrapping it
       // in one nests buttons (invalid HTML). QuizCard is `selectable` so its own
       // button handles the click + stays keyboard-accessible.
+      // Pool order = decklist frequency (staples first); the per-card % badge was
+      // unlabeled + redundant with the sort, so it's dropped.
       <div key={c.cardId} data-testid="guide-pool-card" style={{ position: 'relative' }}>
         <QuizCard card={ref(c)} width={w} noPreview mini verdict={verdict} selectable onClick={() => cycle(c.cardId)} />
-        {c.count > 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 9, fontWeight: 800, color: '#cfe4ff', background: 'rgba(0,0,0,0.72)', borderRadius: 4, padding: '0 4px', pointerEvents: 'none' }}>{Math.round(c.fraction * 100)}%</span>}
       </div>
     );
   };
