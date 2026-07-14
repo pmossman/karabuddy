@@ -25,8 +25,12 @@ export default async function AdminTeamPage({ params }: { params: Promise<{ slug
       <Card>
         <div style={{ display: 'flex', gap: 28, padding: '2px', flexWrap: 'wrap' }}>
           <Stat label="Members" value={d.members.length} accent="#e6ebf2" />
+          {(d.private || d.privateReplays > 0) && <Stat label="Private replays" value={d.privateReplays} accent={GOLD} />}
           {d.featureCounts.map((f) => <Stat key={f.key} label={f.label} value={f.n} />)}
         </div>
+        {d.private && d.privateReplays === 0 && (
+          <div style={{ marginTop: 8, fontSize: 12, color: MUTED }}>Private mode is on, but no encrypted replays under the current key yet.</div>
+        )}
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14, marginTop: 14 }}>

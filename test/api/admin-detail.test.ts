@@ -87,6 +87,35 @@ describe('admin directories + detail', () => {
     expect(await teamDetail('nope-missing')).toBeNull();
   });
 
+  it('private replays link to their team via key id (featureDetail + teamDetail + user chip)', async () => {
+    const owner = await seedUser('Priv Owner');
+    const slug = randomUUID().slice(0, 6);
+    const kid = `key_${randomUUID().slice(0, 8)}`;
+    await getDb().insert(teams).values({ slug, name: 'Private Squad', createdBy: owner, privateMode: true, teamKeyId: kid });
+    await getDb().insert(teamMembers).values({ teamSlug: slug, userId: owner, role: 'owner' });
+    const rslug = `r_${randomUUID().slice(0, 8)}`;
+    await getDb().insert(replays).values({
+      slug: rslug, gameId: randomUUID(), userId: owner, ownerToken: `kbx_${randomUUID()}`,
+      players: [], payloadBlobUrl: 'https://b.test/e.json', encrypted: true, teamKeyId: kid, encryptedSummary: '{}',
+    });
+    // A plaintext replay by the same owner — must NOT count as a private replay.
+    await seedReplay(owner);
+
+    const td = await teamDetail(slug);
+    expect(td!.private).toBe(true);
+    expect(td!.privateReplays).toBe(1);
+
+    const ud = await userDetail(owner);
+    expect(ud!.teams.find((t) => t.slug === slug)?.private).toBe(true);
+    // Exactly the ONE encrypted replay — the feature filter must be applied.
+    expect(ud!.featureCounts.find((f) => f.key === 'privateReplays')?.n).toBe(1);
+    expect(ud!.games).toBeGreaterThanOrEqual(2); // both replays are games
+
+    const fd = await featureDetail('privateReplays');
+    expect(fd!.topTeams.some((t) => t.slug === slug)).toBe(true);
+    expect(fd!.topUsers.some((u) => u.id === owner)).toBe(true);
+  });
+
   it('featureDetail returns weekly series + top users + recent', async () => {
     const uid = await seedUser('Commenter');
     const rep = await seedReplay(uid);
