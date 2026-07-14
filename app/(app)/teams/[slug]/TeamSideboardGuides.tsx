@@ -34,7 +34,15 @@ interface PoolCard { cardId: string; name: string | null; set: string | null; nu
 interface MatchupSummary extends Matchup { takeCount: number; contributors: (string | null)[]; myTake: boolean }
 interface Take { id: string; authorId: string; authorName: string | null; notes: string; cardsIn: GuideCard[]; cardsOut: GuideCard[]; updatedAt: string }
 
-type Screen = { s: 'list' } | { s: 'matchup'; m: Matchup } | { s: 'form'; m?: Matchup };
+// A DECK (your leader + base) is the top-level lens — you review its matchups.
+interface Deck { ownLeader: string; ownBase: string }
+const deckOf = (m: Matchup): Deck => ({ ownLeader: m.ownLeader, ownBase: m.ownBase });
+const sameDeck = (m: Matchup | MatchupSummary, d: Deck) => m.ownLeader === d.ownLeader && m.ownBase === d.ownBase;
+type Screen =
+  | { s: 'decks' }
+  | { s: 'deck'; deck: Deck }
+  | { s: 'matchup'; m: Matchup; deck: Deck }
+  | { s: 'form'; m?: Matchup; deck?: Deck };
 
 const mq = (m: Matchup) => new URLSearchParams(m as any).toString();
 function ref(c: { cardId: string; name?: string | null; set?: string | null; number?: number | null; cost?: number | null }): QuizCardRef {
@@ -53,10 +61,19 @@ function resolveBaseKind(key: string | undefined, kinds: BaseKinds): BaseKind | 
 }
 
 export function TeamSideboardGuides({ teamSlug }: { teamSlug: string; viewerName?: string }) {
-  const [screen, setScreen] = useState<Screen>({ s: 'list' });
-  if (screen.s === 'form') return <TakeForm teamSlug={teamSlug} matchup={screen.m} onDone={() => setScreen(screen.m ? { s: 'matchup', m: screen.m } : { s: 'list' })} onSaved={(m) => setScreen({ s: 'matchup', m })} />;
-  if (screen.s === 'matchup') return <MatchupView teamSlug={teamSlug} matchup={screen.m} onBack={() => setScreen({ s: 'list' })} onEditTake={(m) => setScreen({ s: 'form', m })} />;
-  return <MatchupsList teamSlug={teamSlug} onNew={() => setScreen({ s: 'form' })} onOpen={(m) => setScreen({ s: 'matchup', m })} />;
+  const [screen, setScreen] = useState<Screen>({ s: 'decks' });
+  if (screen.s === 'form') {
+    return <TakeForm teamSlug={teamSlug} matchup={screen.m} deck={screen.deck}
+      onDone={() => setScreen(screen.m ? { s: 'matchup', m: screen.m, deck: deckOf(screen.m) } : screen.deck ? { s: 'deck', deck: screen.deck } : { s: 'decks' })}
+      onSaved={(m) => setScreen({ s: 'matchup', m, deck: deckOf(m) })} />;
+  }
+  if (screen.s === 'matchup') {
+    return <MatchupView teamSlug={teamSlug} matchup={screen.m} onBack={() => setScreen({ s: 'deck', deck: screen.deck })} onEditTake={(m) => setScreen({ s: 'form', m, deck: screen.deck })} />;
+  }
+  if (screen.s === 'deck') {
+    return <DeckMatchups teamSlug={teamSlug} deck={screen.deck} onBack={() => setScreen({ s: 'decks' })} onOpen={(m) => setScreen({ s: 'matchup', m, deck: screen.deck })} onNew={() => setScreen({ s: 'form', deck: screen.deck })} />;
+  }
+  return <DecksList teamSlug={teamSlug} onOpen={(deck) => setScreen({ s: 'deck', deck })} onNew={() => setScreen({ s: 'form' })} />;
 }
 
 // ── Matchup display (leader art + base: aspect icon vanilla / art+name unique) ─
@@ -92,8 +109,8 @@ function MatchupSide({ leader, baseKey, leaderArt, baseKinds, w, big, reverse }:
   );
 }
 
-// ── Matchups list ───────────────────────────────────────────────────────────
-function MatchupsList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: () => void; onOpen: (m: Matchup) => void }) {
+// Shared fetch of the team's guides bundle (matchups + art/base maps).
+function useGuidesData(teamSlug: string) {
   const [data, setData] = useState<{ matchups: MatchupSummary[]; leaderArt: Art; baseKinds: BaseKinds } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -105,30 +122,88 @@ function MatchupsList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: ()
       } catch { setError('failed to load'); }
     })();
   }, [teamSlug]);
+  return { data, error };
+}
+
+// ── Level 1: your DECKS (leader/base) — the top-level lens ────────────────────
+function DecksList({ teamSlug, onOpen, onNew }: { teamSlug: string; onOpen: (d: Deck) => void; onNew: () => void }) {
+  const { data, error } = useGuidesData(teamSlug);
   if (error) return <ErrorNote>{error}</ErrorNote>;
-  if (!data) return <Loading label="matchups" />;
+  if (!data) return <Loading label="your decks" />;
+
+  // Group matchups by your deck (own leader + base).
+  const map = new Map<string, { deck: Deck; matchups: number; members: Set<string>; mine: boolean }>();
+  for (const m of data.matchups) {
+    const key = `${m.ownLeader}|${m.ownBase}`;
+    let e = map.get(key);
+    if (!e) { e = { deck: deckOf(m), matchups: 0, members: new Set(), mine: false }; map.set(key, e); }
+    e.matchups++;
+    m.contributors.filter(Boolean).forEach((c) => e!.members.add(c as string));
+    if (m.myTake) e.mine = true;
+  }
+  const decks = [...map.values()].sort((a, b) => b.matchups - a.matchups);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#e6ebf2' }}>Sideboard guides</div>
-          <div style={{ fontSize: 13, color: '#8a93a3', marginTop: 3 }}>Pick a matchup — the team&apos;s picks on what to bring in, cut, and why.</div>
+          <div style={{ fontSize: 13, color: '#8a93a3', marginTop: 3 }}>Pick your deck to review its matchups — what to bring in, cut, and why.</div>
         </div>
-        <GradientBorderButton testId="guide-new" onClick={onNew}>Add your picks</GradientBorderButton>
+        <GradientBorderButton testId="guide-new" onClick={onNew}>New guide</GradientBorderButton>
       </div>
-      {data.matchups.length === 0 ? (
-        <EmptyState icon="🗒️">No matchups yet — add your picks for one your team plays.</EmptyState>
+      {decks.length === 0 ? (
+        <EmptyState icon="🗒️">No guides yet — start one for a deck your team plays.</EmptyState>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 10 }}>
-          {data.matchups.map((m) => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
+          {decks.map((d) => (
+            <button key={`${d.deck.ownLeader}|${d.deck.ownBase}`} type="button" data-testid="deck-card" onClick={() => onOpen(d.deck)}
+              style={{ ...panel, padding: 14, cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <MatchupSide leader={d.deck.ownLeader} baseKey={d.deck.ownBase} leaderArt={data.leaderArt} baseKinds={data.baseKinds} w={54} big />
+              <div style={{ display: 'flex', gap: 8, fontSize: 12, color: '#8a93a3', alignItems: 'center' }}>
+                <span style={{ color: '#c8cdd8', fontWeight: 700 }}>{d.matchups} matchup{d.matchups === 1 ? '' : 's'}</span>
+                <span>· {d.members.size} member{d.members.size === 1 ? '' : 's'}</span>
+                {d.mine && <span style={{ marginLeft: 'auto', color: CYAN, fontWeight: 700 }}>you ✓</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Level 2: a deck's MATCHUPS (vs each opponent) ─────────────────────────────
+function DeckMatchups({ teamSlug, deck, onBack, onOpen, onNew }: { teamSlug: string; deck: Deck; onBack: () => void; onOpen: (m: Matchup) => void; onNew: () => void }) {
+  const { data, error } = useGuidesData(teamSlug);
+  if (error) return <ErrorNote>{error}</ErrorNote>;
+  if (!data) return <Loading label="matchups" />;
+  const matchups = data.matchups.filter((m) => sameDeck(m, deck));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <button type="button" onClick={onBack} style={backBtn}>← Decks</button>
+      <div style={{ ...panel, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <MatchupSide leader={deck.ownLeader} baseKey={deck.ownBase} leaderArt={data.leaderArt} baseKinds={data.baseKinds} w={60} big />
+        <span style={{ flex: 1 }} />
+        <GradientBorderButton testId="deck-add-matchup" onClick={onNew} style={{ padding: '0.5rem 1.1rem' }}>Add matchup</GradientBorderButton>
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3' }}>Matchups · {matchups.length}</div>
+      {matchups.length === 0 ? (
+        <EmptyState icon="⚔️">No matchups yet for this deck — add one you expect to face.</EmptyState>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
+          {matchups.map((m) => (
             <button key={mq(m)} type="button" data-testid="matchup-row" onClick={() => onOpen(m)}
               style={{ ...panel, padding: 12, cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <MatchupRow m={m} leaderArt={data.leaderArt} baseKinds={data.baseKinds} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
+                <MatchupSide leader={m.oppLeader} baseKey={m.oppBase} leaderArt={data.leaderArt} baseKinds={data.baseKinds} w={48} />
+              </div>
               <div style={{ display: 'flex', gap: 8, fontSize: 11.5, color: '#8a93a3', alignItems: 'center' }}>
                 <span style={{ color: '#c8cdd8', fontWeight: 700 }}>{m.takeCount} member{m.takeCount === 1 ? '' : 's'}</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.contributors.filter(Boolean).join(', ')}</span>
-                {m.myTake && <span style={{ marginLeft: 'auto', color: CYAN, fontWeight: 700 }}>your take ✓</span>}
+                {m.myTake && <span style={{ marginLeft: 'auto', color: CYAN, fontWeight: 700 }}>you ✓</span>}
               </div>
             </button>
           ))}
@@ -391,11 +466,12 @@ function ReservedSection({ title, tone, cards, count, render, empty }: { title: 
 }
 
 // ── My-take author form ─────────────────────────────────────────────────────
-function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; matchup?: Matchup; onDone: () => void; onSaved: (m: Matchup) => void }) {
-  const locked = !!matchup; // adding/editing a take for an existing matchup
+function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: string; matchup?: Matchup; deck?: Deck; onDone: () => void; onSaved: (m: Matchup) => void }) {
+  const locked = !!matchup;       // editing a take on an existing matchup — all 4 fixed
+  const lockOwn = !matchup && !!deck; // new matchup FOR a deck — your side fixed, opp open
   const [options, setOptions] = useState<Options | null>(null);
-  const [ownLeader, setOwnLeader] = useState(matchup?.ownLeader ?? '');
-  const [ownBase, setOwnBase] = useState(matchup?.ownBase ?? '');
+  const [ownLeader, setOwnLeader] = useState(matchup?.ownLeader ?? deck?.ownLeader ?? '');
+  const [ownBase, setOwnBase] = useState(matchup?.ownBase ?? deck?.ownBase ?? '');
   const [oppLeader, setOppLeader] = useState(matchup?.oppLeader ?? '');
   const [oppBase, setOppBase] = useState(matchup?.oppBase ?? '');
   const [leaderArt, setLeaderArt] = useState<Art>({}); const [baseKinds, setBaseKinds] = useState<BaseKinds>({});
@@ -519,13 +595,19 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
           <MatchupRow m={{ ownLeader, ownBase, oppLeader, oppBase }} leaderArt={leaderArt} baseKinds={baseKinds} big />
         ) : (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* auto-fit minmax(150,1fr): leader + base sit side by side when they
-                fit and STACK on narrow screens, so a select never overflows the
-                panel (the LeaderSelect trigger has a 150px min width). */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
-              <LeaderSelect value={ownLeader} onChange={setOwnLeader} ariaLabel="Your leader" anyLabel="Your leader" options={leaderOpts(options?.ownLeaders)} testId="guide-own-leader" fullWidth />
-              <LeaderSelect value={ownBase} onChange={setOwnBase} ariaLabel="Your base" anyLabel="Your base" options={baseOpts(options?.ownBaseKinds)} testId="guide-own-base" fullWidth />
-            </div>
+            {/* Your side: fixed to the deck when adding a matchup for it; otherwise
+                selectable. auto-fit minmax(150,1fr) so leader + base stack on narrow
+                screens instead of overflowing (the trigger has a 150px min width). */}
+            {lockOwn ? (
+              <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                <MatchupSide leader={ownLeader} baseKey={ownBase} leaderArt={leaderArt} baseKinds={baseKinds} w={54} big />
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
+                <LeaderSelect value={ownLeader} onChange={setOwnLeader} ariaLabel="Your leader" anyLabel="Your leader" options={leaderOpts(options?.ownLeaders)} testId="guide-own-leader" fullWidth />
+                <LeaderSelect value={ownBase} onChange={setOwnBase} ariaLabel="Your base" anyLabel="Your base" options={baseOpts(options?.ownBaseKinds)} testId="guide-own-base" fullWidth />
+              </div>
+            )}
             <span style={{ fontSize: 11, fontWeight: 800, color: '#6c7588' }}>VS</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, flex: '1 1 300px', minWidth: 0 }}>
               <LeaderSelect value={oppLeader} onChange={setOppLeader} ariaLabel="Opponent leader" anyLabel="Opp leader" options={leaderOpts(options?.oppLeaders)} testId="guide-opp-leader" fullWidth />
