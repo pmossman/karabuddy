@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { userDetail } from '@/lib/adminDetail';
-import { PRIMARY, MUTED, Card, Stat, Empty, Chip, ago, fmtDate, pageWrap } from '../../ui';
+import { PRIMARY, MUTED, GOLD, Card, Stat, Empty, Chip, ago, fmtDate, pageWrap } from '../../ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,8 +44,9 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
         {d.teams.length === 0 ? <Empty label="Not on any team." /> : (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {d.teams.map((t) => (
-              <Chip key={t.slug} href={`/admin/teams/${t.slug}`} color={ROLE_COLOR[t.role] ?? '#cdd3dd'}>
-                {t.name}<span style={{ color: MUTED, fontSize: 11 }}>{t.role}</span>
+              <Chip key={t.slug} href={`/admin/teams/${t.slug}`} color={t.private ? GOLD : (ROLE_COLOR[t.role] ?? '#cdd3dd')}>
+                {t.private && <span title="private team" style={{ fontSize: 11 }}>🔒</span>}{t.name}
+                <span style={{ color: MUTED, fontSize: 11 }}>{t.role}{t.private ? ' · private' : ''}</span>
               </Chip>
             ))}
           </div>

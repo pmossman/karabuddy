@@ -165,7 +165,7 @@ function FeatureDrill({ featureKey }: { featureKey: string }) {
         {data.topTeams.length > 0 && (
           <div>
             <ColHead>Top teams</ColHead>
-            <RankList items={data.topTeams.map((t) => ({ label: t.name ?? t.slug ?? '—', n: t.n, href: t.slug ? `/admin/teams/${t.slug}` : undefined }))} />
+            <RankList items={data.topTeams.map((t) => ({ label: t.name ?? t.slug ?? '(no current private team)', n: t.n, href: t.slug ? `/admin/teams/${t.slug}` : undefined }))} />
           </div>
         )}
         <div>
