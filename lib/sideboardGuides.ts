@@ -148,14 +148,18 @@ export async function matchupContextForTeam(teamSlug: string): Promise<{ leaderA
 
 // ── Guide CRUD ────────────────────────────────────────────────────────────
 
-export interface GuideCard { cardId: string; note?: string | null }
+// Consensus math + qty helpers live in the pure, client-safe lib/sideboardConsensus
+// (no db imports) so the server and the guides UI share one implementation.
+export { MAX_QTY, guideQty, sumQty, computeConsensus, modeQty, analyzeMatchupConsensus } from './sideboardConsensus';
+export type { GuideCard, ConsensusCard, MatchupConsensus, SplitCard, PlanCard, ConsensusMember } from './sideboardConsensus';
+import { guideQty, type GuideCard } from './sideboardConsensus';
 
 // Clamp untrusted IN/OUT card lists from the client to the stored shape.
 export function sanitizeGuideCards(arr: unknown): GuideCard[] {
   if (!Array.isArray(arr)) return [];
   return arr
-    .filter((c): c is { cardId: string; note?: unknown } => !!c && typeof (c as any).cardId === 'string' && (c as any).cardId.trim().length > 0)
-    .map((c) => ({ cardId: c.cardId.trim(), note: typeof c.note === 'string' && c.note.trim() ? c.note.trim().slice(0, 500) : null }));
+    .filter((c): c is { cardId: string; qty?: unknown; note?: unknown } => !!c && typeof (c as any).cardId === 'string' && (c as any).cardId.trim().length > 0)
+    .map((c) => ({ cardId: c.cardId.trim(), qty: guideQty(c as any), note: typeof c.note === 'string' && c.note.trim() ? c.note.trim().slice(0, 500) : null }));
 }
 // A matchup — the top-level unit. Takes + comments hang off it.
 export interface Matchup { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
@@ -208,20 +212,6 @@ export async function listTeamMatchups(teamSlug: string, viewerId: string): Prom
 
 // Consensus: cards ranked by how many of the matchup's takes bring them in / cut
 // them. High count = the team plan; a split = the debate.
-export interface ConsensusCard { cardId: string; count: number }
-export function computeConsensus(takes: { cardsIn: GuideCard[]; cardsOut: GuideCard[] }[]): { inCards: ConsensusCard[]; outCards: ConsensusCard[]; total: number } {
-  const total = takes.length;
-  const tally = (key: 'cardsIn' | 'cardsOut') => {
-    const m = new Map<string, number>();
-    for (const t of takes) {
-      const seen = new Set<string>();
-      for (const c of (t[key] || [])) if (c?.cardId && !seen.has(c.cardId)) { seen.add(c.cardId); m.set(c.cardId, (m.get(c.cardId) || 0) + 1); }
-    }
-    return [...m.entries()].map(([cardId, count]) => ({ cardId, count })).sort((a, b) => b.count - a.count || a.cardId.localeCompare(b.cardId));
-  };
-  return { inCards: tally('cardsIn'), outCards: tally('cardsOut'), total };
-}
-
 // ── Matchup comments (any team member; keyed by the matchup) ────────────────
 export async function listMatchupComments(teamSlug: string, m: Matchup) {
   return getDb()

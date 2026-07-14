@@ -263,6 +263,7 @@ When building a surface that does one of these jobs, **use the canonical compone
 | Comment box with @-mentions | `<MentionInput>` (`r/[slug]/MentionInput.tsx`) | ANY composer that can mention someone — autocomplete popover accumulates structured mentions; the server never parses free text, so a raw textarea = mentions silently don't work |
 | Base functional identity | `lib/baseIdentity.resolveBaseIdentities` | which bases are ACTUALLY the same base: vanilla → aspect, force pairs/reprints → shared ability-text hash (`cards.base_ability_hash`), unique → themselves. Any base filter/selector MUST key on this, never raw names |
 | Matchup VS row | `<MatchupRow>` | replay/clip card header |
+| Card copies as a stack | `<CardPile>` / `<PileGrid>` (`app/_components/CardPile.tsx`) | a card whose copy-count is a physical pile (count-1 offset behind the front card, outlined in a group color) — quantity is VISUAL, not a badge. Used by the replay `SideboardSplash` + team Sideboard-Guide picks; `w` sizes the card |
 | Deck card list | `<DeckBlock>` / `<DecksTabs>` | **retiring `DeckGrid`** — migrate, don't extend |
 | Status (error/loading/empty/muted) | `StatusUi.tsx` | |
 | Buttons | `glowButtonStyle` (primary) / `buttonStyles` (ghost/danger) | |

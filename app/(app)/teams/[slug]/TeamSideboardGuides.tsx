@@ -6,13 +6,15 @@
 // individual takes, then discussion. Three screens: matchups list, matchup view,
 // and the my-take author form. Speaks the drills' IN=green / OUT=salmon language.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { analyzeMatchupConsensus, guideQty as qtyOf, sumQty, MAX_QTY, type GuideCard as LibGuideCard, type SplitCard, type ConsensusMember } from '@/lib/sideboardConsensus';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { CardSearch, type SelectedCard } from '@/app/_components/CardSearch';
 import { AspectIcon } from '@/app/_components/AspectIcon';
 import { EmptyState, ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { QuizCard, GradientBorderButton, type QuizCardRef, type PickVerdict } from './OpeningPromptKit';
+import { CardPile, PileGrid } from '@/app/_components/CardPile';
 import { cardImageUrl } from '@/lib/cardImage';
 import { relativeTime } from '@/lib/datetime';
 
@@ -23,15 +25,14 @@ const panel: React.CSSProperties = { background: tokens.surface.panel, border: `
 
 interface Matchup { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
 interface LeaderOpt { name: string; set: string | null; number: number | null }
-interface BaseKind { key: string; label: string; kind: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null }
+interface BaseKind { key: string; label: string; kind: string; aspect: string | null; art: { set: string; number: number } | null; iconAspect: string | null; overlay?: 'force' | 'splash' | null }
 interface Options { ownLeaders: LeaderOpt[]; oppLeaders: LeaderOpt[]; ownBaseKinds: BaseKind[]; oppBaseKinds: BaseKind[] }
 type Art = Record<string, { set: string | null; number: number | null }>;
 type BaseKinds = Record<string, BaseKind>;
-interface GuideCard { cardId: string; note?: string | null }
+type GuideCard = LibGuideCard;
 interface PoolCard { cardId: string; name: string | null; set: string | null; number: number | null; cost: number | null; type: string | null; count: number; fraction: number }
 interface MatchupSummary extends Matchup { takeCount: number; contributors: (string | null)[]; myTake: boolean }
 interface Take { id: string; authorId: string; authorName: string | null; notes: string; cardsIn: GuideCard[]; cardsOut: GuideCard[]; updatedAt: string }
-interface ConsensusCard { cardId: string; count: number }
 
 type Screen = { s: 'list' } | { s: 'matchup'; m: Matchup } | { s: 'form'; m?: Matchup };
 
@@ -80,7 +81,7 @@ function MatchupSide({ leader, baseKey, leaderArt, baseKinds, w, big, reverse }:
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexDirection: reverse ? 'row-reverse' : 'row', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexDirection: reverse ? 'row-reverse' : 'row' }}>
         <div style={{ width: w, height: h, borderRadius: 4, background: leaderUrl ? `center/cover no-repeat url(${leaderUrl})` : '#1a1f28', flexShrink: 0 }} />
-        {kind?.iconAspect ? <AspectIcon aspect={kind.iconAspect} size={big ? 30 : 24} />
+        {kind?.iconAspect ? <AspectIcon aspect={kind.iconAspect} overlay={kind.overlay ?? null} size={big ? 30 : 24} />
           : baseUrl && <div style={{ width: Math.round(w * 0.92), height: h, borderRadius: 4, background: `center/cover no-repeat url(${baseUrl})`, flexShrink: 0 }} />}
       </div>
       <div style={{ minWidth: 0, textAlign: reverse ? 'right' : 'left' }}>
@@ -112,12 +113,12 @@ function MatchupsList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: ()
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#e6ebf2' }}>Sideboard guides</div>
-          <div style={{ fontSize: 13, color: '#8a93a3', marginTop: 3 }}>Pick a matchup — the team&apos;s takes on what to bring in, cut, and why.</div>
+          <div style={{ fontSize: 13, color: '#8a93a3', marginTop: 3 }}>Pick a matchup — the team&apos;s picks on what to bring in, cut, and why.</div>
         </div>
-        <GradientBorderButton testId="guide-new" onClick={onNew}>Add a take</GradientBorderButton>
+        <GradientBorderButton testId="guide-new" onClick={onNew}>Add your picks</GradientBorderButton>
       </div>
       {data.matchups.length === 0 ? (
-        <EmptyState icon="🗒️">No matchups yet — add a take for one your team plays.</EmptyState>
+        <EmptyState icon="🗒️">No matchups yet — add your picks for one your team plays.</EmptyState>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 10 }}>
           {data.matchups.map((m) => (
@@ -125,7 +126,7 @@ function MatchupsList({ teamSlug, onNew, onOpen }: { teamSlug: string; onNew: ()
               style={{ ...panel, padding: 12, cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <MatchupRow m={m} leaderArt={data.leaderArt} baseKinds={data.baseKinds} />
               <div style={{ display: 'flex', gap: 8, fontSize: 11.5, color: '#8a93a3', alignItems: 'center' }}>
-                <span style={{ color: '#c8cdd8', fontWeight: 700 }}>{m.takeCount} take{m.takeCount === 1 ? '' : 's'}</span>
+                <span style={{ color: '#c8cdd8', fontWeight: 700 }}>{m.takeCount} member{m.takeCount === 1 ? '' : 's'}</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.contributors.filter(Boolean).join(', ')}</span>
                 {m.myTake && <span style={{ marginLeft: 'auto', color: CYAN, fontWeight: 700 }}>your take ✓</span>}
               </div>
@@ -143,6 +144,8 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [posting, setPosting] = useState(false);
+  const [selTake, setSelTake] = useState<string | null>(null); // which member's take is shown
+  const picksRef = useRef<HTMLDivElement>(null); // "Team picks" section — scrolled to on member-name click
   const load = useCallback(async () => {
     try {
       const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup?${mq(matchup)}`)).json();
@@ -165,7 +168,7 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
     if (j.ok) void load();
   };
   const delMyTake = async () => {
-    if (!confirm('Remove your take on this matchup?')) return;
+    if (!confirm('Remove your picks for this matchup?')) return;
     const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup?${mq(matchup)}`, { method: 'DELETE' })).json();
     if (j.ok) void load();
   };
@@ -173,49 +176,124 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!d) return <Loading label="the matchup" />;
   const takes: Take[] = d.takes ?? [];
-  const cons = d.consensus ?? { inCards: [], outCards: [], total: 0 };
   const leaderArt: Art = d.leaderArt ?? {}; const baseKinds: BaseKinds = d.baseKinds ?? {};
+  // Show one member's take at a time via a pill selector. Default to your own
+  // take (else the first); the explicit selection wins once you pick a pill.
+  const myTakeId = takes.find((t) => t.authorId === d.viewerId)?.id;
+  const activeTakeId = selTake && takes.some((t) => t.id === selTake) ? selTake : (myTakeId ?? takes[0]?.id);
+  const activeTake = takes.find((t) => t.id === activeTakeId) ?? null;
+  const analysis = analyzeMatchupConsensus(takes); // { total, planIn, planOut, split }
+
+  // Click a member's name (in the Split section) → select their picks + scroll
+  // there. The Split members are keyed by AUTHOR id; the pills key on TAKE id.
+  const selectMember = (authorId: string) => {
+    const t = takes.find((x) => x.authorId === authorId);
+    if (t) setSelTake(t.id);
+    picksRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 860, margin: '0 auto', width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <button type="button" onClick={onBack} style={backBtn}>← Matchups</button>
         <span style={{ flex: 1 }} />
-        <GradientBorderButton testId="edit-my-take" onClick={() => onEditTake(matchup)} style={{ padding: '0.5rem 1.1rem' }}>{d.myTake ? 'Edit my take' : 'Add my take'}</GradientBorderButton>
+        <GradientBorderButton testId="edit-my-take" onClick={() => onEditTake(matchup)} style={{ padding: '0.5rem 1.1rem' }}>{d.myTake ? 'Edit my picks' : 'Add my picks'}</GradientBorderButton>
       </div>
 
       <div style={panel}><MatchupRow m={matchup} leaderArt={leaderArt} baseKinds={baseKinds} big /></div>
 
-      {/* Consensus */}
+      {/* Consensus: THE PLAN (unanimous) + SPLIT (differences, with clickable names) */}
       <div style={panel}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 12 }}>
-          Team consensus · {cons.total} take{cons.total === 1 ? '' : 's'}
+          Team consensus · {analysis.total} member{analysis.total === 1 ? '' : 's'}
         </div>
-        {cons.total === 0 ? (
-          <div style={{ fontSize: 12.5, color: '#6c7588' }}>No takes yet — add yours to start the consensus.</div>
+        {analysis.total === 0 ? (
+          <div style={{ fontSize: 12.5, color: '#6c7588' }}>No picks yet — add yours to start the consensus.</div>
         ) : (
-          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-            <ConsensusCol title="Bring in" tone={GREEN} verdict="match" cards={cons.inCards} total={cons.total} />
-            <ConsensusCol title="Take out" tone={SALMON} verdict="theirs" cards={cons.outCards} total={cons.total} />
-          </div>
+          <>
+            {/* THE PLAN — cards everyone points the same way on */}
+            <div>
+              <SubHead>The plan <span style={{ color: '#6c7588', fontWeight: 700 }}>· everyone agrees</span></SubHead>
+              {analysis.planIn.length === 0 && analysis.planOut.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: '#6c7588' }}>No unanimous picks yet{analysis.split.length ? ' — see the split below' : ''}.</div>
+              ) : (
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                  {analysis.planIn.length > 0 && (
+                    <PileGrid label="Bring in" color={GREEN} w={78}>
+                      {analysis.planIn.map((c) => <CardPile key={c.cardId} id={c.cardId} count={c.qty} color={GREEN} w={78} title={`${c.qty}× ${c.cardId} — all ${analysis.total} agree`} />)}
+                    </PileGrid>
+                  )}
+                  {analysis.planOut.length > 0 && (
+                    <PileGrid label="Take out" color={SALMON} w={78}>
+                      {analysis.planOut.map((c) => <CardPile key={c.cardId} id={c.cardId} count={c.qty} color={SALMON} w={78} title={`${c.qty}× ${c.cardId} — all ${analysis.total} agree`} />)}
+                    </PileGrid>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* SPLIT — where members differ; names click through to their picks */}
+            {analysis.split.length > 0 && (
+              <div style={{ marginTop: 18, borderTop: '1px solid #21262f', paddingTop: 14 }}>
+                <SubHead>Split <span style={{ color: '#6c7588', fontWeight: 700 }}>· where members differ — click a name to see their picks</span></SubHead>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))', gap: 10, alignItems: 'stretch' }}>
+                  {analysis.split.map((sc) => <SplitRow key={sc.cardId} card={sc} viewerId={d.viewerId} onSelect={selectMember} />)}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Individual takes */}
-      {takes.map((t) => (
-        <div key={t.id} style={panel} data-testid="matchup-take">
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: t.authorId === d.viewerId ? CYAN : '#e6ebf2' }}>{t.authorId === d.viewerId ? 'Your take' : `${t.authorName ?? 'Teammate'}'s take`}</span>
-            <span style={{ fontSize: 11, color: '#6c7588' }}>{relativeTime(t.updatedAt, { fallbackToDate: true })}</span>
-            {t.authorId === d.viewerId && <button type="button" onClick={delMyTake} style={{ ...linkBtn, marginLeft: 'auto', color: '#6c7588' }}>remove</button>}
+      {/* Individual takes — a pill per member, one shown at a time */}
+      {takes.length > 0 && (
+        <div ref={picksRef} style={panel}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 10 }}>
+            Team picks <span style={{ fontWeight: 700, textTransform: 'none', letterSpacing: 0, color: '#6c7588' }}>· whose to show</span>
           </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <TakeCol title="In" tone={GREEN} verdict="match" cards={t.cardsIn} />
-            <TakeCol title="Out" tone={SALMON} verdict="theirs" cards={t.cardsOut} />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+            {takes.map((t) => {
+              const mine = t.authorId === d.viewerId;
+              const on = t.id === activeTakeId;
+              // Clear filter-chip look: every pill has a visible fill + border so
+              // it reads as tappable; the selected one lights up (cyan for you).
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  data-testid="take-pill"
+                  aria-pressed={on}
+                  onClick={() => setSelTake(t.id)}
+                  style={{
+                    border: `1.5px solid ${on ? (mine ? CYAN : '#8a93a3') : '#39424f'}`, cursor: 'pointer', fontFamily: 'inherit',
+                    fontSize: 12.5, fontWeight: 700, padding: '6px 14px', borderRadius: 999,
+                    background: on ? (mine ? 'rgba(102,229,255,0.16)' : 'rgba(255,255,255,0.10)') : '#1b2230',
+                    color: on ? (mine ? CYAN : '#f0f3f8') : '#aeb6c4',
+                    display: 'inline-flex', alignItems: 'center', gap: 6, boxShadow: on ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.03)',
+                  }}
+                >
+                  {mine ? 'You' : (t.authorName ?? 'Teammate')}
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: on ? (mine ? CYAN : '#c8cdd8') : '#7a8394' }}>+{sumQty(t.cardsIn)}/−{sumQty(t.cardsOut)}</span>
+                </button>
+              );
+            })}
           </div>
-          {t.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginTop: 10 }}>{t.notes}</div>}
+          {activeTake && (
+            <div data-testid="matchup-take">
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: activeTake.authorId === d.viewerId ? CYAN : '#e6ebf2' }}>{activeTake.authorId === d.viewerId ? 'Your picks' : `${activeTake.authorName ?? 'Teammate'}'s picks`}</span>
+                <span style={{ fontSize: 11, color: '#6c7588' }}>{relativeTime(activeTake.updatedAt, { fallbackToDate: true })}</span>
+                {activeTake.authorId === d.viewerId && <button type="button" onClick={delMyTake} style={{ ...linkBtn, marginLeft: 'auto', color: '#6c7588' }}>remove</button>}
+              </div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <TakeCol title="In" tone={GREEN} cards={activeTake.cardsIn} />
+                <TakeCol title="Out" tone={SALMON} cards={activeTake.cardsOut} />
+              </div>
+              {activeTake.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginTop: 10 }}>{activeTake.notes}</div>}
+            </div>
+          )}
         </div>
-      ))}
+      )}
 
       {/* Discussion */}
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -240,42 +318,72 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
   );
 }
 
-function ConsensusCol({ title, tone, verdict, cards, total }: { title: string; tone: string; verdict: PickVerdict; cards: ConsensusCard[]; total: number }) {
+function SubHead({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 12, fontWeight: 800, color: '#c8cdd8', marginBottom: 10 }}>{children}</div>;
+}
+
+// One SPLIT card: the pile + the members behind it, grouped by direction. Names
+// are buttons that jump to that member's picks. Contested = brought in by some,
+// cut by others.
+function SplitRow({ card, viewerId, onSelect }: { card: SplitCard; viewerId: string; onSelect: (id: string) => void }) {
+  const lean = card.contested ? '#d9a441' : (card.inMembers.length >= card.outMembers.length ? GREEN : SALMON);
   return (
-    <div style={{ flex: '1 1 340px', minWidth: 0 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: tone, marginBottom: 10 }}>{title}</div>
-      {cards.length === 0 ? <div style={{ fontSize: 12.5, color: '#6c7588' }}>—</div> : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {cards.map((c) => {
-            const full = c.count === total;
-            return (
-              <div key={c.cardId} style={{ position: 'relative' }} title={`${c.count} of ${total} takes`}>
-                <QuizCard card={ref(c)} width={58} noPreview mini verdict={verdict} />
-                <span style={{ position: 'absolute', bottom: 2, right: 2, fontSize: 9, fontWeight: 800, color: '#0b0e13', background: full ? tone : '#c8cdd8', borderRadius: 4, padding: '0 4px' }}>{c.count}/{total}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+    <div data-testid="split-card" style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0, background: '#0f131a', border: '1px solid #1c222c', borderRadius: 10, padding: '10px 12px' }}>
+      {/* flexShrink:0 — the card must keep its full w+RESERVE width, else the flex
+          row squeezes the box and its absolutely-positioned stacked copies spill
+          out over the text beside it. */}
+      <div style={{ flexShrink: 0 }}><CardPile id={card.cardId} count={card.qty} color={lean} w={52} title={card.cardId} /></div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        {card.contested && <span title="members disagree on this card" style={{ fontSize: 11, fontWeight: 800, color: '#d9a441', textTransform: 'uppercase', letterSpacing: '0.04em' }}>⚔ Contested</span>}
+        {card.inMembers.length > 0 && <ChipRow label="In" tone={GREEN} members={card.inMembers} viewerId={viewerId} onSelect={onSelect} />}
+        {card.outMembers.length > 0 && <ChipRow label="Out" tone={SALMON} members={card.outMembers} viewerId={viewerId} onSelect={onSelect} />}
+      </div>
     </div>
   );
 }
-function TakeCol({ title, tone, verdict, cards }: { title: string; tone: string; verdict: PickVerdict; cards: GuideCard[] }) {
+function ChipRow({ label, tone, members, viewerId, onSelect }: { label: string; tone: string; members: ConsensusMember[]; viewerId: string; onSelect: (id: string) => void }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 10.5, fontWeight: 800, color: tone, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+      {members.map((m) => {
+        const mine = m.id === viewerId;
+        return (
+          <button key={m.id} type="button" data-testid="split-member" onClick={() => onSelect(m.id)}
+            title="See their picks"
+            style={{
+              cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+              background: '#141922', border: `1px solid ${tone}55`, color: mine ? CYAN : '#dfe4ec',
+            }}>
+            {mine ? 'You' : m.name}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+// Individual pick list: piles, copies = stack depth (no number needed).
+function TakeCol({ title, tone, cards }: { title: string; tone: string; cards: GuideCard[] }) {
   return (
     <div style={{ flex: '1 1 300px', minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: tone, marginBottom: 8 }}>{title} · {cards.length}</div>
-      {cards.length === 0 ? <div style={{ fontSize: 12, color: '#6c7588' }}>—</div> : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>{cards.map((c, i) => <QuizCard key={`${c.cardId}-${i}`} card={ref(c)} width={52} noPreview mini verdict={verdict} />)}</div>
-      )}
+      {cards.length === 0
+        ? <div><div style={{ fontSize: 11, fontWeight: 800, color: tone, marginBottom: 8 }}>{title} · 0</div><div style={{ fontSize: 12, color: '#6c7588' }}>—</div></div>
+        : (
+          <PileGrid label={`${title} · ${sumQty(cards)}`} color={tone} w={58}>
+            {cards.map((c, i) => <CardPile key={`${c.cardId}-${i}`} id={c.cardId} count={qtyOf(c)} color={tone} w={58} title={`${qtyOf(c)}× ${c.cardId}`} />)}
+          </PileGrid>
+        )}
     </div>
   );
 }
 
+const stepBtn: React.CSSProperties = { border: 0, background: 'transparent', color: '#fff', fontSize: 15, fontWeight: 800, lineHeight: 1, width: 20, height: 20, cursor: 'pointer', padding: 0 };
+
 // One reserved swap row (Bring in / Take out) above the pool in the author form.
-function ReservedSection({ title, tone, cards, render, empty }: { title: string; tone: string; cards: PoolCard[]; render: (c: PoolCard, w: number) => React.ReactNode; empty: string }) {
+// `count` is the total COPIES (qty-summed), not the number of distinct cards.
+function ReservedSection({ title, tone, cards, count, render, empty }: { title: string; tone: string; cards: PoolCard[]; count: number; render: (c: PoolCard, w: number) => React.ReactNode; empty: string }) {
   return (
     <div>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: tone, marginBottom: 8 }}>{title} · {cards.length}</div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: tone, marginBottom: 8 }}>{title} · {count} card{count === 1 ? '' : 's'}</div>
       {cards.length === 0 ? <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>{empty}</div>
         : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>{cards.map((c) => render(c, 76))}</div>}
     </div>
@@ -292,7 +400,7 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
   const [oppBase, setOppBase] = useState(matchup?.oppBase ?? '');
   const [leaderArt, setLeaderArt] = useState<Art>({}); const [baseKinds, setBaseKinds] = useState<BaseKinds>({});
   const [notes, setNotes] = useState('');
-  const [marks, setMarks] = useState<Record<string, 'in' | 'out'>>({});
+  const [marks, setMarks] = useState<Record<string, { side: 'in' | 'out'; qty: number }>>({});
   const [extra, setExtra] = useState<PoolCard[]>([]);
   const [pool, setPool] = useState<{ totalLists: number; cards: PoolCard[] } | null>(null);
   const [poolLoading, setPoolLoading] = useState(false);
@@ -309,8 +417,8 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
         const my = gj.ok ? gj.data.myTake : null;
         if (my) {
           setNotes(my.notes ?? '');
-          const m: Record<string, 'in' | 'out'> = {};
-          for (const c of my.cardsIn) m[c.cardId] = 'in'; for (const c of my.cardsOut) m[c.cardId] = 'out';
+          const m: Record<string, { side: 'in' | 'out'; qty: number }> = {};
+          for (const c of my.cardsIn) m[c.cardId] = { side: 'in', qty: qtyOf(c) }; for (const c of my.cardsOut) m[c.cardId] = { side: 'out', qty: qtyOf(c) };
           setMarks(m);
           setExtra([...my.cardsIn, ...my.cardsOut].map((c: GuideCard) => ({ cardId: c.cardId, name: null, set: null, number: null, cost: null, type: null, count: 0, fraction: 0 })));
         }
@@ -329,29 +437,59 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
   useEffect(() => { void loadPool(ownLeader); }, [ownLeader, loadPool]);
 
   const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] => (arr ?? []).map((o) => ({ value: o.name, label: o.name, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
-  const baseOpts = (kinds: BaseKind[] | undefined): LeaderSelectOption[] => (kinds ?? []).map((k) => ({ value: k.key, label: k.label, art: k.art ? { set: k.art.set, number: k.art.number } : undefined, artIsLeader: false, iconAspect: k.iconAspect ?? undefined }));
+  const baseOpts = (kinds: BaseKind[] | undefined): LeaderSelectOption[] => (kinds ?? []).map((k) => ({ value: k.key, label: k.label, art: k.art ? { set: k.art.set, number: k.art.number } : undefined, artIsLeader: false, iconAspect: k.iconAspect ?? undefined, overlay: k.overlay ?? null }));
 
   const poolIds = useMemo(() => new Set((pool?.cards ?? []).map((c) => c.cardId)), [pool]);
   const allCards = useMemo(() => [...(pool?.cards ?? []), ...extra.filter((e) => !poolIds.has(e.cardId))], [pool, extra, poolIds]);
-  const cycle = (id: string) => setMarks((m) => { const cur = m[id]; const next = { ...m }; if (cur === undefined) next[id] = 'in'; else if (cur === 'in') next[id] = 'out'; else delete next[id]; return next; });
+  // Pool click cycles side (unmarked → in → out → off); qty starts at 1, preserved across side flips.
+  const cycle = (id: string) => setMarks((m) => { const cur = m[id]; const next = { ...m }; if (!cur) next[id] = { side: 'in', qty: 1 }; else if (cur.side === 'in') next[id] = { side: 'out', qty: cur.qty }; else delete next[id]; return next; });
+  // Qty stepper on a reserved card: below 1 drops it back to the pool; capped at 3.
+  const bumpQty = (id: string, delta: number) => setMarks((m) => { const cur = m[id]; if (!cur) return m; const q = cur.qty + delta; const next = { ...m }; if (q < 1) delete next[id]; else next[id] = { ...cur, qty: Math.min(MAX_QTY, q) }; return next; });
   const addCard = (c: SelectedCard | null) => {
     if (!c) return;
     if (!allCards.some((x) => x.cardId === c.cardId)) setExtra((e) => [...e, { cardId: c.cardId, name: c.name, set: null, number: null, cost: null, type: null, count: 0, fraction: 0 }]);
-    setMarks((m) => (m[c.cardId] ? m : { ...m, [c.cardId]: 'in' }));
+    setMarks((m) => (m[c.cardId] ? m : { ...m, [c.cardId]: { side: 'in', qty: 1 } }));
   };
 
-  const inCards = allCards.filter((c) => marks[c.cardId] === 'in');
-  const outCards = allCards.filter((c) => marks[c.cardId] === 'out');
+  const inCards = allCards.filter((c) => marks[c.cardId]?.side === 'in');
+  const outCards = allCards.filter((c) => marks[c.cardId]?.side === 'out');
   const poolCards = allCards.filter((c) => !marks[c.cardId]);
   const poolVisible = showAll ? poolCards : poolCards.slice(0, 48);
+  const withQty = (c: PoolCard): GuideCard => ({ cardId: c.cardId, qty: marks[c.cardId]?.qty ?? 1 });
+  const inQty = inCards.reduce((s, c) => s + (marks[c.cardId]?.qty ?? 1), 0);
+  const outQty = outCards.reduce((s, c) => s + (marks[c.cardId]?.qty ?? 1), 0);
+
+  // Pool card: click to cycle side. No qty control here (qty lives on the reserved card).
   const renderCard = (c: PoolCard, w: number) => {
     const mk = marks[c.cardId];
-    const verdict: PickVerdict | undefined = mk === 'in' ? 'match' : mk === 'out' ? 'theirs' : undefined;
+    const verdict: PickVerdict | undefined = mk?.side === 'in' ? 'match' : mk?.side === 'out' ? 'theirs' : undefined;
     return (
-      <button key={c.cardId} type="button" data-testid="guide-pool-card" onClick={() => cycle(c.cardId)} style={{ position: 'relative', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>
-        <QuizCard card={ref(c)} width={w} noPreview mini verdict={verdict} />
-        {c.count > 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 9, fontWeight: 800, color: '#cfe4ff', background: 'rgba(0,0,0,0.72)', borderRadius: 4, padding: '0 4px' }}>{Math.round(c.fraction * 100)}%</span>}
-      </button>
+      // A div (not a button) — QuizCard renders its own <button>, so wrapping it
+      // in one nests buttons (invalid HTML). QuizCard is `selectable` so its own
+      // button handles the click + stays keyboard-accessible.
+      <div key={c.cardId} data-testid="guide-pool-card" style={{ position: 'relative' }}>
+        <QuizCard card={ref(c)} width={w} noPreview mini verdict={verdict} selectable onClick={() => cycle(c.cardId)} />
+        {c.count > 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 9, fontWeight: 800, color: '#cfe4ff', background: 'rgba(0,0,0,0.72)', borderRadius: 4, padding: '0 4px', pointerEvents: 'none' }}>{Math.round(c.fraction * 100)}%</span>}
+      </div>
+    );
+  };
+  // Reserved (In/Out) card: a PILE (copies = stack) with a legible −N+ stepper
+  // below. Click the pile to switch side / remove; the stepper sets copies.
+  const renderReservedCard = (c: PoolCard, w: number) => {
+    const mk = marks[c.cardId];
+    const tone = mk?.side === 'out' ? SALMON : GREEN;
+    const q = mk?.qty ?? 1;
+    return (
+      <div key={c.cardId} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+        <button type="button" data-testid="guide-reserved-card" onClick={() => cycle(c.cardId)} title="Click to switch In ↔ Out, again to remove" style={{ display: 'block', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>
+          <CardPile id={c.cardId} count={q} color={tone} w={w} name={c.name} />
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(3,6,11,0.9)', border: `1px solid ${tone}66`, borderRadius: 8 }}>
+          <button type="button" aria-label="one fewer" onClick={() => bumpQty(c.cardId, -1)} style={stepBtn}>−</button>
+          <span style={{ fontSize: 13, fontWeight: 900, color: '#fff', minWidth: 26, textAlign: 'center' }}>{q}×</span>
+          <button type="button" aria-label="one more" disabled={q >= MAX_QTY} onClick={() => bumpQty(c.cardId, 1)} style={{ ...stepBtn, opacity: q >= MAX_QTY ? 0.35 : 1 }}>+</button>
+        </div>
+      </div>
     );
   };
 
@@ -361,7 +499,7 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
     setSaving(true);
     const m: Matchup = { ownLeader, ownBase, oppLeader, oppBase };
     try {
-      const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...m, notes, cardsIn: inCards.map((c) => ({ cardId: c.cardId })), cardsOut: outCards.map((c) => ({ cardId: c.cardId })) }) })).json();
+      const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...m, notes, cardsIn: inCards.map(withQty), cardsOut: outCards.map(withQty) }) })).json();
       if (!j.ok) { setError(j.error || 'save failed'); return; }
       onSaved(m);
     } catch { setError('save failed'); } finally { setSaving(false); }
@@ -371,7 +509,7 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900, margin: '0 auto', width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button type="button" onClick={onDone} style={backBtn}>← Back</button>
-        <span style={{ fontSize: 15, fontWeight: 800, color: '#e6ebf2' }}>{locked ? 'Your take' : 'New take'}</span>
+        <span style={{ fontSize: 15, fontWeight: 800, color: '#e6ebf2' }}>{locked ? 'Your picks' : 'New picks'}</span>
       </div>
       {error && <ErrorNote>{error}</ErrorNote>}
 
@@ -396,8 +534,11 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
 
       {/* Reserved IN / OUT */}
       <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <ReservedSection title="Bring in" tone={GREEN} cards={inCards} render={renderCard} empty="Click cards in the pool below to bring them in." />
-        <ReservedSection title="Take out" tone={SALMON} cards={outCards} render={renderCard} empty="Click a card again to move it here (cards you're cutting)." />
+        <ReservedSection title="Bring in" tone={GREEN} cards={inCards} count={inQty} render={renderReservedCard} empty="Click cards in the pool below to bring them in." />
+        <ReservedSection title="Take out" tone={SALMON} cards={outCards} count={outQty} render={renderReservedCard} empty="Click a card again to move it here (cards you're cutting)." />
+        {inQty > 0 && outQty > 0 && inQty !== outQty && (
+          <div style={{ fontSize: 12, color: '#d9a441' }}>Heads up: {inQty} in vs {outQty} out — a sideboard swap usually brings in and takes out the same number of cards.</div>
+        )}
         <div style={{ maxWidth: 340 }}><CardSearch value={null} onChange={addCard} testId="guide-card-search" /></div>
       </div>
 
@@ -422,7 +563,7 @@ function TakeForm({ teamSlug, matchup, onDone, onSaved }: { teamSlug: string; ma
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <button type="button" onClick={onDone} style={backBtn}>Cancel</button>
-        <GradientBorderButton testId="guide-save" onClick={save} disabled={!canSave || saving} style={{ padding: '0.55rem 1.4rem' }}>{saving ? 'Saving…' : 'Save my take'}</GradientBorderButton>
+        <GradientBorderButton testId="guide-save" onClick={save} disabled={!canSave || saving} style={{ padding: '0.55rem 1.4rem' }}>{saving ? 'Saving…' : 'Save my picks'}</GradientBorderButton>
       </div>
     </div>
   );

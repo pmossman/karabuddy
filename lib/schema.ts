@@ -600,6 +600,12 @@ export const cards = pgTable('cards', {
   // hash = functionally the same base (force pairs, reprints) — the input to
   // lib/baseIdentity's grouping. Null for vanilla bases / non-bases.
   baseAbilityHash: text('base_ability_hash'),
+  // The base's functional TYPE, derived from its ability text at sync
+  // (lib/cards.classifyBaseSubtype): 'force' (creates a Force token) or 'splash'
+  // (ignore an aspect penalty) — the two community-recognized shared base kinds,
+  // rendered as aspect icon + force/splash glyph. Null for vanilla / unique /
+  // non-base cards. Consumed by lib/baseIdentity.
+  baseSubtype: text('base_subtype'), // 'force' | 'splash' | null
   source: text('source').notNull().default('observed'), // 'seed' | 'observed'
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -958,7 +964,7 @@ export type SideboardResponse = typeof sideboardResponses.$inferSelect;
 // team member has ONE "take" (their good-IN / bad-OUT cards + notes), and the
 // matchup view aggregates them into a consensus + shows divergence. Not tied to
 // a decklist; applied to one on demand.
-type GuideCard = { cardId: string; note?: string | null };
+type GuideCard = { cardId: string; qty?: number; note?: string | null };
 export const sideboardTakes = pgTable(
   'sideboard_takes',
   {

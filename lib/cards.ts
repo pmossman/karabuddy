@@ -32,6 +32,7 @@ export interface CatalogRow {
   traits: string[] | null;
   hasAbility: boolean | null;
   baseAbilityHash: string | null;
+  baseSubtype: 'force' | 'splash' | null;
   source: string;
 }
 
@@ -58,6 +59,18 @@ export function cardIdFromSetNumber(set: string, number: string | number): strin
   return `${set}_${num}`;
 }
 
+// Classify a base's functional TYPE from its printed ability text. The two
+// shared/community-recognized base kinds: FORCE bases ("...create your Force
+// token") and SPLASH bases ("...ignoring 1 of its ... aspect penalties"). Any
+// other ability (Colossus etc.) is a distinct unique base → null.
+export function classifyBaseSubtype(ability: string | null | undefined): 'force' | 'splash' | null {
+  const t = (ability ?? '').toLowerCase();
+  if (!t) return null;
+  if (t.includes('force token') || (t.includes('force unit') && t.includes('force'))) return 'force';
+  if (t.includes('aspect penalt')) return 'splash'; // "ignoring ... aspect penalties"
+  return null;
+}
+
 export function swuCardToRow(c: SwuCard): CatalogRow {
   const costN = c.Cost == null || c.Cost === '' ? NaN : Number(c.Cost);
   const numInt = Number.parseInt(String(c.Number), 10);
@@ -80,6 +93,7 @@ export function swuCardToRow(c: SwuCard): CatalogRow {
     traits: Array.isArray(c.Traits) ? c.Traits : null,
     hasAbility: type === 'base' ? ability.length > 0 : null,
     baseAbilityHash: type === 'base' ? baseAbilityHash(ability) : null,
+    baseSubtype: type === 'base' ? classifyBaseSubtype(ability) : null,
     source: 'seed',
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { swuCardToRow, cardIdFromSetNumber, baseAbilityHash } from './cards';
+import { swuCardToRow, cardIdFromSetNumber, baseAbilityHash, classifyBaseSubtype } from './cards';
 
 describe('cardIdFromSetNumber', () => {
   it('zero-pads numeric numbers to 3 (matching the gamestate-derived id)', () => {
@@ -18,7 +18,7 @@ describe('swuCardToRow', () => {
     const r = swuCardToRow({ Set: 'SOR', Number: '005', Name: 'Luke Skywalker', Subtitle: 'Jedi Knight', Cost: '7', Type: 'Unit', Aspects: ['Vigilance'], Arenas: ['Ground'], Traits: ['Force', 'Rebel'] });
     expect(r).toEqual({
       cardId: 'SOR_005', name: 'Luke Skywalker', subtitle: 'Jedi Knight', set: 'SOR', number: 5,
-      aspects: ['vigilance'], cost: 7, type: 'unit', arena: 'ground', traits: ['Force', 'Rebel'], hasAbility: null, baseAbilityHash: null, source: 'seed',
+      aspects: ['vigilance'], cost: 7, type: 'unit', arena: 'ground', traits: ['Force', 'Rebel'], hasAbility: null, baseAbilityHash: null, baseSubtype: null, source: 'seed',
     });
   });
   it('subtitle is null when the card has none', () => {
@@ -33,6 +33,14 @@ describe('swuCardToRow', () => {
     expect(swuCardToRow({ Set: 'LAW', Number: '023', Type: 'Base', Aspects: ['Command'], Text: 'Epic Action: Play a card from your hand, ignoring 1 of its Vigilance…' }).hasAbility).toBe(true);
     // Non-base → null (never imply a unit "has no ability").
     expect(swuCardToRow({ Set: 'SOR', Number: '100', Type: 'Unit', FrontText: 'When Played: draw a card.' }).hasAbility).toBeNull();
+  });
+  it('classifies base subtype: force / splash / null (+ carried into swuCardToRow)', () => {
+    expect(classifyBaseSubtype('When a friendly Force unit attacks: The Force is with you (create your Force token).')).toBe('force');
+    expect(classifyBaseSubtype('Epic Action: Play a card from your hand, ignoring 1 of its Vigilance, Command, Aggression, or Cunning aspect penalties.')).toBe('splash');
+    expect(classifyBaseSubtype('Epic Action: Deal 3 damage to a damaged non-leader unit.')).toBeNull(); // unique
+    expect(classifyBaseSubtype('')).toBeNull();
+    expect(swuCardToRow({ Set: 'LOF', Number: '026', Type: 'Base', Aspects: ['Aggression'], FrontText: 'When a friendly Force unit attacks: create your Force token.' }).baseSubtype).toBe('force');
+    expect(swuCardToRow({ Set: 'SOR', Number: '005', Type: 'Unit', FrontText: 'create your Force token.' }).baseSubtype).toBeNull(); // non-base
   });
   it('handles a free event (cost 0) vs a missing/blank cost (null)', () => {
     expect(swuCardToRow({ Set: 'SHD', Number: '012', Cost: '0', Type: 'Event' }).cost).toBe(0);

@@ -21,6 +21,8 @@ export interface LeaderSelectOption {
   // Aspect icon instead of card art — for base-identity GROUPS (vanilla /
   // force-pair bases, lib/baseIdentity), where no single card IS the option.
   iconAspect?: string | null;
+  // Force/splash base: renders the aspect icon + this glyph (lib/baseIdentity).
+  overlay?: 'force' | 'splash' | null;
 }
 
 const ANY = '__all__';
@@ -106,7 +108,7 @@ export function LeaderSelect({
     if (o?.iconAspect) {
       return (
         <span style={{ width: 40, height: 29, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <AspectIcon aspect={o.iconAspect} size={22} />
+          <AspectIcon aspect={o.iconAspect} size={20} overlay={o.overlay ?? null} />
         </span>
       );
     }

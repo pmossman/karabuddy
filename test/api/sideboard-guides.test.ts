@@ -75,7 +75,7 @@ describe('sideboard guides (matchup takes)', () => {
     expect(view.takes).toHaveLength(2); // one per member
     expect(view.consensus.total).toBe(2);
     // ASH_010 is in BOTH takes' IN -> 2/2 consensus, first
-    expect(view.consensus.inCards[0]).toEqual({ cardId: 'ASH_010', count: 2 });
+    expect(view.consensus.inCards[0]).toEqual({ cardId: 'ASH_010', count: 2, qty: 1 });
     expect(view.consensus.inCards.find((c: any) => c.cardId === 'ASH_099').count).toBe(1);
     expect(view.myTake.cardsIn.map((c: any) => c.cardId)).toEqual(['ASH_010', 'ASH_099']); // b's own
 
@@ -89,6 +89,19 @@ describe('sideboard guides (matchup takes)', () => {
     as(a);
     await matchupDel(new Request(`http://t?${new URLSearchParams(MU)}`, { method: 'DELETE' }), p(team));
     expect((await getMatchup(team)).data.takes).toHaveLength(1);
+  });
+
+  it('persists per-card quantities (clamped 1..3) and surfaces them in the take + consensus', async () => {
+    const a = await seedUser();
+    const team = await seedTeam(a, [a]);
+    as(a);
+    await matchupPut(putReq({ ...MU, notes: '+2/-2 swap', cardsIn: [{ cardId: 'ASH_010', qty: 2 }, { cardId: 'ASH_020', qty: 9 }], cardsOut: [{ cardId: 'ASH_030', qty: 2 }] }), p(team));
+    const view = (await getMatchup(team)).data;
+    const inById = Object.fromEntries(view.myTake.cardsIn.map((c: any) => [c.cardId, c.qty]));
+    expect(inById.ASH_010).toBe(2);
+    expect(inById.ASH_020).toBe(3); // clamped from 9 to the 3-copy max
+    expect(view.myTake.cardsOut[0].qty).toBe(2);
+    expect(view.consensus.inCards.find((c: any) => c.cardId === 'ASH_010')).toEqual({ cardId: 'ASH_010', count: 1, qty: 2 });
   });
 
   it('matchup comments: any member posts; poster-only delete; non-member refused', async () => {
