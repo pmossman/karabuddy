@@ -25,11 +25,44 @@ swuforge's model. Two things resolve it:
   blobs." The user sees value before they see plumbing.
 - **Additive & reversible in tone.** Every screen reassures "nothing in karabuddy
   changes." Migration is a copy, consent-gated, own-data-only.
-- **karabuddy's cockpit skin, forge-ember for the destination.** The tool lives in
-  karabuddy so it wears karabuddy's neon-dark system; a single ember accent
-  (`#ff7a3d`) marks everything that IS swuforge (folder, "Open in Forge", the
-  migrate CTA), so the two apps read as two worlds.
+- **The aesthetic transitions as you migrate.** Not one flat blend — the visual
+  world shifts step by step from karabuddy toward a merged karabuddy×SWU-Forge
+  look, so moving through the wizard *feels* like crossing over (Parker's steer).
+  See "Visual approach" below.
+- **Keep what SWU Forge users recognize.** It's a karabuddy *skin for* SWU Forge,
+  not a replacement of it — so their familiar elements stay (see below).
+- **Plain copy, no marketing voice.** Specific and understated. Avoid the AI tells
+  (breathless hero copy, "here's your…", "the magic", em-dash bullet triads,
+  emoji-as-markers). Say what a control does; state facts.
 - **Summary before detail.** Stat strips up top; expandable detail below.
+
+## Visual approach — the progressive karabuddy → SWU Forge shift
+
+SWU Forge's own look (verified at swuforge.com): a **warm purple-charcoal** dark
+ground, a **brushed-steel wordmark** inside a **molten-orange + blue fire vortex**,
+a **targeting-reticle** logo mark, and a signature **orange→blue gradient border**
+on inputs/buttons. It already uses **blue**, so karabuddy's azure/cyan rhymes with
+it. Decks are shown as a **leader + base card pair** with a blue **PREMIER** format
+badge, a "Leader · 30HP Aspect" subtitle, and an author avatar.
+
+The prototype interpolates six phases (one per step) via `data-phase` on `.app`,
+each redefining a handful of tokens:
+- **Ground** cold blue-black `#0a0c10` → warm purple-charcoal `#110c18`.
+- **The gradient** (`--grad`, on the primary CTA / seal / folder badge) warms from
+  azure→cyan (pure karabuddy) to orange→blue (SWU Forge) — the border literally
+  heats up each step.
+- **Accent** (eyebrow, headline stat) cyan → ember. **`--dest-op`** ramps the SWU
+  Forge wordmark + reticle from faint (0.45) to full (1) — the brand "arrives."
+- The **background ember glow** fades in; the **cyan LED** stays constant as
+  karabuddy's through-line so both identities coexist at the end.
+
+Kept-from-SWU-Forge elements: the leader+base deck pair, PREMIER badge, the
+"Leader · 30HP Aspect" line, the reticle mark, steel wordmark, gradient borders.
+Kept-from-karabuddy: the LED step-rail, mono readouts, the cockpit structure.
+
+_Build note: `.led` is the rail's LED-dot class — don't reuse it as a state
+modifier elsewhere (a `class="s led"` stats cell inherited its circular dark
+background). Renamed to `.s.live`._
 
 ## The flow (6 steps)
 

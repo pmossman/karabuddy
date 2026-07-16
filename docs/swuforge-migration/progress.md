@@ -3,6 +3,20 @@
 Append a dated entry each work session (newest at top). Keep it a log of what
 happened + what's next, not a design doc (that's `ux-design.md`).
 
+## 2026-07-15 (later) — prototype v2: progressive blend + plainer copy
+
+- Viewed swuforge.com directly (warm purple-charcoal ground, steel wordmark +
+  orange/blue fire vortex, reticle mark, orange→blue gradient borders; decks shown
+  as leader+base card pairs with a PREMIER badge + "Leader · 30HP Aspect").
+- Reworked the prototype per Parker: (1) rewrote copy to drop AI tells; (2) the
+  aesthetic now **transitions per step** (`data-phase` 0→5) from karabuddy-cold to
+  a merged karabuddy×Forge look — ground warms, the gradient heats azure→cyan to
+  orange→blue, accent cyan→ember, the Forge wordmark/reticle fade in; cyan LED
+  stays as karabuddy's through-line. Kept Forge's familiar deck-pair/badge/reticle.
+- Verified in-browser (chrome-devtools) across phases; fixed a class-collision bug
+  (`.s.led` inherited the rail LED-dot's circular bg → renamed `.s.live`).
+- Artifact updated in place (same URL, v2-progressive-blend).
+
 ## 2026-07-15 — migration tool: design + interactive prototype
 
 - Read Andy's "first-class replays" plan; captured its implications in `context.md`
