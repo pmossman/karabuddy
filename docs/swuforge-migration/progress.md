@@ -3,6 +3,22 @@
 Append a dated entry each work session (newest at top). Keep it a log of what
 happened + what's next, not a design doc (that's `ux-design.md`).
 
+## 2026-07-15 (later 3) — rebuilt on karabuddy's design system (React)
+
+- Per Parker: the demo must use karabuddy's real components, not a bespoke embed.
+  Rebuilt `/migrate-demo` as a **React client component** (`app/migrate-demo/
+  page.tsx`) on the actual design system — `Panel`, `LedToggle`, `Segmented`,
+  `LeaderBasePair` (real card art), `TacticalHeading`, `glow`/`ghost` buttons,
+  `tokens`, `KaraBuddyThemeProvider`. Deleted the iframe/`public/` embed.
+- Left progress rail is now **jump-clickable** (Parker's ask) — any section.
+- Kept the progressive karabuddy→Forge accent shift as a light layer over the
+  constant karabuddy components (accent cyan→ember per step, Forge branding
+  fades in). Real card art via `/card-art/...` — fixed IDs to base-set printings
+  that are synced locally (Vader JTL_006, SOR/ASH/SHD/JTL bases); dropped a
+  duplicate version chip.
+- Typecheck clean; verified in-browser (Start/Connect/Decks/Confirm). The HTML
+  prototype stays as the design reference + Artifact.
+
 ## 2026-07-15 (later 2) — deployable in-app demo route
 
 - Made the prototype a real, deployable karabuddy route: **`/migrate-demo`**

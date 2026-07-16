@@ -1,42 +1,40 @@
-# Migration prototype — files & how it's deployed
+# Migration demo — files
 
-Interactive click-through demo of the karabuddy → SWU Forge team migration
-(faked data, no backend). Aesthetic transitions from karabuddy to a merged
-SWU Forge look as you advance the wizard.
+Deployable in-app demo of the karabuddy → SWU Forge team migration (faked data,
+no backend — for gathering UX feedback, not a real feature).
 
-## Two copies (keep in sync)
+## The deployable demo (canonical)
 
-- **`migration-tool.html`** (this folder) — the **source**. An Artifact-style
-  fragment (`<title>` + `<style>` + markup + `<script>`, no `<html>`/`<head>`).
-  Edit here. Also published as an Artifact.
-- **`public/demos/swuforge-migration.html`** (repo root) — the **deployed copy**,
-  a full standalone HTML document. Served statically and embedded full-screen by
-  the route `app/migrate-demo/page.tsx` at **`/migrate-demo`**.
+**`app/migrate-demo/page.tsx`** → route **`/migrate-demo`**. A React client
+component built on **karabuddy's real design system**: `Panel`, `LedToggle`,
+`Segmented`, `LeaderBasePair` (real leader/base card art), `TacticalHeading`,
+`glowButtonStyle`/`btnGhost`, and `tokens` — wrapped in `KaraBuddyThemeProvider`.
+It lives OUTSIDE the `(app)` group so it renders full-screen without the sidebar
+app shell (the wizard has its own chrome). `noindex`, public.
 
-The route lives OUTSIDE the `(app)` group so it doesn't get the sidebar app shell
-(the wizard has its own chrome). It's `noindex`, public, faked — a demo to gather
-feedback, not a real feature.
+- The **left progress rail is jump-clickable** — hop to any section.
+- The aesthetic shifts per step from karabuddy (cyan/cold) toward a merged
+  karabuddy×Forge look (ember/warm): the karabuddy components stay constant as
+  the through-line while the Forge branding + a phase accent fade in. The one
+  non-token colour is the `FORGE` ember (partner brand), noted in the file.
+- Real card art resolves from karabuddy's own `/card-art/...`. Demo deck IDs must
+  be printings whose art is synced locally (base-set numbers, not hyperspace
+  variants) — verified: Cad Bane ASH_011, Wedge JTL_008, Vader JTL_006, Ezra
+  ASH_013, Obi-Wan TWI_003; bases SOR_021/SOR_020/ASH_023/SHD_023/JTL_030.
 
-## Regenerate the deployed copy after editing the source
+Typecheck-clean (the deploy pipeline runs `typecheck`). Verified in-browser across
+steps.
 
-```sh
-node -e '
-const fs=require("fs");
-const src=fs.readFileSync("docs/swuforge-migration/prototype/migration-tool.html","utf8");
-const i=src.indexOf("<div class=\"app\">");
-const doc=`<!doctype html>\n<html lang="en" style="background:#0a0c10">\n<head>\n`
- +`<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n`
- +`<meta name="robots" content="noindex">\n`+src.slice(0,i).trim()+`\n</head>\n<body>\n`
- +src.slice(i).trim()+`\n</body>\n</html>`;
-fs.mkdirSync("public/demos",{recursive:true});
-fs.writeFileSync("public/demos/swuforge-migration.html",doc);
-console.log("regenerated public/demos/swuforge-migration.html");
-'
-```
+## The original standalone prototype (design reference)
+
+**`migration-tool.html`** (this folder) — the earlier self-contained HTML
+prototype (bespoke CSS, not the design system). Kept as the design-exploration
+reference and still published as an Artifact. The React page above superseded it
+as the thing to deploy; edits should now go to `app/migrate-demo/page.tsx`.
 
 ## Turning this into a real feature (future)
 
-For a shipped feature this would be ported to a React/TSX page under `(app)`
-(idiomatic, wired to real derivation + Andy's ingest). The embed is deliberate for
-the demo phase — it keeps the deployed page byte-identical to the reviewed
-prototype with zero port risk. See `../ux-design.md`.
+Move it under `(app)` (or keep the standalone route), wire it to the real
+team-scoped deck derivation (`lib/sideboardGuides` + `prototype-user-deck-export`),
+the replay converter (`prototype-replay-to-swuforge`), and Andy's ingest. See
+`../ux-design.md` and `../open-questions.md`.
