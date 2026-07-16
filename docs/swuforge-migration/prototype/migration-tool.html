@@ -1,0 +1,771 @@
+<title>Migrate to SWU Forge — karabuddy prototype</title>
+<style>
+  /* ---- Blended tokens: karabuddy cockpit × SWU Forge (warm-dark + ember + steel,
+         unified by the orange→blue gradient; karabuddy's cyan LED kept for "live"). ---- */
+  :root {
+    --bg-deep:#100c16; --bg:#15111d; --surface:#1b1626; --raised:#221c30;
+    --border:#322a40; --border-strong:#443a55;
+    --blue:#5b86e0; --blue-hi:#7ba0f0; --blue-soft:rgba(91,134,224,.15);
+    --led:#4dd2ff; --led-soft:rgba(77,210,255,.10);
+    --forge:#ef8a3c; --forge-2:#ffb066; --forge-soft:rgba(239,138,60,.14);
+    --grad:linear-gradient(100deg,#ef8a3c 0%,#c069a0 48%,#5b86e0 100%);
+    --grad-glow:0 0 16px rgba(239,138,60,.22), 0 0 22px rgba(91,134,224,.18);
+    /* phase-driven: interpolate karabuddy(0) → merged swuforge(5). Overridden per step. */
+    --accent:#ef8a3c; --warm-a:.10; --cool-a:.09; --dest-op:1;
+    --steel-a:#dfe2e8; --steel-b:#8b909c;
+    --success:#6bd968; --warn:#e0c64a; --danger:#ff6b6b;
+    --text:#ece9f2; --text-2:#a29db3; --text-3:#726c85; --text-4:#4a4658;
+    --asp-vigilance:#4a86c5; --asp-command:#4f9d5f; --asp-aggression:#cf4b45;
+    --asp-cunning:#d9b73e; --asp-heroism:#cfc7b2; --asp-villainy:#3a3346;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;
+    --r-sm:5px; --r-md:8px; --r-lg:12px;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased; background:var(--bg-deep); }
+  .app { height:100vh; display:flex; flex-direction:column; overflow:hidden; transition:background .5s ease;
+    background:
+      radial-gradient(1000px 560px at 84% -6%, rgba(239,138,60,var(--warm-a)), transparent 58%),
+      radial-gradient(1000px 680px at -6% 112%, rgba(91,134,224,var(--cool-a)), transparent 55%),
+      var(--bg-deep); }
+  .gradborder { background:linear-gradient(var(--surface),var(--surface)) padding-box, var(--grad) border-box;
+    border:1px solid transparent; }
+
+  /* ---- The progressive shift: each step warms from karabuddy toward the merged look ---- */
+  .app[data-phase="0"]{ --bg-deep:#0a0c10; --bg:#0f1117; --surface:#141821; --raised:#1a1f29; --border:#242832; --border-strong:#343a46;
+    --grad:linear-gradient(100deg,#4d9dff,#4dd2ff); --accent:#4dd2ff; --warm-a:0; --cool-a:.11; --dest-op:.45; }
+  .app[data-phase="1"]{ --bg-deep:#0c0b13; --bg:#11101a; --surface:#171724; --raised:#1d1c2b; --border:#2a2839; --border-strong:#3a374a;
+    --grad:linear-gradient(100deg,#6b8fe4,#5b86e0); --accent:#6ba0e6; --warm-a:.025; --cool-a:.10; --dest-op:.62; }
+  .app[data-phase="2"]{ --bg-deep:#0e0c15; --bg:#13111c; --surface:#191825; --raised:#201d2e; --border:#2e2a3d; --border-strong:#40384f;
+    --grad:linear-gradient(100deg,#a978b0,#5b86e0); --accent:#9d83c9; --warm-a:.05; --cool-a:.10; --dest-op:.76; }
+  .app[data-phase="3"]{ --bg-deep:#0f0c16; --bg:#14111d; --surface:#1a1726; --raised:#221c30; --border:#302a40; --border-strong:#443a53;
+    --grad:linear-gradient(100deg,#e2895f,#6a7fd2); --accent:#d18a67; --warm-a:.07; --cool-a:.09; --dest-op:.86; }
+  .app[data-phase="4"]{ --bg-deep:#100c16; --bg:#15111d; --surface:#1b1626; --raised:#221c30; --border:#322a40; --border-strong:#443a55;
+    --grad:linear-gradient(100deg,#ef8a3c,#5b86e0); --accent:#ec8a3f; --warm-a:.09; --cool-a:.09; --dest-op:.95; }
+  .app[data-phase="5"]{ --bg-deep:#110c18; --bg:#16111f; --surface:#1c1627; --raised:#231d32; --border:#342a42; --border-strong:#463a57;
+    --grad:linear-gradient(100deg,#ef8a3c 0%,#c069a0 48%,#5b86e0 100%); --accent:#ef8a3c; --warm-a:.11; --cool-a:.08; --dest-op:1; }
+
+  /* ---- Top bar ---- */
+  .topbar { display:flex; align-items:center; gap:13px; padding:0 20px; height:56px;
+    border-bottom:1px solid var(--border); background:rgba(16,12,22,.7); flex:0 0 auto; }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .brand .kb { font-weight:700; letter-spacing:.2px; color:var(--text); }
+  .brand .kb b { color:var(--led); font-weight:700; }
+  .brand .arrow { color:var(--text-4); }
+  .wordmark { font-weight:800; letter-spacing:1.2px; font-size:15px; text-transform:uppercase;
+    background:linear-gradient(180deg,var(--steel-a) 12%, var(--steel-b) 92%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 1px 0 rgba(255,255,255,.06); opacity:var(--dest-op); transition:opacity .5s ease; }
+  .reticle { flex:0 0 auto; opacity:var(--dest-op); transition:opacity .5s ease; }
+  .topbar .title { margin-left:4px; color:var(--text-2); font-size:13px; }
+  .topbar .spacer { flex:1; }
+  .topbar .close { color:var(--text-3); font-size:20px; line-height:1; cursor:pointer;
+    background:none; border:none; padding:4px 8px; border-radius:var(--r-sm); }
+  .topbar .close:hover { color:var(--text); background:var(--surface); }
+  .badge-proto { font-family:var(--mono); font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--text-3); border:1px solid var(--border-strong); border-radius:var(--r-sm); padding:2px 7px; }
+
+  /* ---- Body: rail + panel ---- */
+  .body { flex:1; display:flex; min-height:0; }
+  .rail { flex:0 0 238px; border-right:1px solid var(--border); padding:22px 16px;
+    background:linear-gradient(180deg, rgba(34,28,48,.4), rgba(21,17,29,.15)); overflow-y:auto; }
+  .rail h4 { font-family:var(--mono); font-size:10px; letter-spacing:2px; text-transform:uppercase;
+    color:var(--text-3); margin:0 0 14px 10px; }
+  .step { display:flex; align-items:center; gap:12px; padding:9px 10px; border-radius:var(--r-md);
+    cursor:pointer; color:var(--text-2); }
+  .step + .step { margin-top:2px; }
+  .step:hover { background:rgba(255,255,255,.02); }
+  .step.active { background:var(--blue-soft); color:var(--text); }
+  .led { width:11px; height:11px; border-radius:50%; flex:0 0 auto; border:1px solid var(--border-strong);
+    background:var(--bg-deep); }
+  .step.active .led { border-color:var(--led); background:var(--led);
+    box-shadow:0 0 7px rgba(77,210,255,.75), inset 0 0 3px rgba(255,255,255,.5); }
+  .step.done .led { border-color:var(--success); background:var(--success); box-shadow:0 0 6px rgba(107,217,104,.5); }
+  .step .n { font-family:var(--mono); font-size:11px; color:var(--text-3); width:14px; }
+  .step.active .n { color:var(--led); }
+  .step .lbl { font-size:13px; font-weight:500; }
+  .rail-foot { margin-top:20px; padding:12px 8px 4px; border-top:1px solid var(--border); }
+  .rail-foot .team { display:flex; align-items:center; gap:9px; }
+  .rail-foot .team .badge { width:28px; height:28px; border-radius:7px; display:grid; place-items:center;
+    font-family:var(--mono); font-weight:700; color:var(--forge-2); font-size:12px; }
+  .rail-foot .team .meta small { color:var(--text-3); font-family:var(--mono); font-size:11px; }
+  .rail-foot .team .meta div { font-weight:600; font-size:13px; }
+
+  /* ---- Panel ---- */
+  .panel { flex:1; overflow-y:auto; padding:34px 40px 30px; }
+  .panel-inner { max-width:880px; margin:0 auto; }
+  .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:2.5px; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px; }
+  h1 { font-size:29px; line-height:1.16; margin:0 0 12px; letter-spacing:-.4px; text-wrap:balance; font-weight:700; }
+  h2 { font-size:19px; margin:0 0 4px; font-weight:650; letter-spacing:-.2px; }
+  .lede { color:var(--text-2); font-size:15px; max-width:64ch; margin:0 0 26px; }
+  .muted { color:var(--text-3); }
+
+  /* ---- Footer ---- */
+  .footer { flex:0 0 auto; border-top:1px solid var(--border); padding:14px 24px;
+    display:flex; align-items:center; gap:14px; background:rgba(16,12,22,.6); }
+  .footer .hint { color:var(--text-3); font-size:13px; font-family:var(--mono); }
+  .footer .spacer { flex:1; }
+
+  /* ---- Buttons ---- */
+  .btn { font-family:var(--sans); font-size:14px; font-weight:600; border-radius:var(--r-md);
+    padding:10px 18px; cursor:pointer; border:1px solid var(--border-strong); background:var(--surface);
+    color:var(--text); display:inline-flex; align-items:center; gap:8px; transition:.14s; }
+  .btn:hover { border-color:var(--text-3); background:var(--raised); }
+  .btn.ghost { background:transparent; border-color:transparent; color:var(--text-2); }
+  .btn.ghost:hover { color:var(--text); background:var(--surface); }
+  /* primary = the blend: gradient border + soft glow */
+  .btn.primary { background:linear-gradient(var(--raised),var(--raised)) padding-box, var(--grad) border-box;
+    border:1px solid transparent; color:#f4eefb; box-shadow:var(--grad-glow); }
+  .btn.primary:hover { box-shadow:0 0 22px rgba(239,138,60,.3), 0 0 26px rgba(91,134,224,.28); }
+  .btn:disabled { opacity:.4; cursor:not-allowed; box-shadow:none; }
+  .btn.sm { padding:6px 12px; font-size:13px; }
+
+  /* ---- Chips / cards ---- */
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px 20px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .chip { font-family:var(--mono); font-size:11px; letter-spacing:.4px; padding:3px 8px; border-radius:999px;
+    border:1px solid var(--border-strong); color:var(--text-2); background:var(--bg-deep); white-space:nowrap; }
+  .chip.forge { color:var(--forge-2); border-color:rgba(239,138,60,.4); background:var(--forge-soft); }
+  .chip.blue { color:var(--blue-hi); border-color:rgba(91,134,224,.4); background:var(--blue-soft); }
+  .chip.good { color:var(--success); border-color:rgba(107,217,104,.4); }
+  .chip.warn { color:var(--warn); border-color:rgba(224,198,74,.4); }
+  .num { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  /* format badge, echoing SWU Forge's PREMIER pill */
+  .fmt { font-family:var(--mono); font-size:9px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    color:#cfe0ff; background:rgba(91,134,224,.9); border-radius:3px; padding:1px 5px; }
+
+  .val { display:flex; gap:14px; align-items:flex-start; padding:16px; border:1px solid var(--border);
+    border-radius:var(--r-md); background:var(--surface); }
+  .val .ic { flex:0 0 auto; width:34px; height:34px; border-radius:8px; display:grid; place-items:center;
+    background:rgba(255,255,255,.035); border:1px solid var(--border-strong); color:var(--accent); font-size:16px; font-family:var(--mono); }
+  .val h3 { margin:0 0 3px; font-size:14px; }
+  .val p { margin:0; color:var(--text-2); font-size:13px; }
+
+  .stats { display:flex; border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden;
+    background:var(--surface); margin-bottom:22px; }
+  .stats .s { flex:1; padding:14px 16px; border-right:1px solid var(--border); }
+  .stats .s:last-child { border-right:none; }
+  .stats .s .v { font-family:var(--mono); font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .stats .s .k { font-family:var(--mono); font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-3); margin-top:2px; }
+  .stats .s.fg .v { color:var(--accent); }
+  .stats .s.live .v { color:var(--led); }
+
+  .tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--border); }
+  .tab { padding:9px 14px; cursor:pointer; color:var(--text-3); font-weight:600; font-size:13px;
+    border-bottom:2px solid transparent; margin-bottom:-1px; display:flex; align-items:center; gap:7px; }
+  .tab:hover { color:var(--text-2); }
+  .tab.active { color:var(--text); border-bottom-color:var(--forge); }
+  .tab .ct { font-family:var(--mono); font-size:11px; color:var(--text-3); background:var(--bg-deep);
+    border:1px solid var(--border); border-radius:999px; padding:0 7px; }
+  .tab.active .ct { color:var(--forge); border-color:rgba(239,138,60,.4); }
+
+  /* ---- Deck row (leader+base pair, SWU Forge anatomy) ---- */
+  .deck { border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface);
+    margin-bottom:10px; overflow:hidden; transition:border-color .15s; }
+  .deck.on { border-color:rgba(239,138,60,.26); }
+  .deck.off { opacity:.5; }
+  .deck-head { display:flex; align-items:center; gap:15px; padding:12px 15px; cursor:pointer; }
+  .pair { display:flex; gap:3px; flex:0 0 auto; }
+  .mini { position:relative; height:50px; border-radius:5px; overflow:hidden; display:grid; place-items:center;
+    box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.14), 0 2px 5px rgba(0,0,0,.45); }
+  .mini.leader { width:37px; }
+  .mini.base { width:58px; }
+  .mini .ini { position:relative; font-family:var(--mono); font-weight:700; color:#fff; font-size:15px;
+    text-shadow:0 1px 3px rgba(0,0,0,.7); }
+  .mini .cap { position:absolute; left:0; right:0; bottom:0; height:11px; background:rgba(6,6,10,.72);
+    font-family:var(--mono); font-size:6.5px; letter-spacing:.2px; color:#d8d8e2; display:flex; align-items:center;
+    justify-content:center; text-transform:uppercase; }
+  .mini.base .hp { position:absolute; top:3px; left:3px; font-family:var(--mono); font-size:9px; font-weight:700;
+    color:#fff; background:rgba(6,6,10,.6); border-radius:3px; padding:0 3px; }
+  .mini .fmt { position:absolute; top:3px; left:3px; }
+  .deck-id { flex:1; min-width:0; }
+  .deck-id .name { font-weight:650; font-size:15px; outline:none; border-radius:4px; padding:1px 3px; margin:-1px -3px; }
+  .deck-id .name:focus { background:var(--bg-deep); box-shadow:0 0 0 1px var(--blue); }
+  .deck-id .sub { color:var(--text-3); font-size:12px; margin-top:3px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .deck-id .sub .swu { color:var(--text-2); }
+  .deck-readout { display:flex; align-items:center; gap:22px; flex:0 0 auto; }
+  .ro { text-align:right; }
+  .ro .v { font-family:var(--mono); font-size:15px; font-variant-numeric:tabular-nums; font-weight:600; }
+  .ro .k { font-family:var(--mono); font-size:9px; letter-spacing:1px; text-transform:uppercase; color:var(--text-3); }
+  .wr-good { color:var(--success); } .wr-mid { color:var(--warn); } .wr-bad { color:var(--danger); }
+  .caret { color:var(--text-3); font-size:12px; transition:transform .18s; font-family:var(--mono); }
+  .deck.open .caret { transform:rotate(90deg); }
+
+  .toggle { flex:0 0 auto; width:42px; height:23px; border-radius:999px; border:1px solid var(--border-strong);
+    background:var(--bg-deep); position:relative; cursor:pointer; transition:.15s; }
+  .toggle .dot { position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%;
+    background:var(--text-3); transition:.15s; }
+  .toggle.on { border-color:var(--forge); background:var(--forge-soft); }
+  .toggle.on .dot { left:21px; background:var(--forge); box-shadow:0 0 7px rgba(239,138,60,.8); }
+
+  .deck-body { border-top:1px solid var(--border); padding:16px; display:none; background:rgba(10,8,16,.35); }
+  .deck.open .deck-body { display:block; }
+  .subhead { font-family:var(--mono); font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--text-3); margin:0 0 10px; }
+  .subhead .lc { text-transform:none; letter-spacing:0; color:var(--text-3); }
+
+  .ver { display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid var(--border);
+    border-radius:var(--r-sm); background:var(--surface); margin-bottom:7px; }
+  .ver .tag { font-family:var(--mono); font-weight:700; color:var(--forge-2); font-size:13px; width:32px; }
+  .ver .desc { flex:1; font-size:13px; }
+  .ver .desc small { color:var(--text-3); display:block; font-family:var(--mono); margin-top:2px; }
+  .ver .st { font-family:var(--mono); font-size:12px; color:var(--text-2); font-variant-numeric:tabular-nums; }
+
+  .cardcols { display:grid; grid-template-columns:1fr 1fr; gap:6px 22px; margin-top:4px; }
+  .cl { display:flex; align-items:center; gap:9px; font-size:13px; padding:2px 0; }
+  .cl .cost { font-family:var(--mono); width:19px; height:19px; border-radius:4px; display:grid; place-items:center;
+    font-size:11px; font-weight:700; background:var(--bg-deep); border:1px solid var(--border-strong); color:var(--text-2); flex:0 0 auto; }
+  .cl .qty { font-family:var(--mono); color:var(--text-3); font-size:12px; }
+  .cl.more .nm { color:var(--text-3); font-style:italic; }
+
+  .members-cols { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+  .who { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
+  .ava { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:10px;
+    font-weight:700; color:#0a0c10; font-family:var(--mono); }
+
+  .mrow { display:flex; align-items:center; gap:14px; padding:13px 15px; border:1px solid var(--border);
+    border-radius:var(--r-md); background:var(--surface); margin-bottom:9px; }
+  .mrow .ava { width:34px; height:34px; font-size:13px; }
+  .mrow .mid { flex:1; }
+  .mrow .mid .nm { font-weight:600; }
+  .mrow .mid .sub { font-family:var(--mono); font-size:12px; color:var(--text-3); margin-top:2px;
+    display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .prov { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:4px; text-transform:uppercase; letter-spacing:.5px; }
+  .prov.google { color:#8ab4f8; border:1px solid rgba(138,180,248,.35); }
+  .prov.discord { color:#a9b3f2; border:1px solid rgba(169,179,242,.35); }
+  .usel { background:var(--bg-deep); color:var(--text-2); border:1px solid var(--border-strong); border-radius:var(--r-sm);
+    font-family:var(--sans); font-size:13px; padding:6px 10px; }
+
+  .consent { display:flex; gap:11px; align-items:flex-start; padding:13px 15px; border:1px solid var(--border);
+    border-radius:var(--r-md); background:var(--surface); margin-bottom:9px; cursor:pointer; }
+  .check { flex:0 0 auto; width:20px; height:20px; border-radius:5px; border:1px solid var(--border-strong);
+    background:var(--bg-deep); display:grid; place-items:center; color:transparent; font-size:13px; font-weight:800; margin-top:1px; }
+  .consent.on .check { background:var(--forge); border-color:var(--forge); color:#1a0f08; box-shadow:0 0 8px rgba(239,138,60,.5); }
+  .consent .ct { font-size:13px; } .consent .ct b { font-weight:600; }
+  .consent .ct small { color:var(--text-3); display:block; margin-top:2px; }
+
+  .prog { max-width:520px; margin:6vh auto 0; text-align:center; }
+  .prog .ring { width:92px; height:92px; margin:0 auto 26px; border-radius:50%;
+    border:3px solid rgba(91,134,224,.18); border-top-color:var(--forge); border-right-color:var(--blue);
+    animation:spin 1s linear infinite; box-shadow:var(--grad-glow); }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .plog { text-align:left; margin-top:24px; font-family:var(--mono); font-size:13px; }
+  .plog .pl { display:flex; align-items:center; gap:11px; padding:7px 0; color:var(--text-3); opacity:.4; transition:.3s; }
+  .plog .pl.run { color:var(--text); opacity:1; }
+  .plog .pl.done { color:var(--text-2); opacity:1; }
+  .plog .pl .mk { width:16px; text-align:center; color:var(--success); }
+  .plog .pl.run .mk { color:var(--led); }
+
+  .done-hero { text-align:center; padding:12px 0 22px; }
+  .done-hero .seal { width:64px; height:64px; margin:0 auto 18px; border-radius:16px;
+    background:linear-gradient(var(--surface),var(--surface)) padding-box, var(--grad) border-box; border:2px solid transparent;
+    display:grid; place-items:center; box-shadow:var(--grad-glow); }
+  .recap { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:22px 0; }
+  .recap .r { border:1px solid var(--border); border-radius:var(--r-md); padding:14px; text-align:center; background:var(--surface); }
+  .recap .r .v { font-family:var(--mono); font-size:24px; font-weight:600; color:var(--forge); }
+  .recap .r .k { font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-3); margin-top:3px; }
+  .both { display:flex; gap:14px; align-items:flex-start; padding:16px; border:1px solid var(--border);
+    border-radius:var(--r-md); background:linear-gradient(110deg, var(--forge-soft), var(--blue-soft)); margin-top:10px; }
+
+  @media (prefers-reduced-motion: reduce) { .prog .ring { animation:none; } .caret { transition:none; } }
+  @media (max-width: 760px) {
+    .rail { display:none; } .panel { padding:22px 18px; } .grid2,.recap { grid-template-columns:1fr; }
+    .cardcols { grid-template-columns:1fr; } .deck-readout { gap:12px; }
+  }
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <span class="kb">kara<b>buddy</b></span>
+      <span class="arrow">→</span>
+      <svg class="reticle" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <defs><linearGradient id="rg" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#ef8a3c"/><stop offset="1" stop-color="#5b86e0"/></linearGradient></defs>
+        <circle cx="12" cy="12" r="8.2" stroke="url(#rg)" stroke-width="1.6"/>
+        <circle cx="12" cy="12" r="2.4" fill="url(#rg)"/>
+        <path d="M12 1.5v3.2M12 19.3v3.2M1.5 12h3.2M19.3 12h3.2" stroke="url(#rg)" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <span class="wordmark">SWU Forge</span>
+    </div>
+    <span class="title">Team migration</span>
+    <span class="spacer"></span>
+    <span class="badge-proto">Prototype · faked data</span>
+    <button class="close" title="Close">×</button>
+  </div>
+
+  <div class="body">
+    <nav class="rail">
+      <h4>Migration</h4>
+      <div id="rail"></div>
+      <div class="rail-foot">
+        <div class="team">
+          <div class="badge gradborder">CC</div>
+          <div class="meta">
+            <div>Core Combo Crew</div>
+            <small>6 members · 412 games</small>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <main class="panel"><div class="panel-inner" id="panel"></div></main>
+  </div>
+
+  <div class="footer">
+    <button class="btn ghost" id="back">← Back</button>
+    <span class="hint" id="hint"></span>
+    <span class="spacer"></span>
+    <button class="btn primary" id="next">Continue →</button>
+  </div>
+</div>
+
+<script>
+/* ============================ FAKED DATA ============================ */
+const ASPECTS = { vigilance:'--asp-vigilance', command:'--asp-command', aggression:'--asp-aggression',
+  cunning:'--asp-cunning', heroism:'--asp-heroism', villainy:'--asp-villainy' };
+const av = n => ({A:'#ef8a3c',B:'#4dd2ff',C:'#6bd968',D:'#c78bff',E:'#e0c64a',F:'#5b86e0'})[n] || '#888';
+
+const team = {
+  name:'Core Combo Crew', slug:'ccc', code:'CC',
+  members:[
+    { id:'drew', name:'Drew Knox',    role:'Owner',  provider:'google',  matched:true,  email:'drew.knox@gmail.com', games:118, ava:'A', include:true },
+    { id:'sky',  name:'Skyler Vance', role:'Member', provider:'discord', matched:true,  email:'skyvance#4417',       games:96,  ava:'B', include:true },
+    { id:'tatum',name:'Tatum Lee',    role:'Member', provider:'google',  matched:true,  email:'tatum.lee@gmail.com', games:74,  ava:'C', include:true },
+    { id:'rowan',name:'Rowan Vega',   role:'Member', provider:'google',  matched:true,  email:'rowan.v@gmail.com',   games:62,  ava:'F', include:true },
+    { id:'riley',name:'Riley Lee',    role:'Member', provider:'discord', matched:false, email:null,                  games:44,  ava:'D', include:true },
+    { id:'morg', name:'Morgan Webb',  role:'Member', provider:'discord', matched:false, email:null,                  games:18,  ava:'E', include:true },
+  ]
+};
+const sampleMain = () => ([
+  {c:1,q:2,n:'Confiscate'},{c:1,q:3,n:'Bamboozle'},{c:2,q:3,n:'Cantina Braggart'},
+  {c:2,q:2,n:'Pyke Sentinel'},{c:3,q:2,n:'Waylay'},{c:3,q:3,n:'Fleet Lieutenant'},
+  {c:4,q:2,n:'Cell Block Guard'},{c:5,q:2,n:'Boba Fett, Daimyo'},{c:6,q:1,n:'Krayt Dragon'},
+]);
+const sampleSide = [{c:2,q:2,n:'Vanquish'},{c:3,q:2,n:'Takedown'},{c:1,q:3,n:'Open Fire'},{c:4,q:3,n:'Change of Heart'}];
+
+let decks = [
+  { id:'cadbane', leader:'Cad Bane', epithet:'Still Faster Than You', hp:30, aspect:'Vigilance', base:'Fortress Vader',
+    asp:['cunning','villainy'], baseAsp:'vigilance', games:119, w:71, l:48, span:'May 3 – Jun 25',
+    who:['drew','sky','tatum'], tags:['sideboard included','4 pilots'],
+    versions:[
+      {tag:'v1', desc:'Launch list, heavy Pyke aggro', note:'May 3 · 45 games', st:'59%'},
+      {tag:'v2', desc:'−2 Cantina Braggart, +2 Cad Bane leader unit, +1 Waylay', note:'Jun 6 · 74 games · current', st:'62%'},
+    ], main:sampleMain(), side:sampleSide, size:50, sb:10, include:true },
+  { id:'wedge', leader:'Wedge Antilles', epithet:'Leader of Red Squadron', hp:30, aspect:'Aggression', base:'Chopper Base',
+    asp:['aggression','heroism'], baseAsp:'aggression', games:85, w:52, l:33, span:'May 1 – Jun 23',
+    who:['sky','rowan'], tags:['3 versions'],
+    versions:[
+      {tag:'v1', desc:'Snubfighter tempo', note:'May 1 · 30 games', st:'57%'},
+      {tag:'v2', desc:'+2 Green Squadron, −2 Wingman', note:'May 20 · 29 games', st:'62%'},
+      {tag:'v3', desc:'+1 Rogue Squadron, sideboard reshuffle', note:'Jun 12 · 26 games · current', st:'65%'},
+    ], main:sampleMain(), side:sampleSide, size:50, sb:10, include:true },
+  { id:'vader', leader:'Darth Vader', epithet:'Victor Squadron Leader', hp:30, aspect:'Aggression', base:'Command Center',
+    asp:['aggression','villainy'], baseAsp:'aggression', games:75, w:40, l:35, span:'May 5 – Jun 9',
+    who:['drew','tatum','morg'], tags:[], versions:[
+      {tag:'v1', desc:'One list all format', note:'May 5 · 75 games', st:'53%'} ],
+    main:sampleMain(), side:sampleSide, size:50, sb:10, include:true },
+  { id:'ezra', leader:'Ezra Bridger', epithet:"It's Now or Never", hp:30, aspect:'Cunning', base:'Spice Mines',
+    asp:['cunning','heroism'], baseAsp:'cunning', games:32, w:20, l:12, span:'Jun 1 – Jun 12',
+    who:['rowan'], tags:['2 versions'], versions:[
+      {tag:'v1', desc:'Experience swarm', note:'Jun 1 · 22 games', st:'64%'},
+      {tag:'v2', desc:'+2 Chopper, −1 event', note:'Jun 8 · 10 games', st:'60%'} ],
+    main:sampleMain(), side:sampleSide, size:50, sb:10, include:true },
+  { id:'obiwan', leader:'Obi-Wan Kenobi', epithet:'Courage Makes Heroes', hp:30, aspect:'Vigilance', base:'Kestro City',
+    asp:['vigilance','heroism'], baseAsp:'vigilance', games:12, w:8, l:4, span:'Jun 10 – Jun 15',
+    who:['drew'], tags:[], versions:[{tag:'v1', desc:'Control shell', note:'Jun 10 · 12 games', st:'67%'}],
+    main:sampleMain(), side:sampleSide, size:50, sb:10, include:true },
+  { id:'ahsoka', leader:'Ahsoka Tano', epithet:'Trust in the Force', hp:30, aspect:'Vigilance', base:'Lair of Grievous',
+    asp:['vigilance','heroism'], baseAsp:'vigilance', games:14, w:7, l:7, span:'Jun 2 – Jun 18',
+    who:['sky','rowan'], tags:[], versions:[{tag:'v1', desc:'Aggro-tempo', note:'Jun 2 · 14 games', st:'50%'}],
+    main:sampleMain(), side:sampleSide, size:50, sb:10, include:true },
+];
+
+let unlinked = [
+  { id:'u1', leader:'Baylan Skoll', base:'Cunning base', reason:'Partial list, 30 cards (pre-release set)', who:'drew', date:'Jun 21' },
+  { id:'u2', leader:'Sabine Wren', base:'Cunning base', reason:'Partial list, 30 cards', who:'sky', date:'Jun 20' },
+  { id:'u3', leader:'Mother Talzin', base:'Command base', reason:'No decklist recorded (older game)', who:'tatum', date:'May 12' },
+  { id:'u4', leader:'Grand Admiral Thrawn', base:'Aggression base', reason:'Partial list, 42 cards', who:'rowan', date:'Jun 17' },
+  { id:'u5', leader:'Aurra Sing', base:'Aggression base', reason:'No sideboard recorded', who:'morg', date:'Jun 9' },
+];
+
+/* ============================ STATE ============================ */
+const STEPS = [
+  { key:'start',   label:'Start' },
+  { key:'connect', label:'Connect Forge' },
+  { key:'decks',   label:'Decks' },
+  { key:'members', label:'Teammates' },
+  { key:'confirm', label:'Confirm' },
+  { key:'done',    label:'Done' },
+];
+const state = { step:0, connected:false, deckTab:'decks', folderName:'Core Combo Crew',
+  consents:{ own:false, encrypted:true } };
+const $ = s => document.querySelector(s);
+const el = h => { const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild; };
+const includedDecks = () => decks.filter(d=>d.include);
+const includedMembers = () => team.members.filter(m=>m.include);
+const wrClass = p => p>=58?'wr-good':p>=48?'wr-mid':'wr-bad';
+const tileStyle = a => `background:linear-gradient(150deg, var(${ASPECTS[a[0]]}), var(${ASPECTS[a[1]||a[0]]}));`;
+
+/* ============================ RAIL ============================ */
+function renderRail(){
+  const r = $('#rail'); r.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const cls = i===state.step?'active': i<state.step?'done':'';
+    const node = el(`<div class="step ${cls}" data-i="${i}">
+      <span class="led"></span><span class="n">${i<state.step?'✓':String(i+1)}</span>
+      <span class="lbl">${s.label}</span></div>`);
+    node.addEventListener('click',()=>{ if(i<=state.step) go(i); });
+    r.appendChild(node);
+  });
+}
+
+/* ============================ STEPS ============================ */
+function stepStart(){
+  return `
+  <p class="eyebrow">karabuddy → SWU Forge</p>
+  <h1>Move your team's decks and games to SWU Forge</h1>
+  <p class="lede">Your team has <b class="num">412</b> recorded games. karabuddy stores the full decklist behind each
+  one, so it can rebuild them as SWU Forge decks (with the versions you ran and their win rates) and bring every game
+  across as a battle log.</p>
+
+  <div class="grid2" style="margin-bottom:14px">
+    <div class="val"><div class="ic">▤</div><div><h3>Full decklists</h3>
+      <p>Each game keeps the recorder's whole 50 plus sideboard, so decks arrive complete, not leader-and-base stubs.</p></div></div>
+    <div class="val"><div class="ic">≡</div><div><h3>Versions</h3>
+      <p>Games group into the versions you ran over time, each with its own win rate.</p></div></div>
+    <div class="val"><div class="ic">%</div><div><h3>Records</h3>
+      <p>Every deck comes with its win-loss, its win rate, and who on the team played it.</p></div></div>
+    <div class="val"><div class="ic">▷</div><div><h3>Battle logs</h3>
+      <p>All 412 games upload as replays you can watch on SWU Forge.</p></div></div>
+  </div>
+  <p class="muted" style="font-size:13px">Nothing leaves karabuddy until you review and confirm.</p>`;
+}
+
+function stepConnect(){
+  if(!state.connected){
+    return `
+    <p class="eyebrow">Connect</p>
+    <h1>Connect your SWU Forge account</h1>
+    <p class="lede">You and your teammates sign in to both apps with Google or Discord. We use that to match each
+    player to their Forge account, so no one has to link anything by hand.</p>
+    <div class="card" style="max-width:440px">
+      <div class="subhead">Sign in to SWU Forge as team owner</div>
+      <button class="btn" style="width:100%;justify-content:center;margin-bottom:9px" data-connect="google">
+        <span class="prov google" style="border:none;padding:0">G</span> Continue with Google</button>
+      <button class="btn" style="width:100%;justify-content:center" data-connect="discord">
+        <span class="prov discord" style="border:none;padding:0">✱</span> Continue with Discord</button>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:14px">Faked for the prototype. Nothing leaves this page.</p>`;
+  }
+  return `
+  <p class="eyebrow">Connected</p>
+  <h1>Connected as Drew</h1>
+  <p class="lede">Matched <b>drew.knox@gmail.com</b> to the Forge account <b class="num">@drewknox</b>. Choose where
+  your team's decks and games should go.</p>
+  <div class="card" style="max-width:560px">
+    <div class="subhead">SWU Forge team folder</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="mini leader" style="height:44px;width:33px;${tileStyle(['aggression','villainy'])}"><span class="ini">CC</span></div>
+      <div style="flex:1">
+        <input id="folder" value="${state.folderName}" style="width:100%;background:var(--bg-deep);border:1px solid var(--border-strong);
+          color:var(--text);border-radius:6px;padding:8px 10px;font-size:14px;font-family:var(--sans)"/>
+        <div class="muted" style="font-size:12px;margin-top:6px;font-family:var(--mono)">
+          swuforge.com/folders/<span class="num">new</span> · 6 teammates invited</div>
+      </div>
+      <span class="chip forge">new folder</span>
+    </div>
+  </div>`;
+}
+
+function stepDecks(){
+  const inc = includedDecks();
+  const totalGames = inc.reduce((s,d)=>s+d.games,0);
+  const totalVers = inc.reduce((s,d)=>s+d.versions.length,0);
+  const strip = `
+  <div class="stats">
+    <div class="s fg"><div class="v num">${inc.length}</div><div class="k">Decks</div></div>
+    <div class="s"><div class="v num">${totalVers}</div><div class="k">Versions</div></div>
+    <div class="s live"><div class="v num">${totalGames}</div><div class="k">Games linked</div></div>
+    <div class="s"><div class="v num">${unlinked.length}</div><div class="k">Standalone games</div></div>
+  </div>`;
+  const tabs = `
+  <div class="tabs">
+    <div class="tab ${state.deckTab==='decks'?'active':''}" data-tab="decks">Decks <span class="ct">${decks.length}</span></div>
+    <div class="tab ${state.deckTab==='unlinked'?'active':''}" data-tab="unlinked">Standalone games <span class="ct">${unlinked.length}</span></div>
+  </div>`;
+  const body = state.deckTab==='decks'
+    ? `<p class="muted" style="font-size:13px;margin:-4px 0 14px">Rename a deck, turn one off, or open it to see the list, versions, and games. All on by default.</p><div id="decklist"></div>`
+    : `<p class="muted" style="font-size:13px;margin:-4px 0 14px">These games don't have a full decklist (partial pre-release captures, or games recorded before karabuddy stored lists). They come across as standalone battle logs you can watch now and attach to a deck later.</p><div id="unlinkedlist"></div>`;
+  return `<p class="eyebrow">Decks</p><h1>Decks built from your games</h1>${strip}${tabs}${body}`;
+}
+
+function renderDeckList(){
+  const host = $('#decklist'); if(!host) return; host.innerHTML='';
+  decks.forEach(d=>{
+    const wr = Math.round(d.w/(d.w+d.l)*100);
+    const node = el(`<div class="deck ${d.include?'on':'off'}" data-id="${d.id}">
+      <div class="deck-head">
+        <div class="pair">
+          <div class="mini leader" style="${tileStyle(d.asp)}"><span class="fmt">PR</span><span class="ini">${initials(d.leader)}</span><span class="cap">${d.leader.split(' ')[0]}</span></div>
+          <div class="mini base" style="${tileStyle([d.baseAsp])}"><span class="hp">${d.hp}</span><span class="cap">${d.base}</span></div>
+        </div>
+        <div class="deck-id">
+          <div class="name" contenteditable="true" spellcheck="false">${d.displayName || (d.leader + ' — ' + d.epithet)}</div>
+          <div class="sub">
+            <span class="swu">${d.leader} · ${d.hp}HP ${d.aspect}</span>
+            ${d.versions.length>1?`<span class="chip forge">${d.versions.length} versions</span>`:''}
+            ${d.tags.map(m=>`<span class="chip blue">${m}</span>`).join('')}
+          </div>
+        </div>
+        <div class="deck-readout">
+          <div class="ro"><div class="v num">${d.games}</div><div class="k">games</div></div>
+          <div class="ro"><div class="v num">${d.w}–${d.l}</div><div class="k">W–L</div></div>
+          <div class="ro"><div class="v num ${wrClass(wr)}">${wr}%</div><div class="k">win</div></div>
+          <span class="caret">▶</span>
+          <div class="toggle ${d.include?'on':''}" data-toggle title="Include"><span class="dot"></span></div>
+        </div>
+      </div>
+      <div class="deck-body">
+        <div class="subhead">Versions <span class="lc">— grouped from decklist changes over time</span></div>
+        ${d.versions.map(v=>`<div class="ver"><span class="tag">${v.tag}</span>
+          <div class="desc">${v.desc}<small>${v.note}</small></div><span class="st">${v.st} win</span></div>`).join('')}
+        <div class="subhead" style="margin-top:16px">Decklist <span class="lc">· ${d.size} cards + ${d.sb} sideboard</span></div>
+        <div class="cardcols">
+          ${d.main.map(c=>`<div class="cl"><span class="cost">${c.c}</span><span class="qty">${c.q}×</span><span class="nm">${c.n}</span></div>`).join('')}
+          <div class="cl more"><span class="cost">…</span><span class="nm">+ ${d.size - d.main.reduce((s,c)=>s+c.q,0)} more maindeck cards</span></div>
+        </div>
+        <div class="subhead" style="margin-top:14px">Sideboard</div>
+        <div class="cardcols">
+          ${d.side.map(c=>`<div class="cl"><span class="cost">${c.c}</span><span class="qty">${c.q}×</span><span class="nm">${c.n}</span></div>`).join('')}
+        </div>
+        <div class="subhead" style="margin-top:14px">Played by</div>
+        <div class="members-cols">${d.who.map(id=>{const m=team.members.find(x=>x.id===id);return `<span class="who"><span class="ava" style="background:${av(m.ava)}">${initials(m.name)}</span>${m.name}</span>`;}).join('')}</div>
+      </div>
+    </div>`);
+    const head = node.querySelector('.deck-head');
+    head.addEventListener('click',e=>{
+      if(e.target.closest('[data-toggle]') || e.target.classList.contains('name')) return;
+      node.classList.toggle('open');
+    });
+    node.querySelector('[data-toggle]').addEventListener('click',e=>{
+      e.stopPropagation(); d.include=!d.include;
+      node.classList.toggle('on',d.include); node.classList.toggle('off',!d.include);
+      node.querySelector('[data-toggle]').classList.toggle('on',d.include);
+      refreshStripAndFooter();
+    });
+    const nm = node.querySelector('.name');
+    nm.addEventListener('blur',()=>{ d.displayName = nm.textContent.trim(); });
+    host.appendChild(node);
+  });
+}
+
+function renderUnlinked(){
+  const host = $('#unlinkedlist'); if(!host) return; host.innerHTML='';
+  unlinked.forEach(u=>{
+    const m = team.members.find(x=>x.id===u.who);
+    const node = el(`<div class="mrow">
+      <div class="mini leader" style="height:44px;width:33px;${tileStyle(['villainy','cunning'])}"><span class="ini">${initials(u.leader)}</span></div>
+      <div class="mid">
+        <div class="nm">${u.leader} · ${u.base}</div>
+        <div class="sub"><span class="chip warn">no full deck</span> ${u.reason} · ${m?m.name:''} · ${u.date}</div>
+      </div>
+      <select class="usel">
+        <option>Keep standalone</option>
+        ${decks.map(d=>`<option>Attach to ${d.leader}</option>`).join('')}
+      </select>
+    </div>`);
+    host.appendChild(node);
+  });
+}
+
+function stepMembers(){
+  return `
+  <p class="eyebrow">Teammates</p>
+  <h1>Teammates</h1>
+  <p class="lede">Matched teammates go into the <b>${state.folderName}</b> folder with their games credited to them.
+  Anyone without a Forge account gets an invite, and their games wait in the folder until they claim it.</p>
+  <div id="memberlist"></div>`;
+}
+function renderMembers(){
+  const host=$('#memberlist'); if(!host) return; host.innerHTML='';
+  team.members.forEach(m=>{
+    const node = el(`<div class="mrow">
+      <span class="ava" style="background:${av(m.ava)}">${initials(m.name)}</span>
+      <div class="mid">
+        <div class="nm">${m.name} ${m.role==='Owner'?'<span class="chip" style="margin-left:4px">owner</span>':''}</div>
+        <div class="sub">
+          <span class="prov ${m.provider}">${m.provider}</span>
+          ${m.matched ? `<span class="chip good">matched · ${m.email}</span>` : `<span class="chip warn">no Forge account yet</span>`}
+          · <span class="num">${m.games}</span> games
+        </div>
+      </div>
+      ${m.matched ? '' : `<button class="btn sm">Invite</button>`}
+      <div class="toggle ${m.include?'on':''}" data-mtoggle title="Include"><span class="dot"></span></div>
+    </div>`);
+    node.querySelector('[data-mtoggle]').addEventListener('click',()=>{
+      m.include=!m.include; node.querySelector('[data-mtoggle]').classList.toggle('on',m.include);
+      refreshStripAndFooter();
+    });
+    host.appendChild(node);
+  });
+}
+
+function stepConfirm(){
+  const inc = includedDecks();
+  const games = inc.reduce((s,d)=>s+d.games,0);
+  const vers = inc.reduce((s,d)=>s+d.versions.length,0);
+  return `
+  <p class="eyebrow">Confirm</p>
+  <h1>Review and migrate</h1>
+  <p class="lede">This is what gets added to your SWU Forge folder <b>${state.folderName}</b>. It only adds to Forge
+  and changes nothing in karabuddy.</p>
+  <div class="stats" style="margin-bottom:20px">
+    <div class="s fg"><div class="v num">${inc.length}</div><div class="k">Decks + ${vers} versions</div></div>
+    <div class="s live"><div class="v num">${games}</div><div class="k">Linked games</div></div>
+    <div class="s"><div class="v num">${unlinked.length}</div><div class="k">Standalone games</div></div>
+    <div class="s"><div class="v num">${includedMembers().length}</div><div class="k">Teammates</div></div>
+  </div>
+  <div class="subhead">Before you send</div>
+  <div class="consent ${state.consents.own?'on':''}" data-consent="own">
+    <span class="check">✓</span><span class="ct"><b>These are my team's own recorded games.</b>
+    <small>Only each player's own decks and games are sent. Opponents' hidden cards were never recorded.</small></span></div>
+  <div class="consent ${state.consents.encrypted?'on':''}" data-consent="encrypted">
+    <span class="check">✓</span><span class="ct"><b>Leave out private (encrypted) team replays.</b>
+    <small>Encrypted replays can't be read on the server, so they stay in karabuddy.</small></span></div>`;
+}
+
+function stepMigrating(){
+  return `<div class="prog">
+    <div class="ring"></div>
+    <h1 style="font-size:22px">Setting up your team on SWU Forge</h1>
+    <p class="muted" style="font-family:var(--mono);font-size:13px">Nothing in karabuddy changes.</p>
+    <div class="plog" id="plog">
+      ${['Creating the team folder “'+state.folderName+'”',
+         'Building '+includedDecks().length+' decks and versions',
+         'Uploading '+includedDecks().reduce((s,d)=>s+d.games,0)+' games as battle logs',
+         'Attaching games to their decks',
+         'Crediting games to '+includedMembers().length+' teammates',
+         'Working out win rates and matchups'].map((t,i)=>
+        `<div class="pl" data-pl="${i}"><span class="mk">○</span><span>${t}</span></div>`).join('')}
+    </div></div>`;
+}
+
+function stepDone(){
+  const inc = includedDecks();
+  const games = inc.reduce((s,d)=>s+d.games,0);
+  const vers = inc.reduce((s,d)=>s+d.versions.length,0);
+  return `
+  <div class="done-hero">
+    <div class="seal"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="url(#rg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <h1>Your team is set up on SWU Forge</h1>
+    <p class="lede" style="margin:0 auto">Everything below is live in <b>${state.folderName}</b>. The decks are ready
+    to edit, the games are ready to watch, and the records are in place. karabuddy keeps every original.</p>
+  </div>
+  <div class="recap">
+    <div class="r"><div class="v num">${inc.length}</div><div class="k">Decks</div></div>
+    <div class="r"><div class="v num">${vers}</div><div class="k">Versions</div></div>
+    <div class="r"><div class="v num">${games + unlinked.length}</div><div class="k">Games</div></div>
+    <div class="r"><div class="v num">${includedMembers().length}</div><div class="k">Teammates</div></div>
+  </div>
+  <div class="both">
+    <div class="mini leader" style="height:38px;width:28px;${tileStyle(['cunning','villainy'])}"></div>
+    <div style="flex:1"><b>karabuddy and SWU Forge, together</b>
+      <div class="muted" style="font-size:13px;margin-top:3px">New karabuddy games keep flowing to Forge. And your Forge
+      battle logs open in the karabuddy viewer, so you can review with tags and frames while you build on the Forge.</div></div>
+  </div>
+  <div style="display:flex;gap:12px;margin-top:22px">
+    <button class="btn primary" style="flex:1;justify-content:center">Open ${state.folderName} in SWU Forge ↗</button>
+    <button class="btn" data-restart>Run again</button>
+  </div>`;
+}
+
+/* ============================ CONTROLLER ============================ */
+function render(){
+  // The visual world shifts each step: karabuddy (0) → merged swuforge (5).
+  $('.app').dataset.phase = state.step===-1 ? 5 : state.step;
+  renderRail();
+  const p = $('#panel');
+  if(state.step===-1){ p.innerHTML=stepMigrating(); runMigration(); setFooter(); return; }
+  const key = STEPS[state.step].key;
+  const map = { start:stepStart, connect:stepConnect, decks:stepDecks, members:stepMembers, confirm:stepConfirm, done:stepDone };
+  p.innerHTML = map[key]();
+  p.parentElement.scrollTop = 0;
+  wireStep(key);
+  setFooter();
+}
+function wireStep(key){
+  if(key==='connect'){
+    document.querySelectorAll('[data-connect]').forEach(b=>b.addEventListener('click',()=>{ state.connected=true; render(); }));
+    const f=$('#folder'); if(f) f.addEventListener('input',()=>{ state.folderName=f.value||'Team folder'; });
+  }
+  if(key==='decks'){
+    document.querySelectorAll('[data-tab]').forEach(t=>t.addEventListener('click',()=>{ state.deckTab=t.dataset.tab; render(); }));
+    renderDeckList(); renderUnlinked();
+  }
+  if(key==='members') renderMembers();
+  if(key==='confirm'){
+    document.querySelectorAll('[data-consent]').forEach(c=>c.addEventListener('click',()=>{
+      const k=c.dataset.consent; state.consents[k]=!state.consents[k];
+      c.classList.toggle('on',state.consents[k]); setFooter();
+    }));
+  }
+  if(key==='done'){ const r=$('[data-restart]'); if(r) r.addEventListener('click',()=>{ state.step=0; state.connected=false; render(); }); }
+}
+function setFooter(){
+  const back=$('#back'), next=$('#next'), hint=$('#hint');
+  back.style.visibility = (state.step<=0) ? 'hidden' : 'visible';
+  if(state.step===-1){ back.style.visibility='hidden'; next.style.display='none'; hint.textContent=''; return; }
+  next.style.display='inline-flex'; next.className='btn primary';
+  const key = STEPS[state.step].key;
+  const inc = includedDecks();
+  const games = inc.reduce((s,d)=>s+d.games,0);
+  const cfg = {
+    start:   { label:'Start migration →', hint:'', ok:true },
+    connect: { label: state.connected?'Continue →':'Connect an account to continue', hint:'', ok:state.connected },
+    decks:   { label:'Continue →', hint:`${inc.length} decks · ${games} games selected`, ok:inc.length>0 },
+    members: { label:'Continue →', hint:`${includedMembers().length} teammates`, ok:includedMembers().length>0 },
+    confirm: { label:'Migrate to SWU Forge', hint: state.consents.own?'':'Confirm the first box to continue', ok:state.consents.own },
+    done:    { label:'', hint:'', ok:true, hideNext:true },
+  }[key];
+  hint.textContent = cfg.hint||'';
+  if(cfg.hideNext){ next.style.display='none'; return; }
+  next.textContent = cfg.label; next.disabled = !cfg.ok;
+}
+function refreshStripAndFooter(){
+  if(STEPS[state.step] && STEPS[state.step].key==='decks'){
+    const inc=includedDecks(); const games=inc.reduce((s,d)=>s+d.games,0);
+    const vers=inc.reduce((s,d)=>s+d.versions.length,0);
+    const s=document.querySelectorAll('.stats .s .v');
+    if(s[0]) s[0].textContent=inc.length; if(s[1]) s[1].textContent=vers; if(s[2]) s[2].textContent=games;
+  }
+  setFooter();
+}
+function go(n){ state.step=n; render(); }
+$('#next').addEventListener('click',()=>{
+  const key=STEPS[state.step]?.key;
+  if(key==='confirm'){ state.step=-1; render(); return; }
+  if(state.step < STEPS.length-1) go(state.step+1);
+});
+$('#back').addEventListener('click',()=>{ if(state.step>0) go(state.step-1); });
+$('.close').addEventListener('click',()=>{});
+
+function runMigration(){
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const rows=[...document.querySelectorAll('.pl')];
+  const finish=()=>{ state.step=STEPS.length-1; render(); };
+  if(reduce){ finish(); return; }
+  let i=0;
+  const tick=()=>{
+    if(i>0){ const prev=rows[i-1]; prev.classList.remove('run'); prev.classList.add('done'); prev.querySelector('.mk').textContent='✓'; }
+    if(i>=rows.length){ setTimeout(finish,450); return; }
+    rows[i].classList.add('run'); rows[i].querySelector('.mk').textContent='◐';
+    i++; setTimeout(tick, 560);
+  };
+  setTimeout(tick,350);
+}
+function initials(n){ return n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+render();
+</script>
