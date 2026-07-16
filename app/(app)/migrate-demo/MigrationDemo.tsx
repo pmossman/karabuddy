@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, type CSSProperties } from 'react';
-import { KaraBuddyThemeProvider } from '@/app/_components/KaraBuddyThemeProvider';
 import { Panel } from '@/app/_components/Panel';
 import { LedToggle } from '@/app/_components/LedToggle';
 import { Segmented } from '@/app/_components/Segmented';
@@ -127,7 +126,7 @@ function Chip({ children, tone }: { children: React.ReactNode; tone?: 'forge' | 
 const microLabel: CSSProperties = { font: `600 10px ${mono}`, letterSpacing: '0.14em', textTransform: 'uppercase', color: tokens.color.textMuted };
 const statNum: CSSProperties = { font: `600 22px ${mono}`, fontVariantNumeric: 'tabular-nums' };
 
-export default function MigrateDemoPage() {
+export default function MigrationDemo() {
   const [step, setStep] = useState(0); // -1 = migrating
   const [connected, setConnected] = useState(false);
   const [folderName, setFolderName] = useState('Core Combo Crew');
@@ -163,89 +162,78 @@ export default function MigrateDemoPage() {
     setTimeout(tick, 350);
   };
 
-  // ── shell ──────────────────────────────────────────────────────────────────
+  // ── page — renders INSIDE the karabuddy app shell (real sidebar + header) ────
   return (
-    <KaraBuddyThemeProvider>
-      <div style={{
-        position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        color: tokens.color.text, fontFamily: tokens.font.family, fontSize: 14,
-        transition: 'background .5s ease',
-        background:
-          `radial-gradient(1000px 560px at 84% -6%, rgba(239,138,60,${WARM_A[phase]}), transparent 58%),` +
-          `radial-gradient(1000px 680px at -6% 112%, rgba(77,210,255,0.09), transparent 55%),` +
-          tokens.color.bgDeep,
-      }}>
-        {/* top bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '0 20px', height: 56,
-          borderBottom: `1px solid ${tokens.color.border}`, background: 'rgba(10,12,16,0.6)', flex: '0 0 auto' }}>
-          <span style={{ fontWeight: 700 }}>kara<span style={{ color: tokens.led.on }}>buddy</span></span>
-          <span style={{ color: tokens.color.textFaint }}>→</span>
-          <Reticle opacity={DEST_OP[phase]} />
+    <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 28px 64px', position: 'relative', color: tokens.color.text, fontFamily: tokens.font.family }}>
+      {/* subtle progressive warm glow (the karabuddy→Forge shift, contained to this page) */}
+      <div aria-hidden style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 320, pointerEvents: 'none', zIndex: 0,
+        background: `radial-gradient(700px 220px at 82% -30px, rgba(239,138,60,${WARM_A[phase] * 1.6}), transparent 70%)` }} />
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        {/* page header — the SWU Forge destination + demo context (karabuddy's own chrome is the shell around this) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 20, flexWrap: 'wrap' }}>
+          <Reticle opacity={DEST_OP[phase]} size={22} />
           <span style={{ font: `800 15px ${tokens.font.family}`, letterSpacing: '1.2px', textTransform: 'uppercase',
-            background: 'linear-gradient(180deg,#dfe2e8 12%,#8b909c 92%)', WebkitBackgroundClip: 'text',
-            backgroundClip: 'text', color: 'transparent', opacity: DEST_OP[phase], transition: 'opacity .5s ease' }}>SWU Forge</span>
-          <span style={{ marginLeft: 4, color: tokens.color.textSecondary, fontSize: 13 }}>Team migration</span>
+            background: 'linear-gradient(180deg,#dfe2e8 12%,#8b909c 92%)', WebkitBackgroundClip: 'text', backgroundClip: 'text',
+            color: 'transparent', opacity: DEST_OP[phase], transition: 'opacity .5s ease' }}>SWU Forge</span>
+          <span style={{ color: tokens.color.textSecondary, fontSize: 14 }}>Team migration</span>
           <span style={{ flex: 1 }} />
+          <Chip tone="forge">Core Combo Crew</Chip>
           <Chip>Prototype · faked data</Chip>
         </div>
 
-        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          {/* rail */}
-          <nav style={{ flex: '0 0 240px', borderRight: `1px solid ${tokens.color.border}`, padding: '22px 16px', overflowY: 'auto' }}
-            className="mig-rail">
-            <div style={{ ...microLabel, margin: '0 0 14px 10px' }}>Migration</div>
-            {STEPS.map((label, i) => {
-              const active = i === phase, done = i < phase;
-              // Demo: every section is jump-clickable so it's easy to review out of order.
-              return (
-                <div key={label} onClick={() => setStep(i)} role="button" tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(i); } }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 10px', borderRadius: tokens.radius.md,
-                    cursor: 'pointer', color: active ? tokens.color.text : tokens.color.textSecondary,
-                    background: active ? tokens.color.primarySoft : 'transparent', marginTop: 2 }}>
-                  <span style={{ width: 11, height: 11, borderRadius: '50%', flex: '0 0 auto',
-                    border: `1px solid ${done ? tokens.color.success : active ? tokens.led.on : tokens.color.borderStrong}`,
-                    background: done ? tokens.color.success : active ? tokens.led.on : tokens.color.bgDeep,
-                    boxShadow: active ? tokens.led.dotGlow : done ? '0 0 6px rgba(107,217,104,0.5)' : 'none' }} />
-                  <span style={{ font: `500 11px ${mono}`, color: active ? tokens.led.on : tokens.color.textMuted, width: 14 }}>{done ? '✓' : i + 1}</span>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{label}</span>
-                </div>
-              );
-            })}
-            <div style={{ marginTop: 20, paddingTop: 12, borderTop: `1px solid ${tokens.color.border}`, display: 'flex', alignItems: 'center', gap: 9 }}>
-              <span style={{ width: 28, height: 28, borderRadius: 7, display: 'grid', placeItems: 'center', font: `700 12px ${mono}`,
-                color: FORGE_2, border: `1px solid rgba(239,138,60,0.4)`, background: FORGE_SOFT }}>CC</span>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{folderName}</div>
-                <div style={{ ...microLabel, letterSpacing: '0.04em', textTransform: 'none' }}>6 members · 412 games</div>
-              </div>
-            </div>
-          </nav>
+        {/* horizontal stepper (jump-clickable) */}
+        <Stepper phase={phase} onJump={setStep} />
 
-          {/* panel */}
-          <main style={{ flex: 1, overflowY: 'auto', padding: '34px 40px 30px' }}>
-            <div style={{ maxWidth: 880, margin: '0 auto' }} key={step}>
-              {step === -1 ? <Migrating done={migrateDone} folder={folderName} decks={incDecks.length} games={linkedGames} members={incMembers.length} />
-                : step === 0 ? <Start accent={accent} />
-                : step === 1 ? <Connect accent={accent} connected={connected} onConnect={() => setConnected(true)} folderName={folderName} setFolderName={setFolderName} />
-                : step === 2 ? <Decks accent={accent} decks={decks} setDeck={setDeck} deckTab={deckTab} setDeckTab={setDeckTab} openDeck={openDeck} setOpenDeck={setOpenDeck} versions={versions} linkedGames={linkedGames} />
-                : step === 3 ? <Teammates accent={accent} members={members} setMembers={setMembers} folderName={folderName} />
-                : step === 4 ? <Confirm accent={accent} decks={incDecks.length} versions={versions} games={linkedGames} members={incMembers.length} folderName={folderName} consentOwn={consentOwn} setConsentOwn={setConsentOwn} consentEnc={consentEnc} setConsentEnc={setConsentEnc} />
-                : <Done accent={accent} decks={incDecks.length} versions={versions} games={linkedGames + UNLINKED.length} members={incMembers.length} folderName={folderName} onRestart={() => { setStep(0); setConnected(false); }} />}
-            </div>
-          </main>
+        {/* current step */}
+        <div key={step} style={{ marginTop: 26 }}>
+          {step === -1 ? <Migrating done={migrateDone} folder={folderName} decks={incDecks.length} games={linkedGames} members={incMembers.length} />
+            : step === 0 ? <Start accent={accent} />
+            : step === 1 ? <Connect accent={accent} connected={connected} onConnect={() => setConnected(true)} folderName={folderName} setFolderName={setFolderName} />
+            : step === 2 ? <Decks accent={accent} decks={decks} setDeck={setDeck} deckTab={deckTab} setDeckTab={setDeckTab} openDeck={openDeck} setOpenDeck={setOpenDeck} versions={versions} linkedGames={linkedGames} />
+            : step === 3 ? <Teammates accent={accent} members={members} setMembers={setMembers} folderName={folderName} />
+            : step === 4 ? <Confirm accent={accent} decks={incDecks.length} versions={versions} games={linkedGames} members={incMembers.length} folderName={folderName} consentOwn={consentOwn} setConsentOwn={setConsentOwn} consentEnc={consentEnc} setConsentEnc={setConsentEnc} />
+            : <Done accent={accent} decks={incDecks.length} versions={versions} games={linkedGames + UNLINKED.length} members={incMembers.length} folderName={folderName} onRestart={() => { setStep(0); setConnected(false); }} />}
         </div>
 
-        {/* footer */}
-        <Footer
-          step={step} connected={connected} consentOwn={consentOwn}
-          incDecks={incDecks.length} incMembers={incMembers.length} linkedGames={linkedGames} accent={accent}
-          onBack={() => step > 0 && setStep(step - 1)}
-          onNext={() => { if (step === 4) runMigration(); else if (step >= 0 && step < 5) setStep(step + 1); }}
-        />
+        {/* inline actions (steps 0–4; migrating + done carry their own) */}
+        {step >= 0 && step <= 4 && (
+          <Footer
+            step={step} connected={connected} consentOwn={consentOwn}
+            incDecks={incDecks.length} incMembers={incMembers.length} linkedGames={linkedGames} accent={accent}
+            onBack={() => step > 0 && setStep(step - 1)}
+            onNext={() => { if (step === 4) runMigration(); else if (step >= 0 && step < 5) setStep(step + 1); }}
+          />
+        )}
       </div>
-      <style>{`@media (max-width:820px){ .mig-rail{ display:none; } }`}</style>
-    </KaraBuddyThemeProvider>
+    </div>
+  );
+}
+
+// Horizontal, jump-clickable step indicator under the page header. The app's own
+// left sidebar is the primary nav; this is just the wizard's progress.
+function Stepper({ phase, onJump }: { phase: number; onJump: (i: number) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2, borderBottom: `1px solid ${tokens.color.border}`, paddingBottom: 12 }}>
+      {STEPS.map((label, i) => {
+        const active = i === phase, done = i < phase;
+        return (
+          <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
+            <button onClick={() => onJump(i)} aria-current={active ? 'step' : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: tokens.radius.md, border: 'none',
+                background: active ? tokens.color.primarySoft : 'transparent', cursor: 'pointer',
+                color: active ? tokens.color.text : tokens.color.textSecondary, fontFamily: tokens.font.family }}>
+              <span style={{ width: 19, height: 19, borderRadius: '50%', display: 'grid', placeItems: 'center', font: `700 10px ${mono}`, flex: '0 0 auto',
+                border: `1px solid ${done ? tokens.color.success : active ? tokens.led.on : tokens.color.borderStrong}`,
+                background: done ? 'rgba(107,217,104,0.14)' : active ? 'rgba(77,210,255,0.14)' : 'transparent',
+                color: done ? tokens.color.success : active ? tokens.led.on : tokens.color.textMuted,
+                boxShadow: active ? tokens.led.dotGlow : 'none' }}>{done ? '✓' : i + 1}</span>
+              <span style={{ fontSize: 13, fontWeight: active ? 600 : 500 }}>{label}</span>
+            </button>
+            {i < STEPS.length - 1 && <span aria-hidden style={{ width: 14, height: 1, background: tokens.color.border }} />}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -583,7 +571,6 @@ function Done({ accent, decks, versions, games, members, folderName, onRestart }
 }
 
 function Footer({ step, connected, consentOwn, incDecks, incMembers, linkedGames, accent, onBack, onNext }: any) {
-  if (step === -1) return <div style={{ flex: '0 0 auto', borderTop: `1px solid ${tokens.color.border}`, height: 61, background: 'rgba(10,12,16,0.55)' }} />;
   const cfg: Record<number, { label: string; hint: string; ok: boolean; ember?: boolean; hide?: boolean }> = {
     0: { label: 'Start migration →', hint: '', ok: true },
     1: { label: connected ? 'Continue →' : 'Connect an account to continue', hint: '', ok: connected },
@@ -594,7 +581,7 @@ function Footer({ step, connected, consentOwn, incDecks, incMembers, linkedGames
   };
   const c = cfg[step];
   return (
-    <div style={{ flex: '0 0 auto', borderTop: `1px solid ${tokens.color.border}`, padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(10,12,16,0.55)' }}>
+    <div style={{ marginTop: 30, paddingTop: 18, borderTop: `1px solid ${tokens.color.border}`, display: 'flex', alignItems: 'center', gap: 14 }}>
       <button onClick={onBack} style={{ ...btnGhost, border: 'none', visibility: step <= 0 ? 'hidden' : 'visible' }}>← Back</button>
       <span style={{ color: tokens.color.textMuted, font: `13px ${mono}` }}>{c.hint}</span>
       <span style={{ flex: 1 }} />

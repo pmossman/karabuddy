@@ -3,6 +3,20 @@
 Append a dated entry each work session (newest at top). Keep it a log of what
 happened + what's next, not a design doc (that's `ux-design.md`).
 
+## 2026-07-15 (later 4) — moved INSIDE the app shell (real chrome)
+
+- Feedback: the demo was a full-screen takeover with a fake top bar/rail — no
+  real karabuddy header/logo/sidebar/footer. Fixed: moved the route into the
+  `(app)` group (`app/(app)/migrate-demo/`) so it renders as a normal page inside
+  the real app shell (KARA BUDDY header + nav + footer; sidebar when signed in).
+- Removed the bespoke full-screen wrapper + top bar + vertical rail. The wizard is
+  now page content: a light SWU-Forge header row + a **horizontal jump-clickable
+  stepper** + step body + inline Back/Continue. Progressive warm glow kept, scoped
+  to the page (doesn't repaint the app).
+- Split into a server `page.tsx` (metadata/noindex) + client `MigrationDemo.tsx`
+  (a client page can't export metadata; also dodged a Next typed-routes layout
+  error). Typecheck clean; verified in-browser inside the shell.
+
 ## 2026-07-15 (later 3) — rebuilt on karabuddy's design system (React)
 
 - Per Parker: the demo must use karabuddy's real components, not a bespoke embed.

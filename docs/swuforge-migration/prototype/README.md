@@ -5,14 +5,19 @@ no backend — for gathering UX feedback, not a real feature).
 
 ## The deployable demo (canonical)
 
-**`app/migrate-demo/page.tsx`** → route **`/migrate-demo`**. A React client
-component built on **karabuddy's real design system**: `Panel`, `LedToggle`,
-`Segmented`, `LeaderBasePair` (real leader/base card art), `TacticalHeading`,
-`glowButtonStyle`/`btnGhost`, and `tokens` — wrapped in `KaraBuddyThemeProvider`.
-It lives OUTSIDE the `(app)` group so it renders full-screen without the sidebar
-app shell (the wizard has its own chrome). `noindex`, public.
+Route **`/migrate-demo`**, in the `(app)` group so it renders **inside karabuddy's
+real app shell** (sidebar/header + footer) as a normal page — NOT a full-screen
+takeover:
+- **`app/(app)/migrate-demo/page.tsx`** — server component: metadata (`noindex`)
+  + renders the client wizard.
+- **`app/(app)/migrate-demo/MigrationDemo.tsx`** — the interactive wizard, a client
+  component built on **karabuddy's real design system**: `Panel`, `LedToggle`,
+  `Segmented`, `LeaderBasePair` (real leader/base card art), `TacticalHeading`,
+  `glowButtonStyle`/`btnGhost`, `tokens`. No custom top bar/sidebar — the app
+  shell provides those; the wizard is page content (header + horizontal stepper +
+  step body + inline actions).
 
-- The **left progress rail is jump-clickable** — hop to any section.
+- The **horizontal stepper is jump-clickable** — hop to any section.
 - The aesthetic shifts per step from karabuddy (cyan/cold) toward a merged
   karabuddy×Forge look (ember/warm): the karabuddy components stay constant as
   the through-line while the Forge branding + a phase accent fade in. The one
