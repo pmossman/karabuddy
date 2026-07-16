@@ -3,6 +3,20 @@
 Append a dated entry each work session (newest at top). Keep it a log of what
 happened + what's next, not a design doc (that's `ux-design.md`).
 
+## 2026-07-15 (later 5) — access-gated to Parker + Andy
+
+- `/migrate-demo` is now gated to an email allowlist (`lib/migrateDemoAccess.ts`,
+  mirroring `lib/admin.ts`): `KARABUDDY_MIGRATE_DEMO_EMAILS` env var, comma-sep.
+  Empty/unset ⇒ nobody (404). Non-allowlisted users 404 (verified signed-out).
+  Unit test: `test/unit/migrate-demo-access.test.ts`.
+- **PROD DEPLOY STEP (required):** set the Vercel *Production* env var
+  `KARABUDDY_MIGRATE_DEMO_EMAILS=parkermos@gmail.com,andrew.cousineau@gmail.com`
+  (Parker + Andy/InvisibleLuis). Without it, even Parker 404s (safe default).
+  Andy's karabuddy account confirmed via a read-only prod lookup: name
+  "InvisibleLuis", Discord, email andrew.cousineau@gmail.com.
+- Local: added the same var to `.env.development.local` (gitignored) so a signed-in
+  local session sees it. Andy's email is NOT committed (env-only; tests use fakes).
+
 ## 2026-07-15 (later 4) — moved INSIDE the app shell (real chrome)
 
 - Feedback: the demo was a full-screen takeover with a fake top bar/rail — no
