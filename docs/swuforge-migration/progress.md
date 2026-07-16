@@ -3,6 +3,19 @@
 Append a dated entry each work session (newest at top). Keep it a log of what
 happened + what's next, not a design doc (that's `ux-design.md`).
 
+## 2026-07-15 (later 2) — deployable in-app demo route
+
+- Made the prototype a real, deployable karabuddy route: **`/migrate-demo`**
+  (`app/migrate-demo/page.tsx`), OUTSIDE the `(app)` group so it renders
+  full-screen without the sidebar shell. It embeds the self-contained prototype
+  from `public/demos/swuforge-migration.html` (byte-identical to the reviewed
+  version; no React port → zero regression risk). `noindex`, public, faked data.
+- No CSP/frame headers in the app, so the inline-script prototype runs fine.
+- Verified in the running dev app (chrome-devtools): full-screen, LED step-rail
+  visible at desktop width, phase shift intact. Route + asset both 200.
+- Source ↔ deployed-copy sync + regen command documented in `prototype/README.md`.
+- A true React/TSX port under `(app)` is the follow-up if it becomes a real feature.
+
 ## 2026-07-15 (later) — prototype v2: progressive blend + plainer copy
 
 - Viewed swuforge.com directly (warm purple-charcoal ground, steel wordmark +
