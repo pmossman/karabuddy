@@ -21,18 +21,24 @@ const CARD_ID = (setId: any): string | null =>
 
 // ── karabast raw card → swuforge NormalizedCard ────────────────────────────
 function normCard(c: any): any {
+  // Masked/face-down cards: the opponent's hidden hand (karabuddy's decoder
+  // replaces these with a REPLAYHIDDEN sentinel that still carries a setId/id)
+  // and face-down resources (no identity at all). swuforge draws card BACKS off
+  // `isHidden`, so emit a true hidden card with NO cardId — else the sentinel
+  // 404s as broken art (Andy's verify finding). See docs/swuforge-migration.
+  const masked = c?.setId?.set === 'REPLAYHIDDEN' || c?.id === 'REPLAYHIDDEN_0' || (!c?.setId && !c?.id);
   return {
     uuid: c?.uuid ?? null,
-    cardId: CARD_ID(c?.setId),
-    karabastId: c?.id ?? null, // karabast engine template id
-    name: c?.name ?? null,
+    cardId: masked ? null : CARD_ID(c?.setId),
+    karabastId: masked ? null : (c?.id ?? null), // karabast engine template id
+    name: masked ? null : (c?.name ?? null),
     type: c?.type ?? null,
     printedType: c?.printedType ?? null,
     power: c?.power ?? null,
     hp: c?.hp ?? null,
     damage: c?.damage ?? 0,
     exhausted: !!c?.exhausted,
-    isHidden: !c?.setId && !c?.id, // face-down/masked card (opp hand, resources)
+    isHidden: masked, // face-down/masked card (opp hand, resources) → card back
     sentinel: !!c?.sentinel,
     isAttacker: !!c?.isAttacker,
     isDefender: !!c?.isDefender,
