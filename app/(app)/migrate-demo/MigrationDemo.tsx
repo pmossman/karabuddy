@@ -4,6 +4,7 @@ import { useState, type CSSProperties } from 'react';
 import { Panel } from '@/app/_components/Panel';
 import { LedToggle } from '@/app/_components/LedToggle';
 import { Segmented } from '@/app/_components/Segmented';
+import { Select } from '@/app/_components/Select';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { TacticalHeading } from '@/app/_components/TacticalHeading';
 import { glowButtonStyle } from '@/app/_components/glowButton';
@@ -351,25 +352,33 @@ function Decks({ accent, decks, setDeck, deckTab, setDeckTab, openDeck, setOpenD
         <>
           <p style={{ color: tokens.color.textMuted, fontSize: 13, margin: '-4px 0 14px' }}>These games don't have a full decklist (partial pre-release captures, or games recorded before karabuddy stored lists). They come across as standalone battle logs you can watch now and attach to a deck later.</p>
           {UNLINKED.map((u) => (
-            <Panel key={u.id} hud={false} padding={0} style={{ marginBottom: 9 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 15px' }}>
-                <LeaderBasePair leader={{ name: u.leader }} base={{ name: u.base }} orientation="overlap" width={34} height={26} fit="cover" radius={4} fallback="box" />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{u.leader} · {u.base}</div>
-                  <div style={{ ...microLabel, textTransform: 'none', letterSpacing: '0.02em', marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Chip tone="warn">no full deck</Chip> {u.reason} · {u.date}
-                  </div>
-                </div>
-                <select defaultValue="keep" style={{ background: tokens.color.bgDeep, color: tokens.color.textSecondary, border: `1px solid ${tokens.color.borderStrong}`, borderRadius: tokens.radius.sm, fontFamily: tokens.font.family, fontSize: 13, padding: '6px 10px' }}>
-                  <option value="keep">Keep standalone</option>
-                  {DECKS.map((d) => <option key={d.id} value={d.id}>Attach to {d.leader.name}</option>)}
-                </select>
-              </div>
-            </Panel>
+            <UnlinkedRow key={u.id} u={u} />
           ))}
         </>
       )}
     </>
+  );
+}
+
+function UnlinkedRow({ u }: { u: (typeof UNLINKED)[number] }) {
+  const [target, setTarget] = useState('keep');
+  const options: ReadonlyArray<readonly [string, string]> = [
+    ['keep', 'Keep standalone'],
+    ...DECKS.map((d) => [d.id, `Attach to ${d.leader.name}`] as const),
+  ];
+  return (
+    <Panel hud={false} padding={0} style={{ marginBottom: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 15px' }}>
+        <LeaderBasePair leader={{ name: u.leader }} base={{ name: u.base }} orientation="overlap" width={34} height={26} fit="cover" radius={4} fallback="box" />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600 }}>{u.leader} · {u.base}</div>
+          <div style={{ ...microLabel, textTransform: 'none', letterSpacing: '0.02em', marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Chip tone="warn">no full deck</Chip> {u.reason} · {u.date}
+          </div>
+        </div>
+        <Select value={target} onChange={setTarget} options={options} size="sm" ariaLabel="Attach standalone game to a deck" style={{ maxWidth: 210 }} />
+      </div>
+    </Panel>
   );
 }
 
