@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, desc } from 'drizzle-orm';
 import { getDb } from './db';
-import { replays, replayTeamShares, teamMembers, sideboardTakes, sideboardMatchupComments, cards, users } from './schema';
+import { replays, replayTeamShares, teamMembers, sideboardTakes, sideboardMatchupComments, cards, users, type TakeBaseline } from './schema';
 import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
 import { cardIdFromSetNumber } from './cards';
 
@@ -302,18 +302,32 @@ export function sanitizeGuideCards(arr: unknown): GuideCard[] {
     .filter((c): c is { cardId: string; qty?: unknown; note?: unknown } => !!c && typeof (c as any).cardId === 'string' && (c as any).cardId.trim().length > 0)
     .map((c) => ({ cardId: c.cardId.trim(), qty: guideQty(c as any), note: typeof c.note === 'string' && c.note.trim() ? c.note.trim().slice(0, 500) : null }));
 }
+// Clamp an untrusted baseline decklist ({main, sideboard} of {cardId,count}) to
+// the stored shape, or null. Counts clamped 1..9 (a decklist copy count).
+export function sanitizeBaseline(raw: unknown): TakeBaseline | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const list = (arr: unknown): TakeBaseline['main'] => Array.isArray(arr)
+    ? arr.filter((e): e is { cardId: string; count?: unknown } => !!e && typeof (e as any).cardId === 'string' && (e as any).cardId.trim().length > 0)
+        .map((e) => ({ cardId: e.cardId.trim(), count: Math.min(9, Math.max(1, Math.round(Number((e as any).count)) || 1)) }))
+        .slice(0, 120)
+    : [];
+  const main = list((raw as any).main);
+  const sideboard = list((raw as any).sideboard);
+  return main.length || sideboard.length ? { main, sideboard } : null;
+}
 // A matchup — the top-level unit. Takes + comments hang off it.
 export interface Matchup { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
 const takeWhere = (teamSlug: string, m: Matchup) =>
   and(eq(sideboardTakes.teamSlug, teamSlug), eq(sideboardTakes.ownLeader, m.ownLeader), eq(sideboardTakes.ownBase, m.ownBase), eq(sideboardTakes.oppLeader, m.oppLeader), eq(sideboardTakes.oppBase, m.oppBase));
 
-// Upsert the caller's ONE take for a matchup (insert or replace).
-export async function upsertMyTake(teamSlug: string, authorId: string, m: Matchup, notes: string, cardsIn: GuideCard[], cardsOut: GuideCard[]): Promise<void> {
+// Upsert the caller's ONE take for a matchup (insert or replace). `baseline` is
+// the replay decklist it was authored from (null for pool-authored takes).
+export async function upsertMyTake(teamSlug: string, authorId: string, m: Matchup, notes: string, cardsIn: GuideCard[], cardsOut: GuideCard[], baseline: TakeBaseline | null = null): Promise<void> {
   await getDb().insert(sideboardTakes)
-    .values({ id: randomUUID(), teamSlug, authorId, ...m, notes, cardsIn, cardsOut })
+    .values({ id: randomUUID(), teamSlug, authorId, ...m, notes, cardsIn, cardsOut, baseline })
     .onConflictDoUpdate({
       target: [sideboardTakes.teamSlug, sideboardTakes.ownLeader, sideboardTakes.ownBase, sideboardTakes.oppLeader, sideboardTakes.oppBase, sideboardTakes.authorId],
-      set: { notes, cardsIn, cardsOut, updatedAt: new Date() },
+      set: { notes, cardsIn, cardsOut, baseline, updatedAt: new Date() },
     });
 }
 
@@ -324,7 +338,7 @@ export async function deleteMyTake(teamSlug: string, authorId: string, m: Matchu
 // Every take on a matchup, author-attributed (newest first).
 export async function matchupTakes(teamSlug: string, m: Matchup) {
   return getDb()
-    .select({ id: sideboardTakes.id, authorId: sideboardTakes.authorId, authorName: users.name, notes: sideboardTakes.notes, cardsIn: sideboardTakes.cardsIn, cardsOut: sideboardTakes.cardsOut, updatedAt: sideboardTakes.updatedAt })
+    .select({ id: sideboardTakes.id, authorId: sideboardTakes.authorId, authorName: users.name, notes: sideboardTakes.notes, cardsIn: sideboardTakes.cardsIn, cardsOut: sideboardTakes.cardsOut, baseline: sideboardTakes.baseline, updatedAt: sideboardTakes.updatedAt })
     .from(sideboardTakes)
     .leftJoin(users, eq(users.id, sideboardTakes.authorId))
     .where(takeWhere(teamSlug, m))

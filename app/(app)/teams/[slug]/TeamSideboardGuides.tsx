@@ -39,7 +39,9 @@ interface ArchetypeDecklist { replaySlug: string; playedAt: string | null; recor
 // how recent, and how many games ran it (NOT by a single opponent).
 const decklistLabel = (d: ArchetypeDecklist) => `${d.isMine ? 'Your list' : `${d.recorderName ?? 'Teammate'}’s list`}${d.playedAt ? ` · ${relativeTime(d.playedAt)}` : ''}${d.gameCount > 1 ? ` · ${d.gameCount} games` : ''}`;
 interface MatchupSummary extends Matchup { takeCount: number; contributors: (string | null)[]; myTake: boolean }
-interface Take { id: string; authorId: string; authorName: string | null; notes: string; cardsIn: GuideCard[]; cardsOut: GuideCard[]; updatedAt: string }
+interface DeckEntry { cardId: string; count: number }
+interface TakeBaseline { main: DeckEntry[]; sideboard: DeckEntry[] }
+interface Take { id: string; authorId: string; authorName: string | null; notes: string; cardsIn: GuideCard[]; cardsOut: GuideCard[]; baseline?: TakeBaseline | null; updatedAt: string }
 
 // A DECK (your leader + base) is the top-level lens — you review its matchups.
 interface Deck { ownLeader: string; ownBase: string }
@@ -378,6 +380,7 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
                 <TakeCol title="Take out" tone={SALMON} cards={activeTake.cardsOut} />
               </div>
               {activeTake.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginTop: 10 }}>{activeTake.notes}</div>}
+              <BaselineDeck take={activeTake} />
             </div>
           )}
         </div>
@@ -451,6 +454,44 @@ function ChipRow({ label, tone, members, viewerId, onSelect }: { label: string; 
     </span>
   );
 }
+// The replay decklist a take was authored from — collapsed by default, shown with
+// the plan overlaid (cuts tinted salmon in the main, brings-in green in the
+// sideboard) so a guide reads in the context of the list it assumes. Guides aren't
+// tied to a list — this is provenance, and the seed for applying a guide to any list.
+function BaselineDeck({ take }: { take: Take }) {
+  const [open, setOpen] = useState(false);
+  const b = take.baseline;
+  if (!b || (!b.main?.length && !b.sideboard?.length)) return null;
+  const inIds = new Set(take.cardsIn.map((c) => c.cardId));
+  const outIds = new Set(take.cardsOut.map((c) => c.cardId));
+  const mainTotal = b.main.reduce((s, c) => s + c.count, 0);
+  const sideTotal = b.sideboard.reduce((s, c) => s + c.count, 0);
+  const tile = (c: DeckEntry, which: 'main' | 'side') => {
+    const tone = which === 'main' ? (outIds.has(c.cardId) ? SALMON : NEUTRAL) : (inIds.has(c.cardId) ? GREEN : NEUTRAL);
+    return <CardPile key={c.cardId} id={c.cardId} count={c.count} color={tone} w={40} />;
+  };
+  return (
+    <div data-testid="take-baseline" style={{ marginTop: 12, borderTop: '1px solid #1c222c', paddingTop: 10 }}>
+      <button type="button" data-testid="take-baseline-toggle" onClick={() => setOpen((o) => !o)} style={{ ...linkBtn, color: '#8a93a3', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 10 }}>{open ? '▾' : '▸'}</span> The list this guide is based on · {mainTotal} + {sideTotal}
+      </button>
+      {open && (
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10 }}>
+          <div style={{ flex: '2 1 300px', minWidth: 0 }}>
+            <div style={{ ...sectionLabel, marginBottom: 8, color: '#c8cdd8' }}>Main deck · {mainTotal} <span style={{ color: SALMON, fontWeight: 700 }}>· cuts in salmon</span></div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{b.main.map((c) => tile(c, 'main'))}</div>
+          </div>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+            <div style={{ ...sectionLabel, marginBottom: 8, color: '#c8cdd8' }}>Sideboard · {sideTotal} <span style={{ color: GREEN, fontWeight: 700 }}>· brings in green</span></div>
+            {b.sideboard.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{b.sideboard.map((c) => tile(c, 'side'))}</div>
+              : <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>—</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // One contributor: no consensus / pill selector — just the single plan (cards +
 // notes) and a nudge to add more. (Remove lives in the header, with Edit.)
 function SolePlan({ take, viewerId, onAdd }: { take: Take; viewerId: string; onAdd: () => void }) {
@@ -468,7 +509,8 @@ function SolePlan({ take, viewerId, onAdd }: { take: Take; viewerId: string; onA
         </div>
       )}
       {take.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginBottom: 14 }}>{take.notes}</div>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', border: '1px dashed #33414d', background: 'rgba(102,229,255,0.05)', borderRadius: 10, padding: '12px 14px' }}>
+      <BaselineDeck take={take} />
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', border: '1px dashed #33414d', background: 'rgba(102,229,255,0.05)', borderRadius: 10, padding: '12px 14px' }}>
         {mine ? (
           <span style={{ fontSize: 12.5, color: '#8a93a3' }}>You&apos;re the first to weigh in — your teammates&apos; picks will show here to compare.</span>
         ) : (
@@ -541,6 +583,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   const [decklists, setDecklists] = useState<ArchetypeDecklist[] | null>(null);
   const [sourceIdx, setSourceIdx] = useState(0);
   const [sideAdds, setSideAdds] = useState<Record<string, number>>({}); // tech cards added to the sideboard reservoir
+  const [loadedBaseline, setLoadedBaseline] = useState<TakeBaseline | null>(null); // baseline of the take being edited
 
   useEffect(() => {
     (async () => {
@@ -555,6 +598,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
           for (const c of my.cardsIn) m[c.cardId] = { side: 'in', qty: qtyOf(c) }; for (const c of my.cardsOut) m[c.cardId] = { side: 'out', qty: qtyOf(c) };
           setMarks(m);
           setExtra([...my.cardsIn, ...my.cardsOut].map((c: GuideCard) => ({ cardId: c.cardId, name: null, set: null, number: null, cost: null, type: null, count: 0, fraction: 0 })));
+          setLoadedBaseline(my.baseline ?? null); // keep the stored baseline through a pool-lens edit
         }
       }
     })();
@@ -732,7 +776,13 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
     setSaving(true);
     const m: Matchup = { ownLeader, ownBase, oppLeader, oppBase };
     try {
-      const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...m, notes, cardsIn: inCards.map(withQty), cardsOut: outCards.map(withQty) }) })).json();
+      // Store the list this was authored from (decklist lens) so the guide can be
+      // read against its context + later applied to any list. A pool-lens edit
+      // keeps whatever baseline the take already had (don't wipe it on a note tweak).
+      const baseline = lens === 'decklist' && src
+        ? { main: src.main.map((c) => ({ cardId: c.cardId, count: c.count })), sideboard: src.sideboard.map((c) => ({ cardId: c.cardId, count: c.count })) }
+        : loadedBaseline;
+      const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...m, notes, cardsIn: inCards.map(withQty), cardsOut: outCards.map(withQty), baseline }) })).json();
       if (!j.ok) { setError(j.error || 'save failed'); return; }
       onSaved(m);
     } catch { setError('save failed'); } finally { setSaving(false); }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireTeamMember } from '@/lib/apiAuth';
 import {
   matchupTakes, listMatchupComments, matchupContextForTeam, computeConsensus,
-  upsertMyTake, deleteMyTake, sanitizeGuideCards, type Matchup,
+  upsertMyTake, deleteMyTake, sanitizeGuideCards, sanitizeBaseline, type Matchup,
 } from '@/lib/sideboardGuides';
 
 export const runtime = 'nodejs';
@@ -41,7 +41,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ slug: st
   const body = await req.json().catch(() => ({}));
   const m = matchupFromBody(body);
   if (!m) return NextResponse.json({ ok: false, error: 'a full matchup (both leaders + bases) is required' }, { status: 400 });
-  await upsertMyTake(slug, mem.userId, m, typeof body.notes === 'string' ? body.notes.slice(0, 5000) : '', sanitizeGuideCards(body.cardsIn), sanitizeGuideCards(body.cardsOut));
+  await upsertMyTake(slug, mem.userId, m, typeof body.notes === 'string' ? body.notes.slice(0, 5000) : '', sanitizeGuideCards(body.cardsIn), sanitizeGuideCards(body.cardsOut), sanitizeBaseline(body.baseline));
   return NextResponse.json({ ok: true });
 }
 

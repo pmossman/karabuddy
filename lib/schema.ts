@@ -965,6 +965,10 @@ export type SideboardResponse = typeof sideboardResponses.$inferSelect;
 // matchup view aggregates them into a consensus + shows divergence. Not tied to
 // a decklist; applied to one on demand.
 type GuideCard = { cardId: string; qty?: number; note?: string | null };
+// B232: the replay-derived decklist a take was authored FROM (main + sideboard),
+// stored for context so a guide can be read against the list it assumes — and
+// later applied to any list. Null when the take was built from the card pool.
+export type TakeBaseline = { main: { cardId: string; count: number }[]; sideboard: { cardId: string; count: number }[] };
 export const sideboardTakes = pgTable(
   'sideboard_takes',
   {
@@ -979,6 +983,7 @@ export const sideboardTakes = pgTable(
     notes: text('notes').notNull().default(''),
     cardsIn: jsonb('cards_in').$type<GuideCard[]>().notNull().default([]), // bring in
     cardsOut: jsonb('cards_out').$type<GuideCard[]>().notNull().default([]), // take out
+    baseline: jsonb('baseline').$type<TakeBaseline>(), // the replay decklist authored from (nullable)
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
