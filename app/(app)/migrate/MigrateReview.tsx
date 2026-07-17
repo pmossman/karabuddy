@@ -38,13 +38,21 @@ function ArchThumb({ deck }: { deck: DerivedDeck }) {
 
 function CardThumb({ card, w = 44 }: { card: CardRef; w?: number }) {
   const url = cardImageUrl(parseId(card.id), false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const PW = 236, PH = Math.round(PW / 0.716); // full-card aspect
+  const preview = pos && url && typeof window !== 'undefined'
+    ? { left: Math.min(pos.x + 20, window.innerWidth - PW - 10), top: Math.min(Math.max(pos.y - PH / 2, 8), window.innerHeight - PH - 8) }
+    : null;
   return (
-    <span title={card.name ?? card.id} style={{ position: 'relative', width: w, height: Math.round(w * 1.4), flex: '0 0 auto', display: 'inline-block' }}>
+    <span onMouseMove={(e) => setPos({ x: e.clientX, y: e.clientY })} onMouseLeave={() => setPos(null)}
+      style={{ position: 'relative', width: w, height: Math.round(w * 1.4), flex: '0 0 auto', display: 'inline-block' }}>
       {url
         ? // eslint-disable-next-line @next/next/no-img-element
           <img src={url} alt={card.name ?? card.id} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 3, display: 'block', background: tokens.color.bgDeep }} />
         : <span style={{ width: '100%', height: '100%', borderRadius: 3, border: `1px solid ${tokens.color.border}`, display: 'grid', placeItems: 'center', fontSize: 8, color: tokens.color.textMuted, textAlign: 'center', padding: 2 }}>{card.name ?? card.id}</span>}
       {card.count > 1 && <span style={{ position: 'absolute', right: -4, bottom: -5, minWidth: 15, height: 15, borderRadius: '50%', background: tokens.color.bg, border: `1px solid ${tokens.color.borderStrong}`, color: tokens.color.text, font: `700 9px ${mono}`, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{card.count}</span>}
+      {preview && // eslint-disable-next-line @next/next/no-img-element
+        <img src={url!} alt="" style={{ position: 'fixed', left: preview.left, top: preview.top, width: PW, height: PH, borderRadius: 10, boxShadow: '0 10px 34px rgba(0,0,0,0.75)', border: '1px solid rgba(255,255,255,0.16)', zIndex: 1000, pointerEvents: 'none' }} />}
     </span>
   );
 }
@@ -75,11 +83,8 @@ export function MigrateReview({ decks }: { decks: DerivedDeck[] }) {
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '26px 28px 64px', color: tokens.color.text, fontFamily: tokens.font.family }}>
       <div style={{ font: `600 11px ${mono}`, letterSpacing: '0.2em', textTransform: 'uppercase', color: FORGE, marginBottom: 8 }}>karabuddy → SWU Forge</div>
-      <h1 style={{ fontSize: 27, margin: '0 0 10px', letterSpacing: '-0.3px', fontWeight: 700 }}>Send your decks to SWU Forge</h1>
-      <p style={{ color: tokens.color.textSecondary, fontSize: 15, maxWidth: '62ch', margin: '0 0 22px' }}>
-        These are the decks karabuddy found in your games — one per leader + base, most-played first. We&apos;ll send each
-        deck&apos;s <b>current list</b>. Open one to see the exact cards. Uncheck any you don&apos;t want.
-      </p>
+      <h1 style={{ fontSize: 27, margin: '0 0 6px', letterSpacing: '-0.3px', fontWeight: 700 }}>Send your decks to SWU Forge</h1>
+      <p style={{ color: tokens.color.textMuted, fontSize: 13, margin: '0 0 20px' }}>From your replays · most-played first · current list of each</p>
 
       {decks.length === 0 ? (
         <Panel padding={28} style={{ textAlign: 'center', color: tokens.color.textSecondary }}>
@@ -119,10 +124,10 @@ function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onI
           <div style={{ fontWeight: 650, fontSize: 15.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {deck.leader.name} <span style={{ color: tokens.color.textMuted, fontWeight: 400 }}>· {deck.base.label}</span>
           </div>
-          <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 3, color: tokens.color.textMuted, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 3, color: tokens.color.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
             <span><b style={{ color: tokens.color.textSecondary, fontWeight: 600 }}>{deck.games}</b> games</span>
             <span>{deck.wins}–{deck.losses}{p != null && <b style={{ color: wrColor(p), marginLeft: 5 }}>{p}%</b>}</span>
-            <span>current list · {current.size}+{current.sideSize} sideboard</span>
+            <span>{current.size}+{current.sideSize}</span>
           </div>
         </div>
         <div onClick={(e) => e.stopPropagation()}>
@@ -135,8 +140,7 @@ function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onI
           <DeckListView v={current} />
           {deck.versions.length > 1 && (
             <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 14, color: tokens.color.textMuted }}>
-              You revised this list {deck.versions.length} times between {deck.startAt} and {deck.endAt}. We send the current one;
-              its earlier versions come across as the deck&apos;s history on SWU Forge.
+              {deck.versions.length} versions · earlier ones kept as history
             </div>
           )}
         </div>
