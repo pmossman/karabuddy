@@ -17,6 +17,7 @@ config({ path: '.env.development.local' });
 
 type DeckMap = Map<string, number>; // cardId -> count
 const mapOf = (deck: any[]): DeckMap => { const m = new Map<string, number>(); for (const c of deck || []) if (c?.id) m.set(c.id, (m.get(c.id) || 0) + (c.count || 0)); return m; };
+const merge = (...maps: DeckMap[]): DeckMap => { const m = new Map<string, number>(); for (const mp of maps) for (const [k, v] of mp) m.set(k, (m.get(k) || 0) + v); return m; };
 const total = (m: DeckMap) => [...m.values()].reduce((a, b) => a + b, 0);
 const sig = (m: DeckMap) => [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([id, n]) => `${id}:${n}`).join(',');
 function diff(a: DeckMap, b: DeckMap) {
@@ -29,9 +30,15 @@ const fmtDate = (t: number) => new Date(t).toISOString().slice(0, 10);
 async function main() {
   const args = process.argv.slice(2);
   const userArg = args.find((a) => !a.startsWith('--')) || null;
-  const T = Number(args.find((a) => a.startsWith('--t='))?.split('=')[1] ?? 4);
+  // A version = the combined MAIN+SIDEBOARD set (sideboarding just repartitions
+  // the registered 60, so it doesn't change the union). T=0 → any real change to
+  // the 60 is a new version. minV=1 → no consolidation (the combined set already
+  // ignores sideboard churn). SIDEMIN filters out games with an incomplete
+  // sideboard capture (which would falsely look like a different set).
+  const T = Number(args.find((a) => a.startsWith('--t='))?.split('=')[1] ?? 0);
   const MIN = Number(args.find((a) => a.startsWith('--min='))?.split('=')[1] ?? 8);
-  const MINV = Number(args.find((a) => a.startsWith('--minv='))?.split('=')[1] ?? 5);
+  const MINV = Number(args.find((a) => a.startsWith('--minv='))?.split('=')[1] ?? 1);
+  const SIDEMIN = Number(args.find((a) => a.startsWith('--sidemin='))?.split('=')[1] ?? 8);
 
   const { getDb } = await import('../lib/db');
   const { replays, extensionTokens, users, cards } = await import('../lib/schema');
@@ -65,13 +72,19 @@ async function main() {
 
   type Rec = { t: number; deck: DeckMap; sideboard: any[]; win: boolean | null; leaderName: string; baseLabel: string };
   const byArch = new Map<string, { leaderName: string; baseLabel: string; recs: Rec[] }>();
+  let exclMain = 0, exclSide = 0;
   for (const r of rows) {
     const owner = Array.isArray(r.players) ? (r.players as any[]).find((p) => p?.id === r.pov) : null;
     if (!owner?.leader?.name || !owner?.base) continue;
     const d = (r.decks as any)?.[r.pov!];
     if (!d?.deck) continue;
-    const deck = mapOf(d.deck);
-    if (total(deck) < 50) continue; // complete lists only — partial captures muddy versioning
+    const main = mapOf(d.deck), side = mapOf(d.sideboard || []);
+    // Version identity is the combined registered set (main ∪ sideboard). Require a
+    // complete capture (full maindeck + a real sideboard) so a dropped sideboard
+    // doesn't read as a different version.
+    if (total(main) < 50) { exclMain++; continue; }         // nextSet/partial maindeck fragment
+    if (total(side) < SIDEMIN) { exclSide++; continue; }     // sideboard capture gap
+    const deck = merge(main, side);
     const subtitle = subMap.get(`${owner.leader.set}|${owner.leader.number}`) ?? null;
     const lv = leaderValue(owner.leader.name, subtitle);
     const baseId = baseIds.get(CARD(owner.base.set, owner.base.number));
@@ -141,24 +154,23 @@ async function main() {
     ...d.removed.map(([id, n]) => `−${n} ${nameOf.get(id) ?? id}`),
   ].join(', ');
 
-  console.log(`User ${u?.name ?? userId} — deck version detection\n(T=${T} cards to split; consolidate versions with < ${MINV} games into neighbours; min ${MIN} games/archetype)\n`);
-  // Raw runs (no consolidation) vs consolidated versions — shows the noise the
-  // consolidation pass removes, and how minV tunes it.
-  console.log('Versions: raw (per-game churn) → consolidated at minV = 3 / 5 / 8');
-  console.log('  games   raw   m3   m5   m8    archetype');
+  console.log(`User ${u?.name ?? userId} — deck version detection`);
+  console.log(`Version = the combined MAIN+SIDEBOARD set (sideboarding ignored).`);
+  console.log(`Excluded: ${exclMain} partial-maindeck (nextSet fragments) + ${exclSide} incomplete-sideboard (<${SIDEMIN}) games.\n`);
+  console.log('Versions per archetype (T=' + T + ' change to the 60 = new version):');
+  console.log('  games   versions   archetype');
   for (const a of archs) {
-    const raw = detect(a.recs, T, 1).length;
-    const [m3, m5, m8] = [3, 5, 8].map((mv) => detect(a.recs, T, mv).length);
-    console.log(`  ${String(a.recs.length).padStart(5)}   ${String(raw).padStart(3)}   ${String(m3).padStart(2)}   ${String(m5).padStart(2)}   ${String(m8).padStart(2)}    ${a.leaderName} — ${a.baseLabel}`);
+    const n = detect(a.recs, T, MINV).length;
+    console.log(`  ${String(a.recs.length).padStart(5)}      ${String(n).padStart(3)}      ${a.leaderName} — ${a.baseLabel}`);
   }
 
-  console.log(`\n── Version timelines (consolidated, minV=${MINV}) ──`);
+  console.log(`\n── Version timelines ──`);
   for (const a of archs.slice(0, 6)) {
     const vs = detect(a.recs, T, MINV);
     console.log(`\n${a.leaderName} — ${a.baseLabel}   (${a.recs.length} games → ${vs.length} versions)`);
     vs.forEach((v, i) => {
       const wr = v.wins + v.losses ? Math.round((v.wins / (v.wins + v.losses)) * 100) : null;
-      const change = i === 0 ? 'initial list' : showDiff(diff(vs[i - 1].rep, v.rep)) || '(sideboard/no maindeck change)';
+      const change = i === 0 ? 'initial list' : showDiff(diff(vs[i - 1].rep, v.rep)) || '(revisited an earlier list)';
       console.log(`  v${i + 1}  ${fmtDate(v.start)}–${fmtDate(v.end)}  ${String(v.games).padStart(3)} games  ${String(v.wins)}–${v.losses}${wr != null ? ` (${wr}%)` : ''}`);
       console.log(`      ${change.slice(0, 160)}`);
     });
