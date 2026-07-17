@@ -123,4 +123,20 @@ describe('sideboard guides (matchup takes)', () => {
     as(await seedUser()); // non-member
     expect((await (await commentPost(new Request('http://t', { method: 'POST', body: JSON.stringify({ ...MU, body: 'x' }) }), p(team))).json()).ok).toBeFalsy();
   });
+
+  it('stores the authoring baseline decklist (sanitized) with the take; pool-authored is null', async () => {
+    const a = await seedUser();
+    const team = await seedTeam(a, [a]);
+    as(a);
+    await matchupPut(putReq({ ...MU, cardsIn: [{ cardId: 'ASH_099' }], cardsOut: [{ cardId: 'ASH_010' }],
+      baseline: { main: [{ cardId: 'ASH_010', count: 3 }, { cardId: 'BAD', count: 99 }, { cardId: '  ', count: 1 }], sideboard: [{ cardId: 'ASH_099', count: 2 }] } }), p(team));
+    const view = (await getMatchup(team)).data;
+    // Counts clamp to 1..9, blank ids drop.
+    expect(view.myTake.baseline.main).toEqual([{ cardId: 'ASH_010', count: 3 }, { cardId: 'BAD', count: 9 }]);
+    expect(view.myTake.baseline.sideboard).toEqual([{ cardId: 'ASH_099', count: 2 }]);
+
+    // Re-saving without a baseline (pool-authored) clears it.
+    await matchupPut(putReq({ ...MU, cardsIn: [{ cardId: 'ASH_020' }] }), p(team));
+    expect((await getMatchup(team)).data.myTake.baseline).toBeNull();
+  });
 });

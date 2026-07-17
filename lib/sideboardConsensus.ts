@@ -12,6 +12,45 @@ export function guideQty(c: { qty?: number | null } | null | undefined): number 
 }
 export const sumQty = (cards: GuideCard[]): number => cards.reduce((s, c) => s + guideQty(c), 0);
 
+// ── Apply a guide to a decklist ─────────────────────────────────────────────
+// A guide's plan (bring IN / take OUT) reconciled against a DIFFERENT list than it
+// was authored from. Cuts match your MAIN deck; brings match your SIDEBOARD (or
+// note if you already run it maindeck / don't have it at all). Pure — the swaps
+// that transfer, and the ones that don't fit your build.
+export interface DeckEntry { cardId: string; count: number }
+export interface DeckList { main: DeckEntry[]; sideboard: DeckEntry[] }
+export interface AppliedSwap { cardId: string; qty: number; have: number; applied: number } // qty=guide wants, have=in your zone, applied=min
+export interface GuideApplication {
+  cut: AppliedSwap[];       // OUT cards present in your main → cut
+  bring: AppliedSwap[];     // IN cards present in your sideboard → bring in
+  notRunning: GuideCard[];  // OUT cards you don't run (nothing to cut)
+  alreadyIn: GuideCard[];   // IN cards already in your maindeck (no swap needed)
+  missing: GuideCard[];     // IN cards not in your main OR sideboard (you don't have them)
+  cutTotal: number; bringTotal: number;
+}
+export function applyGuideToList(plan: { cardsIn: GuideCard[]; cardsOut: GuideCard[] }, list: DeckList): GuideApplication {
+  const mainCount = new Map((list.main || []).map((e) => [e.cardId, Math.max(0, e.count)] as const));
+  const sideCount = new Map((list.sideboard || []).map((e) => [e.cardId, Math.max(0, e.count)] as const));
+  const cut: AppliedSwap[] = [], notRunning: GuideCard[] = [];
+  for (const c of plan.cardsOut || []) {
+    const qty = guideQty(c), have = mainCount.get(c.cardId) ?? 0;
+    if (have > 0) cut.push({ cardId: c.cardId, qty, have, applied: Math.min(qty, have) });
+    else notRunning.push({ cardId: c.cardId, qty });
+  }
+  const bring: AppliedSwap[] = [], alreadyIn: GuideCard[] = [], missing: GuideCard[] = [];
+  for (const c of plan.cardsIn || []) {
+    const qty = guideQty(c), sHave = sideCount.get(c.cardId) ?? 0, mHave = mainCount.get(c.cardId) ?? 0;
+    if (sHave > 0) bring.push({ cardId: c.cardId, qty, have: sHave, applied: Math.min(qty, sHave) });
+    else if (mHave > 0) alreadyIn.push({ cardId: c.cardId, qty });
+    else missing.push({ cardId: c.cardId, qty });
+  }
+  return {
+    cut, bring, notRunning, alreadyIn, missing,
+    cutTotal: cut.reduce((s, x) => s + x.applied, 0),
+    bringTotal: bring.reduce((s, x) => s + x.applied, 0),
+  };
+}
+
 // Most common value (ties → the larger, so a 2-vs-3 split shows the bigger swap).
 export function modeQty(qtys: number[]): number {
   const freq = new Map<number, number>();

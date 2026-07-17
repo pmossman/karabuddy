@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, desc } from 'drizzle-orm';
 import { getDb } from './db';
-import { replays, replayTeamShares, teamMembers, sideboardTakes, sideboardMatchupComments, cards, users } from './schema';
+import { replays, replayTeamShares, teamMembers, sideboardTakes, sideboardMatchupComments, cards, users, type TakeBaseline } from './schema';
 import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
 import { cardIdFromSetNumber } from './cards';
 
@@ -90,6 +90,101 @@ export async function matchupCardPool(
   // Staples first; ties broken by cost then name for a stable, scannable order.
   list.sort((a, b) => b.count - a.count || (a.cost ?? 99) - (b.cost ?? 99) || (a.name ?? '').localeCompare(b.name ?? ''));
   return { totalLists, cards: list };
+}
+
+// B232: candidate BASELINE decklists for authoring a guide "through the lens of a
+// real list" — recent shared replays where the recorder ran this archetype (own
+// leader NAME [+ base identity key]), each with its full main + sideboard. The
+// author picks one and swaps cards between main/side; the viewer's own lists sort
+// first, then by recency. The baseline is a scaffold — only the swap is stored.
+export interface DecklistCard {
+  cardId: string; count: number;
+  name: string | null; subtitle: string | null; set: string | null; number: number | null; cost: number | null; type: string | null;
+}
+export interface ArchetypeDecklist {
+  replaySlug: string; playedAt: string | null; recorderName: string | null; isMine: boolean; gameCount: number;
+  main: DecklistCard[]; sideboard: DecklistCard[];
+}
+export async function archetypeDecklists(
+  teamSlug: string,
+  viewerId: string,
+  ownLeader: string,
+  ownBaseKey?: string | null,
+  limit = 8,
+): Promise<ArchetypeDecklist[]> {
+  const db = getDb();
+  const wantName = leaderNameOf(ownLeader);
+  const rows = await db
+    .select({ slug: replays.slug, createdAt: replays.createdAt, userId: replays.userId, ownerName: users.name, ownerPlayerId: replays.ownerPlayerId, players: replays.players, decks: replays.decks })
+    .from(replays)
+    .innerJoin(replayTeamShares, eq(replayTeamShares.replaySlug, replays.slug))
+    .leftJoin(users, eq(users.id, replays.userId))
+    .where(and(eq(replayTeamShares.teamSlug, teamSlug), isNotNull(replays.decks)))
+    .orderBy(desc(replays.createdAt));
+
+  // Rows whose recorder ran this leader, carrying the recorder base ref so we can
+  // resolve its functional identity and match the requested base key.
+  const cand: { row: (typeof rows)[number]; base: any }[] = [];
+  for (const r of rows) {
+    const opid = r.ownerPlayerId;
+    if (!opid || !r.decks) continue;
+    const players = Array.isArray(r.players) ? (r.players as any[]) : [];
+    const me = players.find((p) => p?.id === opid);
+    if (!me || me.leader?.name !== wantName) continue;
+    const d = (r.decks as any)?.[opid];
+    if (!d || !(Array.isArray(d.deck) && d.deck.length)) continue;
+    cand.push({ row: r, base: me.base ?? null });
+  }
+  if (!cand.length) return [];
+
+  // Resolve base identities once, then filter to the requested base (if any).
+  const baseIds = ownBaseKey ? await resolveBaseIdentities(cand.map((c) => c.base).filter((b) => b?.set && b?.number != null)) : null;
+  const matched = cand.filter((c) => {
+    if (!ownBaseKey) return true;
+    if (!(c.base?.set && c.base?.number != null)) return false;
+    return baseIds!.get(cardIdFromSetNumber(c.base.set, c.base.number))?.key === ownBaseKey;
+  });
+  if (!matched.length) return [];
+
+  // Collapse lists with IDENTICAL card content — a deck played across many games
+  // is ONE option, not one per opponent. Prefer the viewer's own copy as the
+  // representative; label by the group's most recent play + how many games used it.
+  const norm = (arr: any[]) => (arr || []).filter((e) => e?.id).map((e) => `${e.id}:${Math.max(1, Number(e.count) || 1)}`).sort().join(',');
+  const whenOf = (c: (typeof matched)[number]) => (c.row.createdAt instanceof Date ? c.row.createdAt.getTime() : (c.row.createdAt ? Date.parse(c.row.createdAt as any) : 0));
+  interface Group { rep: (typeof matched)[number]; count: number; isMine: boolean; latest: number }
+  const groups = new Map<string, Group>();
+  for (const c of matched) {
+    const d = (c.row.decks as any)[c.row.ownerPlayerId!];
+    const key = `${norm(d.deck)}|${norm(d.sideboard)}`;
+    const mine = c.row.userId === viewerId;
+    const g = groups.get(key);
+    // Representative preference: the viewer's own copy, else the most recent (matched
+    // is already viewer-first then newest-first, so the first seen per key wins).
+    if (!g) groups.set(key, { rep: c, count: 1, isMine: mine, latest: whenOf(c) });
+    else { g.count++; g.isMine = g.isMine || mine; g.latest = Math.max(g.latest, whenOf(c)); }
+  }
+  const ordered = [...groups.values()].sort((a, b) => Number(b.isMine) - Number(a.isMine) || b.latest - a.latest).slice(0, limit);
+
+  const ids = new Set<string>();
+  for (const g of ordered) { const d = (g.rep.row.decks as any)[g.rep.row.ownerPlayerId!]; for (const list of [d.deck, d.sideboard]) for (const e of (list || [])) if (e?.id) ids.add(e.id); }
+  const meta = ids.size ? await db.select().from(cards).where(inArray(cards.cardId, [...ids])) : [];
+  const metaById = new Map(meta.map((m) => [m.cardId, m]));
+  const toCards = (arr: any[]): DecklistCard[] => (arr || []).filter((e) => e?.id).map((e) => {
+    const m = metaById.get(e.id);
+    return { cardId: e.id, count: Math.max(1, Number(e.count) || 1), name: m?.name ?? null, subtitle: m?.subtitle ?? null, set: m?.set ?? null, number: m?.number ?? null, cost: m?.cost ?? null, type: m?.type ?? null };
+  });
+  return ordered.map((g) => {
+    const d = (g.rep.row.decks as any)[g.rep.row.ownerPlayerId!];
+    return {
+      replaySlug: g.rep.row.slug,
+      playedAt: g.latest ? new Date(g.latest).toISOString() : null,
+      recorderName: g.rep.row.ownerName ?? null,
+      isMine: g.isMine,
+      gameCount: g.count,
+      main: toCards(d.deck),
+      sideboard: toCards(d.sideboard),
+    };
+  });
 }
 
 // A leader is identified by name + SUBTITLE (like cards) — "Luke Skywalker" has
@@ -207,18 +302,32 @@ export function sanitizeGuideCards(arr: unknown): GuideCard[] {
     .filter((c): c is { cardId: string; qty?: unknown; note?: unknown } => !!c && typeof (c as any).cardId === 'string' && (c as any).cardId.trim().length > 0)
     .map((c) => ({ cardId: c.cardId.trim(), qty: guideQty(c as any), note: typeof c.note === 'string' && c.note.trim() ? c.note.trim().slice(0, 500) : null }));
 }
+// Clamp an untrusted baseline decklist ({main, sideboard} of {cardId,count}) to
+// the stored shape, or null. Counts clamped 1..9 (a decklist copy count).
+export function sanitizeBaseline(raw: unknown): TakeBaseline | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const list = (arr: unknown): TakeBaseline['main'] => Array.isArray(arr)
+    ? arr.filter((e): e is { cardId: string; count?: unknown } => !!e && typeof (e as any).cardId === 'string' && (e as any).cardId.trim().length > 0)
+        .map((e) => ({ cardId: e.cardId.trim(), count: Math.min(9, Math.max(1, Math.round(Number((e as any).count)) || 1)) }))
+        .slice(0, 120)
+    : [];
+  const main = list((raw as any).main);
+  const sideboard = list((raw as any).sideboard);
+  return main.length || sideboard.length ? { main, sideboard } : null;
+}
 // A matchup — the top-level unit. Takes + comments hang off it.
 export interface Matchup { ownLeader: string; ownBase: string; oppLeader: string; oppBase: string }
 const takeWhere = (teamSlug: string, m: Matchup) =>
   and(eq(sideboardTakes.teamSlug, teamSlug), eq(sideboardTakes.ownLeader, m.ownLeader), eq(sideboardTakes.ownBase, m.ownBase), eq(sideboardTakes.oppLeader, m.oppLeader), eq(sideboardTakes.oppBase, m.oppBase));
 
-// Upsert the caller's ONE take for a matchup (insert or replace).
-export async function upsertMyTake(teamSlug: string, authorId: string, m: Matchup, notes: string, cardsIn: GuideCard[], cardsOut: GuideCard[]): Promise<void> {
+// Upsert the caller's ONE take for a matchup (insert or replace). `baseline` is
+// the replay decklist it was authored from (null for pool-authored takes).
+export async function upsertMyTake(teamSlug: string, authorId: string, m: Matchup, notes: string, cardsIn: GuideCard[], cardsOut: GuideCard[], baseline: TakeBaseline | null = null): Promise<void> {
   await getDb().insert(sideboardTakes)
-    .values({ id: randomUUID(), teamSlug, authorId, ...m, notes, cardsIn, cardsOut })
+    .values({ id: randomUUID(), teamSlug, authorId, ...m, notes, cardsIn, cardsOut, baseline })
     .onConflictDoUpdate({
       target: [sideboardTakes.teamSlug, sideboardTakes.ownLeader, sideboardTakes.ownBase, sideboardTakes.oppLeader, sideboardTakes.oppBase, sideboardTakes.authorId],
-      set: { notes, cardsIn, cardsOut, updatedAt: new Date() },
+      set: { notes, cardsIn, cardsOut, baseline, updatedAt: new Date() },
     });
 }
 
@@ -229,7 +338,7 @@ export async function deleteMyTake(teamSlug: string, authorId: string, m: Matchu
 // Every take on a matchup, author-attributed (newest first).
 export async function matchupTakes(teamSlug: string, m: Matchup) {
   return getDb()
-    .select({ id: sideboardTakes.id, authorId: sideboardTakes.authorId, authorName: users.name, notes: sideboardTakes.notes, cardsIn: sideboardTakes.cardsIn, cardsOut: sideboardTakes.cardsOut, updatedAt: sideboardTakes.updatedAt })
+    .select({ id: sideboardTakes.id, authorId: sideboardTakes.authorId, authorName: users.name, notes: sideboardTakes.notes, cardsIn: sideboardTakes.cardsIn, cardsOut: sideboardTakes.cardsOut, baseline: sideboardTakes.baseline, updatedAt: sideboardTakes.updatedAt })
     .from(sideboardTakes)
     .leftJoin(users, eq(users.id, sideboardTakes.authorId))
     .where(takeWhere(teamSlug, m))

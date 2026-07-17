@@ -7,7 +7,7 @@
 // and the my-take author form. Speaks the drills' IN=green / OUT=salmon language.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { analyzeMatchupConsensus, guideQty as qtyOf, sumQty, MAX_QTY, type GuideCard as LibGuideCard, type SplitCard, type ConsensusMember } from '@/lib/sideboardConsensus';
+import { analyzeMatchupConsensus, applyGuideToList, guideQty as qtyOf, sumQty, MAX_QTY, type GuideCard as LibGuideCard, type SplitCard, type ConsensusMember, type AppliedSwap } from '@/lib/sideboardConsensus';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { CardSearch, type SelectedCard } from '@/app/_components/CardSearch';
 import { AspectIcon } from '@/app/_components/AspectIcon';
@@ -33,8 +33,15 @@ type Art = Record<string, { set: string | null; number: number | null; name?: st
 type BaseKinds = Record<string, BaseKind>;
 type GuideCard = LibGuideCard;
 interface PoolCard { cardId: string; name: string | null; set: string | null; number: number | null; cost: number | null; type: string | null; count: number; fraction: number }
+interface DecklistCard { cardId: string; count: number; name: string | null; set: string | null; number: number | null; cost: number | null; type: string | null }
+interface ArchetypeDecklist { replaySlug: string; playedAt: string | null; recorderName: string | null; isMine: boolean; gameCount: number; main: DecklistCard[]; sideboard: DecklistCard[] }
+// A deduped baseline list is played across many games — label it by whose it is,
+// how recent, and how many games ran it (NOT by a single opponent).
+const decklistLabel = (d: ArchetypeDecklist) => `${d.isMine ? 'Your list' : `${d.recorderName ?? 'Teammate'}’s list`}${d.playedAt ? ` · ${relativeTime(d.playedAt)}` : ''}${d.gameCount > 1 ? ` · ${d.gameCount} games` : ''}`;
 interface MatchupSummary extends Matchup { takeCount: number; contributors: (string | null)[]; myTake: boolean }
-interface Take { id: string; authorId: string; authorName: string | null; notes: string; cardsIn: GuideCard[]; cardsOut: GuideCard[]; updatedAt: string }
+interface DeckEntry { cardId: string; count: number }
+interface TakeBaseline { main: DeckEntry[]; sideboard: DeckEntry[] }
+interface Take { id: string; authorId: string; authorName: string | null; notes: string; cardsIn: GuideCard[]; cardsOut: GuideCard[]; baseline?: TakeBaseline | null; updatedAt: string }
 
 // A DECK (your leader + base) is the top-level lens — you review its matchups.
 interface Deck { ownLeader: string; ownBase: string }
@@ -373,11 +380,13 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
                 <TakeCol title="Take out" tone={SALMON} cards={activeTake.cardsOut} />
               </div>
               {activeTake.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginTop: 10 }}>{activeTake.notes}</div>}
+              <ApplyGuide teamSlug={teamSlug} matchup={matchup} take={activeTake} />
+              <BaselineDeck take={activeTake} />
             </div>
           )}
         </div>
       ) : takes.length === 1 ? (
-        <SolePlan take={takes[0]} viewerId={d.viewerId} onAdd={() => onEditTake(matchup)} />
+        <SolePlan take={takes[0]} teamSlug={teamSlug} matchup={matchup} viewerId={d.viewerId} onAdd={() => onEditTake(matchup)} />
       ) : null}
 
       {/* Discussion */}
@@ -446,9 +455,117 @@ function ChipRow({ label, tone, members, viewerId, onSelect }: { label: string; 
     </span>
   );
 }
+// The replay decklist a take was authored from — collapsed by default, shown with
+// the plan overlaid (cuts tinted salmon in the main, brings-in green in the
+// sideboard) so a guide reads in the context of the list it assumes. Guides aren't
+// tied to a list — this is provenance, and the seed for applying a guide to any list.
+function BaselineDeck({ take }: { take: Take }) {
+  const [open, setOpen] = useState(false);
+  const b = take.baseline;
+  if (!b || (!b.main?.length && !b.sideboard?.length)) return null;
+  const inIds = new Set(take.cardsIn.map((c) => c.cardId));
+  const outIds = new Set(take.cardsOut.map((c) => c.cardId));
+  const mainTotal = b.main.reduce((s, c) => s + c.count, 0);
+  const sideTotal = b.sideboard.reduce((s, c) => s + c.count, 0);
+  const tile = (c: DeckEntry, which: 'main' | 'side') => {
+    const tone = which === 'main' ? (outIds.has(c.cardId) ? SALMON : NEUTRAL) : (inIds.has(c.cardId) ? GREEN : NEUTRAL);
+    return <CardPile key={c.cardId} id={c.cardId} count={c.count} color={tone} w={40} />;
+  };
+  return (
+    <div data-testid="take-baseline" style={{ marginTop: 12, borderTop: '1px solid #1c222c', paddingTop: 10 }}>
+      <button type="button" data-testid="take-baseline-toggle" onClick={() => setOpen((o) => !o)} style={{ ...linkBtn, color: '#8a93a3', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 10 }}>{open ? '▾' : '▸'}</span> The list this guide is based on · {mainTotal} + {sideTotal}
+      </button>
+      {open && (
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10 }}>
+          <div style={{ flex: '2 1 300px', minWidth: 0 }}>
+            <div style={{ ...sectionLabel, marginBottom: 8, color: '#c8cdd8' }}>Main deck · {mainTotal} <span style={{ color: SALMON, fontWeight: 700 }}>· cuts in salmon</span></div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{b.main.map((c) => tile(c, 'main'))}</div>
+          </div>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+            <div style={{ ...sectionLabel, marginBottom: 8, color: '#c8cdd8' }}>Sideboard · {sideTotal} <span style={{ color: GREEN, fontWeight: 700 }}>· brings in green</span></div>
+            {b.sideboard.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{b.sideboard.map((c) => tile(c, 'side'))}</div>
+              : <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>—</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const mutedLabel: React.CSSProperties = { fontSize: 11, color: '#8a93a3', marginBottom: 4 };
+// B232: apply a guide's plan to one of YOUR recorded lists for this archetype —
+// cuts match your MAIN, brings match your SIDEBOARD, and what doesn't fit is
+// called out. The target lists come from the same recent-replays endpoint the
+// author picked from, so guides transfer even when the decks differ.
+function ApplyGuide({ teamSlug, matchup, take }: { teamSlug: string; matchup: Matchup; take: Take }) {
+  const [open, setOpen] = useState(false);
+  const [lists, setLists] = useState<ArchetypeDecklist[] | null>(null);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (!open || lists) return;
+    let dead = false;
+    (async () => {
+      try {
+        const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/decklists?ownLeader=${encodeURIComponent(matchup.ownLeader)}&ownBase=${encodeURIComponent(matchup.ownBase)}`)).json();
+        if (!dead) setLists(j.ok ? j.data.decklists : []);
+      } catch { if (!dead) setLists([]); }
+    })();
+    return () => { dead = true; };
+  }, [open, lists, teamSlug, matchup]);
+  const target = lists?.[idx] ?? null;
+  const result = useMemo(() => target ? applyGuideToList({ cardsIn: take.cardsIn, cardsOut: take.cardsOut }, { main: target.main, sideboard: target.sideboard }) : null, [target, take]);
+
+  const swaps = (items: AppliedSwap[], tone: string) => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{items.map((x) => <CardPile key={x.cardId} id={x.cardId} count={x.applied} color={tone} w={44} />)}</div>;
+  const misses = (items: GuideCard[]) => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, opacity: 0.55 }}>{items.map((x) => <CardPile key={x.cardId} id={x.cardId} count={qtyOf(x)} color={NEUTRAL} w={34} />)}</div>;
+
+  return (
+    <div data-testid="apply-guide" style={{ marginTop: 10, borderTop: '1px solid #1c222c', paddingTop: 10 }}>
+      <button type="button" data-testid="apply-guide-toggle" onClick={() => setOpen((o) => !o)} style={{ ...linkBtn, color: CYAN, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+        <span style={{ fontSize: 10 }}>{open ? '▾' : '▸'}</span> Apply to my list
+      </button>
+      {open && (lists === null ? <div style={{ marginTop: 8 }}><Loading label="your lists" /></div>
+        : lists.length === 0 ? <div style={{ marginTop: 8, fontSize: 12.5, color: '#6c7588' }}>No recorded list of this deck to apply to — record a game with it first.</div>
+        : (
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {lists.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Your list</span>
+                {lists.map((d, i) => <button key={d.replaySlug} type="button" data-testid="apply-target" onClick={() => setIdx(i)} style={chipBtn(i === idx)}>{decklistLabel(d)}</button>)}
+              </div>
+            )}
+            {result && (
+              <>
+                <div style={{ fontSize: 12.5, color: '#c8cdd8' }}>Applied to {target?.isMine ? 'your list' : `${target?.recorderName ?? 'this'}’s list`}: <b style={{ color: SALMON }}>−{result.cutTotal}</b> / <b style={{ color: GREEN }}>+{result.bringTotal}</b>.</div>
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                    <div style={{ ...sectionLabel, marginBottom: 8, color: SALMON }}>Cut from your deck · {result.cutTotal}</div>
+                    {result.cut.length ? swaps(result.cut, SALMON) : <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>Nothing to cut.</div>}
+                  </div>
+                  <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                    <div style={{ ...sectionLabel, marginBottom: 8, color: GREEN }}>Bring in from your sideboard · {result.bringTotal}</div>
+                    {result.bring.length ? swaps(result.bring, GREEN) : <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>Nothing to bring in.</div>}
+                  </div>
+                </div>
+                {(result.notRunning.length + result.missing.length + result.alreadyIn.length > 0) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: '#0f131a', border: '1px solid #1c222c', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#d9a441' }}>Doesn’t fit your list</div>
+                    {result.notRunning.length > 0 && <div><div style={mutedLabel}>Guide cuts these — you’re not running them:</div>{misses(result.notRunning)}</div>}
+                    {result.missing.length > 0 && <div><div style={mutedLabel}>Guide brings these — not in your deck or sideboard:</div>{misses(result.missing)}</div>}
+                    {result.alreadyIn.length > 0 && <div><div style={mutedLabel}>Already in your maindeck:</div>{misses(result.alreadyIn)}</div>}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+    </div>
+  );
+}
+
 // One contributor: no consensus / pill selector — just the single plan (cards +
 // notes) and a nudge to add more. (Remove lives in the header, with Edit.)
-function SolePlan({ take, viewerId, onAdd }: { take: Take; viewerId: string; onAdd: () => void }) {
+function SolePlan({ take, teamSlug, matchup, viewerId, onAdd }: { take: Take; teamSlug: string; matchup: Matchup; viewerId: string; onAdd: () => void }) {
   const mine = take.authorId === viewerId;
   const empty = take.cardsIn.length === 0 && take.cardsOut.length === 0;
   return (
@@ -463,7 +580,9 @@ function SolePlan({ take, viewerId, onAdd }: { take: Take; viewerId: string; onA
         </div>
       )}
       {take.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginBottom: 14 }}>{take.notes}</div>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', border: '1px dashed #33414d', background: 'rgba(102,229,255,0.05)', borderRadius: 10, padding: '12px 14px' }}>
+      {!empty && <ApplyGuide teamSlug={teamSlug} matchup={matchup} take={take} />}
+      <BaselineDeck take={take} />
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', border: '1px dashed #33414d', background: 'rgba(102,229,255,0.05)', borderRadius: 10, padding: '12px 14px' }}>
         {mine ? (
           <span style={{ fontSize: 12.5, color: '#8a93a3' }}>You&apos;re the first to weigh in — your teammates&apos; picks will show here to compare.</span>
         ) : (
@@ -492,6 +611,12 @@ function TakeCol({ title, tone, cards }: { title: string; tone: string; cards: G
 }
 
 const stepBtn: React.CSSProperties = { border: 0, background: 'transparent', color: '#fff', fontSize: 15, fontWeight: 800, lineHeight: 1, width: 20, height: 20, cursor: 'pointer', padding: 0 };
+const NEUTRAL = '#3a424f'; // unchanged card in a decklist column (no plan mark)
+// Small IN/OUT + move pills (explicit — no click-to-cycle). `tone` = green/salmon.
+const pillBtn = (tone: string, active: boolean): React.CSSProperties => ({ border: `1px solid ${active ? tone : '#2e333c'}`, background: active ? `${tone}22` : 'transparent', color: active ? tone : '#8a93a3', fontSize: 10.5, fontWeight: 800, borderRadius: 5, padding: '2px 8px', cursor: 'pointer', lineHeight: 1.3, fontFamily: 'inherit' });
+// Lens segmented toggle (decklist vs pool) + source chip.
+const segBtn = (active: boolean): React.CSSProperties => ({ border: `1px solid ${active ? CYAN : '#2e333c'}`, background: active ? `${CYAN}1e` : 'transparent', color: active ? CYAN : '#a0a8b8', fontSize: 11.5, fontWeight: 700, borderRadius: 6, padding: '5px 11px', cursor: 'pointer', fontFamily: 'inherit' });
+const chipBtn = (active: boolean): React.CSSProperties => ({ border: `1px solid ${active ? CYAN : '#2e333c'}`, background: active ? `${CYAN}1e` : '#0f131a', color: active ? CYAN : '#a0a8b8', fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' });
 
 // One reserved swap row (Bring in / Take out) above the pool in the author form.
 // `count` is the total COPIES (qty-summed), not the number of distinct cards.
@@ -524,6 +649,13 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [manual, setManual] = useState(false); // pick leader + base separately (fallback)
+  // B232: two lenses onto the SAME plan (marks) — swap cards on a real decklist,
+  // or pick from the team card pool. Baseline lists come from recent replays.
+  const [lens, setLens] = useState<'decklist' | 'pool'>('pool');
+  const [decklists, setDecklists] = useState<ArchetypeDecklist[] | null>(null);
+  const [sourceIdx, setSourceIdx] = useState(0);
+  const [sideAdds, setSideAdds] = useState<Record<string, number>>({}); // tech cards added to the sideboard reservoir
+  const [loadedBaseline, setLoadedBaseline] = useState<TakeBaseline | null>(null); // baseline of the take being edited
 
   useEffect(() => {
     (async () => {
@@ -538,6 +670,7 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
           for (const c of my.cardsIn) m[c.cardId] = { side: 'in', qty: qtyOf(c) }; for (const c of my.cardsOut) m[c.cardId] = { side: 'out', qty: qtyOf(c) };
           setMarks(m);
           setExtra([...my.cardsIn, ...my.cardsOut].map((c: GuideCard) => ({ cardId: c.cardId, name: null, set: null, number: null, cost: null, type: null, count: 0, fraction: 0 })));
+          setLoadedBaseline(my.baseline ?? null); // keep the stored baseline through a pool-lens edit
         }
       }
     })();
@@ -553,6 +686,24 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   }, [teamSlug]);
   useEffect(() => { void loadPool(ownLeader); }, [ownLeader, loadPool]);
 
+  // Load the archetype's recent decklists as swap baselines. Default a NEW take to
+  // the decklist lens when we have one to work from; editing stays on the pool
+  // lens (its stored picks may reference cards outside a single baseline).
+  useEffect(() => {
+    if (!ownLeader || !ownBase) { setDecklists(null); return; }
+    let dead = false;
+    (async () => {
+      try {
+        const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/decklists?ownLeader=${encodeURIComponent(ownLeader)}&ownBase=${encodeURIComponent(ownBase)}`)).json();
+        if (dead) return;
+        const dl: ArchetypeDecklist[] = j.ok ? j.data.decklists : [];
+        setDecklists(dl); setSourceIdx(0); setSideAdds({});
+        setLens(dl.length && !matchup ? 'decklist' : 'pool');
+      } catch { if (!dead) setDecklists([]); }
+    })();
+    return () => { dead = true; };
+  }, [teamSlug, ownLeader, ownBase, matchup]);
+
   const leaderOpts = (arr: LeaderOpt[] | undefined): LeaderSelectOption[] => (arr ?? []).map((o) => ({ value: o.value, label: o.name, sublabel: o.subtitle, art: { set: o.set ?? undefined, number: o.number ?? undefined }, artIsLeader: true }));
   const baseOpts = (kinds: BaseKind[] | undefined): LeaderSelectOption[] => (kinds ?? []).map((k) => ({ value: k.key, label: k.label, art: k.art ? { set: k.art.set, number: k.art.number } : undefined, artIsLeader: false, iconAspect: k.iconAspect ?? undefined, overlay: k.overlay ?? null }));
   // Archetype (leader+base) options — one pick sets both. Leader art thumb; label
@@ -566,16 +717,62 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   const archValue = (leader: string, base: string) => (leader && base ? `${leader}${ARCH_SEP}${base}` : '');
   const pickArch = (setLeader: (v: string) => void, setBase: (v: string) => void) => (v: string) => { const [l, b] = v.split(ARCH_SEP); setLeader(l); setBase(b ?? ''); };
 
-  const poolIds = useMemo(() => new Set((pool?.cards ?? []).map((c) => c.cardId)), [pool]);
-  const allCards = useMemo(() => [...(pool?.cards ?? []), ...extra.filter((e) => !poolIds.has(e.cardId))], [pool, extra, poolIds]);
-  // Pool click cycles side (unmarked → in → out → off); qty starts at 1, preserved across side flips.
-  const cycle = (id: string) => setMarks((m) => { const cur = m[id]; const next = { ...m }; if (!cur) next[id] = { side: 'in', qty: 1 }; else if (cur.side === 'in') next[id] = { side: 'out', qty: cur.qty }; else delete next[id]; return next; });
-  // Qty stepper on a reserved card: below 1 drops it back to the pool; capped at 3.
+  // The current baseline decklist (decklist lens). `allCards` carries meta for
+  // every card either lens can show — the pool, the baseline list, and search-adds
+  // — so the shared plan summary can always render a marked card.
+  const src = decklists?.[sourceIdx] ?? null;
+  const baselineCards: PoolCard[] = useMemo(() => (src ? [...src.main, ...src.sideboard].map((c) => ({ cardId: c.cardId, name: c.name, set: c.set, number: c.number, cost: c.cost, type: c.type, count: 0, fraction: 0 })) : []), [src]);
+  const allCards = useMemo(() => {
+    const seen = new Set<string>(); const out: PoolCard[] = [];
+    for (const c of [...(pool?.cards ?? []), ...baselineCards, ...extra]) if (!seen.has(c.cardId)) { seen.add(c.cardId); out.push(c); }
+    return out;
+  }, [pool, baselineCards, extra]);
+  const metaById = useMemo(() => { const m = new Map<string, PoolCard>(); for (const c of allCards) m.set(c.cardId, c); return m; }, [allCards]);
+
+  // Baseline copy-counts (side merges any search-added tech). The plan (marks) is
+  // relative to these: an OUT card's copies move main→side, an IN card side→main.
+  const baseMain = useMemo(() => new Map((src?.main ?? []).map((c) => [c.cardId, c.count] as const)), [src]);
+  const baseSide = useMemo(() => {
+    const m = new Map((src?.sideboard ?? []).map((c) => [c.cardId, c.count] as const));
+    for (const [id, n] of Object.entries(sideAdds)) m.set(id, (m.get(id) ?? 0) + n);
+    return m;
+  }, [src, sideAdds]);
+  const zoneCounts = (id: string) => {
+    const inQ = marks[id]?.side === 'in' ? marks[id].qty : 0;
+    const outQ = marks[id]?.side === 'out' ? marks[id].qty : 0;
+    return { main: Math.max(0, (baseMain.get(id) ?? 0) - outQ + inQ), side: Math.max(0, (baseSide.get(id) ?? 0) + outQ - inQ) };
+  };
+  const deckColumn = (which: 'main' | 'side') => [...new Set<string>([...baseMain.keys(), ...baseSide.keys(), ...Object.keys(marks)])]
+    .map((id) => ({ id, ...zoneCounts(id) }))
+    .filter((r) => (which === 'main' ? r.main : r.side) > 0)
+    .sort((a, b) => (metaById.get(a.id)?.cost ?? 99) - (metaById.get(b.id)?.cost ?? 99) || (metaById.get(a.id)?.name ?? a.id).localeCompare(metaById.get(b.id)?.name ?? b.id));
+
+  // Explicit set/flip/remove — no click-to-cycle.
+  const setSide = (id: string, side: 'in' | 'out' | null) => setMarks((m) => { const next = { ...m }; if (!side) delete next[id]; else next[id] = { side, qty: m[id]?.qty ?? 1 }; return next; });
   const bumpQty = (id: string, delta: number) => setMarks((m) => { const cur = m[id]; if (!cur) return m; const q = cur.qty + delta; const next = { ...m }; if (q < 1) delete next[id]; else next[id] = { ...cur, qty: Math.min(MAX_QTY, q) }; return next; });
-  const addCard = (c: SelectedCard | null) => {
+  // Decklist lens: move ONE copy between main/side. Undo the opposite mark first
+  // (a cut then re-brought copy nets to nothing), else add a mark up to what's
+  // available in the source zone.
+  const move = (id: string, dir: 'toSide' | 'toMain') => setMarks((m) => {
+    const cur = m[id]; const next = { ...m };
+    if (dir === 'toSide') {
+      if (cur?.side === 'in') { if (cur.qty <= 1) delete next[id]; else next[id] = { side: 'in', qty: cur.qty - 1 }; }
+      else { const outQ = cur?.side === 'out' ? cur.qty : 0; if (outQ >= Math.min(MAX_QTY, baseMain.get(id) ?? 0)) return m; next[id] = { side: 'out', qty: outQ + 1 }; }
+    } else {
+      if (cur?.side === 'out') { if (cur.qty <= 1) delete next[id]; else next[id] = { side: 'out', qty: cur.qty - 1 }; }
+      else { const inQ = cur?.side === 'in' ? cur.qty : 0; if (inQ >= Math.min(MAX_QTY, baseSide.get(id) ?? 0)) return m; next[id] = { side: 'in', qty: inQ + 1 }; }
+    }
+    return next;
+  });
+  const addCard = (c: SelectedCard | null) => { // pool lens: add a card and mark it IN
     if (!c) return;
     if (!allCards.some((x) => x.cardId === c.cardId)) setExtra((e) => [...e, { cardId: c.cardId, name: c.name, set: null, number: null, cost: null, type: null, count: 0, fraction: 0 }]);
     setMarks((m) => (m[c.cardId] ? m : { ...m, [c.cardId]: { side: 'in', qty: 1 } }));
+  };
+  const addSide = (c: SelectedCard | null) => { // decklist lens: drop a tech card into the sideboard reservoir
+    if (!c) return;
+    if (!allCards.some((x) => x.cardId === c.cardId)) setExtra((e) => [...e, { cardId: c.cardId, name: c.name, set: null, number: null, cost: null, type: null, count: 0, fraction: 0 }]);
+    setSideAdds((s) => ({ ...s, [c.cardId]: Math.min(MAX_QTY, (s[c.cardId] ?? 0) + 1) }));
   };
 
   const inCards = allCards.filter((c) => marks[c.cardId]?.side === 'in');
@@ -585,37 +782,58 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
   const withQty = (c: PoolCard): GuideCard => ({ cardId: c.cardId, qty: marks[c.cardId]?.qty ?? 1 });
   const inQty = inCards.reduce((s, c) => s + (marks[c.cardId]?.qty ?? 1), 0);
   const outQty = outCards.reduce((s, c) => s + (marks[c.cardId]?.qty ?? 1), 0);
+  const mainRows = src ? deckColumn('main') : [];
+  const sideRows = src ? deckColumn('side') : [];
+  const mainTotal = mainRows.reduce((s, r) => s + r.main, 0);
+  const sideTotal = sideRows.reduce((s, r) => s + r.side, 0);
 
-  // Pool card: click to cycle side. No qty control here (qty lives on the reserved card).
+  // Pool card: the card + explicit In / Out buttons (click again to clear).
   const renderCard = (c: PoolCard, w: number) => {
     const mk = marks[c.cardId];
     const verdict: PickVerdict | undefined = mk?.side === 'in' ? 'match' : mk?.side === 'out' ? 'theirs' : undefined;
     return (
-      // A div (not a button) — QuizCard renders its own <button>, so wrapping it
-      // in one nests buttons (invalid HTML). QuizCard is `selectable` so its own
-      // button handles the click + stays keyboard-accessible.
-      // Pool order = decklist frequency (staples first); the per-card % badge was
-      // unlabeled + redundant with the sort, so it's dropped.
-      <div key={c.cardId} data-testid="guide-pool-card" style={{ position: 'relative' }}>
-        <QuizCard card={ref(c)} width={w} noPreview mini verdict={verdict} selectable onClick={() => cycle(c.cardId)} />
+      <div key={c.cardId} data-testid="guide-pool-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        <QuizCard card={ref(c)} width={w} noPreview mini verdict={verdict} />
+        <div style={{ display: 'flex', gap: 3 }}>
+          <button type="button" data-testid="pool-in" onClick={() => setSide(c.cardId, mk?.side === 'in' ? null : 'in')} style={pillBtn(GREEN, mk?.side === 'in')}>In</button>
+          <button type="button" data-testid="pool-out" onClick={() => setSide(c.cardId, mk?.side === 'out' ? null : 'out')} style={pillBtn(SALMON, mk?.side === 'out')}>Out</button>
+        </div>
       </div>
     );
   };
-  // Reserved (In/Out) card: a PILE (copies = stack) with a legible −N+ stepper
-  // below. Click the pile to switch side / remove; the stepper sets copies.
+  // Decklist-lens column card: the pile + one explicit move button (Cut → / ← Bring in).
+  const renderDeckCard = (which: 'main' | 'side', row: { id: string; main: number; side: number }) => {
+    const id = row.id; const mk = marks[id];
+    const count = which === 'main' ? row.main : row.side;
+    const tone = which === 'main' ? (mk?.side === 'in' ? GREEN : NEUTRAL) : (mk?.side === 'out' ? SALMON : NEUTRAL);
+    return (
+      <div key={id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+        <CardPile id={id} count={count} color={tone} w={58} name={metaById.get(id)?.name ?? undefined} />
+        {which === 'main'
+          ? <button type="button" data-testid="deck-to-side" onClick={() => move(id, 'toSide')} style={pillBtn(SALMON, false)}>Cut →</button>
+          : <button type="button" data-testid="deck-to-main" onClick={() => move(id, 'toMain')} style={pillBtn(GREEN, false)}>← Bring in</button>}
+      </div>
+    );
+  };
+  // Reserved (In/Out) card: a PILE (copies = stack), a −N+ stepper, and explicit
+  // buttons to FLIP it to the other side (bring-in ↔ take-out) or remove it — the
+  // qty carries across a flip.
   const renderReservedCard = (c: PoolCard, w: number) => {
     const mk = marks[c.cardId];
-    const tone = mk?.side === 'out' ? SALMON : GREEN;
+    const isIn = mk?.side !== 'out';
+    const tone = isIn ? GREEN : SALMON;
     const q = mk?.qty ?? 1;
     return (
-      <div key={c.cardId} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-        <button type="button" data-testid="guide-reserved-card" onClick={() => cycle(c.cardId)} title="Click to switch In ↔ Out, again to remove" style={{ display: 'block', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>
-          <CardPile id={c.cardId} count={q} color={tone} w={w} name={c.name} />
-        </button>
+      <div key={c.cardId} data-testid="guide-reserved-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+        <CardPile id={c.cardId} count={q} color={tone} w={w} name={c.name} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(3,6,11,0.9)', border: `1px solid ${tone}66`, borderRadius: 8 }}>
           <button type="button" aria-label="one fewer" onClick={() => bumpQty(c.cardId, -1)} style={stepBtn}>−</button>
           <span style={{ fontSize: 13, fontWeight: 900, color: '#fff', minWidth: 26, textAlign: 'center' }}>{q}×</span>
           <button type="button" aria-label="one more" disabled={q >= MAX_QTY} onClick={() => bumpQty(c.cardId, 1)} style={{ ...stepBtn, opacity: q >= MAX_QTY ? 0.35 : 1 }}>+</button>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button type="button" data-testid="reserved-flip" onClick={() => setSide(c.cardId, isIn ? 'out' : 'in')} style={pillBtn(isIn ? SALMON : GREEN, false)} title={`Move to ${isIn ? 'Take out' : 'Bring in'}`}>{isIn ? '→ Take out' : '→ Bring in'}</button>
+          <button type="button" data-testid="reserved-remove" onClick={() => setSide(c.cardId, null)} style={pillBtn('#6c7588', false)} title="Remove from the plan">✕</button>
         </div>
       </div>
     );
@@ -630,7 +848,13 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
     setSaving(true);
     const m: Matchup = { ownLeader, ownBase, oppLeader, oppBase };
     try {
-      const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...m, notes, cardsIn: inCards.map(withQty), cardsOut: outCards.map(withQty) }) })).json();
+      // Store the list this was authored from (decklist lens) so the guide can be
+      // read against its context + later applied to any list. A pool-lens edit
+      // keeps whatever baseline the take already had (don't wipe it on a note tweak).
+      const baseline = lens === 'decklist' && src
+        ? { main: src.main.map((c) => ({ cardId: c.cardId, count: c.count })), sideboard: src.sideboard.map((c) => ({ cardId: c.cardId, count: c.count })) }
+        : loadedBaseline;
+      const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/matchup`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...m, notes, cardsIn: inCards.map(withQty), cardsOut: outCards.map(withQty), baseline }) })).json();
       if (!j.ok) { setError(j.error || 'save failed'); return; }
       onSaved(m);
     } catch { setError('save failed'); } finally { setSaving(false); }
@@ -692,27 +916,66 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
         </div>
       ) : (
         <>
-          {/* Reserved IN / OUT */}
+          {/* The plan — shared by both lenses, always visible */}
           <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <ReservedSection title="Bring in" tone={GREEN} cards={inCards} count={inQty} render={renderReservedCard} empty="Click cards in the pool below to bring them in." />
-            <ReservedSection title="Take out" tone={SALMON} cards={outCards} count={outQty} render={renderReservedCard} empty="Click a card again to move it here (cards you're cutting)." />
+            <ReservedSection title="Bring in" tone={GREEN} cards={inCards} count={inQty} render={renderReservedCard} empty="Bring cards in from the sideboard (or pool) below." />
+            <ReservedSection title="Take out" tone={SALMON} cards={outCards} count={outQty} render={renderReservedCard} empty="Cut cards from your deck below." />
             {inQty > 0 && outQty > 0 && inQty !== outQty && (
               <div style={{ fontSize: 12, color: '#d9a441' }}>Heads up: {inQty} in vs {outQty} out — a sideboard swap usually brings in and takes out the same number of cards.</div>
             )}
-            <div style={{ maxWidth: 340 }}><CardSearch value={null} onChange={addCard} testId="guide-card-search" /></div>
           </div>
 
-          {/* Pool */}
-          <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Editing lens: swap on a real decklist, or pick from the team card pool */}
+          <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ ...sectionLabel, marginBottom: 0 }}>Your card pool {pool ? `· ${pool.totalLists} lists` : ''}</div>
-              <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Click to bring <span style={{ color: GREEN, fontWeight: 700 }}>IN</span>; again to move <span style={{ color: SALMON, fontWeight: 700 }}>OUT</span>; again to return it.</span>
+              <div style={{ ...sectionLabel, marginBottom: 0 }}>Build your plan</div>
+              {(decklists?.length ?? 0) > 0 && (
+                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                  <button type="button" data-testid="lens-decklist" onClick={() => setLens('decklist')} style={segBtn(lens === 'decklist')}>From a decklist</button>
+                  <button type="button" data-testid="lens-pool" onClick={() => setLens('pool')} style={segBtn(lens === 'pool')}>From the card pool</button>
+                </div>
+              )}
             </div>
-            {poolLoading ? <Loading label="the card pool" />
-              : <>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>{poolVisible.map((c) => renderCard(c, 72))}</div>
-                {poolCards.length > poolVisible.length && <button type="button" onClick={() => setShowAll(true)} style={{ alignSelf: 'flex-start', ...linkBtn }}>Show all {poolCards.length} cards</button>}
-              </>}
+
+            {lens === 'decklist' && src ? (
+              <div data-testid="decklist-lens" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(decklists?.length ?? 0) > 1 ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Starting from</span>
+                    {decklists!.map((d, i) => (
+                      <button key={d.replaySlug} type="button" data-testid="decklist-source" onClick={() => setSourceIdx(i)} style={chipBtn(i === sourceIdx)}>
+                        {decklistLabel(d)}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11.5, color: '#8a93a3' }}>{decklistLabel(src)} — cut from the deck, bring in from the sideboard.</div>
+                )}
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '2 1 340px', minWidth: 0 }}>
+                    <div style={{ ...sectionLabel, marginBottom: 8, color: '#c8cdd8' }}>Main deck · {mainTotal}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{mainRows.map((r) => renderDeckCard('main', r))}</div>
+                  </div>
+                  <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                    <div style={{ ...sectionLabel, marginBottom: 8, color: '#c8cdd8' }}>Sideboard · {sideTotal}</div>
+                    {sideRows.length === 0
+                      ? <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>No sideboard recorded — add cards below.</div>
+                      : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{sideRows.map((r) => renderDeckCard('side', r))}</div>}
+                    <div style={{ marginTop: 10, maxWidth: 300 }}><CardSearch value={null} onChange={addSide} testId="guide-card-search" /></div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div data-testid="pool-lens" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <span style={{ fontSize: 11.5, color: '#8a93a3' }}>{pool && pool.totalLists > 0 ? `Your team’s cards for this archetype · ${pool.totalLists} lists — ` : ''}mark cards <span style={{ color: GREEN, fontWeight: 700 }}>In</span> or <span style={{ color: SALMON, fontWeight: 700 }}>Out</span>.</span>
+                {poolLoading ? <Loading label="the card pool" />
+                  : <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>{poolVisible.map((c) => renderCard(c, 66))}</div>
+                    {poolCards.length > poolVisible.length && <button type="button" onClick={() => setShowAll(true)} style={{ alignSelf: 'flex-start', ...linkBtn }}>Show all {poolCards.length} cards</button>}
+                  </>}
+                <div style={{ maxWidth: 320 }}><CardSearch value={null} onChange={addCard} testId="guide-card-search" /></div>
+              </div>
+            )}
           </div>
 
           <div style={{ ...panel, display: 'flex', flexDirection: 'column', gap: 8 }}>
