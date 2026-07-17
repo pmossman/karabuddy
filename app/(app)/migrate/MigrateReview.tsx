@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Panel } from '@/app/_components/Panel';
 import { LedToggle } from '@/app/_components/LedToggle';
 import { AspectIcon } from '@/app/_components/AspectIcon';
@@ -36,23 +36,36 @@ function ArchThumb({ deck }: { deck: DerivedDeck }) {
   );
 }
 
+const HOVER_DELAY = 400; // ms the cursor must rest before the preview shows
+
 function CardThumb({ card, w = 44 }: { card: CardRef; w?: number }) {
   const url = cardImageUrl(parseId(card.id), false);
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const posRef = useRef({ x: 0, y: 0 });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const start = (e: React.MouseEvent) => {
+    posRef.current = { x: e.clientX, y: e.clientY };
+    if (timer.current) clearTimeout(timer.current);
+    // only show once the cursor has actually rested here — sweeping across cards
+    // leaves before the delay fires, so nothing flashes.
+    timer.current = setTimeout(() => setAnchor({ ...posRef.current }), HOVER_DELAY);
+  };
+  const stop = () => { if (timer.current) clearTimeout(timer.current); setAnchor(null); };
   const PW = 236, PH = Math.round(PW / 0.716); // full-card aspect
-  const preview = pos && url && typeof window !== 'undefined'
-    ? { left: Math.min(pos.x + 20, window.innerWidth - PW - 10), top: Math.min(Math.max(pos.y - PH / 2, 8), window.innerHeight - PH - 8) }
+  const place = anchor && typeof window !== 'undefined'
+    ? { left: Math.min(anchor.x + 20, window.innerWidth - PW - 10), top: Math.min(Math.max(anchor.y - PH / 2, 8), window.innerHeight - PH - 8) }
     : null;
   return (
-    <span onMouseMove={(e) => setPos({ x: e.clientX, y: e.clientY })} onMouseLeave={() => setPos(null)}
+    <span onMouseEnter={start} onMouseMove={(e) => { posRef.current = { x: e.clientX, y: e.clientY }; }} onMouseLeave={stop}
       style={{ position: 'relative', width: w, height: Math.round(w * 1.4), flex: '0 0 auto', display: 'inline-block' }}>
       {url
         ? // eslint-disable-next-line @next/next/no-img-element
           <img src={url} alt={card.name ?? card.id} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 3, display: 'block', background: tokens.color.bgDeep }} />
         : <span style={{ width: '100%', height: '100%', borderRadius: 3, border: `1px solid ${tokens.color.border}`, display: 'grid', placeItems: 'center', fontSize: 8, color: tokens.color.textMuted, textAlign: 'center', padding: 2 }}>{card.name ?? card.id}</span>}
       {card.count > 1 && <span style={{ position: 'absolute', right: -4, bottom: -5, minWidth: 15, height: 15, borderRadius: '50%', background: tokens.color.bg, border: `1px solid ${tokens.color.borderStrong}`, color: tokens.color.text, font: `700 9px ${mono}`, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{card.count}</span>}
-      {preview && // eslint-disable-next-line @next/next/no-img-element
-        <img src={url!} alt="" style={{ position: 'fixed', left: preview.left, top: preview.top, width: PW, height: PH, borderRadius: 10, boxShadow: '0 10px 34px rgba(0,0,0,0.75)', border: '1px solid rgba(255,255,255,0.16)', zIndex: 1000, pointerEvents: 'none' }} />}
+      {place && // eslint-disable-next-line @next/next/no-img-element
+        <img src={url!} alt="" style={{ position: 'fixed', left: place.left, top: place.top, width: PW, height: PH, borderRadius: 10, boxShadow: '0 10px 34px rgba(0,0,0,0.75)', border: '1px solid rgba(255,255,255,0.16)', zIndex: 1000, pointerEvents: 'none' }} />}
     </span>
   );
 }
