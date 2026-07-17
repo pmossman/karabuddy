@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeConsensus, analyzeMatchupConsensus } from '@/lib/sideboardConsensus';
+import { computeConsensus, analyzeMatchupConsensus, applyGuideToList } from '@/lib/sideboardConsensus';
 
 // B231: consensus = cards ranked by how many of a matchup's takes agree.
 describe('computeConsensus', () => {
@@ -96,5 +96,40 @@ describe('analyzeMatchupConsensus', () => {
 
   it('empty -> zeros', () => {
     expect(analyzeMatchupConsensus([])).toEqual({ total: 0, planIn: [], planOut: [], split: [] });
+  });
+});
+
+// B232: applying a guide's plan to a DIFFERENT list — which swaps transfer.
+describe('applyGuideToList', () => {
+  const list = { main: [{ cardId: 'A', count: 3 }, { cardId: 'B', count: 2 }, { cardId: 'DUP', count: 1 }], sideboard: [{ cardId: 'X', count: 2 }, { cardId: 'DUP', count: 1 }] };
+
+  it('cuts what you run in the main; brings what you have in the sideboard', () => {
+    const r = applyGuideToList({ cardsOut: [{ cardId: 'A', qty: 2 }], cardsIn: [{ cardId: 'X', qty: 2 }] }, list);
+    expect(r.cut).toEqual([{ cardId: 'A', qty: 2, have: 3, applied: 2 }]);
+    expect(r.bring).toEqual([{ cardId: 'X', qty: 2, have: 2, applied: 2 }]);
+    expect(r.cutTotal).toBe(2);
+    expect(r.bringTotal).toBe(2);
+    expect(r.notRunning).toEqual([]); expect(r.missing).toEqual([]); expect(r.alreadyIn).toEqual([]);
+  });
+
+  it('caps applied copies at how many you actually have', () => {
+    const r = applyGuideToList({ cardsOut: [{ cardId: 'B', qty: 3 }], cardsIn: [{ cardId: 'X', qty: 3 }] }, list);
+    expect(r.cut[0]).toEqual({ cardId: 'B', qty: 3, have: 2, applied: 2 }); // only run 2 of B
+    expect(r.bring[0]).toEqual({ cardId: 'X', qty: 3, have: 2, applied: 2 }); // only 2 in side
+  });
+
+  it('flags cuts you do not run, brings you already maindeck, and brings you do not have', () => {
+    const r = applyGuideToList({ cardsOut: [{ cardId: 'GHOST', qty: 1 }], cardsIn: [{ cardId: 'DUP', qty: 1 }, { cardId: 'NOPE', qty: 2 }] }, list);
+    expect(r.cut).toEqual([]);
+    expect(r.notRunning).toEqual([{ cardId: 'GHOST', qty: 1 }]);
+    // DUP is in the sideboard AND main — sideboard presence wins (bringable).
+    expect(r.bring).toEqual([{ cardId: 'DUP', qty: 1, have: 1, applied: 1 }]);
+    expect(r.missing).toEqual([{ cardId: 'NOPE', qty: 2 }]);
+  });
+
+  it('an IN card only in your maindeck is "already in", not a bring', () => {
+    const r = applyGuideToList({ cardsOut: [], cardsIn: [{ cardId: 'A', qty: 1 }] }, { main: [{ cardId: 'A', count: 3 }], sideboard: [] });
+    expect(r.bring).toEqual([]);
+    expect(r.alreadyIn).toEqual([{ cardId: 'A', qty: 1 }]);
   });
 });

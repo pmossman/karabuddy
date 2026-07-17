@@ -7,7 +7,7 @@
 // and the my-take author form. Speaks the drills' IN=green / OUT=salmon language.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { analyzeMatchupConsensus, guideQty as qtyOf, sumQty, MAX_QTY, type GuideCard as LibGuideCard, type SplitCard, type ConsensusMember } from '@/lib/sideboardConsensus';
+import { analyzeMatchupConsensus, applyGuideToList, guideQty as qtyOf, sumQty, MAX_QTY, type GuideCard as LibGuideCard, type SplitCard, type ConsensusMember, type AppliedSwap } from '@/lib/sideboardConsensus';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { CardSearch, type SelectedCard } from '@/app/_components/CardSearch';
 import { AspectIcon } from '@/app/_components/AspectIcon';
@@ -380,12 +380,13 @@ function MatchupView({ teamSlug, matchup, onBack, onEditTake }: { teamSlug: stri
                 <TakeCol title="Take out" tone={SALMON} cards={activeTake.cardsOut} />
               </div>
               {activeTake.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginTop: 10 }}>{activeTake.notes}</div>}
+              <ApplyGuide teamSlug={teamSlug} matchup={matchup} take={activeTake} />
               <BaselineDeck take={activeTake} />
             </div>
           )}
         </div>
       ) : takes.length === 1 ? (
-        <SolePlan take={takes[0]} viewerId={d.viewerId} onAdd={() => onEditTake(matchup)} />
+        <SolePlan take={takes[0]} teamSlug={teamSlug} matchup={matchup} viewerId={d.viewerId} onAdd={() => onEditTake(matchup)} />
       ) : null}
 
       {/* Discussion */}
@@ -492,9 +493,79 @@ function BaselineDeck({ take }: { take: Take }) {
   );
 }
 
+const mutedLabel: React.CSSProperties = { fontSize: 11, color: '#8a93a3', marginBottom: 4 };
+// B232: apply a guide's plan to one of YOUR recorded lists for this archetype —
+// cuts match your MAIN, brings match your SIDEBOARD, and what doesn't fit is
+// called out. The target lists come from the same recent-replays endpoint the
+// author picked from, so guides transfer even when the decks differ.
+function ApplyGuide({ teamSlug, matchup, take }: { teamSlug: string; matchup: Matchup; take: Take }) {
+  const [open, setOpen] = useState(false);
+  const [lists, setLists] = useState<ArchetypeDecklist[] | null>(null);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (!open || lists) return;
+    let dead = false;
+    (async () => {
+      try {
+        const j = await (await fetch(`/api/teams/${teamSlug}/sideboard-guides/decklists?ownLeader=${encodeURIComponent(matchup.ownLeader)}&ownBase=${encodeURIComponent(matchup.ownBase)}`)).json();
+        if (!dead) setLists(j.ok ? j.data.decklists : []);
+      } catch { if (!dead) setLists([]); }
+    })();
+    return () => { dead = true; };
+  }, [open, lists, teamSlug, matchup]);
+  const target = lists?.[idx] ?? null;
+  const result = useMemo(() => target ? applyGuideToList({ cardsIn: take.cardsIn, cardsOut: take.cardsOut }, { main: target.main, sideboard: target.sideboard }) : null, [target, take]);
+
+  const swaps = (items: AppliedSwap[], tone: string) => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{items.map((x) => <CardPile key={x.cardId} id={x.cardId} count={x.applied} color={tone} w={44} />)}</div>;
+  const misses = (items: GuideCard[]) => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, opacity: 0.55 }}>{items.map((x) => <CardPile key={x.cardId} id={x.cardId} count={qtyOf(x)} color={NEUTRAL} w={34} />)}</div>;
+
+  return (
+    <div data-testid="apply-guide" style={{ marginTop: 10, borderTop: '1px solid #1c222c', paddingTop: 10 }}>
+      <button type="button" data-testid="apply-guide-toggle" onClick={() => setOpen((o) => !o)} style={{ ...linkBtn, color: CYAN, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+        <span style={{ fontSize: 10 }}>{open ? '▾' : '▸'}</span> Apply to my list
+      </button>
+      {open && (lists === null ? <div style={{ marginTop: 8 }}><Loading label="your lists" /></div>
+        : lists.length === 0 ? <div style={{ marginTop: 8, fontSize: 12.5, color: '#6c7588' }}>No recorded list of this deck to apply to — record a game with it first.</div>
+        : (
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {lists.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Your list</span>
+                {lists.map((d, i) => <button key={d.replaySlug} type="button" data-testid="apply-target" onClick={() => setIdx(i)} style={chipBtn(i === idx)}>{decklistLabel(d)}</button>)}
+              </div>
+            )}
+            {result && (
+              <>
+                <div style={{ fontSize: 12.5, color: '#c8cdd8' }}>Applied to {target?.isMine ? 'your list' : `${target?.recorderName ?? 'this'}’s list`}: <b style={{ color: SALMON }}>−{result.cutTotal}</b> / <b style={{ color: GREEN }}>+{result.bringTotal}</b>.</div>
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                    <div style={{ ...sectionLabel, marginBottom: 8, color: SALMON }}>Cut from your deck · {result.cutTotal}</div>
+                    {result.cut.length ? swaps(result.cut, SALMON) : <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>Nothing to cut.</div>}
+                  </div>
+                  <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                    <div style={{ ...sectionLabel, marginBottom: 8, color: GREEN }}>Bring in from your sideboard · {result.bringTotal}</div>
+                    {result.bring.length ? swaps(result.bring, GREEN) : <div style={{ fontSize: 12, color: '#6c7588', fontStyle: 'italic' }}>Nothing to bring in.</div>}
+                  </div>
+                </div>
+                {(result.notRunning.length + result.missing.length + result.alreadyIn.length > 0) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: '#0f131a', border: '1px solid #1c222c', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#d9a441' }}>Doesn’t fit your list</div>
+                    {result.notRunning.length > 0 && <div><div style={mutedLabel}>Guide cuts these — you’re not running them:</div>{misses(result.notRunning)}</div>}
+                    {result.missing.length > 0 && <div><div style={mutedLabel}>Guide brings these — not in your deck or sideboard:</div>{misses(result.missing)}</div>}
+                    {result.alreadyIn.length > 0 && <div><div style={mutedLabel}>Already in your maindeck:</div>{misses(result.alreadyIn)}</div>}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+    </div>
+  );
+}
+
 // One contributor: no consensus / pill selector — just the single plan (cards +
 // notes) and a nudge to add more. (Remove lives in the header, with Edit.)
-function SolePlan({ take, viewerId, onAdd }: { take: Take; viewerId: string; onAdd: () => void }) {
+function SolePlan({ take, teamSlug, matchup, viewerId, onAdd }: { take: Take; teamSlug: string; matchup: Matchup; viewerId: string; onAdd: () => void }) {
   const mine = take.authorId === viewerId;
   const empty = take.cardsIn.length === 0 && take.cardsOut.length === 0;
   return (
@@ -509,6 +580,7 @@ function SolePlan({ take, viewerId, onAdd }: { take: Take; viewerId: string; onA
         </div>
       )}
       {take.notes?.trim() && <div style={{ fontSize: 13, color: '#c8cdd8', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginBottom: 14 }}>{take.notes}</div>}
+      {!empty && <ApplyGuide teamSlug={teamSlug} matchup={matchup} take={take} />}
       <BaselineDeck take={take} />
       <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', border: '1px dashed #33414d', background: 'rgba(102,229,255,0.05)', borderRadius: 10, padding: '12px 14px' }}>
         {mine ? (
