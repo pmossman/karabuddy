@@ -92,6 +92,87 @@ export async function matchupCardPool(
   return { totalLists, cards: list };
 }
 
+// B232: candidate BASELINE decklists for authoring a guide "through the lens of a
+// real list" — recent shared replays where the recorder ran this archetype (own
+// leader NAME [+ base identity key]), each with its full main + sideboard. The
+// author picks one and swaps cards between main/side; the viewer's own lists sort
+// first, then by recency. The baseline is a scaffold — only the swap is stored.
+export interface DecklistCard {
+  cardId: string; count: number;
+  name: string | null; subtitle: string | null; set: string | null; number: number | null; cost: number | null; type: string | null;
+}
+export interface ArchetypeDecklist {
+  replaySlug: string; playedAt: string | null; recorderName: string | null; isMine: boolean; oppLeaderName: string | null;
+  main: DecklistCard[]; sideboard: DecklistCard[];
+}
+export async function archetypeDecklists(
+  teamSlug: string,
+  viewerId: string,
+  ownLeader: string,
+  ownBaseKey?: string | null,
+  limit = 8,
+): Promise<ArchetypeDecklist[]> {
+  const db = getDb();
+  const wantName = leaderNameOf(ownLeader);
+  const rows = await db
+    .select({ slug: replays.slug, createdAt: replays.createdAt, userId: replays.userId, ownerName: users.name, ownerPlayerId: replays.ownerPlayerId, players: replays.players, decks: replays.decks })
+    .from(replays)
+    .innerJoin(replayTeamShares, eq(replayTeamShares.replaySlug, replays.slug))
+    .leftJoin(users, eq(users.id, replays.userId))
+    .where(and(eq(replayTeamShares.teamSlug, teamSlug), isNotNull(replays.decks)))
+    .orderBy(desc(replays.createdAt));
+
+  // Rows whose recorder ran this leader, carrying the recorder base ref so we can
+  // resolve its functional identity and match the requested base key.
+  const cand: { row: (typeof rows)[number]; opp: any; base: any }[] = [];
+  for (const r of rows) {
+    const opid = r.ownerPlayerId;
+    if (!opid || !r.decks) continue;
+    const players = Array.isArray(r.players) ? (r.players as any[]) : [];
+    const me = players.find((p) => p?.id === opid);
+    if (!me || me.leader?.name !== wantName) continue;
+    const d = (r.decks as any)?.[opid];
+    if (!d || !(Array.isArray(d.deck) && d.deck.length)) continue;
+    cand.push({ row: r, opp: players.find((p) => p?.id !== opid) ?? null, base: me.base ?? null });
+  }
+  if (!cand.length) return [];
+
+  // Resolve base identities once, then filter to the requested base (if any).
+  const baseIds = ownBaseKey ? await resolveBaseIdentities(cand.map((c) => c.base).filter((b) => b?.set && b?.number != null)) : null;
+  const matched = cand.filter((c) => {
+    if (!ownBaseKey) return true;
+    if (!(c.base?.set && c.base?.number != null)) return false;
+    return baseIds!.get(cardIdFromSetNumber(c.base.set, c.base.number))?.key === ownBaseKey;
+  });
+  if (!matched.length) return [];
+
+  // The viewer's own lists first (their deck is the natural baseline), then recency
+  // (rows already came ordered newest-first, and Array.sort is stable).
+  matched.sort((a, b) => Number(b.row.userId === viewerId) - Number(a.row.userId === viewerId));
+  const top = matched.slice(0, limit);
+
+  const ids = new Set<string>();
+  for (const c of top) { const d = (c.row.decks as any)[c.row.ownerPlayerId!]; for (const list of [d.deck, d.sideboard]) for (const e of (list || [])) if (e?.id) ids.add(e.id); }
+  const meta = ids.size ? await db.select().from(cards).where(inArray(cards.cardId, [...ids])) : [];
+  const metaById = new Map(meta.map((m) => [m.cardId, m]));
+  const toCards = (arr: any[]): DecklistCard[] => (arr || []).filter((e) => e?.id).map((e) => {
+    const m = metaById.get(e.id);
+    return { cardId: e.id, count: Math.max(1, Number(e.count) || 1), name: m?.name ?? null, subtitle: m?.subtitle ?? null, set: m?.set ?? null, number: m?.number ?? null, cost: m?.cost ?? null, type: m?.type ?? null };
+  });
+  return top.map((c) => {
+    const d = (c.row.decks as any)[c.row.ownerPlayerId!];
+    return {
+      replaySlug: c.row.slug,
+      playedAt: c.row.createdAt instanceof Date ? c.row.createdAt.toISOString() : (c.row.createdAt ?? null),
+      recorderName: c.row.ownerName ?? null,
+      isMine: c.row.userId === viewerId,
+      oppLeaderName: c.opp?.leader?.name ?? null,
+      main: toCards(d.deck),
+      sideboard: toCards(d.sideboard),
+    };
+  });
+}
+
 // A leader is identified by name + SUBTITLE (like cards) — "Luke Skywalker" has
 // several versions. `value` (the "name · subtitle" identity) is what's stored on
 // a matchup; name/subtitle drive the display.
