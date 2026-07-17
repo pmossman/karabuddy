@@ -100,3 +100,17 @@ happened + what's next, not a design doc (that's `ux-design.md`).
 - Sent Andy a sample pack of 8 anonymized converted v3 replays + README.
 - Deck-derivation prototype (416 replays → 20 archetype decks) — shelved as a
   standalone, now folded into the migration as auto-deck-creation.
+
+## 2026-07-16 — swuforge IS callable; deck migration proven against live API
+
+- Reverse-engineered swuforge's API (SvelteKit, `/api/*` + `__data.json` loads) via
+  its own frontend traffic + Parker's session. Full map in `context.md`.
+- **Deck side works TODAY, no Andy:** derived a real karabuddy deck → `POST
+  /api/decks` → 201, real deck in Parker's account (Cad Bane, verified 23/8).
+  cardKey = `SET_N` (unpadded). `createdVia` source tag exists.
+- **Replay side still blocked on Andy:** no `/api/games|replays|import` (404).
+- Idempotency is now concrete: POST always creates new → need karabuddy-side
+  `deck→swuforge id` mapping + PATCH on re-run (see context.md).
+- Pivot for the "single X" prototype: start with a single **deck** (callable now),
+  not a single replay (needs M5). Test decks in Parker's swuforge acct:
+  `cmroabt1p0oa101ou2aow9aa6` (+ his manual "test") — deletable via DELETE /api/decks/{id}.

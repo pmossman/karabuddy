@@ -98,6 +98,52 @@ Watch a **swuforge** replay in the **karabuddy** viewer — both are the same
 `PersistedTimeline`/frame model, so the karabuddy viewer could render swuforge's
 blobs. Lets migrated users keep both apps' benefits. Future.
 
+## swuforge API surface (probed live, 2026-07-16) — PROVEN callable
+
+swuforge is a **SvelteKit** app (matches Andy's `+page.server.ts` routing) with a
+real `/api/*` surface. Reverse-engineered from its own frontend traffic +
+Parker's authenticated session (Auth.js session cookie — same auth stack as us).
+
+- **`GET /api/cards`** — public. Full 2,245-card catalog. Cards keyed by
+  `{cardNumber, expansion.code}` = **`SET_NNN`** (e.g. Cad Bane = cardNumber 11,
+  expansion ASH → ASH_011).
+- **`/api/decks`** — auth (401 without session):
+  - `GET` → list of the user's decks (`{id, name, folderId, leaderKey, baseKey,
+    format, entryCount, sideboardCount, createdAt}`).
+  - `POST` → **create a deck** (201). Body:
+    ```json
+    { "name", "folderId":null, "format":"premier",
+      "leaderKey":"LAW_8", "leader2Key":null, "baseKey":"JTL_19",
+      "entries":[{"cardKey":"LAW_8","count":1}, …],       // INCLUDES leader+base
+      "sideboardEntries":[…], "createdVia":"scratch" }
+    ```
+  - `PATCH`/`DELETE /api/decks/{id}` (GET on {id} → 405). Full deck content read
+    via the SvelteKit load: `GET /decks/{id}/__data.json` (public if link-enabled).
+- **`/api/teams`, `/api/folders`, `/api/tags`** — auth; exist (team folders map here).
+- **NO replay ingest yet:** `/api/games`, `/api/replays`, `/api/matches`,
+  `/api/import` all 404. There's a Battle-Log UI but it's deck-scoped
+  (`/decks/[id]/battle-log`, no import API) — the replay side genuinely needs
+  Andy to build M5.
+
+### Card key: swuforge uses `SET_N` (UNPADDED)
+`leaderKey/baseKey/cardKey` are `LAW_8`, `ASH_19`, `SEC_20` — NOT karabuddy's
+zero-padded `LAW_008`. One-line map: `SET_${Number(NNN)}`.
+
+### PROVEN end-to-end (deck side), no collaboration needed
+Derived a real karabuddy deck (Cad Bane, 50+10) → mapped `SET_NNN`→`SET_N`,
+`entries = [leader, base, …deck]`, `sideboardEntries = sideboard` → `POST
+/api/decks` in Parker's account → **201**, deck `cmroabt1p0oa101ou2aow9aa6`,
+read back as 23 entries / 8 sideboard (exact). So **deck migration is buildable
+against the live API today**; only the replay push waits on Andy.
+Script: `scripts/prototype-user-deck-export.ts` derives; payload map is trivial.
+
+### Idempotency (Parker's ask) — now concrete
+`POST /api/decks` always **creates a new** deck (returns a fresh id) — it does NOT
+dedupe. So idempotency requires **karabuddy-side tracking**: store `karabuddy deck
+identity → swuforge deckId`; on re-run, `PATCH /api/decks/{id}` instead of POST
+(or skip). `createdVia` is a source tag (`"scratch"` today) — a natural hook to
+stamp `"karabuddy"` on migrated decks if Andy allows the value.
+
 ## Key files / pointers
 
 - Converter: `scripts/prototype-replay-to-swuforge.ts` (+ `--pack`, `--batch`).
