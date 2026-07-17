@@ -141,7 +141,7 @@ export default function MigrationDemo({ realDecks }: { realDecks: DerivedDeck[] 
           {step === -1 ? <Migrating done={migrateDone} folder={folderName} decks={incDecks.length} games={linkedGames} members={incMembers.length} />
             : step === 0 ? <Start accent={accent} games={totalGames} decks={realDecks.length} versions={realDecks.reduce((s, d) => s + d.versions.length, 0)} />
             : step === 1 ? <Connect accent={accent} connected={connected} onConnect={() => setConnected(true)} folderName={folderName} setFolderName={setFolderName} />
-            : step === 2 ? <Decks accent={accent} decks={realDecks} sel={sel} patch={patch} setAll={setAll} />
+            : step === 2 ? <Decks accent={accent} decks={realDecks} sel={sel} patch={patch} setAll={setAll} onContinue={() => setStep(3)} />
             : step === 3 ? <Teammates accent={accent} members={members} setMembers={setMembers} folderName={folderName} />
             : step === 4 ? <Confirm accent={accent} decks={incDecks.length} versions={versions} games={linkedGames} members={incMembers.length} folderName={folderName} consentOwn={consentOwn} setConsentOwn={setConsentOwn} consentEnc={consentEnc} setConsentEnc={setConsentEnc} />
             : <Done accent={accent} decks={incDecks.length} versions={versions} games={linkedGames} members={incMembers.length} folderName={folderName} onRestart={() => { setStep(0); setConnected(false); }} />}
@@ -281,7 +281,9 @@ function Connect({ accent, connected, onConnect, folderName, setFolderName }: { 
 
 // The REAL feature: decks reconstructed from the user's replays. Turn one off, or
 // open it to scrub how the list evolved. Selection drives the wizard's counts.
-function Decks({ accent, decks, sel, patch, setAll }: { accent: string; decks: DerivedDeck[]; sel: Sel[]; patch: (i: number, p: Partial<Sel>) => void; setAll: (on: boolean) => void }) {
+// The primary action (Continue) rides a sticky bar at the top so it's reachable
+// without scrolling past every deck.
+function Decks({ accent, decks, sel, patch, setAll, onContinue }: { accent: string; decks: DerivedDeck[]; sel: Sel[]; patch: (i: number, p: Partial<Sel>) => void; setAll: (on: boolean) => void; onContinue: () => void }) {
   const inc = decks.filter((_, i) => sel[i].include);
   const versions = inc.reduce((s, d) => s + d.versions.length, 0);
   const games = inc.reduce((s, d) => s + d.games, 0);
@@ -290,21 +292,30 @@ function Decks({ accent, decks, sel, patch, setAll }: { accent: string; decks: D
     <>
       <Eyebrow accent={accent}>Decks</Eyebrow>
       <Title>Decks rebuilt from your games</Title>
-      <StatStrip items={[
-        { v: inc.length, k: 'Decks', color: accent },
-        { v: versions, k: 'Versions' },
-        { v: games, k: 'Games linked', color: tokens.led.on },
-      ]} />
       {decks.length === 0 ? (
         <Panel padding={24} style={{ textAlign: 'center', color: tokens.color.textSecondary }}>
           No constructed decks in your games yet — record some 50-card matches and they&apos;ll show up here.
         </Panel>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '-2px 0 14px' }}>
-            <p style={{ color: tokens.color.textMuted, fontSize: 13, margin: 0, flex: 1 }}>Turn a deck off, or open it to scrub how its list evolved. All on by default.</p>
-            <button onClick={() => setAll(!allOn)} style={linkBtn}>{allOn ? 'Deselect all' : `Select all ${decks.length}`}</button>
+          <div style={{ position: 'sticky', top: 0, zIndex: 6, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '13px 18px', borderRadius: tokens.radius.md, border: '1px solid rgba(239,138,60,0.32)', background: 'rgba(14,11,20,0.94)', backdropFilter: 'blur(8px)', boxShadow: '0 6px 22px rgba(0,0,0,0.4)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px' }}>
+                  Migrating <span style={{ color: FORGE, fontVariantNumeric: 'tabular-nums' }}>{inc.length}</span> deck{inc.length === 1 ? '' : 's'}
+                  <span style={{ color: tokens.color.textMuted, fontWeight: 400, fontSize: 13 }}> · {versions} versions · {games} games</span>
+                </div>
+                <div style={{ ...microLabel, textTransform: 'none', letterSpacing: '0.02em', marginTop: 3 }}>
+                  <button onClick={() => setAll(!allOn)} style={linkBtn}>{allOn ? 'Deselect all' : `Select all ${decks.length}`}</button>
+                </div>
+              </div>
+              <button onClick={onContinue} disabled={inc.length === 0}
+                style={{ ...primaryBtn(accent, true), padding: '11px 20px', fontWeight: 650, opacity: inc.length === 0 ? 0.45 : 1, cursor: inc.length === 0 ? 'not-allowed' : 'pointer', flex: '0 0 auto' }}>
+                Continue →
+              </button>
+            </div>
           </div>
+          <p style={{ color: tokens.color.textMuted, fontSize: 13, margin: '0 0 14px' }}>Turn a deck off, or open it to scrub how its list evolved. All on by default.</p>
           {decks.map((d, i) => (
             <Folder key={d.key} deck={d} s={sel[i]} onInclude={(on) => patch(i, { include: on })} onOpen={() => patch(i, { open: !sel[i].open })} />
           ))}
