@@ -38,7 +38,7 @@ function ArchThumb({ deck }: { deck: DerivedDeck }) {
 
 const HOVER_DELAY = 400; // ms the cursor must rest before the preview shows
 
-function CardThumb({ card, w = 44 }: { card: CardRef; w?: number }) {
+function CardThumb({ card, w = 44, tone }: { card: CardRef; w?: number; tone?: 'added' | 'removed' }) {
   const url = cardImageUrl(parseId(card.id), false);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const posRef = useRef({ x: 0, y: 0 });
@@ -56,13 +56,15 @@ function CardThumb({ card, w = 44 }: { card: CardRef; w?: number }) {
   const place = anchor && typeof window !== 'undefined'
     ? { left: Math.min(anchor.x + 20, window.innerWidth - PW - 10), top: Math.min(Math.max(anchor.y - PH / 2, 8), window.innerHeight - PH - 8) }
     : null;
+  const ring: CSSProperties = tone === 'added' ? { border: `1.5px solid ${tokens.color.success}`, boxShadow: `0 0 0 2px rgba(107,217,104,0.4)` }
+    : tone === 'removed' ? { border: `1.5px solid ${tokens.color.danger}` } : {};
   return (
     <span onMouseEnter={start} onMouseMove={(e) => { posRef.current = { x: e.clientX, y: e.clientY }; }} onMouseLeave={stop}
-      style={{ position: 'relative', width: w, height: Math.round(w * 1.4), flex: '0 0 auto', display: 'inline-block' }}>
+      style={{ position: 'relative', width: w, height: Math.round(w * 1.4), flex: '0 0 auto', display: 'inline-block', opacity: tone === 'removed' ? 0.5 : 1 }}>
       {url
         ? // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={card.name ?? card.id} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 3, display: 'block', background: tokens.color.bgDeep }} />
-        : <span style={{ width: '100%', height: '100%', borderRadius: 3, border: `1px solid ${tokens.color.border}`, display: 'grid', placeItems: 'center', fontSize: 8, color: tokens.color.textMuted, textAlign: 'center', padding: 2 }}>{card.name ?? card.id}</span>}
+          <img src={url} alt={card.name ?? card.id} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 3, display: 'block', background: tokens.color.bgDeep, ...ring }} />
+        : <span style={{ width: '100%', height: '100%', borderRadius: 3, border: `1px solid ${tokens.color.border}`, display: 'grid', placeItems: 'center', fontSize: 8, color: tokens.color.textMuted, textAlign: 'center', padding: 2, ...ring }}>{card.name ?? card.id}</span>}
       {card.count > 1 && <span style={{ position: 'absolute', right: -4, bottom: -5, minWidth: 15, height: 15, borderRadius: '50%', background: tokens.color.bg, border: `1px solid ${tokens.color.borderStrong}`, color: tokens.color.text, font: `700 9px ${mono}`, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{card.count}</span>}
       {place && // eslint-disable-next-line @next/next/no-img-element
         <img src={url!} alt="" style={{ position: 'fixed', left: place.left, top: place.top, width: PW, height: PH, borderRadius: 10, boxShadow: '0 10px 34px rgba(0,0,0,0.75)', border: '1px solid rgba(255,255,255,0.16)', zIndex: 1000, pointerEvents: 'none' }} />}
@@ -70,17 +72,67 @@ function CardThumb({ card, w = 44 }: { card: CardRef; w?: number }) {
   );
 }
 
-function DeckListView({ v }: { v: DeckVersion }) {
+function DeckListView({ v, addedIds }: { v: DeckVersion; addedIds?: Set<string> }) {
   const main = [...v.main].sort((a, b) => (a.cost ?? 99) - (b.cost ?? 99) || (a.name ?? '').localeCompare(b.name ?? ''));
   const side = [...v.sideboard].sort((a, b) => (a.cost ?? 99) - (b.cost ?? 99));
+  const tone = (c: CardRef): 'added' | undefined => (addedIds?.has(c.id) ? 'added' : undefined);
   return (
-    <div style={{ marginTop: 12 }}>
+    <div style={{ marginTop: 10 }}>
       <div style={{ ...micro, marginBottom: 9 }}>Main deck · {v.size}</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 8px' }}>{main.map((c, i) => <CardThumb key={c.id + i} card={c} />)}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 8px' }}>{main.map((c, i) => <CardThumb key={c.id + i} card={c} tone={tone(c)} />)}</div>
       {side.length > 0 && <>
         <div style={{ ...micro, margin: '16px 0 9px' }}>Sideboard · {v.sideSize}</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 8px' }}>{side.map((c, i) => <CardThumb key={c.id + i} card={c} />)}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 8px' }}>{side.map((c, i) => <CardThumb key={c.id + i} card={c} tone={tone(c)} />)}</div>
       </>}
+    </div>
+  );
+}
+
+function NavBtn({ label, onClick, disabled }: { label: string; onClick: () => void; disabled: boolean }) {
+  return <button onClick={onClick} disabled={disabled} aria-label={label === '◀' ? 'previous version' : 'next version'}
+    style={{ background: tokens.color.surface, border: `1px solid ${tokens.color.borderStrong}`, color: disabled ? tokens.color.textFaint : tokens.color.text, borderRadius: 6, width: 26, height: 24, cursor: disabled ? 'default' : 'pointer', font: `12px ${mono}`, flex: '0 0 auto' }}>{label}</button>;
+}
+
+// Scrub through a deck's versions (latest → earliest) with ◀▶ / arrow keys / dots.
+// Added cards ring green; cut cards show faded — so you see how it evolved.
+function VersionScrubber({ deck }: { deck: DerivedDeck }) {
+  const last = deck.versions.length - 1;
+  const [vi, setVi] = useState(last);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { ref.current?.focus({ preventScroll: true }); }, []);
+  const v = deck.versions[vi];
+  const isLatest = vi === last;
+  const p = wr(v.wins, v.losses);
+  const addedIds = new Set((v.diff?.added ?? []).map((c) => c.id));
+  const go = (d: number) => setVi((x) => Math.max(0, Math.min(last, x + d)));
+  const single = deck.versions.length === 1;
+  return (
+    <div ref={ref} tabIndex={0} onKeyDown={(e) => { if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); } }} style={{ outline: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+        {!single && <NavBtn label="◀" onClick={() => go(-1)} disabled={vi === 0} />}
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ font: `700 11px ${mono}`, letterSpacing: '0.08em', color: isLatest ? FORGE : tokens.color.textSecondary }}>{isLatest ? 'CURRENT LIST' : v.label.toUpperCase()}</span>
+          <span style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginLeft: 10 }}>{v.startAt}–{v.endAt} · {v.games} games · {v.wins}–{v.losses}{p != null ? ` (${p}%)` : ''}</span>
+        </div>
+        {!single && <><span style={{ font: `11px ${mono}`, color: tokens.color.textMuted }}>{vi + 1}/{deck.versions.length}</span><NavBtn label="▶" onClick={() => go(1)} disabled={vi === last} /></>}
+      </div>
+      {!single && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, margin: '9px 0 4px', flexWrap: 'wrap' }}>
+          {deck.versions.map((_, k) => (
+            <button key={k} onClick={() => setVi(k)} title={deck.versions[k].label} aria-label={`version ${k + 1}`}
+              style={{ width: k === vi ? 20 : 8, height: 8, borderRadius: 4, border: 'none', padding: 0, cursor: 'pointer', transition: 'width .12s',
+                background: k === vi ? FORGE : k === last ? 'rgba(239,138,60,0.45)' : tokens.color.borderStrong }} />
+          ))}
+          <span style={{ ...micro, textTransform: 'none', marginLeft: 6, color: tokens.color.textFaint }}>← → to step</span>
+        </div>
+      )}
+      {v.diff && v.diff.removed.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ ...micro, marginBottom: 8, color: tokens.color.dangerSoft }}>Cut going into {v.label}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 8px' }}>{v.diff.removed.map((c, i) => <CardThumb key={c.id + i} card={c} tone="removed" />)}</div>
+        </div>
+      )}
+      <DeckListView v={v} addedIds={addedIds} />
     </div>
   );
 }
@@ -150,12 +202,7 @@ function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onI
 
       {s.open && (
         <div style={{ borderTop: `1px solid ${tokens.color.border}`, padding: '4px 16px 16px', background: 'rgba(10,8,16,0.3)' }}>
-          <DeckListView v={current} />
-          {deck.versions.length > 1 && (
-            <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 14, color: tokens.color.textMuted }}>
-              {deck.versions.length} versions · earlier ones kept as history
-            </div>
-          )}
+          <VersionScrubber deck={deck} />
         </div>
       )}
     </Panel>
