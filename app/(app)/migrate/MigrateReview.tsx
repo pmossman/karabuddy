@@ -144,6 +144,8 @@ export function MigrateReview({ decks }: { decks: DerivedDeck[] }) {
   const patch = (i: number, p: Partial<Sel>) => setSel((s) => s.map((x, j) => (j === i ? { ...x, ...p } : x)));
   const chosen = useMemo(() => decks.filter((_, i) => sel[i].include), [decks, sel]);
   const games = chosen.reduce((s, d) => s + d.games, 0);
+  const allOn = chosen.length === decks.length;
+  const setAll = (on: boolean) => setSel((s) => s.map((x) => ({ ...x, include: on })));
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '26px 28px 64px', color: tokens.color.text, fontFamily: tokens.font.family }}>
@@ -157,20 +159,11 @@ export function MigrateReview({ decks }: { decks: DerivedDeck[] }) {
         </Panel>
       ) : (
         <>
-          <div style={{ display: 'flex', border: `1px solid ${tokens.color.border}`, borderRadius: tokens.radius.md, overflow: 'hidden', background: tokens.color.surface, marginBottom: 18 }}>
-            {[[chosen.length, 'Decks selected', FORGE], [games, 'Games behind them', tokens.led.on]].map(([v, k, c], idx) => (
-              <div key={idx} style={{ flex: 1, padding: '14px 16px', borderRight: idx === 0 ? `1px solid ${tokens.color.border}` : undefined }}>
-                <div style={{ font: `600 22px ${mono}`, fontVariantNumeric: 'tabular-nums', color: c as string }}>{v as number}</div>
-                <div style={{ ...micro, marginTop: 2 }}>{k as string}</div>
-              </div>
-            ))}
-          </div>
+          <ActionBar chosen={chosen} total={decks.length} games={games} allOn={allOn} onToggleAll={() => setAll(!allOn)} />
 
           {decks.map((deck, i) => (
             <Folder key={deck.key} deck={deck} s={sel[i]} onInclude={(on) => patch(i, { include: on })} onOpen={() => patch(i, { open: !sel[i].open })} />
           ))}
-
-          <Footer decks={chosen.length} />
         </>
       )}
     </div>
@@ -182,8 +175,11 @@ function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onI
   const current = deck.versions[deck.versions.length - 1];
   return (
     <Panel hud={false} padding={0} style={{ marginBottom: 10, opacity: s.include ? 1 : 0.5, borderColor: s.include ? 'rgba(239,138,60,0.26)' : undefined }}>
-      <div onClick={onOpen} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', cursor: 'pointer' }}>
-        <span style={{ color: tokens.color.textMuted, font: `11px ${mono}`, transform: s.open ? 'rotate(90deg)' : 'none', transition: 'transform .18s', width: 10, flex: '0 0 auto' }}>▶</span>
+      <div onClick={() => onInclude(!s.include)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}>
+        <button onClick={(e) => { e.stopPropagation(); onOpen(); }} aria-label={s.open ? 'Hide cards' : 'Show cards'} title={s.open ? 'Hide cards' : 'Show cards'}
+          style={{ background: s.open ? 'rgba(239,138,60,0.14)' : 'transparent', border: `1px solid ${s.open ? 'rgba(239,138,60,0.4)' : tokens.color.border}`, borderRadius: 6, color: tokens.color.textSecondary, width: 24, height: 24, display: 'grid', placeItems: 'center', cursor: 'pointer', flex: '0 0 auto', padding: 0, transition: 'background .15s, border-color .15s' }}>
+          <span style={{ font: `10px ${mono}`, lineHeight: 1, transform: s.open ? 'rotate(90deg)' : 'none', transition: 'transform .18s' }}>▶</span>
+        </button>
         <ArchThumb deck={deck} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 650, fontSize: 15.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -209,18 +205,48 @@ function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onI
   );
 }
 
-function Footer({ decks }: { decks: number }) {
-  const [done, setDone] = useState(false);
+const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: tokens.led.on, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 };
+
+// The page's primary action, pinned to the top so it's visible without scrolling.
+function ActionBar({ chosen, total, games, allOn, onToggleAll }: { chosen: DerivedDeck[]; total: number; games: number; allOn: boolean; onToggleAll: () => void }) {
+  const n = chosen.length;
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Live creation into SWU Forge is CORS/auth-blocked from our origin — it needs a
+  // SWU Forge-side handoff (Andy). Until that lands, this honestly confirms the
+  // selection is prepared rather than faking a push. The real POST slots in here.
+  const onMigrate = async () => {
+    setBusy(true); setResult(null);
+    try {
+      await new Promise((r) => setTimeout(r, 250));
+      setResult({ ok: true, msg: `${n} deck${n === 1 ? '' : 's'} ready. Live SWU Forge creation is the pending handoff — wiring it with Andy next.` });
+    } finally { setBusy(false); }
+  };
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 26, paddingTop: 18, borderTop: `1px solid ${tokens.color.border}` }}>
-      <span style={{ color: tokens.color.textMuted, font: `13px ${mono}` }}>
-        {done ? `Prepared ${decks} deck${decks === 1 ? '' : 's'} for SWU Forge.` : `${decks} deck${decks === 1 ? '' : 's'} selected`}
-      </span>
-      <span style={{ flex: 1 }} />
-      <button onClick={() => setDone(true)} disabled={decks === 0}
-        style={{ ...glowButtonStyle, padding: '10px 18px', fontSize: 14, color: '#ffe7d6', border: `1px solid ${FORGE}`, boxShadow: `0 0 12px rgba(239,138,60,0.2)`, opacity: decks === 0 ? 0.4 : 1, cursor: decks === 0 ? 'not-allowed' : 'pointer' }}>
-        Migrate to SWU Forge
-      </button>
+    <div style={{ position: 'sticky', top: 0, zIndex: 6, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '13px 18px', borderRadius: tokens.radius.md, border: '1px solid rgba(239,138,60,0.32)', background: 'rgba(14,11,20,0.94)', backdropFilter: 'blur(8px)', boxShadow: '0 6px 22px rgba(0,0,0,0.4)' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px' }}>
+            Create <span style={{ color: FORGE, fontVariantNumeric: 'tabular-nums' }}>{n}</span> deck{n === 1 ? '' : 's'} in SWU Forge
+          </div>
+          <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 3, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
+            <span>{games} games behind them</span>
+            <span aria-hidden>·</span>
+            <button onClick={onToggleAll} style={linkBtn}>{allOn ? 'Deselect all' : `Select all ${total}`}</button>
+          </div>
+        </div>
+        <button onClick={onMigrate} disabled={n === 0 || busy}
+          style={{ ...glowButtonStyle, padding: '11px 20px', fontSize: 14, fontWeight: 650, color: '#ffe7d6', border: `1px solid ${FORGE}`, background: 'rgba(239,138,60,0.16)', boxShadow: '0 0 14px rgba(239,138,60,0.25)', opacity: n === 0 || busy ? 0.45 : 1, cursor: n === 0 || busy ? 'not-allowed' : 'pointer', flex: '0 0 auto' }}>
+          {busy ? 'Migrating…' : 'Migrate →'}
+        </button>
+      </div>
+      {result && (
+        <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 8, paddingLeft: 4, color: result.ok ? tokens.color.successText : tokens.color.dangerSoft }}>
+          {result.ok ? '✓ ' : '✕ '}{result.msg}
+        </div>
+      )}
     </div>
   );
 }
