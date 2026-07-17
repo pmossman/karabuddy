@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+// Reusable deck-migration UI: one `<Folder>` per reconstructed deck — archetype
+// thumbnail + record + Send toggle, expanding to a version scrubber (◀▶ / arrow
+// keys / dots) with added cards ringed green, cut cards faded, and hover-preview
+// card art. Shared by the /migrate-demo wizard's Decks step (fed real replay
+// data). Selection state is owned by the caller.
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Panel } from '@/app/_components/Panel';
 import { LedToggle } from '@/app/_components/LedToggle';
 import { AspectIcon } from '@/app/_components/AspectIcon';
-import { glowButtonStyle } from '@/app/_components/glowButton';
 import { cardImageUrl } from '@/lib/cardImage';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { DerivedDeck, DeckVersion, CardRef } from '@/lib/deckVersions';
@@ -137,40 +141,9 @@ function VersionScrubber({ deck }: { deck: DerivedDeck }) {
   );
 }
 
-type Sel = { include: boolean; open: boolean };
+export type Sel = { include: boolean; open: boolean };
 
-export function MigrateReview({ decks }: { decks: DerivedDeck[] }) {
-  const [sel, setSel] = useState<Sel[]>(() => decks.map(() => ({ include: true, open: false })));
-  const patch = (i: number, p: Partial<Sel>) => setSel((s) => s.map((x, j) => (j === i ? { ...x, ...p } : x)));
-  const chosen = useMemo(() => decks.filter((_, i) => sel[i].include), [decks, sel]);
-  const games = chosen.reduce((s, d) => s + d.games, 0);
-  const allOn = chosen.length === decks.length;
-  const setAll = (on: boolean) => setSel((s) => s.map((x) => ({ ...x, include: on })));
-
-  return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '26px 28px 64px', color: tokens.color.text, fontFamily: tokens.font.family }}>
-      <div style={{ font: `600 11px ${mono}`, letterSpacing: '0.2em', textTransform: 'uppercase', color: FORGE, marginBottom: 8 }}>karabuddy → SWU Forge</div>
-      <h1 style={{ fontSize: 27, margin: '0 0 6px', letterSpacing: '-0.3px', fontWeight: 700 }}>Send your decks to SWU Forge</h1>
-      <p style={{ color: tokens.color.textMuted, fontSize: 13, margin: '0 0 20px' }}>From your replays · most-played first · current list of each</p>
-
-      {decks.length === 0 ? (
-        <Panel padding={28} style={{ textAlign: 'center', color: tokens.color.textSecondary }}>
-          No constructed decks found in your games yet. Record some 50-card matches and they&apos;ll show up here.
-        </Panel>
-      ) : (
-        <>
-          <ActionBar chosen={chosen} total={decks.length} games={games} allOn={allOn} onToggleAll={() => setAll(!allOn)} />
-
-          {decks.map((deck, i) => (
-            <Folder key={deck.key} deck={deck} s={sel[i]} onInclude={(on) => patch(i, { include: on })} onOpen={() => patch(i, { open: !sel[i].open })} />
-          ))}
-        </>
-      )}
-    </div>
-  );
-}
-
-function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onInclude: (on: boolean) => void; onOpen: () => void }) {
+export function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onInclude: (on: boolean) => void; onOpen: () => void }) {
   const p = wr(deck.wins, deck.losses);
   const current = deck.versions[deck.versions.length - 1];
   return (
@@ -202,51 +175,5 @@ function Folder({ deck, s, onInclude, onOpen }: { deck: DerivedDeck; s: Sel; onI
         </div>
       )}
     </Panel>
-  );
-}
-
-const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: tokens.led.on, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 };
-
-// The page's primary action, pinned to the top so it's visible without scrolling.
-function ActionBar({ chosen, total, games, allOn, onToggleAll }: { chosen: DerivedDeck[]; total: number; games: number; allOn: boolean; onToggleAll: () => void }) {
-  const n = chosen.length;
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  // Live creation into SWU Forge is CORS/auth-blocked from our origin — it needs a
-  // SWU Forge-side handoff (Andy). Until that lands, this honestly confirms the
-  // selection is prepared rather than faking a push. The real POST slots in here.
-  const onMigrate = async () => {
-    setBusy(true); setResult(null);
-    try {
-      await new Promise((r) => setTimeout(r, 250));
-      setResult({ ok: true, msg: `${n} deck${n === 1 ? '' : 's'} ready. Live SWU Forge creation is the pending handoff — wiring it with Andy next.` });
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 6, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '13px 18px', borderRadius: tokens.radius.md, border: '1px solid rgba(239,138,60,0.32)', background: 'rgba(14,11,20,0.94)', backdropFilter: 'blur(8px)', boxShadow: '0 6px 22px rgba(0,0,0,0.4)' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px' }}>
-            Create <span style={{ color: FORGE, fontVariantNumeric: 'tabular-nums' }}>{n}</span> deck{n === 1 ? '' : 's'} in SWU Forge
-          </div>
-          <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 3, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
-            <span>{games} games behind them</span>
-            <span aria-hidden>·</span>
-            <button onClick={onToggleAll} style={linkBtn}>{allOn ? 'Deselect all' : `Select all ${total}`}</button>
-          </div>
-        </div>
-        <button onClick={onMigrate} disabled={n === 0 || busy}
-          style={{ ...glowButtonStyle, padding: '11px 20px', fontSize: 14, fontWeight: 650, color: '#ffe7d6', border: `1px solid ${FORGE}`, background: 'rgba(239,138,60,0.16)', boxShadow: '0 0 14px rgba(239,138,60,0.25)', opacity: n === 0 || busy ? 0.45 : 1, cursor: n === 0 || busy ? 'not-allowed' : 'pointer', flex: '0 0 auto' }}>
-          {busy ? 'Migrating…' : 'Migrate →'}
-        </button>
-      </div>
-      {result && (
-        <div style={{ ...micro, textTransform: 'none', letterSpacing: '0.02em', marginTop: 8, paddingLeft: 4, color: result.ok ? tokens.color.successText : tokens.color.dangerSoft }}>
-          {result.ok ? '✓ ' : '✕ '}{result.msg}
-        </div>
-      )}
-    </div>
   );
 }
