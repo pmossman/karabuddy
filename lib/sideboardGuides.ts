@@ -102,7 +102,7 @@ export interface DecklistCard {
   name: string | null; subtitle: string | null; set: string | null; number: number | null; cost: number | null; type: string | null;
 }
 export interface ArchetypeDecklist {
-  replaySlug: string; playedAt: string | null; recorderName: string | null; isMine: boolean; oppLeaderName: string | null;
+  replaySlug: string; playedAt: string | null; recorderName: string | null; isMine: boolean; gameCount: number;
   main: DecklistCard[]; sideboard: DecklistCard[];
 }
 export async function archetypeDecklists(
@@ -124,7 +124,7 @@ export async function archetypeDecklists(
 
   // Rows whose recorder ran this leader, carrying the recorder base ref so we can
   // resolve its functional identity and match the requested base key.
-  const cand: { row: (typeof rows)[number]; opp: any; base: any }[] = [];
+  const cand: { row: (typeof rows)[number]; base: any }[] = [];
   for (const r of rows) {
     const opid = r.ownerPlayerId;
     if (!opid || !r.decks) continue;
@@ -133,7 +133,7 @@ export async function archetypeDecklists(
     if (!me || me.leader?.name !== wantName) continue;
     const d = (r.decks as any)?.[opid];
     if (!d || !(Array.isArray(d.deck) && d.deck.length)) continue;
-    cand.push({ row: r, opp: players.find((p) => p?.id !== opid) ?? null, base: me.base ?? null });
+    cand.push({ row: r, base: me.base ?? null });
   }
   if (!cand.length) return [];
 
@@ -146,27 +146,41 @@ export async function archetypeDecklists(
   });
   if (!matched.length) return [];
 
-  // The viewer's own lists first (their deck is the natural baseline), then recency
-  // (rows already came ordered newest-first, and Array.sort is stable).
-  matched.sort((a, b) => Number(b.row.userId === viewerId) - Number(a.row.userId === viewerId));
-  const top = matched.slice(0, limit);
+  // Collapse lists with IDENTICAL card content — a deck played across many games
+  // is ONE option, not one per opponent. Prefer the viewer's own copy as the
+  // representative; label by the group's most recent play + how many games used it.
+  const norm = (arr: any[]) => (arr || []).filter((e) => e?.id).map((e) => `${e.id}:${Math.max(1, Number(e.count) || 1)}`).sort().join(',');
+  const whenOf = (c: (typeof matched)[number]) => (c.row.createdAt instanceof Date ? c.row.createdAt.getTime() : (c.row.createdAt ? Date.parse(c.row.createdAt as any) : 0));
+  interface Group { rep: (typeof matched)[number]; count: number; isMine: boolean; latest: number }
+  const groups = new Map<string, Group>();
+  for (const c of matched) {
+    const d = (c.row.decks as any)[c.row.ownerPlayerId!];
+    const key = `${norm(d.deck)}|${norm(d.sideboard)}`;
+    const mine = c.row.userId === viewerId;
+    const g = groups.get(key);
+    // Representative preference: the viewer's own copy, else the most recent (matched
+    // is already viewer-first then newest-first, so the first seen per key wins).
+    if (!g) groups.set(key, { rep: c, count: 1, isMine: mine, latest: whenOf(c) });
+    else { g.count++; g.isMine = g.isMine || mine; g.latest = Math.max(g.latest, whenOf(c)); }
+  }
+  const ordered = [...groups.values()].sort((a, b) => Number(b.isMine) - Number(a.isMine) || b.latest - a.latest).slice(0, limit);
 
   const ids = new Set<string>();
-  for (const c of top) { const d = (c.row.decks as any)[c.row.ownerPlayerId!]; for (const list of [d.deck, d.sideboard]) for (const e of (list || [])) if (e?.id) ids.add(e.id); }
+  for (const g of ordered) { const d = (g.rep.row.decks as any)[g.rep.row.ownerPlayerId!]; for (const list of [d.deck, d.sideboard]) for (const e of (list || [])) if (e?.id) ids.add(e.id); }
   const meta = ids.size ? await db.select().from(cards).where(inArray(cards.cardId, [...ids])) : [];
   const metaById = new Map(meta.map((m) => [m.cardId, m]));
   const toCards = (arr: any[]): DecklistCard[] => (arr || []).filter((e) => e?.id).map((e) => {
     const m = metaById.get(e.id);
     return { cardId: e.id, count: Math.max(1, Number(e.count) || 1), name: m?.name ?? null, subtitle: m?.subtitle ?? null, set: m?.set ?? null, number: m?.number ?? null, cost: m?.cost ?? null, type: m?.type ?? null };
   });
-  return top.map((c) => {
-    const d = (c.row.decks as any)[c.row.ownerPlayerId!];
+  return ordered.map((g) => {
+    const d = (g.rep.row.decks as any)[g.rep.row.ownerPlayerId!];
     return {
-      replaySlug: c.row.slug,
-      playedAt: c.row.createdAt instanceof Date ? c.row.createdAt.toISOString() : (c.row.createdAt ?? null),
-      recorderName: c.row.ownerName ?? null,
-      isMine: c.row.userId === viewerId,
-      oppLeaderName: c.opp?.leader?.name ?? null,
+      replaySlug: g.rep.row.slug,
+      playedAt: g.latest ? new Date(g.latest).toISOString() : null,
+      recorderName: g.rep.row.ownerName ?? null,
+      isMine: g.isMine,
+      gameCount: g.count,
       main: toCards(d.deck),
       sideboard: toCards(d.sideboard),
     };

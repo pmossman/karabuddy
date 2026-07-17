@@ -34,7 +34,10 @@ type BaseKinds = Record<string, BaseKind>;
 type GuideCard = LibGuideCard;
 interface PoolCard { cardId: string; name: string | null; set: string | null; number: number | null; cost: number | null; type: string | null; count: number; fraction: number }
 interface DecklistCard { cardId: string; count: number; name: string | null; set: string | null; number: number | null; cost: number | null; type: string | null }
-interface ArchetypeDecklist { replaySlug: string; playedAt: string | null; recorderName: string | null; isMine: boolean; oppLeaderName: string | null; main: DecklistCard[]; sideboard: DecklistCard[] }
+interface ArchetypeDecklist { replaySlug: string; playedAt: string | null; recorderName: string | null; isMine: boolean; gameCount: number; main: DecklistCard[]; sideboard: DecklistCard[] }
+// A deduped baseline list is played across many games — label it by whose it is,
+// how recent, and how many games ran it (NOT by a single opponent).
+const decklistLabel = (d: ArchetypeDecklist) => `${d.isMine ? 'Your list' : `${d.recorderName ?? 'Teammate'}’s list`}${d.playedAt ? ` · ${relativeTime(d.playedAt)}` : ''}${d.gameCount > 1 ? ` · ${d.gameCount} games` : ''}`;
 interface MatchupSummary extends Matchup { takeCount: number; contributors: (string | null)[]; myTake: boolean }
 interface Take { id: string; authorId: string; authorName: string | null; notes: string; cardsIn: GuideCard[]; cardsOut: GuideCard[]; updatedAt: string }
 
@@ -819,12 +822,12 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
                     <span style={{ fontSize: 11.5, color: '#8a93a3' }}>Starting from</span>
                     {decklists!.map((d, i) => (
                       <button key={d.replaySlug} type="button" data-testid="decklist-source" onClick={() => setSourceIdx(i)} style={chipBtn(i === sourceIdx)}>
-                        {d.isMine ? 'Your list' : (d.recorderName ?? 'Teammate')}{d.oppLeaderName ? ` · vs ${d.oppLeaderName}` : ''}{d.playedAt ? ` · ${relativeTime(d.playedAt)}` : ''}
+                        {decklistLabel(d)}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div style={{ fontSize: 11.5, color: '#8a93a3' }}>From {src.isMine ? 'your' : `${src.recorderName ?? 'a teammate'}’s`} recent list{src.oppLeaderName ? ` vs ${src.oppLeaderName}` : ''}{src.playedAt ? ` · ${relativeTime(src.playedAt)}` : ''}. Cut from the deck, bring in from the sideboard.</div>
+                  <div style={{ fontSize: 11.5, color: '#8a93a3' }}>{decklistLabel(src)} — cut from the deck, bring in from the sideboard.</div>
                 )}
                 <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
                   <div style={{ flex: '2 1 340px', minWidth: 0 }}>

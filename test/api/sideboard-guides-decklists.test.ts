@@ -64,7 +64,6 @@ describe('sideboard-guides decklists', () => {
     expect(dl[0].isMine).toBe(true);
     expect(dl[1].isMine).toBe(false);
     expect(dl[1].recorderName).toBe('Bo');
-    expect(dl[1].oppLeaderName).toBe('Boba');
     // Full main + sideboard with copy counts.
     const bo = dl.find((d: any) => d.replaySlug === bLater);
     expect(bo.main.map((c: any) => [c.cardId, c.count])).toEqual([['ASH_010', 3], ['ASH_020', 2]]);
@@ -76,6 +75,27 @@ describe('sideboard-guides decklists', () => {
 
     // Leader-only (no base filter) still returns both.
     expect((await (await call(team, { ownLeader: 'Cad Bane' })).json()).data.decklists).toHaveLength(2);
+  });
+
+  it('collapses identical lists (same cards, different opponents) into one option with a game count', async () => {
+    const a = await seedUser('Ann');
+    const team = await seedTeam(a, [a]);
+    await getDb().insert(cards).values({ cardId: 'SOR_020', name: 'Command Base', type: 'base', set: 'SOR', number: 20, aspects: ['command'], hasAbility: false, baseAbilityHash: null, source: 'seed' }).onConflictDoNothing();
+    // Same 75 played into three different opponents.
+    const list: { deck: [string, number][]; side: [string, number][] } = { deck: [['ASH_010', 3], ['ASH_020', 2]], side: [['ASH_090', 2]] };
+    await seedReplay(team, a, { ...list, when: '2026-06-01T00:00:00Z', opp: 'Cad Bane' });
+    await seedReplay(team, a, { ...list, when: '2026-06-05T00:00:00Z', opp: 'Boba Fett' });
+    await seedReplay(team, a, { ...list, when: '2026-06-03T00:00:00Z', opp: 'Han Solo' });
+    // A genuinely different list (one card swapped) stays separate.
+    await seedReplay(team, a, { deck: [['ASH_010', 3], ['ASH_020', 2]], side: [['ASH_099', 2]], when: '2026-06-02T00:00:00Z', opp: 'Rey' });
+
+    as(a);
+    const dl = (await (await call(team, { ownLeader: 'Cad Bane', ownBase: 'asp:command' })).json()).data.decklists;
+    expect(dl).toHaveLength(2);
+    const big = dl.find((d: any) => d.gameCount === 3);
+    expect(big).toBeTruthy();
+    expect(big.playedAt).toBe('2026-06-05T00:00:00.000Z'); // most recent play in the group
+    expect(dl.find((d: any) => d.sideboard[0].cardId === 'ASH_099').gameCount).toBe(1);
   });
 
   it('member-only; ownLeader required', async () => {
