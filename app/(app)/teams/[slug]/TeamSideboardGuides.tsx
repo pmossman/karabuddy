@@ -696,21 +696,25 @@ function TakeForm({ teamSlug, matchup, deck, onDone, onSaved }: { teamSlug: stri
       </div>
     );
   };
-  // Reserved (In/Out) card: a PILE (copies = stack) with a legible −N+ stepper
-  // below. Click the pile to switch side / remove; the stepper sets copies.
+  // Reserved (In/Out) card: a PILE (copies = stack), a −N+ stepper, and explicit
+  // buttons to FLIP it to the other side (bring-in ↔ take-out) or remove it — the
+  // qty carries across a flip.
   const renderReservedCard = (c: PoolCard, w: number) => {
     const mk = marks[c.cardId];
-    const tone = mk?.side === 'out' ? SALMON : GREEN;
+    const isIn = mk?.side !== 'out';
+    const tone = isIn ? GREEN : SALMON;
     const q = mk?.qty ?? 1;
     return (
-      <div key={c.cardId} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-        <button type="button" data-testid="guide-reserved-card" onClick={() => setSide(c.cardId, null)} title="Remove from the plan" style={{ display: 'block', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>
-          <CardPile id={c.cardId} count={q} color={tone} w={w} name={c.name} />
-        </button>
+      <div key={c.cardId} data-testid="guide-reserved-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+        <CardPile id={c.cardId} count={q} color={tone} w={w} name={c.name} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(3,6,11,0.9)', border: `1px solid ${tone}66`, borderRadius: 8 }}>
           <button type="button" aria-label="one fewer" onClick={() => bumpQty(c.cardId, -1)} style={stepBtn}>−</button>
           <span style={{ fontSize: 13, fontWeight: 900, color: '#fff', minWidth: 26, textAlign: 'center' }}>{q}×</span>
           <button type="button" aria-label="one more" disabled={q >= MAX_QTY} onClick={() => bumpQty(c.cardId, 1)} style={{ ...stepBtn, opacity: q >= MAX_QTY ? 0.35 : 1 }}>+</button>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button type="button" data-testid="reserved-flip" onClick={() => setSide(c.cardId, isIn ? 'out' : 'in')} style={pillBtn(isIn ? SALMON : GREEN, false)} title={`Move to ${isIn ? 'Take out' : 'Bring in'}`}>{isIn ? '→ Take out' : '→ Bring in'}</button>
+          <button type="button" data-testid="reserved-remove" onClick={() => setSide(c.cardId, null)} style={pillBtn('#6c7588', false)} title="Remove from the plan">✕</button>
         </div>
       </div>
     );
