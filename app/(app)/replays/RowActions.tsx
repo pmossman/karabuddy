@@ -8,6 +8,8 @@ import { ReplayDecksModal } from './ReplayDecksModal';
 import { ReplayCommentsModal } from './ReplayCommentsModal';
 import { useConfirm } from '@/app/_components/Confirm';
 import { matchupTitle } from '@/lib/matchMetadata';
+import { noResult } from './resultDisplay';
+import { useReplaySelection } from './selection';
 
 // B100: per-row kebab (⋮) menu of common actions. The frequent one —
 // flipping which teams a replay is shared with — lives inline as toggles
@@ -36,6 +38,12 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
   // deleting from a team grid would be surprising.
   const canShare = canManage || !!replay.isMine;
   const canDelete = canManage;
+  // A team owner (resultManage, from the list selection context) may fill in a
+  // result for a teammate's NO-RESULT replay — but NOT share/delete it. Server
+  // enforces the same rule.
+  const sel = useReplaySelection();
+  const resultManage = sel?.resultManage ?? false;
+  const canAssignResult = !replay.encrypted && (canShare || (resultManage && noResult(replay)));
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [decksOpen, setDecksOpen] = useState(false);
@@ -105,10 +113,12 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
     });
     const body = await res.json().catch(() => ({}));
     if (!body.ok || (body.results?.ok?.length ?? 0) === 0) {
-      alert(body.results?.forbidden?.length ? "That's not your replay." : "Couldn't set the result.");
+      alert(body.results?.forbidden?.length ? "You can't set this replay's result." : "Couldn't set the result.");
       return;
     }
-    startTransition(() => router.refresh());
+    // Client-fetched grids (team/public) refetch via the context; the server-
+    // rendered library falls back to router.refresh().
+    if (sel?.refresh) sel.refresh(); else startTransition(() => router.refresh());
   };
 
   return (
@@ -169,11 +179,12 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
             gap: 2,
           }}
         >
-          {canShare && !replay.encrypted && (
+          {canAssignResult && (
             <>
               <div style={{ padding: '2px 8px 4px' }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 5 }}>
                   Result{replay.winnerManual ? ' · set manually' : curResult ? '' : ' · none yet'}
+                  {!canShare && resultManage ? ' · for member' : ''}
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <ResultChoice label="Win" active={curResult === 'win'} color="#4ec77e" onClick={() => setResult('result-win')} />

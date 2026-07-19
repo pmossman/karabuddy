@@ -176,7 +176,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
       <div style={{ marginTop: isOverview ? 4 : 20 }}>
         {tab === 'overview' && <TeamOverview slug={slug} />}
         {tab === 'discussion' && <TeamDiscussion teamSlug={slug} />}
-        {tab === 'replays' && <TeamReplays teamSlug={slug} />}
+        {tab === 'replays' && <TeamReplays teamSlug={slug} isOwner={me.role === 'owner'} />}
         {tab === 'clips' && (
           <ClipsBrowser rows={teamClipRows} showCreator emptyLabel="No clips on this team’s replays yet." />
         )}

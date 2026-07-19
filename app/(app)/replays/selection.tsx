@@ -14,6 +14,12 @@ export interface ReplaySelectionApi {
   selected: Set<string>;
   toggle: (slug: string) => void;
   selectable: (row: { isMine?: boolean }) => boolean;
+  // Viewer is a team OWNER on their team's grid — may fill in a result for a
+  // teammate's no-result replay (row renderers surface the per-row control).
+  resultManage: boolean;
+  // Refresh the list after a per-row mutation — router.refresh() on the server-
+  // rendered library, or the parent's refetch on the client-fetched team/public grids.
+  refresh: () => void;
 }
 
 const Ctx = createContext<ReplaySelectionApi | null>(null);

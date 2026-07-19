@@ -7,6 +7,7 @@ import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions
 import { shareAllowed } from '@/lib/privateTeams';
 import { revalidateForOps } from '@/lib/cached';
 import { setReplayResult, type ManualResult } from '@/lib/replayResult';
+import { surfacedReplaySlugs } from '@/lib/teamSurface';
 
 export const runtime = 'nodejs';
 
@@ -97,6 +98,23 @@ export async function POST(req: Request) {
     reviewShared = new Set(shareRows.map((s) => s.replaySlug));
   }
 
+  // Result assignment has a WIDER permission than ownership: a team OWNER may fill
+  // in a result for a replay SHARED with a team they own — assigning on behalf of a
+  // member. Guardrails: only for teams the caller OWNS, and only when there's no
+  // detected result to override (winners null, or a prior MANUAL result to fix) —
+  // it never rewrites a result karabast actually captured (winnerManual is the seam).
+  let teamOwnerAssignable: Set<string> = new Set();
+  if (RESULT_OPS.has(op) && userId) {
+    const owned = (await db.select({ slug: teamMembers.teamSlug }).from(teamMembers)
+      .where(and(eq(teamMembers.userId, userId), eq(teamMembers.role, 'owner')))).map((o) => o.slug);
+    if (owned.length) {
+      // Canonical surfacing rule (shares OR team-scoped tags) — the same set the
+      // team's replays tab shows — so the owner can assign anything they can see.
+      const surfaced = new Set(await surfacedReplaySlugs(owned));
+      teamOwnerAssignable = new Set(slugs.filter((s) => surfaced.has(s)));
+    }
+  }
+
   const rows = await db.select().from(replays).where(inArray(replays.slug, slugs));
   const bySlug = new Map(rows.map((r) => [r.slug, r]));
 
@@ -105,7 +123,13 @@ export async function POST(req: Request) {
   for (const slug of slugs) {
     const replay = bySlug.get(slug);
     if (!replay) { results.notFound.push(slug); continue; }
-    if (!canMutateReplay(replay, ctx)) { results.forbidden.push(slug); continue; }
+    if (!canMutateReplay(replay, ctx)) {
+      // Team-owner result fill-in (result ops only): shared with a team they own,
+      // and no karabast-detected result to override.
+      const teamOwnerOk = RESULT_OPS.has(op) && teamOwnerAssignable.has(slug)
+        && (replay.winners == null || replay.winnerManual === true);
+      if (!teamOwnerOk) { results.forbidden.push(slug); continue; }
+    }
     // Encrypted replays can never be public (would expose ciphertext on a
     // stranger-facing surface) — mirror the single PATCH route's rejection.
     if (op === 'publish' && replay.encrypted) { results.skipped.push(slug); continue; }

@@ -305,3 +305,63 @@ describe('POST /api/replays/bulk — result assignment', () => {
     expect((await rowOf(slug)).winners).toBeNull();
   });
 });
+
+describe('POST /api/replays/bulk — result assignment (team owner on behalf of a member)', () => {
+  beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 })));
+  afterEach(() => vi.unstubAllGlobals());
+  const share = (slug: string, teamSlug: string, by: string) =>
+    getDb().insert(replayTeamShares).values({ replaySlug: slug, teamSlug, sharedBy: by });
+
+  it('a team owner fills in a result for a member\'s NO-RESULT replay shared with their team', async () => {
+    const owner = await seedUser(); const member = await seedUser();
+    const team = await seedTeam(owner, [owner, member]);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = await seedScorable(member, pov, opp);
+    await share(slug, team, member);
+    as(owner);
+    const body = await (await bulk('result-win', [slug])).json();
+    expect(body.applied).toBe(1);
+    const row = await rowOf(slug);
+    expect(row.winners).toEqual([pov]);
+    expect(row.winnerManual).toBe(true);
+  });
+
+  it('a team owner CANNOT override a karabast-detected result', async () => {
+    const owner = await seedUser(); const member = await seedUser();
+    const team = await seedTeam(owner, [owner, member]);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = randomUUID().slice(0, 8);
+    await getDb().insert(replays).values({
+      slug, gameId: randomUUID(), userId: member, ownerToken: `kbx_${randomUUID()}`,
+      players: [{ id: pov }, { id: opp }], ownerPlayerId: pov, winners: [pov], winnerManual: false,
+      payloadBlobUrl: `https://blob.test/${slug}.json`, encrypted: false,
+    });
+    await share(slug, team, member);
+    as(owner);
+    const body = await (await bulk('result-loss', [slug])).json();
+    expect(body.applied).toBe(0);
+    expect(body.results.forbidden).toContain(slug);
+    expect((await rowOf(slug)).winners).toEqual([pov]); // unchanged
+  });
+
+  it('a team owner CANNOT assign a no-result replay NOT shared with a team they own', async () => {
+    const owner = await seedUser(); const member = await seedUser();
+    await seedTeam(owner, [owner, member]);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = await seedScorable(member, pov, opp); // never shared
+    as(owner);
+    const body = await (await bulk('result-win', [slug])).json();
+    expect(body.results.forbidden).toContain(slug);
+  });
+
+  it('a regular member CANNOT assign a teammate\'s result', async () => {
+    const owner = await seedUser(); const m1 = await seedUser(); const m2 = await seedUser();
+    const team = await seedTeam(owner, [owner, m1, m2]);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = await seedScorable(m1, pov, opp);
+    await share(slug, team, m1);
+    as(m2); // a member, not the owner
+    const body = await (await bulk('result-win', [slug])).json();
+    expect(body.results.forbidden).toContain(slug);
+  });
+});

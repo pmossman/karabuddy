@@ -9,7 +9,7 @@ import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 // B52-followup: now wrapped in ReplayFilters so the team page gets the
 // same filter UI + URL persistence + view switcher as /replays. Surface
 // rule (tag by team member OR explicit share) is still enforced server-side.
-export function TeamReplays({ teamSlug }: { teamSlug: string }) {
+export function TeamReplays({ teamSlug, isOwner = false }: { teamSlug: string; isOwner?: boolean }) {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [rows, setRows] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +69,7 @@ export function TeamReplays({ teamSlug }: { teamSlug: string }) {
       <ReplayFilters
         rows={shown}
         canManage={false}
+        resultManage={isOwner}
         showUploaderFilter
         pageSize={60}
         teamSlug={teamSlug}

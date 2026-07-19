@@ -131,6 +131,7 @@ function parseView(raw: string | null): ViewMode {
 export function ReplayFilters({
   rows,
   canManage,
+  resultManage = false,
   emptyState,
   showShareTabs = false,
   showUploaderFilter = false,
@@ -142,6 +143,10 @@ export function ReplayFilters({
 }: {
   rows: Row[];
   canManage: boolean;
+  // A team OWNER viewing their team's grid: may assign a result to a NO-RESULT
+  // team replay on behalf of the member (server enforces the same rule). Distinct
+  // from canManage — it does NOT grant delete/share on others' replays.
+  resultManage?: boolean;
   emptyState: React.ReactNode;
   // Bulk multi-select. `myTeams` populates the "share with" picker (the teams
   // the viewer can share into); `teamSlug` is the team whose grid this is (team
@@ -218,7 +223,11 @@ export function ReplayFilters({
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [opMsg, setOpMsg] = useState<string | null>(null);
-  const selectable = useCallback((r: { isMine?: boolean }) => canManage || !!r.isMine, [canManage]);
+  const selectable = useCallback(
+    (r: { isMine?: boolean; winners?: string[] | null; ownerPlayerId?: string | null; encrypted?: boolean }) =>
+      canManage || !!r.isMine || (resultManage && noResult(r)),
+    [canManage, resultManage],
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -333,9 +342,12 @@ export function ReplayFilters({
     setSelected((prev) => { const n = new Set(prev); if (n.has(slug)) n.delete(slug); else n.add(slug); return n; });
   }, []);
   const exitSelect = () => { setSelectMode(false); setSelected(new Set()); setOpMsg(null); };
+  // Refresh after a mutation: a client-fetched parent (team/public grids) refetches
+  // via onMutated; the server-rendered personal library uses router.refresh().
+  const refresh = useCallback(() => (onMutated ? onMutated() : router.refresh()), [onMutated, router]);
   const selectionApi: ReplaySelectionApi = useMemo(
-    () => ({ selectMode: deferredSelectMode, selected, toggle: toggleSel, selectable }),
-    [deferredSelectMode, selected, toggleSel, selectable],
+    () => ({ selectMode: deferredSelectMode, selected, toggle: toggleSel, selectable, resultManage, refresh }),
+    [deferredSelectMode, selected, toggleSel, selectable, resultManage, refresh],
   );
 
   // Aggregate sharing/visibility state across the SELECTED replays so the bulk
@@ -358,7 +370,6 @@ export function ReplayFilters({
     return Array.from(m, ([slug, name]) => ({ slug, name }));
   }, [myTeams, selectedRows, teamSlug]);
 
-  const refresh = () => (onMutated ? onMutated() : router.refresh());
   // Stage-and-apply: the Manage sheet stages a draft and commits the whole list
   // of changes here, in order, in one go. Bulk writes are 100× the blast radius
   // of a single replay, so nothing mutates until the user hits Apply — and until
