@@ -302,6 +302,13 @@
       "when": 1783104748860,
       "tag": "0042_take_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783104749860,
+      "tag": "0043_manual_result",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,10 @@ const OP_TAGS: Record<string, string[]> = {
   delete: [CACHE_TAGS.teamOverview, CACHE_TAGS.stats, CACHE_TAGS.publicReplays],
   'review-request': [CACHE_TAGS.teamOverview],
   'review-cancel': [CACHE_TAGS.teamOverview],
+  // Assigning/clearing a result changes what feeds team stats + the dashboard.
+  'result-win': [CACHE_TAGS.teamOverview, CACHE_TAGS.stats],
+  'result-loss': [CACHE_TAGS.teamOverview, CACHE_TAGS.stats],
+  'result-clear': [CACHE_TAGS.teamOverview, CACHE_TAGS.stats],
 };
 
 // Bust the caches a set of mutations can stale, so a share/publish/delete shows

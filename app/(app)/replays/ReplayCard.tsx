@@ -10,6 +10,7 @@ import { RowActions } from './RowActions';
 import { CommentCountButton } from './CommentCountButton';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { MatchupRow } from '@/app/_components/MatchupRow';
+import { noResult, NoResultChip } from './resultDisplay';
 import { useReplaySelection, SelectBox } from './selection';
 
 interface ReplayRow {
@@ -106,7 +107,10 @@ export function ReplayCard({ replay, canManage, gameNumber, jumpFrame, jumpLabel
           <PrivateMatchup row={replay as any} thumb={44} />
         ) : (
           <>
-            <MatchupRow p1={p1} p2={p2} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <MatchupRow p1={p1} p2={p2} />
+              {noResult(replay) && <NoResultChip />}
+            </div>
             {/* B53: user-set display name takes precedence over the auto
                 deck-text. The auto deck-text moves to a smaller sub-line. */}
             {replay.displayName ? (

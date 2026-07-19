@@ -9,12 +9,9 @@ import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { decodeReplay, extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
+import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
-import { persistReplayFacts } from '@/lib/statsPersist';
-import { reconcileBo3ForReplay } from '@/lib/bo3Reconcile';
-import { reconcileSideboardsForReplay } from '@/lib/sideboardPersist';
-import { persistOpening } from '@/lib/openingPersist';
+import { persistReplayStats } from '@/lib/replayStatsPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
 
 export const runtime = 'nodejs';
@@ -70,45 +67,10 @@ async function applyUploadShares(
 // both get rows → account-based intra-team detection, no karabast usernames.
 // B101/P0: materialize Stats/Meta facts for this upload (ADR 0007). Guarded —
 // must NEVER fail the upload (same posture as notifyMentions). Idempotent on
-// gameId, so re-running on a re-upload just refreshes. Decoding all frames is
-// bounded work; we only call this on the new-insert path + the final (winner-
-// present) snapshot, not on every mid-match periodic snapshot (perf — a P1
-// rollup/cron can revisit). The backfill covers historical replays.
-async function persistStatsSafe(slug: string, parsed: any, gameId: string, winners: string[] | null): Promise<void> {
-  let decoded: ReturnType<typeof decodeReplay>;
-  try {
-    decoded = decodeReplay(parsed);
-  } catch (e) {
-    console.error('[stats] decode failed for', slug, e);
-    return;
-  }
-  try {
-    await persistReplayFacts({
-      decoded,
-      replaySlug: slug,
-      gameId,
-      winners,
-      ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
-      durationMs: typeof parsed.durationMs === 'number' ? parsed.durationMs : null,
-    });
-  } catch (e) {
-    console.error('[stats] persistReplayFacts failed for', slug, e);
-  }
-  // B224: a Bo1 that karabast converts to a Bo3 records its game 1 as
-  // bestOfOne. Reconcile the whole lobby's stored bo3 flags conversion-aware —
-  // self-heals the moment game 2 (bestOfThree) lands. Best-effort (swallows).
-  await reconcileBo3ForReplay(parsed.match);
-  // B227: sideboard decisions for the Bo3 drill pool — a game completes the
-  // transition off its predecessor. Same self-healing lobby reconcile.
-  await reconcileSideboardsForReplay(parsed.match);
-  // B221: opening facts for the drill pool ride the same decode. Guarded
-  // separately so an opening quirk can't cost the match facts (or vice versa).
-  try {
-    await persistOpening(decoded, slug);
-  } catch (e) {
-    console.error('[openings] persistOpening failed for', slug, e);
-  }
-}
+// gameId, so re-running on a re-upload just refreshes. Extracted to a shared
+// helper (lib/replayStatsPersist) so MANUAL result assignment (lib/replayResult)
+// persists a user-asserted win/loss through the identical path.
+const persistStatsSafe = persistReplayStats;
 
 async function recordParticipant(slug: string, userId: string | null): Promise<void> {
   if (!userId) return;
@@ -439,8 +401,10 @@ export async function POST(req: Request) {
       if (clientMeta) updates.clientMeta = clientMeta;
       // B59: only write winners on the upsert path if we actually
       // detected them THIS upload. A periodic snapshot before game-end
-      // shouldn't clobber a previously-extracted winner.
-      if (winners !== null) updates.winners = winners;
+      // shouldn't clobber a previously-extracted winner. And a MANUALLY
+      // assigned result (winnerManual) is authoritative — a later re-upload
+      // never overwrites the user's call.
+      if (winners !== null && !replay.winnerManual) updates.winners = winners;
       await db.update(replays).set(updates).where(eq(replays.slug, replay.slug));
 
       // Upsert payload-carried tags. New tag ids are inserted; existing ids

@@ -18,6 +18,7 @@ import { formatTimestamp } from '@/lib/datetime';
 import { playerHandle } from '@/lib/players';
 import { segmentMatches, bestOfLabel } from '@/lib/seriesGrouping';
 import { ResultBadge } from '@/app/(app)/r/[slug]/ResultBadge';
+import { noResult, NoResultChip, ManualResultDot } from './resultDisplay';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { ShareBadge } from './ShareBadge';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -60,6 +61,9 @@ interface Row {
   // B59-followup: the recorder POV's playerId — the owner's player in
   // this replay. Combined with `winners` it answers "did I win?".
   ownerPlayerId?: string | null;
+  // Result was assigned by a user (karabast "leave game" left no result), not
+  // detected — drives the "set" marker next to the badge.
+  winnerManual?: boolean;
   // B89: teams this replay is shared with. Empty/absent = unlisted
   // (link-accessible but not surfaced to any team). Drives the Shared /
   // Unlisted tabs + the per-card share badge.
@@ -90,7 +94,7 @@ interface Row {
   isPublic?: boolean;
 }
 
-type ResultFilter = '' | 'wins' | 'losses';
+type ResultFilter = '' | 'wins' | 'losses' | 'none';
 
 // B89: Shared vs Unlisted are mutually exclusive states (a replay either has
 // team shares or it doesn't); the tabs make that split explicit so "who can
@@ -114,6 +118,7 @@ const DEFAULT_VIEW: ViewMode = 'replays';
 const OP_VERB: Record<string, string> = {
   delete: 'deleted', publish: 'made public', unpublish: 'made unlisted', share: 'shared', unshare: 'unshared',
   'label-add': 'labeled', 'label-remove': 'unlabeled', 'review-request': 'review requested', 'review-cancel': 'review cancelled',
+  'result-win': 'marked win', 'result-loss': 'marked loss', 'result-clear': 'result cleared',
 };
 
 function parseView(raw: string | null): ViewMode {
@@ -187,7 +192,7 @@ export function ReplayFilters({
   const [label, setLabel] = useState(() => searchParams.get('label') || '');
   const [result, setResult] = useState<ResultFilter>(() => {
     const v = searchParams.get('result') || '';
-    return v === 'wins' || v === 'losses' ? v : '';
+    return v === 'wins' || v === 'losses' || v === 'none' ? v : '';
   });
   const [view, setView] = useState<ViewMode>(() => parseView(searchParams.get('view')));
   // URL key is `share` (not `tab`) to avoid colliding with the team page's
@@ -286,7 +291,12 @@ export function ReplayFilters({
       if (label) {
         if (!Array.isArray(r.labels) || !r.labels.includes(label)) return false;
       }
-      if (result) {
+      if (result === 'none') {
+        // Match the "No result" chip exactly (lib resultDisplay.noResult): an
+        // unscored, non-encrypted game WITH a POV to assign from. Games with no
+        // owner-player can't be scored, so they don't show here.
+        if (!noResult(r)) return false;
+      } else if (result) {
         // Require a winner signal AND a known owner player to answer
         // "did I win?". Pre-B59 rows + games-without-winners drop out
         // when the filter is on (deliberate — Any leaves them in).
@@ -402,7 +412,7 @@ export function ReplayFilters({
   if (format) activeChips.push({ key: 'fmt', label: FORMAT_LABEL[format] || format, onClear: () => setFormat('') });
   if (mode) activeChips.push({ key: 'mode', label: MODE_LABEL[mode] || mode, onClear: () => setMode('') });
   if (label) activeChips.push({ key: 'label', label: `#${label}`, onClear: () => setLabel('') });
-  if (result) activeChips.push({ key: 'result', label: result === 'wins' ? 'Wins' : 'Losses', onClear: () => setResult('') });
+  if (result) activeChips.push({ key: 'result', label: result === 'wins' ? 'Wins' : result === 'losses' ? 'Losses' : 'No result', onClear: () => setResult('') });
 
   return (
     <ReplaySelectionProvider value={selectionApi}>
@@ -647,8 +657,21 @@ function BulkShareControls({
           Public section come from the SHARED shareControls (same as the single
           replay's ShareWithTeam) — no more drift. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 10px 8px', overflowY: 'auto', minHeight: 0, flex: '1 1 auto' }}>
+      {/* Assign win/loss for stats — a DIRECT action (unlike the staged share
+          toggles): each button applies immediately to the selection. The bulk API
+          gates per-item, so replays you don't own come back as "not yours". */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={shareSectionLabel}>Set result</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" disabled={busy} onClick={() => onApply([{ op: 'result-win' }])} style={resultBtn('#4ec77e', 'rgba(78,199,126,0.45)', busy)}>Mark Win</button>
+          <button type="button" disabled={busy} onClick={() => onApply([{ op: 'result-loss' }])} style={resultBtn('#ff6b6b', 'rgba(255,107,107,0.45)', busy)}>Mark Loss</button>
+          <button type="button" disabled={busy} onClick={() => onApply([{ op: 'result-clear' }])} style={resultBtn('#a7b0c0', '#2e333c', busy)}>Clear</button>
+        </div>
+        <div style={{ fontSize: 11, color: '#8a93a3', lineHeight: 1.4 }}>Win/loss for stats — only your own recordings.</div>
+      </div>
+
       {teams.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid #2e333c', paddingTop: 10 }}>
           <div style={shareSectionLabel}>Share with team</div>
           {teams.map((t) => {
             const st = shareState(t.slug);
@@ -714,6 +737,12 @@ function BulkShareControls({
 
 const dim = (base: React.CSSProperties, disabled: boolean): React.CSSProperties =>
   disabled ? { ...base, opacity: 0.45, cursor: 'default' } : base;
+// Direct result-assignment buttons in the bulk menu (Win green / Loss red / Clear grey).
+const resultBtn = (color: string, border: string, disabled: boolean): React.CSSProperties => ({
+  flex: 1, background: 'transparent', color, border: `1px solid ${border}`, borderRadius: 7,
+  padding: '8px 6px', fontSize: 12.5, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
+  fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: disabled ? 0.45 : 1,
+});
 const selBarStyle: React.CSSProperties = {
   position: 'sticky', top: 0, zIndex: 5, marginTop: 12,
   display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap',
@@ -1439,6 +1468,8 @@ function ReplayCellLink({ replay, gameNumber, jumpFrame, jumpLabel }: { replay: 
         <ResultBadge playerId={p1?.id} winners={replay.winners} />
         <span style={{ fontWeight: 600, color: '#a7d2ff' }}>{matchupText(replay)}</span>
         <ResultBadge playerId={p2?.id} winners={replay.winners} />
+        {noResult(replay) && <NoResultChip />}
+        {replay.winnerManual && !noResult(replay) && <ManualResultDot />}
         {replay.doubleSided && <DoubleSidedChip />}
         {jumpFrame != null && (
           <span data-testid="jump-to-play" style={{ fontSize: 10, fontWeight: 700, color: '#4dd2ff', background: 'rgba(77,210,255,0.12)', border: '1px solid rgba(77,210,255,0.3)', borderRadius: 999, padding: '0 7px', whiteSpace: 'nowrap' }}>▶ jump to {jumpLabel ?? 'the play'}</span>
@@ -1710,7 +1741,7 @@ function FilterControls({
       </Field>
       <Field orientation="column" label="Result">
         <Select size="sm" style={replaySelectStyle} placeholder="Any"
-          value={result} onChange={setResult} options={[['wins', 'Wins'], ['losses', 'Losses']] as const} />
+          value={result} onChange={setResult} options={[['wins', 'Wins'], ['losses', 'Losses'], ['none', 'No result']] as const} />
       </Field>
       {labels.length > 0 && (
         <Field orientation="column" label="Label">

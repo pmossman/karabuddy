@@ -159,6 +159,13 @@ export const replays = pgTable(
     // ask "did the owner win this match?" without a karabast-username
     // lookup. Set ONCE on first insert; later uploads don't overwrite.
     ownerPlayerId: text('owner_player_id'),
+    // Manual result assignment. karabast's "leave game" uploads a full replay with
+    // NO result (winners stays null). A user can assign win/loss for stats; that
+    // writes `winners` (win → [ownerPlayerId], loss → [opponentId]) AND sets
+    // `winnerManual` so (a) a later re-upload with a real result won't clobber the
+    // manual call, and (b) the UI marks it as manually set. `resultSetAt` = audit.
+    winnerManual: boolean('winner_manual').notNull().default(false),
+    resultSetAt: timestamp('result_set_at', { withTimezone: true }),
     // B53: user-editable display name. Null falls back to the auto-matchup
     // text the viewer / card teaser composes from the players array.
     displayName: text('display_name'),

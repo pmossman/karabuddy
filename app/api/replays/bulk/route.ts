@@ -6,6 +6,7 @@ import { replays, replayTeamShares, teamMembers, teams, tags, tagTeamScope } fro
 import { authContextFromRequest, canMutateReplay } from '@/lib/replayPermissions';
 import { shareAllowed } from '@/lib/privateTeams';
 import { revalidateForOps } from '@/lib/cached';
+import { setReplayResult, type ManualResult } from '@/lib/replayResult';
 
 export const runtime = 'nodejs';
 
@@ -24,9 +25,10 @@ export const runtime = 'nodejs';
 // preserves its side effects (private-team compat per replay; unshare strips that
 // team from every tag's scope to keep audience ⊆ shares).
 
-const OPS = new Set(['delete', 'publish', 'unpublish', 'share', 'unshare', 'label-add', 'label-remove', 'review-request', 'review-cancel']);
+const OPS = new Set(['delete', 'publish', 'unpublish', 'share', 'unshare', 'label-add', 'label-remove', 'review-request', 'review-cancel', 'result-win', 'result-loss', 'result-clear']);
 const TEAM_OPS = new Set(['share', 'unshare', 'review-request', 'review-cancel']); // carry a teamSlug
 const LABEL_OPS = new Set(['label-add', 'label-remove']); // carry a label
+const RESULT_OPS = new Set(['result-win', 'result-loss', 'result-clear']); // assign/clear win-loss
 const MAX_SLUGS = 1000;
 
 const bad = (status: number, error: string) => NextResponse.json({ ok: false, error }, { status });
@@ -110,6 +112,9 @@ export async function POST(req: Request) {
     // Encrypted replays keep title/labels in the E2EE summary — a plaintext label
     // edit would leak them, so the PATCH route rejects it. Skip them here too.
     if (LABEL_OPS.has(op) && replay.encrypted) { results.skipped.push(slug); continue; }
+    // Result assignment re-materializes stats from the payload, which the server
+    // can't read for an E2EE replay — skip encrypted rows.
+    if (RESULT_OPS.has(op) && replay.encrypted) { results.skipped.push(slug); continue; }
     if (op === 'share' && !shareAllowed({ encrypted: replay.encrypted, replayTeamKeyId: replay.teamKeyId, team: { privateMode: team!.privateMode, teamKeyId: team!.teamKeyId } }).ok) {
       results.skipped.push(slug);
       continue;
@@ -156,8 +161,18 @@ export async function POST(req: Request) {
       await db.update(replayTeamShares)
         .set({ reviewRequestedAt: requested ? new Date() : null, reviewRequestedBy: requested ? userId : null })
         .where(and(inArray(replayTeamShares.replaySlug, apply), eq(replayTeamShares.teamSlug, teamSlug)));
+    } else if (RESULT_OPS.has(op)) {
+      // Per-slug (each re-materializes its own stats from its payload). A game with
+      // no POV / no opponent id can't be scored → reported skipped, not applied.
+      const result: ManualResult = op === 'result-win' ? 'win' : op === 'result-loss' ? 'loss' : null;
+      for (const slug of apply) {
+        const outcome = await setReplayResult(bySlug.get(slug)!, result);
+        (outcome === 'ok' ? results.ok : results.skipped).push(slug);
+      }
     }
-    results.ok.push(...apply);
+    // Result ops already sorted their slugs into ok/skipped above; the batch ops
+    // applied to all of `apply`.
+    if (!RESULT_OPS.has(op)) results.ok.push(...apply);
     // Bust the caches this op can stale (team dashboard / public browser / stats)
     // so the change shows immediately instead of after the read TTL.
     revalidateForOps([op]);

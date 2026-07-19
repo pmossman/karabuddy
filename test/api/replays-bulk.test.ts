@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { POST as bulkOp } from '@/app/api/replays/bulk/route';
 import { getDb } from '@/lib/db';
@@ -220,5 +220,88 @@ describe('POST /api/replays/bulk — validation', () => {
     expect((await bulk('share', [r1])).status).toBe(400); // no teamSlug
     as(null);
     expect((await bulk('share', [r1], { teamSlug: 'x' })).status).toBe(401);
+  });
+});
+
+// Manual result assignment (karabast "leave game" leaves winners null). The op
+// writes `winners` from the owner's POV + the winnerManual flag; stats re-persist
+// is best-effort (mocked away here — the payload fetch is exercised at the
+// integration layer). These assert the column state + per-item gating.
+async function seedScorable(ownerUserId: string | null, pov: string, oppId: string, token?: string) {
+  const slug = randomUUID().slice(0, 8);
+  await getDb().insert(replays).values({
+    slug, gameId: randomUUID(), userId: ownerUserId, ownerToken: token ?? `kbx_${randomUUID()}`,
+    players: [{ id: pov, username: 'Me' }, { id: oppId, username: 'Opp' }],
+    ownerPlayerId: pov, payloadBlobUrl: `https://blob.test/${slug}.json`, encrypted: false,
+  });
+  return slug;
+}
+
+describe('POST /api/replays/bulk — result assignment', () => {
+  beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 })));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('result-win sets winners to the owner + marks it manual', async () => {
+    const u = await seedUser(); as(u);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = await seedScorable(u, pov, opp);
+    const body = await (await bulk('result-win', [slug])).json();
+    expect(body.applied).toBe(1);
+    const row = await rowOf(slug);
+    expect(row.winners).toEqual([pov]);
+    expect(row.winnerManual).toBe(true);
+    expect(row.resultSetAt).toBeTruthy();
+  });
+
+  it('result-loss sets winners to the opponent', async () => {
+    const u = await seedUser(); as(u);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = await seedScorable(u, pov, opp);
+    await bulk('result-loss', [slug]);
+    const row = await rowOf(slug);
+    expect(row.winners).toEqual([opp]);
+    expect(row.winnerManual).toBe(true);
+  });
+
+  it('result-clear nulls the result + unmarks manual', async () => {
+    const u = await seedUser(); as(u);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = await seedScorable(u, pov, opp);
+    await bulk('result-win', [slug]);
+    await bulk('result-clear', [slug]);
+    const row = await rowOf(slug);
+    expect(row.winners).toBeNull();
+    expect(row.winnerManual).toBe(false);
+  });
+
+  it('forbids assigning a result to a replay you do not own', async () => {
+    const owner = await seedUser(); const other = await seedUser(); as(other);
+    const pov = randomUUID(), opp = randomUUID();
+    const slug = await seedScorable(owner, pov, opp);
+    const body = await (await bulk('result-win', [slug])).json();
+    expect(body.applied).toBe(0);
+    expect(body.results.forbidden).toContain(slug);
+    expect((await rowOf(slug)).winners).toBeNull();
+  });
+
+  it('skips encrypted replays (payload unreadable server-side)', async () => {
+    const u = await seedUser(); as(u);
+    const slug = await seedReplay(u, { encrypted: true });
+    const body = await (await bulk('result-win', [slug])).json();
+    expect(body.results.skipped).toContain(slug);
+  });
+
+  it('skips a game with no opponent id (can\'t score a loss)', async () => {
+    const u = await seedUser(); as(u);
+    const pov = randomUUID();
+    const slug = randomUUID().slice(0, 8);
+    await getDb().insert(replays).values({
+      slug, gameId: randomUUID(), userId: u, ownerToken: `kbx_${randomUUID()}`,
+      players: [{ id: pov, username: 'Me' }], ownerPlayerId: pov,
+      payloadBlobUrl: `https://blob.test/${slug}.json`, encrypted: false,
+    });
+    const body = await (await bulk('result-loss', [slug])).json();
+    expect(body.results.skipped).toContain(slug);
+    expect((await rowOf(slug)).winners).toBeNull();
   });
 });

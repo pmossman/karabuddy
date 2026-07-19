@@ -19,6 +19,9 @@ interface ActionRow {
   players: any;
   displayName?: string | null;
   ownerPlayerId?: string | null;
+  winners?: string[] | null;
+  winnerManual?: boolean;
+  encrypted?: boolean;
   // B100: viewer owns this specific replay. On the team grid `canManage` is
   // false grid-wide, but the owner of an individual replay can still manage
   // it (e.g. un-share). ShareWithTeam re-checks ownership server-side.
@@ -89,6 +92,25 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
     startTransition(() => router.refresh());
   };
 
+  // Current result from the owner's POV (null = no result). Result assignment
+  // reuses the bulk endpoint with a single slug so there's one write path.
+  const winners = Array.isArray(replay.winners) ? replay.winners : null;
+  const curResult: 'win' | 'loss' | null =
+    winners && winners.length && replay.ownerPlayerId ? (winners.includes(replay.ownerPlayerId) ? 'win' : 'loss') : null;
+  const setResult = async (op: 'result-win' | 'result-loss' | 'result-clear') => {
+    setOpen(false);
+    const res = await fetch('/api/replays/bulk', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ op, slugs: [replay.slug] }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!body.ok || (body.results?.ok?.length ?? 0) === 0) {
+      alert(body.results?.forbidden?.length ? "That's not your replay." : "Couldn't set the result.");
+      return;
+    }
+    startTransition(() => router.refresh());
+  };
+
   return (
     <>
       <button
@@ -147,6 +169,21 @@ export function RowActions({ replay, canManage }: { replay: ActionRow; canManage
             gap: 2,
           }}
         >
+          {canShare && !replay.encrypted && (
+            <>
+              <div style={{ padding: '2px 8px 4px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8a93a3', marginBottom: 5 }}>
+                  Result{replay.winnerManual ? ' · set manually' : curResult ? '' : ' · none yet'}
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <ResultChoice label="Win" active={curResult === 'win'} color="#4ec77e" onClick={() => setResult('result-win')} />
+                  <ResultChoice label="Loss" active={curResult === 'loss'} color="#ff6b6b" onClick={() => setResult('result-loss')} />
+                  <ResultChoice label="Clear" active={false} color="#a7b0c0" onClick={() => setResult('result-clear')} disabled={!curResult} />
+                </div>
+              </div>
+              <Divider />
+            </>
+          )}
           {canShare && (
             <>
               <div style={{ padding: '4px 8px 2px' }}>
@@ -223,6 +260,29 @@ function MenuLink({ children, href }: { children: React.ReactNode; href: string 
 
 function Divider() {
   return <div style={{ height: 1, background: '#2e333c', margin: '4px 2px' }} />;
+}
+
+function ResultChoice({ label, active, color, onClick, disabled = false }: { label: string; active: boolean; color: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      style={{
+        flex: 1,
+        background: active ? color : 'transparent',
+        color: active ? '#0d1014' : color,
+        border: `1px solid ${active ? color : 'rgba(255,255,255,0.14)'}`,
+        borderRadius: 6, padding: '6px 4px', fontSize: 12, fontWeight: 700,
+        cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit',
+        opacity: disabled ? 0.4 : 1,
+      }}
+    >
+      {label}
+    </button>
+  );
 }
 
 function itemStyle(danger: boolean, hover: boolean): React.CSSProperties {

@@ -33,6 +33,9 @@ export interface SerializedReplayRow {
   labels: string[] | null;
   winners: string[] | null;
   ownerPlayerId: string | null;
+  // The result was assigned by a user (karabast "leave game" left no result), not
+  // detected from the payload — the UI marks it so it's distinguishable.
+  winnerManual: boolean;
   ownerName: string | null;
   // Perspective: the playerId that is "own" for this row + the resolved
   // leaders. Null when the perspective player can't be determined.
@@ -105,6 +108,7 @@ export function serializeReplayRow(
     labels: replay.labels ?? null,
     winners: replay.winners ?? null,
     ownerPlayerId: replay.ownerPlayerId ?? null,
+    winnerManual: (replay as { winnerManual?: boolean }).winnerManual ?? false,
     ownerName: opts.ownerName ?? null,
     viewerPlayerId: vid ?? null,
     ownLeader: own?.leader ?? null,
