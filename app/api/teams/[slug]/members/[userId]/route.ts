@@ -39,3 +39,35 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   await db.update(teamMembers).set({ role: 'member' }).where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, meId)));
   return NextResponse.json({ ok: true });
 }
+
+// DELETE /api/teams/[slug]/members/[userId] — an owner removes a member from the
+// team. Owner-only. You can't remove yourself here (transfer ownership or delete
+// the team instead) — which also means the acting owner always remains, so the
+// team can never be left without an owner. We drop only the membership row: the
+// member's shared replays/comments persist (they shared them deliberately), but
+// their access is gone because membership is re-validated on every read
+// (lib/activeTeam.resolveActiveTeam + the tag-scope/surfacing gates).
+export async function DELETE(_req: Request, { params }: { params: Promise<{ slug: string; userId: string }> }) {
+  const { slug, userId: targetId } = await params;
+  const m = await requireTeamMember(slug, { role: 'owner' });
+  if (m instanceof NextResponse) return m;
+  const meId = m.userId;
+
+  if (targetId === meId) {
+    return NextResponse.json(
+      { ok: false, error: "you can't remove yourself — transfer ownership or delete the team instead" },
+      { status: 400 },
+    );
+  }
+
+  const db = getDb();
+  const [target] = await db
+    .select()
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, targetId)))
+    .limit(1);
+  if (!target) return NextResponse.json({ ok: false, error: 'not a team member' }, { status: 404 });
+
+  await db.delete(teamMembers).where(and(eq(teamMembers.teamSlug, slug), eq(teamMembers.userId, targetId)));
+  return NextResponse.json({ ok: true });
+}
