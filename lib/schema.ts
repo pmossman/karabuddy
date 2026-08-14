@@ -215,6 +215,10 @@ export const replays = pgTable(
     // B224: series grouping + the bo3 reconcile scan a lobby's games by
     // match->>'lobbyId'; index the expression so it's a lookup, not a seq scan.
     lobbyIdx: index('replays_lobby_idx').on(sql`((${t.match} ->> 'lobbyId'))`),
+    // B233: personal stats scope every fact row through "does this user hold a
+    // replay for this game, on this seat?" (lib/statsQuery.personalSeatCond).
+    // Covers that EXISTS end to end so it stays an index lookup as replays grow.
+    userGameOwnerIdx: index('replays_user_game_owner_idx').on(t.userId, t.gameId, t.ownerPlayerId),
   })
 );
 

@@ -21,6 +21,7 @@ async function seedUser(optedOut = false) {
 async function seedMatch(opts: {
   gameId: string;
   userId?: string | null;
+  ownerPlayerId?: string | null; // recorder's seat; null = legacy pre-B59 row
   format?: string;
   p1: { leader: string; won: boolean; base?: string; rating?: { available: number; wasted: number; forced?: number; underspend?: number; deadCards?: number; countedRounds?: number } };
   p2: { leader: string; won: boolean; base?: string };
@@ -35,6 +36,9 @@ async function seedMatch(opts: {
   const format = opts.format ?? 'premier';
   await db.insert(replays).values({
     slug, gameId: opts.gameId, userId: opts.userId ?? null, ownerToken: 'kbx_' + id(),
+    // The recorder's seat. Personal scope is seat-based (B233), so this is what
+    // ties the fact rows to the uploader — mirrors what the upload route stores.
+    ownerPlayerId: opts.ownerPlayerId === undefined ? 'p1' : opts.ownerPlayerId,
     players: [], payloadBlobUrl: 'memory://x', durationMs: 1,
   });
   await db.insert(matches).values({ gameId: opts.gameId, replaySlug: slug, format, result: 'decisive', ...(opts.createdAt ? { createdAt: opts.createdAt } : {}) });
@@ -146,6 +150,158 @@ describe('getLeaderStats — scope isolation', () => {
     const m = byLeader(await getLeaderStats({ scope }));
     expect(m.LX?.games).toBe(1);
     expect(m.LY?.games).toBe(1);
+  });
+});
+
+// B233 guards. Personal scope used to resolve "my games" through the single
+// matches.replaySlug + match_players.isRecorder — both of which name whichever
+// sibling was persisted LAST. When your opponent also records and uploads after
+// you, that pair points at THEM, so your own game silently left your stats while
+// still listing in /replays (the reported symptom: 186 replays vs 174 stats).
+// Scope is now seat-based: your replay row's ownerPlayerId picks your side.
+describe('personal scope — co-recorded games (B233)', () => {
+  // A game both players recorded. `persistedBy` decides which sibling won the
+  // last-writer-wins race for matches.replaySlug + the isRecorder flag.
+  async function seedCoRecorded(opts: {
+    gameId: string; meUser: string; themUser: string;
+    persistedBy: 'me' | 'them';
+    myLeader: string; theirLeader: string; iWon: boolean;
+    myOwnerPlayerId?: string | null;
+    events?: Array<{ side: 'p1' | 'p2'; cardId: string; event: string }>;
+  }) {
+    const db = getDb();
+    const mySlug = 'r_me' + id().slice(0, 6);
+    const theirSlug = 'r_th' + id().slice(0, 6);
+    await db.insert(replays).values([
+      { slug: mySlug, gameId: opts.gameId, userId: opts.meUser, ownerToken: 'kbx_' + id(),
+        ownerPlayerId: opts.myOwnerPlayerId === undefined ? 'p1' : opts.myOwnerPlayerId,
+        players: [], payloadBlobUrl: 'memory://x', durationMs: 1 },
+      { slug: theirSlug, gameId: opts.gameId, userId: opts.themUser, ownerToken: 'kbx_' + id(),
+        ownerPlayerId: 'p2', players: [], payloadBlobUrl: 'memory://x', durationMs: 1 },
+    ]);
+    const persisted = opts.persistedBy === 'me' ? mySlug : theirSlug;
+    await db.insert(matches).values({ gameId: opts.gameId, replaySlug: persisted, format: 'premier', result: 'decisive' });
+    // isRecorder follows the persisted sibling — that's the whole trap.
+    const meIsRecorder = opts.persistedBy === 'me';
+    await db.insert(matchPlayers).values([
+      { gameId: opts.gameId, playerId: 'p1', leader: opts.myLeader, opponentLeader: opts.theirLeader, won: opts.iWon, isRecorder: meIsRecorder, format: 'premier' },
+      { gameId: opts.gameId, playerId: 'p2', leader: opts.theirLeader, opponentLeader: opts.myLeader, won: !opts.iWon, isRecorder: !meIsRecorder, format: 'premier' },
+    ]);
+    if (opts.events?.length) {
+      const wonBy = { p1: opts.iWon, p2: !opts.iWon };
+      await db.insert(cardEvents).values(opts.events.map((e, i) => ({
+        gameId: opts.gameId, playerId: e.side, isRecorder: e.side === 'p1' ? meIsRecorder : !meIsRecorder,
+        cardId: e.cardId, event: e.event,
+        attribution: e.event === 'drawn' || e.event === 'resourced' ? 'recorder' : 'both',
+        frameIndex: i, sideWon: wonBy[e.side], format: 'premier',
+      })));
+    }
+    return { mySlug, theirSlug };
+  }
+
+  it('counts my game when MY opponent’s sibling was persisted last', async () => {
+    const them = await seedUser(false);
+    await seedCoRecorded({ gameId: 'cr-' + id().slice(0, 6), meUser: userA, themUser: them, persistedBy: 'them', myLeader: 'L1', theirLeader: 'L9', iWon: true });
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: userA } }));
+    expect(m.L1.games).toBe(3); // the 2 seeded solo games + this co-recorded one
+    expect(m.L9).toBeUndefined(); // …and their leader is still not mine
+  });
+
+  it('counts the SAME game for both recorders, from each one’s own side', async () => {
+    const them = await seedUser(false);
+    await seedCoRecorded({ gameId: 'cr-' + id().slice(0, 6), meUser: userA, themUser: them, persistedBy: 'them', myLeader: 'LM', theirLeader: 'LT', iWon: true });
+    const mine = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: userA } }));
+    const theirs = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: them } }));
+    expect(mine.LM).toMatchObject({ games: 1, wins: 1 });
+    expect(theirs.LT).toMatchObject({ games: 1, wins: 0 });
+    expect(mine.LT).toBeUndefined();
+    expect(theirs.LM).toBeUndefined();
+  });
+
+  // The bug was never "just a count": the recovered games carry results, so every
+  // derived number moved with them. Here the dropped game is the only LOSS.
+  it('win rate reflects the recovered games, not just the total', async () => {
+    const them = await seedUser(false);
+    const gid = () => 'cr-' + id().slice(0, 6);
+    // Persisted by me → always counted, a WIN.
+    await seedCoRecorded({ gameId: gid(), meUser: userA, themUser: them, persistedBy: 'me', myLeader: 'LW', theirLeader: 'LT', iWon: true });
+    // Persisted by them → used to vanish. Both are LOSSES.
+    await seedCoRecorded({ gameId: gid(), meUser: userA, themUser: them, persistedBy: 'them', myLeader: 'LW', theirLeader: 'LT', iWon: false });
+    await seedCoRecorded({ gameId: gid(), meUser: userA, themUser: them, persistedBy: 'them', myLeader: 'LW', theirLeader: 'LT', iWon: false });
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: userA } }));
+    // Pre-fix this read 1 game / 100% win rate. The truth is 1-of-3.
+    expect(m.LW).toMatchObject({ games: 3, wins: 1, decisive: 3 });
+    expect(m.LW.winRate).toBeCloseTo(1 / 3);
+  });
+
+  it('matchup cells recover the missing games too', async () => {
+    const them = await seedUser(false);
+    await seedCoRecorded({ gameId: 'cr-' + id().slice(0, 6), meUser: userA, themUser: them, persistedBy: 'them', myLeader: 'LX', theirLeader: 'LY', iWon: false });
+    const rows = await getLeaderMatchups({ scope: { kind: 'personal', userId: userA }, leader: 'LX' });
+    expect(rows.find((r) => r.leader === 'LX' && r.opponentLeader === 'LY')).toMatchObject({ games: 1, wins: 0 });
+  });
+
+  it('card stats pick up MY side of a game my opponent persisted', async () => {
+    const them = await seedUser(false);
+    await seedCoRecorded({
+      gameId: 'cr-' + id().slice(0, 6), meUser: userA, themUser: them, persistedBy: 'them',
+      myLeader: 'LC', theirLeader: 'LD', iWon: true,
+      events: [{ side: 'p1', cardId: 'MINE', event: 'played' }, { side: 'p2', cardId: 'THEIRS', event: 'played' }],
+    });
+    const rows = await getCardStats({ scope: { kind: 'personal', userId: userA }, event: 'played' });
+    const byCard = Object.fromEntries(rows.map((r) => [r.cardId, r]));
+    expect(byCard.MINE).toMatchObject({ observations: 1, wins: 1 });
+    // Their play is still theirs — recovering my side must not leak the opponent's.
+    expect(byCard.THEIRS).toBeUndefined();
+  });
+
+  it('drill-in lists MY replay slug for a game my opponent persisted', async () => {
+    const them = await seedUser(false);
+    const { mySlug, theirSlug } = await seedCoRecorded({ gameId: 'cr-' + id().slice(0, 6), meUser: userA, themUser: them, persistedBy: 'them', myLeader: 'LR', theirLeader: 'LS', iWon: true });
+    const rows = await getEntityReplays({ scope: { kind: 'personal', userId: userA }, leader: 'LR' });
+    expect(rows.map((r) => r.slug)).toEqual([mySlug]);
+    expect(rows.map((r) => r.slug)).not.toContain(theirSlug);
+  });
+
+  // A user can hold TWO replay rows for one game+seat (upload dedupes per
+  // (gameId, ownerToken), so a second install mints a second row). The seat join
+  // must not fan out and count that game twice.
+  it('does not double-count when I hold two replay rows for the same game', async () => {
+    const db = getDb();
+    const gid = 'dup-' + id().slice(0, 6);
+    const slugs = ['r_d1' + id().slice(0, 6), 'r_d2' + id().slice(0, 6)];
+    await db.insert(replays).values(slugs.map((slug) => ({
+      slug, gameId: gid, userId: userA, ownerToken: 'kbx_' + id(), ownerPlayerId: 'p1',
+      players: [], payloadBlobUrl: 'memory://x', durationMs: 1,
+    })));
+    await db.insert(matches).values({ gameId: gid, replaySlug: slugs[0], format: 'premier', result: 'decisive' });
+    await db.insert(matchPlayers).values([
+      { gameId: gid, playerId: 'p1', leader: 'LDUP', opponentLeader: 'LZ', won: true, isRecorder: true, format: 'premier' },
+      { gameId: gid, playerId: 'p2', leader: 'LZ', opponentLeader: 'LDUP', won: false, isRecorder: false, format: 'premier' },
+    ]);
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: userA } }));
+    expect(m.LDUP.games).toBe(1);
+    const rows = await getEntityReplays({ scope: { kind: 'personal', userId: userA }, leader: 'LDUP' });
+    expect(rows).toHaveLength(1);
+  });
+
+  // Pre-B59 / anonymous-claimed rows have no ownerPlayerId and can't be
+  // seat-matched — they fall back to the old slug + isRecorder pair, so the fix
+  // can only ever add games back, never take one away.
+  it('still counts a legacy replay row with no ownerPlayerId', async () => {
+    await seedMatch({
+      gameId: 'legacy-' + id().slice(0, 6), userId: userA, ownerPlayerId: null,
+      p1: { leader: 'LLEG', won: true }, p2: { leader: 'LZ', won: false },
+    });
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: userA } }));
+    expect(m.LLEG).toMatchObject({ games: 1, wins: 1 });
+    expect(m.LZ).toBeUndefined();
+  });
+
+  it('still excludes another user’s games entirely', async () => {
+    await seedMatch({ gameId: 'other-' + id().slice(0, 6), userId: userB, p1: { leader: 'LOTHER', won: true }, p2: { leader: 'LZ', won: false } });
+    const m = byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: userA } }));
+    expect(m.LOTHER).toBeUndefined();
   });
 });
 
