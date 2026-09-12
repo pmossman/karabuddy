@@ -11,8 +11,12 @@ DIR="${SHADOW_DIR:-$HOME/karabuddy-shadow}"
 cd "$DIR"
 NAME=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(".vercel/project.json","utf8")).projectName)')
 if [ "$NAME" != "karabuddy-shadow" ]; then echo "refusing: $DIR is linked to '$NAME', not karabuddy-shadow" >&2; exit 1; fi
+# The shadow may run either the expand branch (PR #28) or the contract branch
+# (PR #29) — never main. Pass SHADOW_BRANCH to switch.
+WANT="${SHADOW_BRANCH:-free-tier-migration}"
+case "$WANT" in free-tier-migration|b235-contract-drop-card-events) ;; *) echo "refusing: '$WANT' is not a shadow branch" >&2; exit 1;; esac
+git fetch -q origin "$WANT" && git checkout -q "$WANT" && git pull -q origin "$WANT"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [ "$BRANCH" != "free-tier-migration" ]; then echo "refusing: $DIR is on '$BRANCH', not free-tier-migration" >&2; exit 1; fi
-git pull -q origin free-tier-migration
+if [ "$BRANCH" != "$WANT" ]; then echo "refusing: $DIR is on '$BRANCH', not $WANT" >&2; exit 1; fi
 echo "deploying $(git rev-parse --short HEAD) to karabuddy-shadow from $DIR"
 exec vercel deploy --prod --yes "$@"
