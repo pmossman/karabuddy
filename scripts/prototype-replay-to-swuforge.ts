@@ -377,7 +377,7 @@ async function main() {
     // Candidates: own-POV, decodable, substantial-but-not-huge; distinct own-leaders → variety.
     const cands = await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players })
       .from(replays)
-      .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), isNotNull(replays.decks),
+      .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), or(isNotNull(replays.deckRefs), isNotNull(replays.decks)),
         sql`${replays.payloadSizeBytes} between 60000 and 450000`))
       .orderBy(sql`random()`).limit(N * 10);
     const manifest: any[] = [];
@@ -412,7 +412,7 @@ async function main() {
   const [row] = slugArg
     ? await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players, decks: replays.decks }).from(replays).where(eq(replays.slug, slugArg))
     : await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players, decks: replays.decks }).from(replays)
-        .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), isNotNull(replays.decks)))
+        .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), or(isNotNull(replays.deckRefs), isNotNull(replays.decks))))
         .orderBy(desc(replays.durationMs)).limit(1);
   if (!row) { console.log('No replay found.'); return; }
 

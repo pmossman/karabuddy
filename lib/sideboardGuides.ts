@@ -5,7 +5,7 @@
 // the authoring selectors.
 
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNotNull, desc } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, or } from 'drizzle-orm';
 import { getDb } from './db';
 import { replays, replayTeamShares, teamMembers, sideboardTakes, sideboardMatchupComments, cards, users, type TakeBaseline } from './schema';
 import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
@@ -44,11 +44,14 @@ export async function matchupCardPool(
 ): Promise<{ totalLists: number; cards: PoolCard[] }> {
   const db = getDb();
   const wantName = leaderNameOf(ownLeaderName); // the pool keys on the leader NAME
-  const rows = await db
-    .select({ ownerPlayerId: replays.ownerPlayerId, players: replays.players, decks: replays.decks })
+  const rawRows = await db
+    .select({ ownerPlayerId: replays.ownerPlayerId, players: replays.players, deckRefs: replays.deckRefs, decks: replays.decks })
     .from(replays)
     .innerJoin(replayTeamShares, eq(replayTeamShares.replaySlug, replays.slug))
-    .where(and(eq(replayTeamShares.teamSlug, teamSlug), isNotNull(replays.decks)));
+    .where(and(eq(replayTeamShares.teamSlug, teamSlug), or(isNotNull(replays.deckRefs), isNotNull(replays.decks))));
+  // B236: decks live in `decklists`; rebuild the embedded shape for the loop.
+  const hydratedPool = await hydrateDecksForRows(rawRows);
+  const rows = rawRows.map((r, i) => ({ ...r, decks: hydratedPool[i] }));
 
   const freq = new Map<string, number>();
   let totalLists = 0;
@@ -114,13 +117,16 @@ export async function archetypeDecklists(
 ): Promise<ArchetypeDecklist[]> {
   const db = getDb();
   const wantName = leaderNameOf(ownLeader);
-  const rows = await db
-    .select({ slug: replays.slug, createdAt: replays.createdAt, userId: replays.userId, ownerName: users.name, ownerPlayerId: replays.ownerPlayerId, players: replays.players, decks: replays.decks })
+  const rawRows = await db
+    .select({ slug: replays.slug, createdAt: replays.createdAt, userId: replays.userId, ownerName: users.name, ownerPlayerId: replays.ownerPlayerId, players: replays.players, deckRefs: replays.deckRefs, decks: replays.decks })
     .from(replays)
     .innerJoin(replayTeamShares, eq(replayTeamShares.replaySlug, replays.slug))
     .leftJoin(users, eq(users.id, replays.userId))
-    .where(and(eq(replayTeamShares.teamSlug, teamSlug), isNotNull(replays.decks)))
+    .where(and(eq(replayTeamShares.teamSlug, teamSlug), or(isNotNull(replays.deckRefs), isNotNull(replays.decks))))
     .orderBy(desc(replays.createdAt));
+  // B236: decks live in `decklists`; rebuild the embedded shape for the loop.
+  const hydratedLists = await hydrateDecksForRows(rawRows);
+  const rows = rawRows.map((r, i) => ({ ...r, decks: hydratedLists[i] }));
 
   // Rows whose recorder ran this leader, carrying the recorder base ref so we can
   // resolve its functional identity and match the requested base key.
@@ -294,6 +300,7 @@ export async function matchupContextForTeam(teamSlug: string): Promise<{ leaderA
 export { MAX_QTY, guideQty, sumQty, computeConsensus, modeQty, analyzeMatchupConsensus } from './sideboardConsensus';
 export type { GuideCard, ConsensusCard, MatchupConsensus, SplitCard, PlanCard, ConsensusMember } from './sideboardConsensus';
 import { guideQty, type GuideCard } from './sideboardConsensus';
+import { hydrateDecksForRows } from './decklists';
 
 // Clamp untrusted IN/OUT card lists from the client to the stored shape.
 export function sanitizeGuideCards(arr: unknown): GuideCard[] {
