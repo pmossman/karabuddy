@@ -165,7 +165,14 @@ export const replays = pgTable(
     // Both null on historical replays uploaded before B42 + on any future
     // upload where the extension didn't catch a lobbystate first.
     match: jsonb('match'),
+    // B236: LEGACY — the embedded per-side deck snapshots. Superseded by
+    // `deckRefs` + the `decklists` table (one row per distinct list). Rows
+    // written before migration 0048 keep it until the contract migration drops
+    // the column; readers go through lib/decklists.hydrateDecks*, which falls
+    // back to it. New rows leave it null.
     decks: jsonb('decks'),
+    // B236: { [playerId]: { username, name, leader, base, decklist: <decklists.id>|null } }
+    deckRefs: jsonb('deck_refs'),
     // B59: winners extracted from the final gamestate at upload (and
     // re-extracted on snapshot upserts). Array of playerIds from the
     // payload's `players` map. Null on:
@@ -740,6 +747,27 @@ export const cardEvents = pgTable(
     gameIdx: index('card_events_game_idx').on(t.gameId),
     cardEventIdx: index('card_events_card_event_idx').on(t.cardId, t.event),
   })
+);
+
+// B236 (DB size): decklists stored once, content-addressed. `id` = md5 of the
+// normalized "leader|base|main|sideboard" string (lib/decklists.ts, with an
+// identical SQL twin for the migration backfill). `cards`/`sideboard` are
+// compact `[[cardId, count], ...]` arrays sorted by card id; costs are
+// re-attached from `cards` on read. 142k replay sides → ~25k rows.
+export const decklists = pgTable(
+  'decklists',
+  {
+    id: text('id').primaryKey(),
+    leaderId: text('leader_id'),
+    baseId: text('base_id'),
+    cards: jsonb('cards').notNull(),
+    sideboard: jsonb('sideboard').notNull(),
+    cardCount: integer('card_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    leaderIdx: index('decklists_leader_idx').on(t.leaderId),
+  }),
 );
 
 export type Card = typeof cards.$inferSelect;

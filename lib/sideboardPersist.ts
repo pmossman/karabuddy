@@ -14,6 +14,7 @@ import { getDb } from './db';
 import { replays, replaySideboards } from './schema';
 import { segmentMatches } from './seriesGrouping';
 import { computeSwap, SIDEBOARD_EXTRACTOR_VERSION, type SideCard } from './sideboardExtract';
+import { hydrateDecksForRows } from './decklists';
 
 interface Row {
   slug: string;
@@ -43,12 +44,16 @@ export async function reconcileLobbySideboards(lobbyId: string): Promise<number>
       ownerToken: replays.ownerToken,
       ownerPlayerId: replays.ownerPlayerId,
       winners: replays.winners,
+      deckRefs: replays.deckRefs,
       decks: replays.decks,
       fmt: sql<string | null>`${replays.match}->>'gamesToWinMode'`,
       createdAt: replays.createdAt,
     })
     .from(replays)
-    .where(sql`${replays.match}->>'lobbyId' = ${lobbyId}`)) as Row[];
+    .where(sql`${replays.match}->>'lobbyId' = ${lobbyId}`)) as (Row & { deckRefs: unknown })[];
+  // B236: decks live in `decklists`; rebuild the embedded shape for the diff.
+  const hydratedDecks = await hydrateDecksForRows(rows);
+  rows.forEach((r, i) => { r.decks = hydratedDecks[i]; });
 
   // Group by recorder — one stable series per recorder.
   const byRecorder = new Map<string, Row[]>();

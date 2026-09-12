@@ -13,6 +13,7 @@ import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayStats } from '@/lib/replayStatsPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
+import { storeDecks } from '@/lib/decklists';
 
 export const runtime = 'nodejs';
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -394,7 +395,8 @@ export async function POST(req: Request) {
         payloadPrunedAt: null,
       };
       if (parsed.match !== undefined) updates.match = parsed.match;
-      if (!replay.decks && parsed.decks) updates.decks = parsed.decks;
+      // B236: decks are stored once in `decklists`; the row keeps refs.
+      if (!replay.decks && !replay.deckRefs && parsed.decks) updates.deckRefs = await storeDecks(parsed.decks);
       // B114: refresh the recorder's client metadata (latest upload wins) —
       // only when this upload carried it, so we don't null a stored value.
       if (clientMeta) updates.clientMeta = clientMeta;
@@ -474,7 +476,7 @@ export async function POST(req: Request) {
       // B42: nullable JSONB columns — undefined for replays uploaded by
       // pre-B42 extension versions, populated for new uploads.
       match: parsed.match ?? null,
-      decks: parsed.decks ?? null,
+      deckRefs: await storeDecks(parsed.decks ?? null),
       winners,
       // B59-followup: stash the recorder's POV so the "Wins" filter on
       // /replays?tab=mine knows which player was "me" without a per-

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { pruneReplayPayloads, retentionDays } from '@/lib/replayRetention';
+import { deleteExpiredReplayRows, pruneReplayPayloads, retentionDays, rowRetentionDays } from '@/lib/replayRetention';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
   const dryRun = new URL(req.url).searchParams.get('dry') === '1';
+  const startedAt = Date.now();
   const result = await pruneReplayPayloads({ days: retentionDays(), timeBudgetMs: TIME_BUDGET_MS, dryRun, log: (m) => console.log(m) });
   console.log('[prune-payloads]', JSON.stringify(result));
-  return NextResponse.json({ ok: true, ...result });
+  // B236: blanket row retention, only when REPLAY_ROW_RETENTION_DAYS is set.
+  const rowDays = rowRetentionDays();
+  const rows = rowDays ? await deleteExpiredReplayRows({ days: rowDays, timeBudgetMs: Math.max(10_000, TIME_BUDGET_MS - (Date.now() - startedAt)), dryRun, log: (m) => console.log(m) }) : null;
+  if (rows) console.log('[retention-rows]', JSON.stringify(rows));
+  return NextResponse.json({ ok: true, ...result, rows });
 }
