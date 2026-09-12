@@ -58,7 +58,7 @@ current and appends to the log at the bottom.
          string (with the password filled in) → hand it to Claude (chat, or
          `COCKROACH_URL=` in `.env.local`). Claude creates two databases in the
          cluster: `shadow` (Phase 0) and, later, `karabuddy` (Phase 2).
-- [ ] **0.4 OAuth redirect URIs for the shadow domain** (2 min). The shadow
+- [x] **0.4 OAuth redirect URIs for the shadow domain** ✅ 2026-09-12 (sign-in verified by Parker). The shadow
       is **https://karabuddy-shadow.vercel.app**. Add:
       - Discord: https://discord.com/developers/applications → your KaraBuddy
         app → OAuth2 → Redirects → Add →
@@ -237,3 +237,5 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
 - 2026-09-12 — Shadow is UP: https://karabuddy-shadow.vercel.app, on the
   `shadow` Cockroach DB (full prod copy) + R2. Retention marking + payload copy
   into R2 running. Waiting on your 0.4 (two OAuth redirect URIs) to sign in.
+- 2026-09-12 — 0.4 done; Parker signed in on the shadow. Phase 1 (dogfooding)
+  can start while the payload copy into R2 finishes in the background.
