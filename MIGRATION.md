@@ -272,3 +272,15 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   −~120 MB), user agent dropped (−17 MB), opt-in `REPLAY_ROW_RETENTION_DAYS`.
   Shadow on Aiven: redeployed and serving; prod copy re-running with the
   read-only-guard fix.
+- 2026-09-12 (later) — B236 merged into `free-tier-migration` (PR #28) after a
+  missed reader (sideboard guides) was moved onto the hydrator; e2e green.
+  PR #29 rebuilt as the full contract: migration 0049 = re-run the deck_refs
+  backfill, `DROP TABLE card_events`, `DROP COLUMN replays.decks`. Shadow load
+  on Aiven now skips the embedded `decks` column entirely (`copy-db
+  --drop-cols=replays.decks` + `scripts/copy-decklists.ts` derives the
+  `decklists` rows from prod in TypeScript), so Aiven never stores the 136 MB.
+  Aiven's disk guard (flips the DB read-only, kills connections) tripped three
+  times during bulk loads at ~350–400 MB of data — WAL from the load, not the
+  data itself; it clears within a minute or two. Fine for karabuddy's normal
+  write rate, but it means the free instance's disk headroom is ~1 GB in
+  practice: keep the DB ≤ ~0.6 GB (PR #29 + the 90-day rule do that).
