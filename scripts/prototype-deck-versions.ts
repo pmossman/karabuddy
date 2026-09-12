@@ -13,6 +13,7 @@
 //     --min = only show archetypes with >= this many complete-deck games
 
 import { config } from 'dotenv';
+import { hydrateDecksForRows } from '../lib/decklists';
 config({ path: '.env.development.local' });
 
 type DeckMap = Map<string, number>; // cardId -> count
@@ -49,7 +50,7 @@ async function main() {
 
   // Pick a user (default: top by qualifying replays)
   let userId = userArg;
-  const qualifies = and(eq(replays.encrypted, false), isNotNull(replays.decks), isNotNull(replays.ownerPlayerId));
+  const qualifies = and(eq(replays.encrypted, false), isNotNull(replays.deckRefs), isNotNull(replays.ownerPlayerId));
   if (!userId) {
     const rows = await db.select({ userId: replays.userId }).from(replays).where(and(qualifies, isNotNull(replays.userId)));
     const c = new Map<string, number>(); for (const r of rows) if (r.userId) c.set(r.userId, (c.get(r.userId) || 0) + 1);
@@ -60,8 +61,9 @@ async function main() {
 
   const tokens = (await db.select({ token: extensionTokens.token }).from(extensionTokens).where(eq(extensionTokens.userId, userId))).map((r) => r.token);
   const ownerFilter = tokens.length ? or(eq(replays.userId, userId), inArray(replays.ownerToken, tokens)) : eq(replays.userId, userId);
-  const rows = await db.select({ players: replays.players, decks: replays.decks, pov: replays.ownerPlayerId, winners: replays.winners, createdAt: replays.createdAt })
+  const rawRows = await db.select({ players: replays.players, deckRefs: replays.deckRefs, pov: replays.ownerPlayerId, winners: replays.winners, createdAt: replays.createdAt })
     .from(replays).where(and(ownerFilter, qualifies));
+  const hydrated = await hydrateDecksForRows(rawRows); const rows = rawRows.map((r, i) => ({ ...r, decks: hydrated[i] }));
 
   // Build per-replay records; group by archetype
   const baseRefs = rows.map((r) => (Array.isArray(r.players) ? (r.players as any[]).find((p) => p?.id === r.pov)?.base : null)).filter(Boolean);

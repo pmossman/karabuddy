@@ -71,7 +71,7 @@ describe('private-teams schema (migration 0029)', () => {
     expect(enc.teamKeyId).toBe(teamKeyId);
     expect(enc.players).toEqual([]);
     expect(enc.match).toBeNull();
-    expect(enc.decks).toBeNull();
+    expect(enc.deckRefs).toBeNull(); // B236: decks column dropped; refs stay null on encrypted rows
     expect(enc.winners).toBeNull();
     // No plaintext leaders/winner anywhere on the stored row.
     expect(JSON.stringify(enc)).not.toContain('Vader');

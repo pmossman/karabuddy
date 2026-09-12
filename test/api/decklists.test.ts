@@ -5,7 +5,7 @@ import { POST as upload } from '@/app/api/replays/route';
 import { GET as getReplay } from '@/app/api/replays/[slug]/route';
 import { getDb } from '@/lib/db';
 import { cards, clips, decklists, extensionTokens, matches, replays, users } from '@/lib/schema';
-import { backfillDeckRefs, hydrateDecks, normalizeDecklist, splitDecks } from '@/lib/decklists';
+import { hydrateDecks, normalizeDecklist } from '@/lib/decklists';
 import { deleteExpiredReplayRows } from '@/lib/replayRetention';
 
 // B236: decklists stored once (content-addressed), replays keep refs; readers
@@ -72,7 +72,7 @@ describe('B236 decklists', () => {
     const a = await uploadReplay(u.token);
     const b = await uploadReplay(u.token); // same list, second game
     const ra = await row(a);
-    expect(ra.decks).toBeNull();
+    expect((ra as any).decks).toBeUndefined(); // column dropped by the contract migration
     const refs = ra.deckRefs as any;
     expect(refs.p1.decklist).toBe(normalizeDecklist(DECKS.p1)!.id);
     expect(refs.p2.decklist).toBeNull(); // masked opponent
@@ -98,34 +98,6 @@ describe('B236 decklists', () => {
     expect(body.data.deckRefs).toBeUndefined();
   });
 
-  it('SQL backfill hashes exactly like TypeScript and converts legacy rows', async () => {
-    const u = await seedUser();
-    const slug = await uploadReplay(u.token);
-    // Turn it back into a legacy row: embedded decks, no refs.
-    await getDb().update(replays).set({ decks: DECKS, deckRefs: null }).where(eq(replays.slug, slug));
-    await getDb().delete(decklists);
-    await backfillDeckRefs();
-    const r = await row(slug);
-    const { refs } = splitDecks(DECKS as any);
-    expect(r.deckRefs).toEqual(refs);
-    const [list] = await getDb().select().from(decklists);
-    expect(list.id).toBe(normalizeDecklist(DECKS.p1)!.id);
-    expect(list.cards).toEqual([['JTL_001', 1], ['SOR_050', 2], ['SOR_100', 3]]);
-    expect(list.sideboard).toEqual([['SOR_200', 2]]);
-    expect(list.cardCount).toBe(6);
-    expect(list.leaderId).toBe('SOR_010');
-    // Hydration of the converted row matches the original (minus internalName).
-    const decks = (await hydrateDecks(r))!;
-    expect(decks.p1.deck!.map((c) => c.id)).toEqual(['JTL_001', 'SOR_050', 'SOR_100']);
-  });
-
-  it('legacy rows without refs still hydrate from the embedded column', async () => {
-    const u = await seedUser();
-    const slug = await uploadReplay(u.token);
-    await getDb().update(replays).set({ decks: DECKS, deckRefs: null }).where(eq(replays.slug, slug));
-    const decks = (await hydrateDecks(await row(slug)))!;
-    expect(decks.p1.deck).toEqual(DECKS.p1.deck);
-  });
 });
 
 describe('B236 blanket row retention (opt-in)', () => {

@@ -4,6 +4,7 @@ import { GET } from '@/app/api/replays/[slug]/route';
 import { canViewReplayIdentities } from '@/lib/altPerspective';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays } from '@/lib/schema';
+import { storeDecks } from '@/lib/decklists';
 
 // B122: karabast usernames + full deck lists + the title are visible ONLY to the
 // uploader or a teammate of the uploader. Everyone else gets anonymized players,
@@ -33,7 +34,7 @@ async function seedReplay(userId: string, ownerToken: string) {
       { id: 'p1', username: 'RealAlice', leader: { name: 'Luke', set: 'SOR', number: 1 }, base: { name: 'Base', set: 'SOR', number: 2 } },
       { id: 'p2', username: 'RealBob', leader: { name: 'Thrawn', set: 'SOR', number: 3 }, base: { name: 'Base2', set: 'SOR', number: 4 } },
     ],
-    decks: { p1: { username: 'RealAlice', name: "Alice's Deck", deck: [{ id: 'SOR_005', count: 3 }] }, p2: { username: 'RealBob', deck: null } },
+    deckRefs: await storeDecks({ p1: { username: 'RealAlice', name: "Alice's Deck", leader: null, base: null, deck: [{ id: 'SOR_005', count: 3 }], sideboard: null }, p2: { username: 'RealBob', leader: null, base: null, deck: null, sideboard: null } }),
     payloadBlobUrl: `https://blob.test/${slug}.json`,
   });
   return slug;

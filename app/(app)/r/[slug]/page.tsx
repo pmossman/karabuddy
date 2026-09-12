@@ -49,7 +49,6 @@ const loadLobbyForSeries = cache(async (lobbyId: string) => {
       ownerPlayerId: replays.ownerPlayerId,
       players: replays.players,
       deckRefs: replays.deckRefs,
-      decks: replays.decks,
       fmt: sql<string | null>`${replays.match}->>'gamesToWinMode'`,
     })
     .from(replays)

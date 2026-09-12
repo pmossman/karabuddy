@@ -13,6 +13,7 @@
 //   npx tsx scripts/prototype-replay-to-swuforge.ts [slug] [--v=2|3]
 
 import { config } from 'dotenv';
+import { hydrateDecks } from '../lib/decklists';
 config({ path: '.env.development.local' });
 
 const isPlainObject = (v: any): v is Record<string, any> => v != null && typeof v === 'object' && !Array.isArray(v);
@@ -377,7 +378,7 @@ async function main() {
     // Candidates: own-POV, decodable, substantial-but-not-huge; distinct own-leaders → variety.
     const cands = await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players })
       .from(replays)
-      .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), isNotNull(replays.decks),
+      .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), isNotNull(replays.deckRefs),
         sql`${replays.payloadSizeBytes} between 60000 and 450000`))
       .orderBy(sql`random()`).limit(N * 10);
     const manifest: any[] = [];
@@ -410,10 +411,11 @@ async function main() {
   }
 
   const [row] = slugArg
-    ? await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players, decks: replays.decks }).from(replays).where(eq(replays.slug, slugArg))
-    : await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players, decks: replays.decks }).from(replays)
-        .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), isNotNull(replays.decks)))
+    ? await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players, deckRefs: replays.deckRefs }).from(replays).where(eq(replays.slug, slugArg))
+    : await db.select({ slug: replays.slug, url: replays.payloadBlobUrl, size: replays.payloadSizeBytes, pov: replays.ownerPlayerId, players: replays.players, deckRefs: replays.deckRefs }).from(replays)
+        .where(and(eq(replays.encrypted, false), isNotNull(replays.ownerPlayerId), isNotNull(replays.deckRefs)))
         .orderBy(desc(replays.durationMs)).limit(1);
+  if (row) (row as any).decks = await hydrateDecks(row); // B236
   if (!row) { console.log('No replay found.'); return; }
 
   const version = Number(args.find((a) => a.startsWith('--v='))?.split('=')[1]) || 3;

@@ -15,7 +15,6 @@ import { getDb, getPgliteClient } from '@/lib/db';
 // per-test transactions when handlers do their own queries.
 
 const TABLES = [
-  'card_events',
   'match_players',
   'matches',
   'cards',

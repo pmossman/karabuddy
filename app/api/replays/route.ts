@@ -396,7 +396,7 @@ export async function POST(req: Request) {
       };
       if (parsed.match !== undefined) updates.match = parsed.match;
       // B236: decks are stored once in `decklists`; the row keeps refs.
-      if (!replay.decks && !replay.deckRefs && parsed.decks) updates.deckRefs = await storeDecks(parsed.decks);
+      if (!replay.deckRefs && parsed.decks) updates.deckRefs = await storeDecks(parsed.decks);
       // B114: refresh the recorder's client metadata (latest upload wins) —
       // only when this upload carried it, so we don't null a stored value.
       if (clientMeta) updates.clientMeta = clientMeta;

@@ -165,12 +165,6 @@ export const replays = pgTable(
     // Both null on historical replays uploaded before B42 + on any future
     // upload where the extension didn't catch a lobbystate first.
     match: jsonb('match'),
-    // B236: LEGACY — the embedded per-side deck snapshots. Superseded by
-    // `deckRefs` + the `decklists` table (one row per distinct list). Rows
-    // written before migration 0048 keep it until the contract migration drops
-    // the column; readers go through lib/decklists.hydrateDecks*, which falls
-    // back to it. New rows leave it null.
-    decks: jsonb('decks'),
     // B236: { [playerId]: { username, name, leader, base, decklist: <decklists.id>|null } }
     deckRefs: jsonb('deck_refs'),
     // B59: winners extracted from the final gamestate at upload (and
@@ -722,33 +716,6 @@ export const matchPlayers = pgTable(
 // `attribution` ('both' | 'recorder') keeps recorder-side vs whole-meta stats
 // honest at query time. `format` denormalized so the hot card-stat query can
 // filter without joining `matches`.
-// B235: LEGACY — superseded by match_players.card_events (jsonb). No code reads or
-// writes this table any more; it's kept in the schema until the contract
-// migration drops it (ADR 0005: drop only after the reading code has deployed).
-// To drop: remove this definition + `drizzle-kit generate`, or apply
-// `DROP TABLE "card_events";` as the next migration.
-export const cardEvents = pgTable(
-  'card_events',
-  {
-    id: bigserial('id', { mode: 'number' }).primaryKey(),
-    gameId: text('game_id')
-      .notNull()
-      .references(() => matches.gameId, { onDelete: 'cascade' }),
-    playerId: text('player_id').notNull(),
-    isRecorder: boolean('is_recorder').notNull().default(false),
-    cardId: text('card_id').notNull(),
-    event: text('event').notNull(), // drawn | resourced | played | discarded
-    attribution: text('attribution').notNull(), // both | recorder
-    frameIndex: integer('frame_index').notNull(),
-    sideWon: boolean('side_won'),
-    format: text('format'),
-  },
-  (t) => ({
-    gameIdx: index('card_events_game_idx').on(t.gameId),
-    cardEventIdx: index('card_events_card_event_idx').on(t.cardId, t.event),
-  })
-);
-
 // B236 (DB size): decklists stored once, content-addressed. `id` = md5 of the
 // normalized "leader|base|main|sideboard" string (lib/decklists.ts, with an
 // identical SQL twin for the migration backfill). `cards`/`sideboard` are
@@ -773,7 +740,6 @@ export const decklists = pgTable(
 export type Card = typeof cards.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
 export type MatchPlayerRow = typeof matchPlayers.$inferSelect;
-export type CardEventRow = typeof cardEvents.$inferSelect;
 
 // ----- B124: Team tournaments (Swiss / Bo3, async)
 //

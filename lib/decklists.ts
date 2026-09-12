@@ -202,4 +202,4 @@ export async function backfillDeckRefs(): Promise<void> {
 }
 
 // Convenience for readers that select the replays table directly.
-export const deckColumns = { deckRefs: replays.deckRefs, decks: replays.decks };
+export const deckColumns = { deckRefs: replays.deckRefs };

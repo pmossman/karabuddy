@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { GET as decklistsGet } from '@/app/api/teams/[slug]/sideboard-guides/decklists/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, replayTeamShares, cards } from '@/lib/schema';
+import { storeDecks } from '@/lib/decklists';
 
 // B232: baseline decklists for authoring a guide from a real list — recent shared
 // replays of an archetype, full main + sideboard, viewer's own first, base-filtered.
@@ -34,7 +35,7 @@ async function seedReplay(team: string, owner: string, opts: { deck: [string, nu
       { id: 'Q', leader: { name: opts.opp ?? 'Ahsoka', set: 'SHD', number: 5 }, base: { name: 'X', set: 'SOR', number: 21 } },
     ],
     payloadBlobUrl: 'blob://x', match: { gameFormat: 'premier' },
-    decks: { P: { username: 'r', leader: null, base: null, deck: opts.deck.map(([id, count]) => ({ id, count })), sideboard: opts.side.map(([id, count]) => ({ id, count })) } },
+    deckRefs: await storeDecks({ P: { username: 'r', leader: null, base: null, deck: opts.deck.map(([id, count]) => ({ id, count })), sideboard: opts.side.map(([id, count]) => ({ id, count })) } }),
   });
   await getDb().insert(replayTeamShares).values({ replaySlug: slug, teamSlug: team, sharedBy: owner });
   return slug;

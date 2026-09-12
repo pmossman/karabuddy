@@ -344,6 +344,13 @@
       "when": 1788892870634,
       "tag": "0048_decklists",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788892871634,
+      "tag": "0049_contract_drop_card_events_and_decks",
+      "breakpoints": true
     }
   ]
 }

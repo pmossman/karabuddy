@@ -45,7 +45,6 @@ export async function reconcileLobbySideboards(lobbyId: string): Promise<number>
       ownerPlayerId: replays.ownerPlayerId,
       winners: replays.winners,
       deckRefs: replays.deckRefs,
-      decks: replays.decks,
       fmt: sql<string | null>`${replays.match}->>'gamesToWinMode'`,
       createdAt: replays.createdAt,
     })
