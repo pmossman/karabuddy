@@ -124,6 +124,11 @@ describe('B234 payload retention', () => {
   it('honors limit + reports more', async () => {
     const u = await seedUser();
     for (let i = 0; i < 3; i++) await age(await uploadReplay(u.token), 60);
+    // Dry run with more candidates than one batch must terminate (it counts
+    // instead of paging — nothing gets marked, so paging would never advance).
+    const dry = await pruneReplayPayloads({ days: 30, batch: 1, dryRun: true });
+    expect(dry.pruned).toBe(3);
+    expect(dry.more).toBe(false);
     const res = await pruneReplayPayloads({ days: 30, limit: 2, batch: 1 });
     expect(res.pruned).toBe(2);
     expect(res.more).toBe(true);

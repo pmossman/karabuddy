@@ -89,6 +89,30 @@ export async function findPrunableReplays(opts: { cutoff: Date; limit: number })
     .limit(opts.limit);
 }
 
+// Count (and size) everything the rule would prune right now — one query, used
+// by dry runs. (A dry run can't page through candidates by re-selecting: nothing
+// gets marked, so the same batch would come back forever.)
+export async function countPrunableReplays(cutoff: Date): Promise<{ count: number; rawBytes: number }> {
+  const db = getDb();
+  const r = replays;
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int`, rawBytes: sql<number>`coalesce(sum(${r.payloadSizeBytes}), 0)::bigint` })
+    .from(r)
+    .where(
+      and(
+        isNull(r.payloadPrunedAt),
+        lt(r.createdAt, cutoff),
+        isNull(r.publicAt),
+        isNull(r.lastViewedAt),
+        notLike(r.payloadBlobUrl, 'data:%'),
+        notExists(db.select({ x: sql`1` }).from(replayViews).where(sql`${replayViews.replaySlug} = ${r.slug}`)),
+        notExists(db.select({ x: sql`1` }).from(clips).where(sql`${clips.replaySlug} = ${r.slug}`)),
+        notExists(db.select({ x: sql`1` }).from(replayReviews).where(sql`${replayReviews.replaySlug} = ${r.slug}`)),
+      ),
+    );
+  return { count: Number(row?.count ?? 0), rawBytes: Number(row?.rawBytes ?? 0) };
+}
+
 export async function pruneReplayPayloads(opts: PruneOptions = {}): Promise<PruneResult> {
   const days = opts.days ?? retentionDays();
   const batch = Math.max(1, opts.batch ?? DEFAULT_PRUNE_BATCH);
@@ -103,6 +127,12 @@ export async function pruneReplayPayloads(opts: PruneOptions = {}): Promise<Prun
     days, cutoff: cutoff.toISOString(), candidates: 0, pruned: 0, rawBytes: 0, failedBatches: 0, dryRun: !!opts.dryRun, more: false,
   };
 
+  if (opts.dryRun) {
+    const c = await countPrunableReplays(cutoff);
+    const n = Math.min(c.count, limit);
+    return { ...result, candidates: c.count, pruned: n, rawBytes: n === c.count ? c.rawBytes : Math.round((c.rawBytes * n) / Math.max(1, c.count)), more: n < c.count };
+  }
+
   // Rows that fail to delete would be re-selected forever; remember them for
   // this run so a persistent store error can't spin the loop.
   const skip = new Set<string>();
@@ -113,12 +143,6 @@ export async function pruneReplayPayloads(opts: PruneOptions = {}): Promise<Prun
     const rows = (await findPrunableReplays({ cutoff, limit: want + skip.size })).filter((r) => !skip.has(r.slug)).slice(0, want);
     if (rows.length === 0) break;
     result.candidates += rows.length;
-    if (opts.dryRun) {
-      result.pruned += rows.length;
-      result.rawBytes += rows.reduce((a, r) => a + (r.payloadSizeBytes || 0), 0);
-      if (rows.length < want) break;
-      continue;
-    }
     try {
       await deletePayloadBlobs(rows.map((r) => r.payloadBlobUrl));
     } catch (e) {
