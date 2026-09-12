@@ -330,6 +330,13 @@
       "when": 1788892868634,
       "tag": "0046_card_events_aggregate",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788892869634,
+      "tag": "0047_card_events_backfill_again",
+      "breakpoints": true
     }
   ]
 }
