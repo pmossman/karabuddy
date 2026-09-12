@@ -31,5 +31,8 @@ UPDATE "replays" r SET "deck_refs" = (
     ELSE NULL END))
   FROM jsonb_each(r."decks") v WHERE jsonb_typeof(v.value) = 'object')
 WHERE r."decks" IS NOT NULL AND r."deck_refs" IS NULL;--> statement-breakpoint
+-- B237: card facts only for recorded seats (the persist path stopped writing
+-- opponent-side facts in the expand deploy; clear what older code wrote).
+UPDATE "match_players" SET "card_events" = NULL WHERE NOT "is_recorder" AND "card_events" IS NOT NULL;--> statement-breakpoint
 DROP TABLE "card_events";--> statement-breakpoint
 ALTER TABLE "replays" DROP COLUMN "decks";
