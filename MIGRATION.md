@@ -23,9 +23,16 @@ current and appends to the log at the bottom.
 
 ### Your items
 
-- [ ] **0.1 `vercel login` once.** In a Claude Code session type `! vercel login`
-      and finish the browser step. Unlocks: creating the shadow project, its env
-      vars and redeploys. (The stored CLI token has expired.)
+- [ ] **0.1 Give Claude Vercel CLI access.** Unlocks: creating the shadow
+      project, its env vars and redeploys. Two ways:
+      - *Easiest:* create a token at https://vercel.com/account/settings/tokens
+        (scope: your team, expiry as you like) and append `VERCEL_TOKEN=…` to
+        `.env.local` (gitignored) or paste it in chat. Claude passes it as
+        `vercel --token`.
+      - *Or* run `vercel login` in a normal terminal window (NOT via Claude's
+        `!` prefix — that has a 2-minute timeout and the device-code flow waited
+        past it on 2026-09-12, which also wiped the old token). Visit the
+        printed URL, approve, done.
 - [ ] **0.2 Cloudflare R2 bucket** (~10 min, free tier, no card):
       1. Cloudflare dashboard → R2 → Create bucket → name `karabuddy-replays`,
          location Automatic. (Same account as swuforge is fine.)
