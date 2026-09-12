@@ -33,7 +33,7 @@ current and appends to the log at the bottom.
         `!` prefix — that has a 2-minute timeout and the device-code flow waited
         past it on 2026-09-12, which also wiped the old token). Visit the
         printed URL, approve, done.
-- [ ] **0.2 Cloudflare R2 bucket** (~10 min, free tier, no card):
+- [x] **0.2 Cloudflare R2 bucket** ✅ 2026-09-12 — verified: gzip'd put, public GET with `Content-Encoding: gzip`, CORS for the shadow origin, delete. (~10 min, free tier, no card):
       1. Cloudflare dashboard → R2 → Create bucket → name `karabuddy-replays`,
          location Automatic. (Same account as swuforge is fine.)
       2. Bucket → Settings → **Public Development URL** → Enable → copy the
@@ -77,9 +77,10 @@ current and appends to the log at the bottom.
       `~/karabuddy-shadow` (the same way CI deploys prod), so nothing on GitHub
       can ever trigger it and `main` is never involved. Env per Appendix A
       "shadow" column: auth + cron + retention + `KARABUDDY_DB_DRIVER=pg` +
-      `KARABUDDY_PAYLOAD_DELETE_DISABLED=1` are set; NO `BLOB_READ_WRITE_TOKEN`,
-      NO `DISCORD_*`. Still pending: `POSTGRES_URL*` (after 0.3) and
-      `KARABUDDY_BLOB_DRIVER=s3` + `R2_*` (after 0.2).
+      `KARABUDDY_PAYLOAD_DELETE_DISABLED=1`, `KARABUDDY_BLOB_DRIVER=s3` + `R2_*`
+      are set; NO `BLOB_READ_WRITE_TOKEN`, NO `DISCORD_*`. Still pending:
+      `POSTGRES_URL*` (after 0.3). Shadow-only values for local scripts live in
+      `~/code/karabuddy/.env.shadow.local` (gitignored).
       > Quirk: the Vercel CLI treats `~/code` as a project root (there's a
       > `~/code/.gitignore`), so a shadow clone under `~/code` kept linking the
       > wrong directory — hence `~/karabuddy-shadow`. The prod link in
@@ -207,3 +208,6 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   (not git-linked; deploys from `~/karabuddy-shadow`) and loaded its
   DB/R2-independent env. Next: 0.2 (R2) and 0.3 (Cockroach) from you; then
   Claude copies the DB, deploys, and posts the shadow URL.
+- 2026-09-12 — 0.2 done: R2 bucket verified end to end with the app's own
+  driver; R2 env loaded on `karabuddy-shadow`. Only 0.3 (Cockroach connection
+  string) blocks the first shadow deploy.
