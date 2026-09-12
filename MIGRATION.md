@@ -50,7 +50,7 @@ current and appends to the log at the bottom.
       > `r2.dev` URLs are rate-limited and "for development" per Cloudflare; at
       > karabuddy's ~100 replay views/day that's fine. A custom domain needs
       > karabuddy.app's DNS on Cloudflare, so it's an optional later step.
-- [ ] **0.3 CockroachDB Cloud cluster** (~10 min, no card):
+- [x] **0.3 CockroachDB Cloud cluster** ✅ 2026-09-12 (~10 min, no card):
       1. https://cockroachlabs.cloud → sign up → Create cluster → **Basic** →
          AWS, **us-east-1** (same region as Vercel iad1) → name `karabuddy`.
       2. Create a SQL user (e.g. `karabuddy`), save the generated password.
@@ -58,10 +58,14 @@ current and appends to the log at the bottom.
          string (with the password filled in) → hand it to Claude (chat, or
          `COCKROACH_URL=` in `.env.local`). Claude creates two databases in the
          cluster: `shadow` (Phase 0) and, later, `karabuddy` (Phase 2).
-- [ ] **0.4 OAuth redirect URIs for the shadow domain** (2 min, after Claude
-      posts the shadow URL in the log): add
-      `https://<shadow-url>/api/auth/callback/discord` to the Discord app and
-      `https://<shadow-url>/api/auth/callback/google` to the Google OAuth client.
+- [ ] **0.4 OAuth redirect URIs for the shadow domain** (2 min). The shadow
+      is **https://karabuddy-shadow.vercel.app**. Add:
+      - Discord: https://discord.com/developers/applications → your KaraBuddy
+        app → OAuth2 → Redirects → Add →
+        `https://karabuddy-shadow.vercel.app/api/auth/callback/discord` → Save.
+      - Google: https://console.cloud.google.com/apis/credentials → the
+        KaraBuddy OAuth client → Authorized redirect URIs → Add →
+        `https://karabuddy-shadow.vercel.app/api/auth/callback/google` → Save.
       Without this you can still browse the shadow, but not sign in.
 
 ### Claude's items
@@ -85,15 +89,17 @@ current and appends to the log at the bottom.
       > `~/code/.gitignore`), so a shadow clone under `~/code` kept linking the
       > wrong directory — hence `~/karabuddy-shadow`. The prod link in
       > `~/code/karabuddy/.vercel` is untouched.
-- [ ] 0.E *(after 0.3)* Create database `shadow` on the cluster, apply
-      migrations, copy prod into it with `scripts/copy-db.ts --skip=card_events`
-      (read-only on prod; ~600 MB, minutes). Verify row counts.
-- [ ] 0.F *(after 0.2 + 0.D)* Deploy the shadow; smoke it: viewer plays a replay
-      (served from prod Blob, read-only), stats + team pages, cron route 401s.
-      Post the shadow URL in the log → unlocks 0.4.
-- [ ] 0.G *(after 0.E)* Run retention on the shadow DB (marks rows, deletes
-      nothing), then `migrate-payloads --keep-old` to copy the surviving ~53k
-      payloads into R2 (gzip'd, ~0.8 GB). Shadow viewer now reads from R2.
+- [x] 0.E Database `shadow` on the cluster: 47 migrations applied; prod copied
+      in from one REPEATABLE READ snapshot (`copy-db --skip=card_events`), all
+      31 tables' row counts match; card facts filled via `copy-card-facts`
+      (262,260 sides). ✅ 2026-09-12
+- [x] 0.F Shadow deployed via `scripts/deploy-shadow.sh` →
+      **https://karabuddy-shadow.vercel.app** (home 200, cron 401 without the
+      secret, extension status OK, viewer/lists render). ✅ 2026-09-12
+- [ ] 0.G *(in progress 2026-09-12)* Retention marked on the shadow DB (deletes
+      nothing — kill switch on), then `migrate-payloads --keep-old
+      --skip-existing` copying the surviving payloads into R2 (gzip'd). Shadow
+      viewer reads from R2 for migrated rows, prod Blob (read-only) for the rest.
 
 ## Phase 1 — get confident (still no prod impact)
 
@@ -228,3 +234,6 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   Guard added: `scripts/deploy-shadow.sh` is now the only way the shadow gets
   deployed — it refuses unless the directory is `~/karabuddy-shadow`, linked to
   `karabuddy-shadow`, on branch `free-tier-migration`.
+- 2026-09-12 — Shadow is UP: https://karabuddy-shadow.vercel.app, on the
+  `shadow` Cockroach DB (full prod copy) + R2. Retention marking + payload copy
+  into R2 running. Waiting on your 0.4 (two OAuth redirect URIs) to sign in.
