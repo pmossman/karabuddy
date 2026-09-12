@@ -211,12 +211,39 @@ export async function readBlobJson<T = any>(url: string): Promise<T | null> {
   }
 }
 
+// True when this process holds a stored object at `pathname` on the CURRENT
+// driver (s3 only — used by scripts/migrate-payloads.ts --skip-existing so a
+// bucket that was already populated by a rehearsal isn't re-uploaded). Returns
+// the public URL, or null when absent / not s3.
+export async function payloadExists(pathname: string): Promise<string | null> {
+  if (!s3Config) return null;
+  const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+  try {
+    await (await s3()).send(new HeadObjectCommand({ Bucket: s3Config.bucket, Key: pathname }));
+    return `${s3Config.publicBaseUrl}/${pathname}`;
+  } catch {
+    return null;
+  }
+}
+
 // Delete payload blobs by URL. Routes each URL to the store that holds it (a
 // row may still point at Vercel Blob while new writes go to R2), so retention
 // and migration work mid-transition. Deletes are free on both stores. Throws
 // if a store rejects the batch — callers must not mark rows pruned on failure.
+//
+// Safety for a SHADOW environment (a second deployment whose database is a
+// copy of prod and whose rows therefore still point at prod's Vercel Blob):
+//   - KARABUDDY_PAYLOAD_DELETE_DISABLED=1 → no store is touched at all (rows
+//     still get marked pruned / migrated; only the blobs outlive them).
+//   - Vercel Blob URLs are skipped (with a warning) when this process has no
+//     BLOB_READ_WRITE_TOKEN — it couldn't delete them anyway, and a shadow
+//     deliberately doesn't carry prod's token.
 export async function deletePayloadBlobs(urls: string[]): Promise<void> {
   if (urls.length === 0) return;
+  if (process.env.KARABUDDY_PAYLOAD_DELETE_DISABLED === '1') {
+    console.warn(`[blob] KARABUDDY_PAYLOAD_DELETE_DISABLED=1 — leaving ${urls.length} blob(s) in place`);
+    return;
+  }
   if (useMemory) {
     for (const u of urls) {
       const p = memoryPathname(u);
@@ -245,6 +272,10 @@ export async function deletePayloadBlobs(urls: string[]): Promise<void> {
     }
   }
   if (vercelUrls.length) {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      console.warn(`[blob] no BLOB_READ_WRITE_TOKEN — leaving ${vercelUrls.length} Vercel Blob object(s) in place`);
+      return;
+    }
     for (let i = 0; i < vercelUrls.length; i += 100) {
       await vercelDel(vercelUrls.slice(i, i + 100));
     }

@@ -5,7 +5,10 @@
 // multi-row INSERTs, and row counts are verified at the end.
 //
 //   SOURCE_URL="<neon POSTGRES_URL_NON_POOLING>" TARGET_URL="<cockroach url>" \
-//     npx tsx scripts/copy-db.ts [--only=table1,table2] [--batch=500] [--verify-only]
+//     npx tsx scripts/copy-db.ts [--only=t1,t2] [--skip=t1,t2] [--batch=500] [--verify-only]
+//
+// `--skip=card_events` for the free-tier cutover: the legacy table is dropped by
+// migration 0047 and is 6.6M rows nobody reads (ADR 0012).
 //
 // The target must already have the schema (run `POSTGRES_URL_NON_POOLING=<target>
 // npx drizzle-kit migrate` first). `drizzle.__drizzle_migrations` is copied too so
@@ -23,6 +26,7 @@ if (!SOURCE_URL || !TARGET_URL) {
 const args = process.argv.slice(2);
 const num = (k: string, d: number) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? Number(a.split('=')[1]) : d; };
 const only = (args.find((x) => x.startsWith('--only=')) || '').slice('--only='.length).split(',').filter(Boolean);
+const skip = new Set((args.find((x) => x.startsWith('--skip=')) || '').slice('--skip='.length).split(',').filter(Boolean));
 const verifyOnly = args.includes('--verify-only');
 const BATCH = num('batch', 500);
 
@@ -57,7 +61,7 @@ async function main() {
   const visit = (t: string) => { if (seen.has(t)) return; seen.add(t); for (const p of deps.get(t) ?? []) visit(p); order.push(t); };
   tables.forEach(visit);
 
-  const selected = only.length ? order.filter((t) => only.includes(t)) : order;
+  const selected = (only.length ? order.filter((t) => only.includes(t)) : order).filter((t) => !skip.has(t));
   console.log('order:', selected.join(' > '));
 
   const summary: { table: string; source: number; target: number; copied: number }[] = [];

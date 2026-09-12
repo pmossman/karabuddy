@@ -19,12 +19,16 @@
 //   --limit=N              stop after N rows
 //   --concurrency=N        parallel rows (default 8; Vercel Blob allows 75 writes/s on Pro)
 //   --min-age-minutes=N    skip rows created more recently than this (default 60)
-//   --keep-old             don't delete the source blob when the URL moved
+//   --keep-old             don't delete the source blob when the URL moved (shadow env:
+//                          the source is PROD's Blob store — always pass this there)
+//   --skip-existing        s3 only: if the object already exists in the bucket (a
+//                          rehearsal put it there), point the row at it instead of
+//                          re-uploading
 
 import { and, asc, isNull, lt, notLike, or, sql, eq, ne, not, like } from 'drizzle-orm';
 import { getDb } from '../lib/db';
 import { replays } from '../lib/schema';
-import { blobDriver, deletePayloadBlobs, putPayload, readBlobText } from '../lib/blob';
+import { blobDriver, deletePayloadBlobs, payloadExists, putPayload, readBlobText } from '../lib/blob';
 
 const PAYLOAD_CACHE_MAX_AGE_SECONDS = 300; // mirrors app/api/replays/route.ts
 
@@ -33,6 +37,7 @@ async function main() {
   const num = (k: string, d: number) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? Number(a.split('=')[1]) : d; };
   const dryRun = args.includes('--dry-run');
   const keepOld = args.includes('--keep-old');
+  const skipExisting = args.includes('--skip-existing');
   const limit = num('limit', Infinity);
   const concurrency = Math.max(1, num('concurrency', 8));
   const minAgeMin = num('min-age-minutes', 60);
@@ -52,7 +57,7 @@ async function main() {
   console.log(`${n} replay(s) to migrate`);
   if (dryRun) return;
 
-  let done = 0, failed = 0, missing = 0, rawBytes = 0, storedBytes = 0;
+  let done = 0, failed = 0, missing = 0, reused = 0, rawBytes = 0, storedBytes = 0;
   const started = Date.now();
   // Page by created_at so a re-run after a crash resumes; each processed row
   // drops out of the WHERE, so always take the oldest remaining.
@@ -70,6 +75,15 @@ async function main() {
     for (let i = 0; i < rows.length; i += concurrency) {
       await Promise.all(rows.slice(i, i + concurrency).map(async (row) => {
         try {
+          if (skipExisting) {
+            const existing = await payloadExists(`replays/${row.slug}.json`);
+            if (existing) {
+              await db.update(replays).set({ payloadBlobUrl: existing, payloadEncoding: 'gzip' }).where(and(eq(replays.slug, row.slug), eq(replays.payloadBlobUrl, row.url)));
+              if (existing !== row.url && !keepOld) await deletePayloadBlobs([row.url]);
+              reused++; done++;
+              return;
+            }
+          }
           const text = await readBlobText(row.url);
           if (text === null) { missing++; pageFailed++; await db.update(replays).set({ payloadPrunedAt: new Date() }).where(eq(replays.slug, row.slug)); console.log(`  ${row.slug}: source blob missing → marked pruned`); return; }
           const res = await putPayload(`replays/${row.slug}.json`, text, { cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS });
@@ -86,7 +100,7 @@ async function main() {
     console.log(`${done} done, ${failed} failed, ${missing} missing · ${(rawBytes / 1048576).toFixed(0)} MB → ${(storedBytes / 1048576).toFixed(0)} MB · ${(done / secs).toFixed(1)}/s`);
     if (pageFailed === rows.length) { console.log('every row in the page failed — stopping'); break; }
   }
-  console.log(JSON.stringify({ done, failed, missing, rawMB: +(rawBytes / 1048576).toFixed(1), storedMB: +(storedBytes / 1048576).toFixed(1) }));
+  console.log(JSON.stringify({ done, reused, failed, missing, rawMB: +(rawBytes / 1048576).toFixed(1), storedMB: +(storedBytes / 1048576).toFixed(1) }));
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
