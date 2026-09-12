@@ -253,3 +253,14 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   the whole free RU budget by itself, so Cockroach Basic is probably a
   $2–10/month database for karabuddy, not a free one. Decision needed — see
   chat 2026-09-12.
+- 2026-09-12 — Neon dashboard read: **76.6 CU-hours in 12 days (~190/month)**
+  at an always-on 0.25 CU, 2.45 GB storage. Neon Free (100 CU-h, 0.5 GB) is
+  out on compute regardless of size. Swuforge's DB measured read-only: 387 MB
+  for 58,452 games (~2.6 KB/game) vs karabuddy ~5.2 KB/game × 144k. **Decision:
+  database → Aiven free PostgreSQL** (1 GB, no metering, PG 18, 20 connections
+  → `KARABUDDY_PG_POOL_MAX=2`). Shadow DB re-created there from the fixed
+  scripts; Cockroach cluster parked (delete after Oct 1). Size work queued:
+  decks normalization (swuforge pattern), client_meta.ua drop, players trim,
+  90-day retention of replay rows.
+  Note: Aiven uses a private CA → URLs use `sslmode=no-verify` for now; for
+  the real cutover, pin Aiven's CA (`certs/aiven-ca.pem` + `sslrootcert`).
