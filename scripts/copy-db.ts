@@ -93,7 +93,15 @@ async function main() {
     console.log(`${t}: copying ${sourceCount} rows`);
     const started = Date.now();
     let copied = 0;
-    await src.query(`DECLARE copy_cur CURSOR FOR SELECT ${names} FROM "${t}"`);
+    // Self-referencing FKs (tags.parent_tag_id → tags.id): parents must land
+    // before children, so rows with a null self-reference go first.
+    const selfRefCols: string[] = (await src.query(`
+      select kcu.column_name from information_schema.table_constraints tc
+      join information_schema.key_column_usage kcu on kcu.constraint_name = tc.constraint_name
+      join information_schema.constraint_column_usage ccu on ccu.constraint_name = tc.constraint_name
+      where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = 'public' and tc.table_name = $1 and ccu.table_name = $1`, [t])).rows.map((r) => r.column_name);
+    const orderBy = selfRefCols.length ? ` ORDER BY ${selfRefCols.map((c) => `("${c}" IS NOT NULL)`).join(', ')}` : '';
+    await src.query(`DECLARE copy_cur CURSOR FOR SELECT ${names} FROM "${t}"${orderBy}`);
     for (;;) {
       const { rows } = await src.query(`FETCH ${BATCH * 4} FROM copy_cur`);
       if (rows.length === 0) break;
