@@ -27,6 +27,10 @@ const args = process.argv.slice(2);
 const num = (k: string, d: number) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? Number(a.split('=')[1]) : d; };
 const only = (args.find((x) => x.startsWith('--only=')) || '').slice('--only='.length).split(',').filter(Boolean);
 const skip = new Set((args.find((x) => x.startsWith('--skip=')) || '').slice('--skip='.length).split(',').filter(Boolean));
+// --drop-cols=table.column,... : source columns to leave out (the target may
+// not have them, or they're legacy bulk we don't want to carry — e.g.
+// replays.decks, which scripts/copy-decklists.ts re-derives into `decklists`).
+const dropCols = new Set((args.find((x) => x.startsWith('--drop-cols=')) || '').slice('--drop-cols='.length).split(',').filter(Boolean));
 const verifyOnly = args.includes('--verify-only');
 // A table that was partially copied (a previous run died mid-table) is normally
 // skipped like any non-empty table; with this flag it's emptied and re-copied.
@@ -94,7 +98,7 @@ async function main() {
   for (const t of selected) {
     const cols: { column_name: string; data_type: string }[] = (await src.query(
       `select column_name, data_type from information_schema.columns where table_schema='public' and table_name=$1 order by ordinal_position`, [t],
-    )).rows;
+    )).rows.filter((c) => !dropCols.has(`${t}.${c.column_name}`));
     const names = cols.map((c) => `"${c.column_name}"`).join(', ');
     const jsonCols = new Set(cols.filter((c) => c.data_type === 'jsonb' || c.data_type === 'json').map((c) => c.column_name));
     const sourceCount = Number((await src.query(`select count(*) n from "${t}"`)).rows[0].n);
