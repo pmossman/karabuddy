@@ -9,8 +9,8 @@
 
 import { eq } from 'drizzle-orm';
 import { getDb } from './db';
-import { cards, matches, matchPlayers, cardEvents } from './schema';
-import { extractReplayFacts, type ExtractOptions } from './statsExtract';
+import { cards, matches, matchPlayers } from './schema';
+import { aggregateCardEvents, extractReplayFacts, type ExtractOptions } from './statsExtract';
 import { analyzeResourcing, summarizeResourcing, type ResourcingRating } from './resourcingAnalysis';
 import type { DecodedReplay } from './replayDecoder';
 
@@ -100,10 +100,13 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
     result: matchFact.result,
     durationMs: matchFact.durationMs,
   });
+  // B235: card facts ride on the side's own row (event → cardId → first frame).
+  const cardMaps = aggregateCardEvents(events);
   await db.insert(matchPlayers).values(
     players.map((p) => {
       const opp = opponentOf(p.playerId);
       return {
+        cardEvents: cardMaps.get(p.playerId) ?? null,
         gameId: matchFact.gameId,
         playerId: p.playerId,
         username: p.username,
@@ -119,24 +122,6 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
       };
     }),
   );
-  if (events.length) {
-    await db.insert(cardEvents).values(
-      events.map((e) => ({
-        // Always the match's resolved gameId — early frames can carry a null
-        // gamestate id, and a null here violates card_events.game_id NOT NULL
-        // (and they all belong to this one match anyway).
-        gameId: matchFact.gameId,
-        playerId: e.playerId,
-        isRecorder: e.isRecorder,
-        cardId: e.cardId,
-        event: e.event,
-        attribution: e.attribution,
-        frameIndex: e.frameIndex,
-        sideWon: e.sideWon,
-        format: matchFact.format,
-      })),
-    );
-  }
 
   return { matchWritten: true, cardEvents: events.length };
 }

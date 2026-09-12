@@ -14,6 +14,7 @@
 // If no userId is given, auto-picks the user with the most qualifying replays.
 
 import { config } from 'dotenv';
+import { hydrateDecksForRows } from '../lib/decklists';
 config({ path: '.env.development.local' }); // local snapshot ONLY — do not add .env.local
 
 const CARD = (set: string, number: number | string) => {
@@ -58,7 +59,7 @@ async function main() {
 
   // A replay "qualifies" for deck export iff: not encrypted (server can decode),
   // has decks + an ownerPlayerId (so we know WHICH POV is the unmasked list).
-  const qualifies = and(eq(replays.encrypted, false), isNotNull(replays.decks), isNotNull(replays.ownerPlayerId));
+  const qualifies = and(eq(replays.encrypted, false), isNotNull(replays.deckRefs), isNotNull(replays.ownerPlayerId));
 
   // --- Scope resolution: userId + ALL their claimed install tokens ------------
   // (Mirrors the export scope the kickoff specifies: session user + every device.)
@@ -66,10 +67,12 @@ async function main() {
     const tokenRows = await db.select({ token: extensionTokens.token }).from(extensionTokens).where(eq(extensionTokens.userId, uid));
     const tokens = tokenRows.map((r) => r.token);
     const ownerFilter = tokens.length ? or(eq(replays.userId, uid), inArray(replays.ownerToken, tokens)) : eq(replays.userId, uid);
-    return db
-      .select({ slug: replays.slug, players: replays.players, decks: replays.decks, ownerPlayerId: replays.ownerPlayerId, createdAt: replays.createdAt })
+    const rawRows = await db
+      .select({ slug: replays.slug, players: replays.players, deckRefs: replays.deckRefs, ownerPlayerId: replays.ownerPlayerId, createdAt: replays.createdAt })
       .from(replays)
       .where(and(ownerFilter, qualifies));
+    const hydrated = await hydrateDecksForRows(rawRows); // B236
+    return rawRows.map((r, i) => ({ ...r, decks: hydrated[i] }));
   }
 
   if (wantTop || !userId) {

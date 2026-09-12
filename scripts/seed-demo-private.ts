@@ -26,6 +26,8 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '../lib/db';
 import { users, teams, teamMembers, replays, replayTeamShares, replayParticipants, tags, extensionReadiness } from '../lib/schema';
 import * as e2ee from '../lib/e2ee.js';
+import { fetchPayloadJson } from '../lib/payloadFetch';
+import { storeDecks } from '../lib/decklists';
 
 // Stable, NON-secret local-demo team keys (43 base64url chars = 32 bytes each).
 const DEMO_TEAM_KEY = 'demoDEMOdemoDEMOdemoDEMOdemoDEMOdemoDEMOdem';
@@ -97,7 +99,7 @@ async function seedEncryptedReplay(db: ReturnType<typeof getDb>, teamKeyId: stri
     const metaJson = await metaRes.json();
     const meta = metaJson.data ?? metaJson;
     if (!meta?.payloadBlobUrl) throw new Error('sample metadata missing payloadBlobUrl');
-    const payload = await (await fetch(meta.payloadBlobUrl)).json();
+    const payload = await fetchPayloadJson(meta.payloadBlobUrl);
 
     const summary = buildSummary(payload, meta);
     const payloadUrl = await dataUrl(JSON.stringify(payload));
@@ -151,7 +153,7 @@ async function seedEncryptedReplay(db: ReturnType<typeof getDb>, teamKeyId: stri
       payloadBlobUrl: meta.payloadBlobUrl,
       payloadSizeBytes: meta.payloadSizeBytes ?? 0,
       match: payload.match ?? null,
-      decks: payload.decks ?? null,
+      deckRefs: await storeDecks(payload.decks ?? null),
       winners: meta.winners ?? null,
       ownerPlayerId: meta.ownerPlayerId ?? payload.localPlayerId ?? null,
     });

@@ -23,7 +23,7 @@ The extension is the only thing that can run on karabast.net itself (intercept t
 
 - Next.js 16 App Router (TypeScript)
 - Neon Postgres + Drizzle ORM
-- Vercel Blob for replay payload storage
+- Vercel Blob or Cloudflare R2 for replay payload storage (gzip'd, pruned when unviewed — ADR 0011)
 - Auth.js v5 (Discord + Google) for sign-in
 - Chrome MV3 plain-JS extension (no build step)
 - Deployed on Vercel

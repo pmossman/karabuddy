@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { replays, cardEvents } from '@/lib/schema';
+import { replays, matchPlayers } from '@/lib/schema';
 import { surfacedReplaySlugs } from '@/lib/teamSurface';
 import { requireSession, requireTeamMember } from '@/lib/apiAuth';
 import { cardPrintings } from '@/lib/cardPrintings';
@@ -40,20 +40,22 @@ export async function GET(req: Request) {
     scope = eq(replays.userId, s.userId);
   }
 
-  // cardEvents is indexed on (cardId, event), so filtering the card first is
-  // cheap; the join to the recorder's own plays + the scope narrows the rest.
   // B226 fix: match EVERY printing of the card (reprints/variants share a
   // name+subtitle), not just the one cardId the search happened to pick.
   const printings = await cardPrintings(cardId);
 
+  // B235: the recorder side's card facts are match_players.card_events ->
+  // {event} -> {cardId} = first frame. The scope (my replays / the team's
+  // surfaced replays) narrows to a few hundred rows before the jsonb probe.
   const rows = await getDb()
-    .select({ slug: replays.slug, frame: sql<number>`min(${cardEvents.frameIndex})` })
-    .from(cardEvents)
+    .select({ slug: replays.slug, frame: sql<number>`min(ce.first_frame::int)` })
+    .from(replays)
     .innerJoin(
-      replays,
-      and(eq(replays.gameId, cardEvents.gameId), eq(replays.ownerPlayerId, cardEvents.playerId)),
+      matchPlayers,
+      and(eq(matchPlayers.gameId, replays.gameId), eq(matchPlayers.playerId, replays.ownerPlayerId)),
     )
-    .where(and(inArray(cardEvents.cardId, printings), eq(cardEvents.event, event), scope))
+    .crossJoinLateral(sql`jsonb_each_text(coalesce(${matchPlayers.cardEvents} -> ${event}, '{}'::jsonb)) as ce(card_id, first_frame)`)
+    .where(and(inArray(sql`ce.card_id`, printings), scope))
     .groupBy(replays.slug);
 
   const plays: Record<string, number> = {};

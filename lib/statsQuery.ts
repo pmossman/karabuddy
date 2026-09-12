@@ -14,7 +14,7 @@
 import { and, eq, exists, inArray, isNotNull, isNull, or, sql, gte, lte } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
-import { matchPlayers, matches, replays, cardEvents, cards } from './schema';
+import { matchPlayers, matches, replays, cards } from './schema';
 
 export type StatsScope =
   | { kind: 'personal'; userId: string }
@@ -143,14 +143,6 @@ function scopePredicate(scope: StatsScope) {
   return inArray(matches.gameId, scope.restrictGameIds);
 }
 
-// Same boundary over card_events, which carries its own per-side gameId/playerId.
-function cardScopePredicate(scope: StatsScope) {
-  if (scope.kind === 'personal')
-    return personalSeatCond(scope.userId, cardEvents.gameId, cardEvents.playerId, cardEvents.isRecorder);
-  if (scope.restrictGameIds.length === 0) return sql`false`;
-  return inArray(matches.gameId, scope.restrictGameIds);
-}
-
 // Which match_players rows count, by audience.
 //
 // Personal needs nothing here: scopePredicate already pins the row to YOUR seat,
@@ -169,21 +161,6 @@ const perspectiveCond = (scope: StatsScope) =>
     : scope.internalGameIds.length
       ? or(eq(matchPlayers.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))
       : eq(matchPlayers.isRecorder, true);
-
-// Card-stats perspective. getCardStats reads card_events (one row per SIDE) and
-// must apply the same audience boundary as perspectiveCond — but card_events
-// carries its own per-side isRecorder, so we key on THAT (not match_players').
-// It matters only for board-visible events: played/discarded are attribution
-// 'both' (materialized for BOTH sides), so without this an opponent's play would
-// be counted as one of YOURS (personal) / the OUTSIDER's into a team aggregate.
-// drawn/resourced only ever have a recorder-side row, so the filter is a no-op
-// for them. Personal is again handled by the seat predicate (cardScopePredicate).
-const cardPerspectiveCond = (scope: StatsScope) =>
-  scope.kind === 'personal'
-    ? undefined
-    : scope.internalGameIds.length
-      ? or(eq(cardEvents.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))
-      : eq(cardEvents.isRecorder, true);
 
 // The replay row a stats row should be PRESENTED as, for the two producers that
 // return replay fields (resourcing trend, drill-in lists). Personal = your own
@@ -477,33 +454,34 @@ export async function getCardStats(
 ): Promise<CardStat[]> {
   const minGames = opts.minGames ?? 1;
   const db = getDb();
+  // B235: card facts live on the side's own match_players row as
+  // card_events->{event}->{cardId} = first frame. One observation per
+  // (game, side, card) by construction, so the audience boundary is exactly the
+  // one every other producer uses (scopePredicate + perspectiveCond) — played/
+  // discarded exist on BOTH sides' rows, drawn/resourced only on the recorder's.
+  const ce = sql`jsonb_object_keys(coalesce(${matchPlayers.cardEvents} -> ${opts.event}, '{}'::jsonb))`;
   let base = db
-    .selectDistinct({
-      cardId: cardEvents.cardId,
-      gameId: cardEvents.gameId,
-      playerId: cardEvents.playerId,
-      sideWon: cardEvents.sideWon,
+    .select({
+      cardId: sql<string>`ce.card_id`.as('card_id'),
+      sideWon: matchPlayers.won,
     })
-    .from(cardEvents)
-    .innerJoin(matches, eq(matches.gameId, cardEvents.gameId))
+    .from(matchPlayers)
+    .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
+    .crossJoinLateral(sql`${ce} as ce(card_id)`)
     .$dynamic();
-  const conds: any[] = [eq(cardEvents.event, opts.event), opts.format ? eq(cardEvents.format, opts.format) : undefined, timeCond(opts), cardPerspectiveCond(opts.scope), cardScopePredicate(opts.scope)];
-  if (opts.leader || opts.baseAspect || opts.baseId || opts.opponentLeader) {
-    // Join the EVENT side's own match_players row (same game + player).
-    base = base.innerJoin(matchPlayers, and(eq(matchPlayers.gameId, cardEvents.gameId), eq(matchPlayers.playerId, cardEvents.playerId)));
-    if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
-    if (opts.opponentLeader) conds.push(eq(matchPlayers.opponentLeader, opts.opponentLeader));
-    if (opts.baseId) {
-      // An ability base IS the deck — match the exact base card.
-      conds.push(eq(matchPlayers.base, opts.baseId));
-    } else if (opts.baseAspect) {
-      // A vanilla deck = any no-ability base of this aspect (ability bases of
-      // the same aspect are their own decks, so exclude them here).
-      const baseCard = alias(cards, 'base_card');
-      base = base.innerJoin(baseCard, eq(baseCard.cardId, matchPlayers.base));
-      conds.push(sql`${baseCard.aspects} @> ${JSON.stringify([opts.baseAspect])}::jsonb`);
-      conds.push(sql`coalesce(${baseCard.hasAbility}, false) = false`);
-    }
+  const conds: any[] = [opts.format ? eq(matches.format, opts.format) : undefined, timeCond(opts), perspectiveCond(opts.scope), scopePredicate(opts.scope)];
+  if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
+  if (opts.opponentLeader) conds.push(eq(matchPlayers.opponentLeader, opts.opponentLeader));
+  if (opts.baseId) {
+    // An ability base IS the deck — match the exact base card.
+    conds.push(eq(matchPlayers.base, opts.baseId));
+  } else if (opts.baseAspect) {
+    // A vanilla deck = any no-ability base of this aspect (ability bases of
+    // the same aspect are their own decks, so exclude them here).
+    const baseCard = alias(cards, 'base_card');
+    base = base.innerJoin(baseCard, eq(baseCard.cardId, matchPlayers.base));
+    conds.push(sql`${baseCard.aspects} @> ${JSON.stringify([opts.baseAspect])}::jsonb`);
+    conds.push(sql`coalesce(${baseCard.hasAbility}, false) = false`);
   }
   const sub = base.where(and(...conds)).as('obs');
   const rows = await db

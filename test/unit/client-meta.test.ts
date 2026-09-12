@@ -6,8 +6,9 @@ import { sanitizeClientMeta } from '@/lib/clientMeta';
 // length-caps each.
 describe('sanitizeClientMeta', () => {
   it('keeps whitelisted string fields, trimmed', () => {
+    // B236: `ua` is no longer stored (dropped like any non-whitelisted key).
     expect(sanitizeClientMeta({ extVersion: ' 0.5.12 ', extVersionName: '0.5.12', browser: 'chrome', ua: 'Mozilla/5.0' }))
-      .toEqual({ extVersion: '0.5.12', extVersionName: '0.5.12', browser: 'chrome', ua: 'Mozilla/5.0' });
+      .toEqual({ extVersion: '0.5.12', extVersionName: '0.5.12', browser: 'chrome' });
   });
 
   it('drops unknown keys and non-string values', () => {
@@ -15,9 +16,9 @@ describe('sanitizeClientMeta', () => {
       .toEqual({ extVersion: '1.0' });
   });
 
-  it('length-caps each field (ua to 256)', () => {
+  it('length-caps each field (extVersion to 32) and ignores ua', () => {
     const out = sanitizeClientMeta({ ua: 'u'.repeat(500), extVersion: 'v'.repeat(100) })!;
-    expect(out.ua).toHaveLength(256);
+    expect(out.ua).toBeUndefined();
     expect(out.extVersion).toHaveLength(32);
   });
 

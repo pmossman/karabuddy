@@ -10,6 +10,7 @@ import { canViewReplayIdentities } from '@/lib/altPerspective';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonymizePlayersSummary, anonymizeDecks, anonByIdFromPlayers } from '@/lib/anonymizeReplay';
+import { hydrateDecks } from '@/lib/decklists';
 
 export const runtime = 'nodejs';
 
@@ -61,13 +62,15 @@ export async function GET(
       ? false
       : await canViewReplayIdentities(row, authContextFromRequest(req, sessionUserId));
 
+    const decks = await hydrateDecks(row); // B236
     if (isSample || !canView) {
       const ordered = orderPlayersOwnerFirst((row as any).players, (row as any).ownerPlayerId);
       const byId = anonByIdFromPlayers(ordered as any[]);
       const data = {
         ...row,
+        deckRefs: undefined,
         players: anonymizePlayersSummary(ordered as any[]),
-        decks: isSample ? anonymizeDecks((row as any).decks, byId) : null,
+        decks: isSample ? anonymizeDecks(decks, byId) : null,
         // A user-set title always shows (user-chosen, not a leaked handle).
         displayName: (row as any).displayName ?? null,
         tags: [],
@@ -78,7 +81,7 @@ export async function GET(
       return NextResponse.json({ ok: true, data }, { headers });
     }
 
-    return NextResponse.json({ ok: true, data: { ...row, tags: tagRows } }, { headers });
+    return NextResponse.json({ ok: true, data: { ...row, deckRefs: undefined, decks, tags: tagRows } }, { headers });
   } catch (err: any) {
     console.error('[karabuddy] GET /api/replays/:slug failed:', err);
     return NextResponse.json({ ok: false, error: err?.message || 'internal error' }, { status: 500, headers });

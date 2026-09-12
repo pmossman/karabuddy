@@ -36,6 +36,7 @@ import { getOrCreateInstallToken } from '@/lib/installToken';
 import { canMutateReplay } from '@/lib/replayPermissions';
 import { computeFrameDwells } from './frameDwell';
 import { resolveConnectedPlayer, createDwellStepper, type DwellStepper, PLAYBACK_SPEEDS, PLAYBACK_SPEED_DEFAULT, PLAYBACK_SPEED_STORAGE_KEY } from './playback';
+import { fetchPayloadJson } from '@/lib/payloadFetch';
 
 // B104: cadence of the action-mode multi-frame playback (ms between frames).
 // Tuned to ~the card-move animation length so consecutive transitions flow.
@@ -74,6 +75,9 @@ interface ReplayRow {
   // identified by `teamKeyId` (the server never sees plaintext or the key).
   encrypted?: boolean;
   teamKeyId?: string | null;
+  // B234: set when retention deleted the payload blob (never viewed within the
+  // window). Metadata/stats remain; the board can't be played back.
+  payloadPrunedAt?: string | Date | null;
 }
 
 interface TagRow {
@@ -639,6 +643,9 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     // gate handles the other tiers). Non-encrypted replays are 'plaintext' → load
     // immediately, unchanged.
     if (replay.encrypted && access !== 'ready') return;
+    // B234: pruned payload — don't fetch (the blob is gone); the render below
+    // shows the expired notice instead of "Failed to load".
+    if (replay.payloadPrunedAt) return;
     let cancelled = false;
     (async () => {
       try {
@@ -646,11 +653,7 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
         // extension bridge (the key never reaches the page). Else the plain path.
         const parsed = replay.encrypted
           ? await decryptReplayPayload<any>(replay.teamKeyId as string, replay.payloadBlobUrl)
-          : JSON.parse(await (await (async () => {
-              const res = await fetch(replay.payloadBlobUrl);
-              if (!res.ok) throw new Error(`payload fetch failed: ${res.status}`);
-              return res;
-            })()).text());
+          : await fetchPayloadJson(replay.payloadBlobUrl);
         // B102: collapse undone + board-static frames so stepping only lands on
         // real, distinct board positions. `decodeReplay` stays raw (extraction
         // path); the viewer renders the collapsed timeline.
@@ -890,6 +893,21 @@ function ViewerShell({ replay, initialTags, anonymize, canFlip, hasLinkedExtensi
     return (
       <div style={{ padding: 32, color: '#ff6b6b', fontFamily: 'var(--font-barlow), sans-serif' }}>
         Failed to load replay: {loadError}
+      </div>
+    );
+  }
+
+  // B234: retention removed this replay's payload (it went unviewed for the
+  // whole retention window). Its stats, result and tags are intact — only the
+  // board playback is gone.
+  if (replay.payloadPrunedAt) {
+    return (
+      <div style={{ padding: 32, maxWidth: 560, fontFamily: 'var(--font-barlow), sans-serif', color: 'var(--kb-text, #e6e6e6)' }}>
+        <h2 style={{ margin: '0 0 8px', fontSize: 20 }}>This replay has expired</h2>
+        <p style={{ margin: 0, opacity: 0.8, lineHeight: 1.5 }}>
+          Replays that nobody opens within {process.env.NEXT_PUBLIC_REPLAY_RETENTION_DAYS || 30} days have their playback data removed to keep
+          KaraBuddy free to run. The match result, decks and stats from this game are still counted everywhere else.
+        </p>
       </div>
     );
   }

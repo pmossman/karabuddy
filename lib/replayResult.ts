@@ -13,6 +13,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from './db';
 import { replays, matches } from './schema';
 import { persistReplayStats } from './replayStatsPersist';
+import { readBlobJson } from './blob';
 
 export type ManualResult = 'win' | 'loss' | null;
 export type SetResultOutcome = 'ok' | 'encrypted' | 'no-pov' | 'no-opponent';
@@ -24,6 +25,8 @@ export interface ReplayForResult {
   players: unknown; // jsonb: [{ id, username, leader, base, ... }]
   payloadBlobUrl: string;
   encrypted: boolean;
+  // B234: retention removed the payload → stats can't be re-materialized.
+  payloadPrunedAt?: Date | string | null;
 }
 
 // Assumes the caller already authorized the mutation (canMutateReplay). Returns
@@ -60,12 +63,11 @@ export async function setReplayResult(replay: ReplayForResult, result: ManualRes
   // asserted winners. Best-effort: the column write above already drives the
   // badge/filter/deck-stats, so a stats blip must not fail the assignment.
   try {
-    const res = await fetch(replay.payloadBlobUrl);
-    if (res.ok) {
-      const parsed = await res.json();
+    const parsed = replay.payloadPrunedAt ? null : await readBlobJson(replay.payloadBlobUrl);
+    if (parsed) {
       await persistReplayStats(replay.slug, parsed, replay.gameId, winners);
     } else {
-      console.error('[result] payload fetch', res.status, 'for', replay.slug);
+      console.error('[result] payload unavailable for', replay.slug, replay.payloadPrunedAt ? '(pruned)' : '');
     }
   } catch (e) {
     console.error('[result] stats re-persist failed for', replay.slug, e);

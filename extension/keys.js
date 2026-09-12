@@ -433,6 +433,20 @@
   // re-wrap every replay's payload + summary + encrypted comments old→new (the
   // content ciphertext is untouched), then flip the team. Resumable — the manifest
   // only lists replays still under the old key.
+  // B234: payload blobs are stored gzip'd. Vercel Blob serves the raw gzip bytes
+  // (no content-encoding), R2 serves them inflated — sniff the magic and inflate
+  // when needed. Mirrors lib/payloadFetch.ts on the web side.
+  async function fetchPayloadJson(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`payload fetch failed: ${res.status}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const gz = bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+    const text = gz
+      ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text()
+      : new TextDecoder().decode(bytes);
+    return JSON.parse(text);
+  }
+
   async function runRotation(team, newKid, progress, runBtn, cancelBtn) {
     const e = e2ee(); if (!e) return;
     runBtn.disabled = true; cancelBtn.disabled = true;
@@ -448,7 +462,7 @@
       for (let i = 0; i < reps.length; i++) {
         progress.textContent = `Re-encrypting replays… ${i}/${reps.length}`;
         const r = reps[i];
-        const blobEnv = await (await fetch(r.payloadBlobUrl)).json();
+        const blobEnv = await fetchPayloadJson(r.payloadBlobUrl);
         const payload = JSON.stringify(await e.rewrapKey(oldKey, newKey, blobEnv));
         const encryptedSummary = r.encryptedSummary ? JSON.stringify(await e.rewrapKey(oldKey, newKey, JSON.parse(r.encryptedSummary))) : '';
         const tags = [];

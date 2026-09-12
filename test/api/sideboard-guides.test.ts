@@ -7,6 +7,7 @@ import { POST as commentPost } from '@/app/api/teams/[slug]/sideboard-guides/mat
 import { DELETE as commentDel } from '@/app/api/teams/[slug]/sideboard-guides/matchup/comments/[commentId]/route';
 import { getDb } from '@/lib/db';
 import { users, teams, teamMembers, replays, replayTeamShares } from '@/lib/schema';
+import { storeDecks } from '@/lib/decklists';
 
 // B231: sideboard guides (matchup-takes model) — pool aggregation, one take per
 // member, the matchup consensus, matchup-level comments, and the auth boundaries.
@@ -32,7 +33,7 @@ async function seedReplay(team: string, owner: string, leaderName: string, deckI
     slug, gameId: randomUUID(), ownerToken: `kbx_${randomUUID()}`, userId: owner, ownerPlayerId: 'P',
     players: [{ id: 'P', leader: { name: leaderName, set: 'SOR', number: 1 }, base: { name: 'Base X', set: 'SOR', number: 20 } }, { id: 'Q', leader: { name: 'Opp', set: 'SHD', number: 5 } }],
     payloadBlobUrl: 'blob://x', match: { gameFormat: 'premier' },
-    decks: { P: { username: 'r', leader: null, base: null, deck: deckIds.map((id) => ({ id, count: 1 })), sideboard: [] } },
+    deckRefs: await storeDecks({ P: { username: 'r', leader: null, base: null, deck: deckIds.map((id) => ({ id, count: 1 })), sideboard: [] } }),
   });
   await getDb().insert(replayTeamShares).values({ replaySlug: slug, teamSlug: team, sharedBy: owner });
 }
