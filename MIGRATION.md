@@ -264,3 +264,11 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   90-day retention of replay rows.
   Note: Aiven uses a private CA → URLs use `sslmode=no-verify` for now; for
   the real cutover, pin Aiven's CA (`certs/aiven-ca.pem` + `sslrootcert`).
+  Aiven free is PG 18, 20 connections (shadow runs `KARABUDDY_PG_POOL_MAX=2`),
+  "up to 8 GB disk" per its docs; its disk guard briefly flips the DB read-only
+  during bulk loads (copy-db now retries + paces itself).
+- 2026-09-12 — B236 built on branch `b236-decklists` (to merge into the
+  migration branch once e2e is green): decklists normalized (swuforge pattern,
+  −~120 MB), user agent dropped (−17 MB), opt-in `REPLAY_ROW_RETENTION_DAYS`.
+  Shadow on Aiven: redeployed and serving; prod copy re-running with the
+  read-only-guard fix.
