@@ -19,6 +19,7 @@ import { replays, replayOpenings } from '../lib/schema';
 import { decodeReplay } from '../lib/replayDecoder';
 import { persistOpening } from '../lib/openingPersist';
 import { OPENING_EXTRACTOR_VERSION } from '../lib/openingExtract';
+import { readBlobText } from '../lib/blob';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -58,13 +59,13 @@ async function main() {
   let failed = 0;
   for (const row of rows) {
     try {
-      const res = await fetch(row.payloadBlobUrl);
-      if (!res.ok) {
-        console.log(`  ${row.slug}: skip (blob ${res.status})`);
+      const payloadText = row.payloadPrunedAt ? null : await readBlobText(row.payloadBlobUrl);
+      if (!payloadText) {
+        console.log(`  ${row.slug}: skip (blob unavailable${row.payloadPrunedAt ? ', pruned' : ''})`);
         skipped++;
         continue;
       }
-      const parsed = JSON.parse(await res.text());
+      const parsed = JSON.parse(payloadText);
       const decoded = decodeReplay(parsed);
       if (await persistOpening(decoded, row.slug)) {
         console.log(`  ${row.slug}: ok`);

@@ -7,7 +7,8 @@ for the decisions behind the model.
 ## Core objects
 
 - **Replay** — one captured karabast.net match. Stored as a `replays` row +
-  a payload blob on Vercel Blob (`payloadBlobUrl`). Identified by a `slug`
+  a gzip-compressed payload blob (`payloadBlobUrl`; Vercel Blob or Cloudflare
+  R2 — see ADR 0011, `lib/blob.ts`). Identified by a `slug`
   (`/r/[slug]`). Carries derived metadata: `players`, `winners`,
   `ownerPlayerId`, `match` (format/cardPool/Bo*), `decks`, `displayName`,
   `labels`.
@@ -15,7 +16,13 @@ for the decisions behind the model.
   frames. `?f=N` in the viewer URL is **1-based** (human-friendly sharing);
   internally frames are 0-based. Tags pin to a `frameIndex`.
 - **Payload** — the raw recorded data (gamestates + lobby snapshot + tags) the
-  extension uploads. Decoded by `lib/replayDecoder.ts`.
+  extension uploads. Decoded by `lib/replayDecoder.ts`. Read it through
+  `lib/payloadFetch.ts` (client) / `readBlobJson` (server) — never a bare
+  `fetch`, the bytes may be gzip.
+- **Expired replay** — a replay whose payload blob retention deleted
+  (`payloadPrunedAt` set: unviewed for `REPLAY_PAYLOAD_RETENTION_DAYS`, not
+  public/clipped/reviewed). Row, result, decks and every stats fact remain;
+  only board playback is gone. ADR 0011.
 - **Tag** — a timestamped comment pinned to a frame of a replay (`tags` row).
   Created in-game (extension) or in the viewer (web). May carry structured
   **mentions** and a **team scope**.

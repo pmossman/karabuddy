@@ -20,6 +20,7 @@ import { getDb } from '../lib/db';
 import { replays, matches } from '../lib/schema';
 import { decodeReplay } from '../lib/replayDecoder';
 import { persistReplayFacts } from '../lib/statsPersist';
+import { readBlobJson } from '../lib/blob';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -52,9 +53,9 @@ async function main() {
 
   const processOne = async (row: (typeof rows)[number]) => {
     try {
-      const res = await fetch(row.payloadBlobUrl);
-      if (!res.ok) { skipped++; return; }
-      const decoded = decodeReplay(JSON.parse(await res.text()));
+      const payload = row.payloadPrunedAt ? null : await readBlobJson(row.payloadBlobUrl);
+      if (!payload) { skipped++; return; }
+      const decoded = decodeReplay(payload);
       // persistReplayFacts is NON-transactional (Neon HTTP has no interactive
       // transactions), so a concurrent-deadlock failure would leave the replay
       // half-written. Deadlocks (mostly on the shared cards catalog) are

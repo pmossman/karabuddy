@@ -4,5 +4,11 @@
     "deploymentEnabled": {
       "main": false
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/prune-payloads",
+      "schedule": "30 9 * * *"
+    }
+  ]
 }

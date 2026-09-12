@@ -12,16 +12,8 @@ CREATE TABLE IF NOT EXISTS "sideboard_matchup_comments" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "sideboard_matchup_comments" ADD CONSTRAINT "sideboard_matchup_comments_team_slug_teams_slug_fk" FOREIGN KEY ("team_slug") REFERENCES "public"."teams"("slug") ON DELETE cascade ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
+ALTER TABLE "sideboard_matchup_comments" ADD CONSTRAINT "sideboard_matchup_comments_team_slug_teams_slug_fk" FOREIGN KEY ("team_slug") REFERENCES "public"."teams"("slug") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "sideboard_matchup_comments" ADD CONSTRAINT "sideboard_matchup_comments_author_id_users_id_fk" FOREIGN KEY ("author_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
+ALTER TABLE "sideboard_matchup_comments" ADD CONSTRAINT "sideboard_matchup_comments_author_id_users_id_fk" FOREIGN KEY ("author_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sideboard_matchup_comments_matchup_idx" ON "sideboard_matchup_comments" USING btree ("team_slug","own_leader","own_base","opp_leader","opp_base");

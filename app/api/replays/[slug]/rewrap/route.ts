@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { and, eq, inArray } from 'drizzle-orm';
-import { put } from '@/lib/blob';
+import { putPayload } from '@/lib/blob';
 import { getDb } from '@/lib/db';
 import { replays, replayTeamShares, tags, teamMembers, teams } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
@@ -100,10 +100,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (replay.payloadBlobUrl.startsWith('data:')) {
     newBlobUrl = `data:application/json;base64,${Buffer.from(payload).toString('base64')}`;
   } else {
-    const blob = await put(`replays/${slug}.json`, payload, {
-      access: 'public',
-      contentType: 'application/json',
-      addRandomSuffix: false,
+    const blob = await putPayload(`replays/${slug}.json`, payload, {
       cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS,
     });
     newBlobUrl = blob.url;
@@ -111,7 +108,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
   await db
     .update(replays)
-    .set({ teamKeyId: newTeamKeyId, encryptedSummary, payloadSizeBytes: payload.length, payloadBlobUrl: newBlobUrl })
+    .set({ teamKeyId: newTeamKeyId, encryptedSummary, payloadSizeBytes: payload.length, payloadBlobUrl: newBlobUrl, payloadEncoding: newBlobUrl.startsWith('data:') ? null : 'gzip' })
     .where(eq(replays.slug, slug));
 
   // Update each re-wrapped tag comment. Scope the write to THIS replay's tags so

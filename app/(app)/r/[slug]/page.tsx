@@ -278,6 +278,9 @@ export default async function ReplayPage({ params }: PageProps) {
   const replay = {
     ...row,
     createdAt: row.createdAt.toISOString(),
+    // B234: retention marks, serialized for the client like createdAt.
+    payloadPrunedAt: row.payloadPrunedAt ? row.payloadPrunedAt.toISOString() : null,
+    lastViewedAt: row.lastViewedAt ? row.lastViewedAt.toISOString() : null,
     players: anonymize ? anonymizePlayersSummary(players as any[]) : players,
     // A user-set title is always shown (it's user-chosen — never a leaked karabast
     // handle); only the AUTO default differs (leader matchup for anon viewers).

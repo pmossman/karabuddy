@@ -316,6 +316,20 @@
       "when": 1783104750860,
       "tag": "0044_replays_user_game_owner_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1788892867634,
+      "tag": "0045_replay_payload_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1788892868634,
+      "tag": "0046_card_events_aggregate",
+      "breakpoints": true
     }
   ]
 }

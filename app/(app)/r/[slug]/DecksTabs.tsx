@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { type DecksByUserId, type DeckCardRef, decodeReplay, extractSeenCards } from '@/lib/replayDecoder';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { DeckBlock } from './Decks';
+import { fetchPayloadJson } from '@/lib/payloadFetch';
 
 // Shared tabbed per-player deck viewer — the body of the in-viewer Decks view,
 // ALSO used full-page at /r/[slug]/deck/[playerId]. Tabs switch players; the
@@ -80,9 +81,7 @@ export function DecksTabs({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(payloadBlobUrl);
-        if (!res.ok) { if (!cancelled) setClientSeen({}); return; }
-        const { frames } = decodeReplay(await res.json());
+        const { frames } = decodeReplay(await fetchPayloadJson(payloadBlobUrl));
         if (cancelled) return;
         const map: Record<string, DeckCardRef[]> = {};
         for (const id of Object.keys(decks)) {
