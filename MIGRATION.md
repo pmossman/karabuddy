@@ -23,7 +23,7 @@ current and appends to the log at the bottom.
 
 ### Your items
 
-- [ ] **0.1 Give Claude Vercel CLI access.** Unlocks: creating the shadow
+- [x] **0.1 Give Claude Vercel CLI access.** ✅ 2026-09-12 (`vercel login` done) Unlocks: creating the shadow
       project, its env vars and redeploys. Two ways:
       - *Easiest:* create a token at https://vercel.com/account/settings/tokens
         (scope: your team, expiry as you like) and append `VERCEL_TOKEN=…` to
@@ -71,12 +71,19 @@ current and appends to the log at the bottom.
 - [x] 0.C Shadow safety: `KARABUDDY_PAYLOAD_DELETE_DISABLED`, no-token guard for
       Vercel Blob URLs, `copy-db --skip`, `migrate-payloads --keep-old
       --skip-existing`
-- [ ] 0.D *(after 0.1)* Create Vercel project `karabuddy-shadow` on the team,
-      linked to the repo, **production branch = `free-tier-migration`** (so its
-      "production" deploys never involve `main`). Env per Appendix A "shadow"
-      column — notably NO `BLOB_READ_WRITE_TOKEN`, NO `DISCORD_*` (the Discord
-      code gates on VERCEL_ENV=production, and a shadow must not post to real
-      channels), `KARABUDDY_PAYLOAD_DELETE_DISABLED=1`.
+- [x] 0.D *(after 0.1)* Vercel project **`karabuddy-shadow`** created on the team
+      (2026-09-12). It is deliberately **not git-linked** — it deploys with
+      `vercel deploy --prod` from a plain clone of the branch at
+      `~/karabuddy-shadow` (the same way CI deploys prod), so nothing on GitHub
+      can ever trigger it and `main` is never involved. Env per Appendix A
+      "shadow" column: auth + cron + retention + `KARABUDDY_DB_DRIVER=pg` +
+      `KARABUDDY_PAYLOAD_DELETE_DISABLED=1` are set; NO `BLOB_READ_WRITE_TOKEN`,
+      NO `DISCORD_*`. Still pending: `POSTGRES_URL*` (after 0.3) and
+      `KARABUDDY_BLOB_DRIVER=s3` + `R2_*` (after 0.2).
+      > Quirk: the Vercel CLI treats `~/code` as a project root (there's a
+      > `~/code/.gitignore`), so a shadow clone under `~/code` kept linking the
+      > wrong directory — hence `~/karabuddy-shadow`. The prod link in
+      > `~/code/karabuddy/.vercel` is untouched.
 - [ ] 0.E *(after 0.3)* Create database `shadow` on the cluster, apply
       migrations, copy prod into it with `scripts/copy-db.ts --skip=card_events`
       (read-only on prod; ~600 MB, minutes). Verify row counts.
@@ -196,3 +203,7 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
 
 - 2026-09-12 — Checklist created. PR #28 (expand) and PR #29 (contract, draft)
   opened but **not merged** — they wait for Phase 2. Waiting on your 0.1–0.3.
+- 2026-09-12 — 0.1 done (CLI login). Created Vercel project `karabuddy-shadow`
+  (not git-linked; deploys from `~/karabuddy-shadow`) and loaded its
+  DB/R2-independent env. Next: 0.2 (R2) and 0.3 (Cockroach) from you; then
+  Claude copies the DB, deploys, and posts the shadow URL.
