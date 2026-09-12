@@ -59,18 +59,21 @@ async function main() {
 
   let done = 0, failed = 0, missing = 0, reused = 0, rawBytes = 0, storedBytes = 0;
   const started = Date.now();
-  // Page by created_at so a re-run after a crash resumes; each processed row
-  // drops out of the WHERE, so always take the oldest remaining.
+  // Keyset paging on (created_at, slug): each page continues strictly after the
+  // last row seen, so the WHERE is evaluated over a shrinking tail and a failed
+  // row is simply left behind. (Re-selecting "oldest still matching" per page
+  // scanned the whole table every page — O(n²) rows read; on a metered
+  // database like CockroachDB Basic that burned the month's request units.)
+  let after: { createdAt: Date; slug: string } | null = null;
   while (done + failed + missing < limit) {
     const rows = await db
       .select({ slug: replays.slug, url: replays.payloadBlobUrl, createdAt: replays.createdAt })
       .from(replays)
-      .where(where)
-      .orderBy(asc(replays.createdAt))
+      .where(after ? and(where, sql`(${replays.createdAt}, ${replays.slug}) > (${after.createdAt}, ${after.slug})`) : where)
+      .orderBy(asc(replays.createdAt), asc(replays.slug))
       .limit(Math.min(concurrency * 4, limit - (done + failed + missing)));
     if (rows.length === 0) break;
-    // A row that failed stays matched by WHERE → would be re-selected forever.
-    // Bail after a full page of failures rather than spin.
+    after = { createdAt: rows[rows.length - 1].createdAt, slug: rows[rows.length - 1].slug };
     let pageFailed = 0;
     for (let i = 0; i < rows.length; i += concurrency) {
       await Promise.all(rows.slice(i, i + concurrency).map(async (row) => {
@@ -98,7 +101,7 @@ async function main() {
     }
     const secs = (Date.now() - started) / 1000;
     console.log(`${done} done, ${failed} failed, ${missing} missing · ${(rawBytes / 1048576).toFixed(0)} MB → ${(storedBytes / 1048576).toFixed(0)} MB · ${(done / secs).toFixed(1)}/s`);
-    if (pageFailed === rows.length) { console.log('every row in the page failed — stopping'); break; }
+    if (pageFailed === rows.length && rows.length >= concurrency) { console.log('every row in the page failed — stopping'); break; }
   }
   console.log(JSON.stringify({ done, reused, failed, missing, rawMB: +(rawBytes / 1048576).toFixed(1), storedMB: +(storedBytes / 1048576).toFixed(1) }));
 }
