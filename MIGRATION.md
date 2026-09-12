@@ -284,3 +284,10 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   data itself; it clears within a minute or two. Fine for karabuddy's normal
   write rate, but it means the free instance's disk headroom is ~1 GB in
   practice: keep the DB ≤ ~0.6 GB (PR #29 + the 90-day rule do that).
+- 2026-09-12 (evening) — At 613 MB (all big tables, no decks) Aiven's guard
+  stayed ON for >10 min: the free instance's usable disk is ~1 GB minus
+  system/WAL/backup overhead, i.e. the full 144k-replay dataset does not fit.
+  **Decision (Parker): 60-day blanket retention + card facts for recorded
+  seats only (B237).** Shadow reloading with `copy-db --since-days=60`
+  (95.5k replays kept, 49k dropped); `REPLAY_ROW_RETENTION_DAYS=60` set on the
+  shadow. Expected shadow DB ≈ 380 MB.

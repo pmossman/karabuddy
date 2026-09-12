@@ -111,11 +111,29 @@ describe('persistReplayFacts', () => {
     expect(kinds).toEqual(['SOR_100:drawn', 'SOR_102:drawn', 'SOR_102:played']);
     expect(alice.cardEvents!.played!.SOR_102).toBeGreaterThanOrEqual(alice.cardEvents!.drawn!.SOR_102); // played after drawn
     const bob = mp.find((p) => p.playerId === 'p2')!;
-    expect(bob.cardEvents?.drawn).toBeUndefined(); // draws are recorder-only
+    expect(bob.cardEvents).toBeNull(); // B237: facts only for recorded seats
+    expect(bob.isRecorder).toBe(false);
 
     // Catalog self-heal: the two observed cards registered with payload metadata.
     const cat = await db.select().from(cards).where(eq(cards.cardId, 'SOR_102'));
     expect(cat[0]).toMatchObject({ name: 'Played Card', cost: 4, type: 'unit', source: 'observed' });
+  });
+
+  it('co-recorded game: the earlier recorder keeps its facts when the opponent persists later (B237)', async () => {
+    const gameId = 'gco-' + randomUUID().slice(0, 6);
+    const slugA = await seedReplay(gameId);
+    const slugB = await seedReplay(gameId);
+    // Alice (p1) uploads first, then Bob (p2) uploads his own recording of the same game.
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slugA, gameId, winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slugB, gameId, winners: ['p1'], ownerPlayerId: 'p2', durationMs: 1 });
+    const db = getDb();
+    const mp = await db.select().from(matchPlayers).where(eq(matchPlayers.gameId, gameId));
+    const alice = mp.find((p) => p.playerId === 'p1')!;
+    const bob = mp.find((p) => p.playerId === 'p2')!;
+    expect(bob.isRecorder).toBe(true);
+    expect(alice.isRecorder).toBe(true); // carried over: she recorded earlier
+    expect(alice.cardEvents?.drawn).toBeDefined(); // her full facts survived the replace
+    expect(bob.cardEvents).toBeDefined();
   });
 
   it('writes a resourcing rating on the recorder row only (≥1 counted round)', async () => {

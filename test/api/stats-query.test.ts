@@ -394,7 +394,9 @@ describe('getCardStats', () => {
       await db.insert(matches).values({ gameId: gid, replaySlug: slugA, format: 'premier', result: 'decisive' });
       await db.insert(matchPlayers).values([
         { gameId: gid, playerId: 'p1', leader: 'LX', opponentLeader: 'LY', won: true, isRecorder: true, format: 'premier' },
-        { gameId: gid, playerId: 'p2', leader: 'LY', opponentLeader: 'LX', won: false, isRecorder: false, format: 'premier' },
+        // B237: an internal game is one BOTH teammates recorded (B84 ≥2 recorders);
+        // card facts exist only for recorded seats, so p2 is a recorded seat too.
+        { gameId: gid, playerId: 'p2', leader: 'LY', opponentLeader: 'LX', won: false, isRecorder: true, format: 'premier' },
       ]);
       await db.update(matchPlayers).set({ cardEvents: { played: { IA: 1 } } }).where(and(eq(matchPlayers.gameId, gid), eq(matchPlayers.playerId, 'p1')));
       await db.update(matchPlayers).set({ cardEvents: { played: { IB: 2 } } }).where(and(eq(matchPlayers.gameId, gid), eq(matchPlayers.playerId, 'p2')));

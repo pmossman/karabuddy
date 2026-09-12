@@ -121,6 +121,10 @@ _progress: tracer bullet SHIPPED in working tree (uncommitted) - extraction (pil
 
 ## Done
 
+### [B237] DB size — card facts for recorded seats only; 60-day blanket retention
+_completed: 2026-09-12 by claude_
+Opponent-side `match_players.card_events` (the board-visible played/discarded of a seat nobody recorded) was 38 MB that no stats needed: `persistReplayFacts` now writes card facts only for the recorder's seat. A co-recorded game keeps both recorders' full facts — before replacing a match, the persist carries over any existing row that was written as a recorder (facts + `is_recorder`), so "internal game" (B84 = both teammates recorded) card stats are unchanged. Contract migration 0049 (PR #29) clears facts on non-recorded seats. Retention: `REPLAY_ROW_RETENTION_DAYS=60` adopted for the shadow (and planned for prod) — replay rows older than 60 days are deleted daily (cascading stats), public + clipped exempt. `copy-db --since-days=60` loads a shadow with exactly that shape.
+
 ### [B236] DB size — decklists stored once, user agent dropped, opt-in 90-day row retention
 _completed: 2026-09-12 by claude_
 Swuforge comparison (read-only on its Railway Postgres): 387 MB for 58k games (~2.6 KB/game) vs karabuddy ~5.2 KB/game — the per-game gap was mostly `replays.decks` (a 1 KB deck snapshot embedded per row; 142,724 sides = only 24,743 distinct lists). Now: `decklists` table (content-addressed md5, compact `[[id,count]]`, costs re-attached on read) + `replays.deck_refs`; `lib/decklists.ts` hydrators keep every reader on the old `DecksByUserId` shape; migration 0048 backfills with an SQL twin of the TS hash (parity test) and strips `client_meta.ua` (17 MB nothing read). `REPLAY_ROW_RETENTION_DAYS` (off by default) makes the daily cron delete replay rows older than N days, cascading stats, exempting public + clipped. Contract (later, with the card_events drop): `DROP COLUMN decks`. Expected: replays table 271 → ~150 MB; DB ~0.75 → ~0.6 GB; with a 90-day rule the steady state stays there.
