@@ -11,7 +11,7 @@ Claude keeps this file current and appends to the log at the bottom.
 
 ## Your items (in order)
 
-- [ ] **1. Merge PR #1** — the code + expand migrations (B234 + B235). CI runs
+- [ ] **1. Merge PR #1** — https://github.com/pmossman/karabuddy/pull/28 — the code + expand migrations (B234 + B235). CI runs
       the full gate (typecheck, unit, api, e2e, smoke) and deploys to prod.
       Either merge on GitHub or tell Claude "merge PR 1".
 - [ ] **2. `vercel login` once**, so Claude can set env vars and redeploy for
@@ -42,7 +42,7 @@ Claude keeps this file current and appends to the log at the bottom.
       3. Connect → Connection string → copy the `postgresql://…?sslmode=verify-full`
          string (with the password filled in) → hand it to Claude (chat, or
          `COCKROACH_URL=` in `.env.local`).
-- [ ] **5. Merge PR #2** (contract migration: drops the old `card_events`
+- [ ] **5. Merge PR #2** — https://github.com/pmossman/karabuddy/pull/29 — (contract migration: drops the old `card_events`
       table, reclaims 1.4 GB). **Only after Claude ticks "5-ready" below** — it
       must deploy after PR #1 is live.
 - [ ] **6. Downgrade Vercel to Hobby** — only after Claude ticks "6-ready".
@@ -58,8 +58,8 @@ Claude keeps this file current and appends to the log at the bottom.
 
 ## Claude's items
 
-- [x] A. Code + tests: B234 (storage) + B235 (DB size), ADR 0011/0012 — **PR #1**
-- [x] B. Contract migration 0047 (`DROP TABLE card_events`) — **PR #2** (draft)
+- [x] A. Code + tests: B234 (storage) + B235 (DB size), ADR 0011/0012 — **PR #1** (#28)
+- [x] B. Contract migration 0047 (`DROP TABLE card_events`) — **PR #2** (#29, draft)
 - [ ] C. *(after 1)* Verify the deploy: migrations 0045/0046 applied, cron
       route answers 401 without the secret, viewer + upload smoke.
 - [ ] D. *(after 1)* Prune the payload backlog: `scripts/prune-payloads.ts`
@@ -128,5 +128,5 @@ Pick a quiet hour (US early morning). Total window ≈ 15–20 min.
 
 ## Log
 
-- 2026-09-12 — Checklist created. PR #1 and PR #2 opened (see links in the
-  items above once Claude fills them in).
+- 2026-09-12 — Checklist created. PR #1 = #28 (expand), PR #2 = #29 (contract,
+  draft). Waiting on your item 1.
