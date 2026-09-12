@@ -239,3 +239,17 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   into R2 running. Waiting on your 0.4 (two OAuth redirect URIs) to sign in.
 - 2026-09-12 — 0.4 done; Parker signed in on the shadow. Phase 1 (dogfooding)
   can start while the payload copy into R2 finishes in the background.
+- 2026-09-12 — **Shadow DB DISABLED: CockroachDB free allowance exhausted.**
+  Basic's free tier is a $15/month credit per organization (= 50M request
+  units + 10 GiB); over that the cluster is switched off until the next
+  billing month (Oct 1) or a paid limit is set ($0.20 per extra 1M RUs).
+  Claude's scripts burned it in one day: three full bulk loads, the retention
+  marking (90k row updates) and — the real culprit — `migrate-payloads`
+  re-selecting "oldest still-unmigrated row" every page, a full table scan
+  per 32 rows (fixed: keyset paging). 29,220 of ~54k payloads made it into
+  R2 (529 MB) before the cutoff; `--skip-existing` picks those up. The
+  shadow site 500s until the DB is back. Also a finding in its own right:
+  karabuddy's ~360k uploads/month × ~60 row writes each is on the order of
+  the whole free RU budget by itself, so Cockroach Basic is probably a
+  $2–10/month database for karabuddy, not a free one. Decision needed — see
+  chat 2026-09-12.
