@@ -34,8 +34,9 @@ const redoPartial = args.includes('--redo-partial');
 const BATCH = num('batch', 500);
 
 function client(url: string) {
-  const ssl = /localhost|127\.0\.0\.1/.test(url) ? undefined : { rejectUnauthorized: !/sslmode=disable/.test(url) };
-  return new pg.Client({ connectionString: url, ssl });
+  // Let the URL's sslmode decide (verify-full for Neon's public CA, no-verify
+  // or sslrootcert for a provider with a private CA such as Aiven).
+  return new pg.Client({ connectionString: url });
 }
 
 async function main() {
