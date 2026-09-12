@@ -7,13 +7,15 @@ Two cooperating pieces:
 - **Webapp** (repo root) — Next.js 16 App Router. Owns the viewer (`/r/[slug]`), replay browser (`/replays`), teams, mentions, accounts, and all APIs.
 - **Chrome MV3 extension** (`extension/`, in-tree, buildless plain JS) — the only thing that can run on karabast.net itself. Intercepts the game WebSocket, records matches, lets you tag moments mid-game, and uploads payloads to the webapp. Also runs a small bridge content script on karabuddy origins for the account-claim flow.
 
+> **In flight:** the free-tier migration (Vercel Hobby + R2 + CockroachDB) is driven from [MIGRATION.md](./MIGRATION.md) — read it before touching storage, DB config or deploys.
+
 > See [CONTEXT.md](./CONTEXT.md) for the domain glossary (replay, tag, team, scope, share, armed, install token, surfacing, frame, leader/base) and [docs/adr/](./docs/adr/) for the key design decisions.
 
 ## Stack
 
 - Next.js 16 App Router (TypeScript), MUI
 - Neon Postgres + Drizzle ORM
-- Vercel Blob (replay payload storage)
+- Replay payloads: gzip'd blobs on Vercel Blob or Cloudflare R2 (`lib/blob.ts`, ADR 0011); unviewed replays are pruned after 30 days
 - Auth.js v5 (`next-auth` beta) — Discord + Google OAuth, Drizzle adapter
 - Chrome MV3 plain-JS extension (no build step)
 - Deployed on Vercel
@@ -142,7 +144,7 @@ karabast can change its gamestate format without notice and silently break recor
 
 ## Backlog
 
-[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B233**; the next new task is **B234**. The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
+[BACKLOG.md](./BACKLOG.md) is the source of truth for outstanding work — the top-of-file conventions section explains the format. Highest used ID is **B235**; the next new task is **B236**. The autonomous loop pulls the first satisfiable task from `## Backlog`, moves it through `## In Progress`, and appends it to `## Done`.
 
 ## Related repos
 
