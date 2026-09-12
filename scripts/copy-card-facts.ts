@@ -38,7 +38,7 @@ async function main() {
     const { rows } = await src.query(`FETCH ${BATCH} FROM facts`);
     if (rows.length === 0) break;
     const params: unknown[] = [];
-    const tuples = rows.map((r) => { params.push(r.game_id, r.player_id, JSON.stringify(r.j)); const n = params.length; return `($${n - 2}, $${n - 1}, $${n}::jsonb)`; });
+    const tuples = rows.map((r) => { params.push(r.game_id, r.player_id, JSON.stringify(r.j)); const n = params.length; return `($${n - 2}::text, $${n - 1}::text, $${n}::jsonb)`; });
     const res = await dst.query(
       `UPDATE match_players AS mp SET card_events = v.j FROM (VALUES ${tuples.join(', ')}) AS v(game_id, player_id, j) WHERE mp.game_id = v.game_id AND mp.player_id = v.player_id`,
       params,

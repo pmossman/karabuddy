@@ -28,6 +28,9 @@ const num = (k: string, d: number) => { const a = args.find((x) => x.startsWith(
 const only = (args.find((x) => x.startsWith('--only=')) || '').slice('--only='.length).split(',').filter(Boolean);
 const skip = new Set((args.find((x) => x.startsWith('--skip=')) || '').slice('--skip='.length).split(',').filter(Boolean));
 const verifyOnly = args.includes('--verify-only');
+// A table that was partially copied (a previous run died mid-table) is normally
+// skipped like any non-empty table; with this flag it's emptied and re-copied.
+const redoPartial = args.includes('--redo-partial');
 const BATCH = num('batch', 500);
 
 function client(url: string) {
@@ -64,6 +67,11 @@ async function main() {
   const selected = (only.length ? order.filter((t) => only.includes(t)) : order).filter((t) => !skip.has(t));
   console.log('order:', selected.join(' > '));
 
+  // ONE snapshot of the source for the whole run. The source is live; without
+  // this a child table copied later can reference a parent row that didn't
+  // exist when the parent table was copied (an FK error on the target).
+  await src.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+
   const summary: { table: string; source: number; target: number; copied: number }[] = [];
   for (const t of selected) {
     const cols: { column_name: string; data_type: string }[] = (await src.query(
@@ -74,7 +82,10 @@ async function main() {
     const sourceCount = Number((await src.query(`select count(*) n from "${t}"`)).rows[0].n);
     const targetCount = Number((await dst.query(`select count(*) n from "${t}"`)).rows[0].n);
     if (verifyOnly) { summary.push({ table: t, source: sourceCount, target: targetCount, copied: 0 }); continue; }
-    if (targetCount > 0) {
+    if (targetCount > 0 && redoPartial && targetCount < sourceCount) {
+      console.log(`${t}: target has a partial copy (${targetCount}/${sourceCount}) — emptying and re-copying (--redo-partial)`);
+      await dst.query(`DELETE FROM "${t}"`);
+    } else if (targetCount > 0) {
       console.log(`${t}: target already has ${targetCount} rows (source ${sourceCount}) — skipping, will not overwrite`);
       summary.push({ table: t, source: sourceCount, target: targetCount, copied: 0 });
       continue;
@@ -82,7 +93,6 @@ async function main() {
     console.log(`${t}: copying ${sourceCount} rows`);
     const started = Date.now();
     let copied = 0;
-    await src.query('BEGIN');
     await src.query(`DECLARE copy_cur CURSOR FOR SELECT ${names} FROM "${t}"`);
     for (;;) {
       const { rows } = await src.query(`FETCH ${BATCH * 4} FROM copy_cur`);
@@ -105,10 +115,11 @@ async function main() {
       if (copied % (BATCH * 40) === 0) console.log(`  ${t}: ${copied}/${sourceCount} (${((Date.now() - started) / 1000).toFixed(0)}s)`);
     }
     await src.query('CLOSE copy_cur');
-    await src.query('COMMIT');
     console.log(`  ${t}: ${copied} rows in ${((Date.now() - started) / 1000).toFixed(0)}s`);
     summary.push({ table: t, source: sourceCount, target: copied, copied });
   }
+
+  await src.query('COMMIT');
 
   // Migration history, so drizzle-kit on the target sees the same applied set.
   if (!verifyOnly && !only.length) {
