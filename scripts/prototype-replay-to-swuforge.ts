@@ -1,3 +1,4 @@
+import { or } from 'drizzle-orm';
 // PROTOTYPE (throwaway — swuforge partnership, replay→replay conversion).
 // Converts a karabuddy .karareplay payload into swuforge's PersistedTimeline v2
 // blob (base snapshot + sparse objectDiff steps), the format Andy's REPLAY-BLOB-
