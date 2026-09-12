@@ -32,6 +32,23 @@ const verifyOnly = args.includes('--verify-only');
 // skipped like any non-empty table; with this flag it's emptied and re-copied.
 const redoPartial = args.includes('--redo-partial');
 const BATCH = num('batch', 500);
+// Pause between batches (ms). A small managed instance can flip itself read-only
+// when a bulk load outruns its WAL checkpointing; a breather keeps it below that.
+const PAUSE_MS = num('pause-ms', 0);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Retry a write that hit a transient "read-only transaction" (Aiven raises
+// SQLSTATE 25006 while its disk-pressure guard is active, then clears it).
+async function withReadOnlyRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await fn(); }
+    catch (e: any) {
+      if (e?.code !== '25006' || attempt > 30) throw e;
+      console.log(`  ${label}: target is read-only (disk guard) — waiting 30s (attempt ${attempt})`);
+      await sleep(30_000);
+    }
+  }
+}
 
 function client(url: string) {
   // Let the URL's sslmode decide (verify-full for Neon's public CA, no-verify
@@ -85,7 +102,7 @@ async function main() {
     if (verifyOnly) { summary.push({ table: t, source: sourceCount, target: targetCount, copied: 0 }); continue; }
     if (targetCount > 0 && redoPartial && targetCount < sourceCount) {
       console.log(`${t}: target has a partial copy (${targetCount}/${sourceCount}) — emptying and re-copying (--redo-partial)`);
-      await dst.query(`DELETE FROM "${t}"`);
+      await withReadOnlyRetry(() => dst.query(`TRUNCATE "${t}" CASCADE`), t);
     } else if (targetCount > 0) {
       console.log(`${t}: target already has ${targetCount} rows (source ${sourceCount}) — skipping, will not overwrite`);
       summary.push({ table: t, source: sourceCount, target: targetCount, copied: 0 });
@@ -118,8 +135,9 @@ async function main() {
           });
           return `(${ph.join(', ')})`;
         });
-        await dst.query(`INSERT INTO "${t}" (${names}) VALUES ${tuples.join(', ')}`, params);
+        await withReadOnlyRetry(() => dst.query(`INSERT INTO "${t}" (${names}) VALUES ${tuples.join(', ')}`, params), t);
         copied += chunk.length;
+        if (PAUSE_MS) await sleep(PAUSE_MS);
       }
       if (copied % (BATCH * 40) === 0) console.log(`  ${t}: ${copied}/${sourceCount} (${((Date.now() - started) / 1000).toFixed(0)}s)`);
     }
