@@ -211,3 +211,20 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
 - 2026-09-12 — 0.2 done: R2 bucket verified end to end with the app's own
   driver; R2 env loaded on `karabuddy-shadow`. Only 0.3 (Cockroach connection
   string) blocks the first shadow deploy.
+- 2026-09-12 — 0.3 done: cluster reachable (also from Vercel's build network);
+  database `shadow` created, 47 migrations applied.
+- 2026-09-12 — **INCIDENT (no user-visible impact).** Claude chained
+  `vercel deploy --prod` after git commands that ran in `~/code/karabuddy`,
+  which is linked to the PROD project — so the branch was deployed to prod, not
+  the shadow. The build failed at typecheck (a gitignored local script got
+  uploaded), so **no new code went live** (prod still serves the 26-day-old
+  deployment; home, viewer and extension status all 200; uploads kept landing).
+  But the build's prebuild had already applied migrations **0045 + 0046 to the
+  prod Neon DB** (additive only: 3 nullable columns, a partial index, and the
+  `match_players.card_events` backfill — running code ignores them; +~140 MB).
+  Consequence handled: old prod code keeps writing `card_events` rows but not
+  the jsonb, so new migration **0047** (in PR #28) re-runs the backfill for
+  rows still null at the real deploy; PR #29's drop is renumbered to 0048.
+  Guard added: `scripts/deploy-shadow.sh` is now the only way the shadow gets
+  deployed — it refuses unless the directory is `~/karabuddy-shadow`, linked to
+  `karabuddy-shadow`, on branch `free-tier-migration`.
