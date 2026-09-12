@@ -31,6 +31,10 @@ const skip = new Set((args.find((x) => x.startsWith('--skip=')) || '').slice('--
 // not have them, or they're legacy bulk we don't want to carry — e.g.
 // replays.decks, which scripts/copy-decklists.ts re-derives into `decklists`).
 const dropCols = new Set((args.find((x) => x.startsWith('--drop-cols=')) || '').slice('--drop-cols='.length).split(',').filter(Boolean));
+// --since-days=N : copy only replays created in the last N days (public ones
+// always), and only the dependent rows that belong to them — the shape a
+// blanket row-retention window leaves behind.
+const sinceDays = num('since-days', 0);
 const verifyOnly = args.includes('--verify-only');
 // A table that was partially copied (a previous run died mid-table) is normally
 // skipped like any non-empty table; with this flag it's emptied and re-copied.
@@ -52,6 +56,16 @@ async function withReadOnlyRetry<T>(fn: () => Promise<T>, label: string): Promis
       await sleep(30_000);
     }
   }
+}
+
+function filterFor(t: string, colNames: string[]): string {
+  const cols = new Set(colNames);
+  const recent = `SELECT slug FROM replays WHERE created_at >= now() - interval '${sinceDays} days' OR public_at IS NOT NULL`;
+  if (t === 'replays') return ` WHERE created_at >= now() - interval '${sinceDays} days' OR public_at IS NOT NULL`;
+  if (cols.has('replay_slug')) return ` WHERE replay_slug IN (${recent})`;
+  if (cols.has('game_id')) return ` WHERE game_id IN (SELECT m.game_id FROM matches m WHERE m.replay_slug IN (${recent}))`;
+  if (cols.has('tag_id')) return ` WHERE tag_id IN (SELECT id FROM tags WHERE replay_slug IN (${recent}))`;
+  return '';
 }
 
 function client(url: string) {
@@ -101,7 +115,7 @@ async function main() {
     )).rows.filter((c) => !dropCols.has(`${t}.${c.column_name}`));
     const names = cols.map((c) => `"${c.column_name}"`).join(', ');
     const jsonCols = new Set(cols.filter((c) => c.data_type === 'jsonb' || c.data_type === 'json').map((c) => c.column_name));
-    const sourceCount = Number((await src.query(`select count(*) n from "${t}"`)).rows[0].n);
+    const sourceCount = Number((await src.query(`select count(*) n from "${t}"${sinceDays > 0 ? filterFor(t, cols.map((c) => c.column_name)) : ''}`)).rows[0].n);
     const targetCount = Number((await dst.query(`select count(*) n from "${t}"`)).rows[0].n);
     if (verifyOnly) { summary.push({ table: t, source: sourceCount, target: targetCount, copied: 0 }); continue; }
     if (targetCount > 0 && redoPartial && targetCount < sourceCount) {
@@ -123,7 +137,8 @@ async function main() {
       join information_schema.constraint_column_usage ccu on ccu.constraint_name = tc.constraint_name
       where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = 'public' and tc.table_name = $1 and ccu.table_name = $1`, [t])).rows.map((r) => r.column_name);
     const orderBy = selfRefCols.length ? ` ORDER BY ${selfRefCols.map((c) => `("${c}" IS NOT NULL)`).join(', ')}` : '';
-    await src.query(`DECLARE copy_cur CURSOR FOR SELECT ${names} FROM "${t}"${orderBy}`);
+    const where = sinceDays > 0 ? filterFor(t, cols.map((c) => c.column_name)) : '';
+    await src.query(`DECLARE copy_cur CURSOR FOR SELECT ${names} FROM "${t}"${where}${orderBy}`);
     for (;;) {
       const { rows } = await src.query(`FETCH ${BATCH * 4} FROM copy_cur`);
       if (rows.length === 0) break;
