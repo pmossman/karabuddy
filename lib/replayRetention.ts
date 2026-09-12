@@ -27,6 +27,51 @@ import { deletePayloadBlobs } from './blob';
 import { clips, replayReviews, replayViews, replays } from './schema';
 
 export const DEFAULT_RETENTION_DAYS = 30;
+
+// B236: opt-in blanket row retention. When REPLAY_ROW_RETENTION_DAYS is set,
+// replay ROWS older than that are deleted outright (the FKs cascade: matches →
+// card facts, tags, participants, openings, sideboards, views, shares). Public
+// replays and clipped replays are exempt. Unset = off.
+export function rowRetentionDays(): number | null {
+  const n = Number(process.env.REPLAY_ROW_RETENTION_DAYS);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export interface DeleteRowsResult { days: number; cutoff: string; deleted: number; more: boolean; dryRun: boolean }
+
+export async function deleteExpiredReplayRows(opts: { days: number; batch?: number; limit?: number; timeBudgetMs?: number; dryRun?: boolean; now?: Date; log?: (m: string) => void }): Promise<DeleteRowsResult> {
+  const batch = Math.max(1, opts.batch ?? 500);
+  const limit = opts.limit ?? Infinity;
+  const now = opts.now ?? new Date();
+  const cutoff = new Date(now.getTime() - opts.days * 86_400_000);
+  const started = Date.now();
+  const db = getDb();
+  const r = replays;
+  const cond = and(
+    lt(r.createdAt, cutoff),
+    isNull(r.publicAt),
+    notExists(db.select({ x: sql`1` }).from(clips).where(sql`${clips.replaySlug} = ${r.slug}`)),
+  );
+  const result: DeleteRowsResult = { days: opts.days, cutoff: cutoff.toISOString(), deleted: 0, more: false, dryRun: !!opts.dryRun };
+  if (opts.dryRun) {
+    const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(r).where(cond);
+    result.deleted = Math.min(Number(row?.n ?? 0), limit);
+    result.more = Number(row?.n ?? 0) > result.deleted;
+    return result;
+  }
+  while (result.deleted < limit) {
+    if (opts.timeBudgetMs != null && Date.now() - started > opts.timeBudgetMs) { result.more = true; break; }
+    const want = Math.min(batch, limit - result.deleted);
+    const victims = await db.select({ slug: r.slug }).from(r).where(cond).orderBy(asc(r.createdAt)).limit(want);
+    if (victims.length === 0) break;
+    await db.delete(r).where(inArray(r.slug, victims.map((v) => v.slug)));
+    result.deleted += victims.length;
+    opts.log?.(`[retention] ${result.deleted} replay rows deleted so far`);
+    if (victims.length < want) break;
+  }
+  if (result.deleted >= limit && limit !== Infinity) result.more = true;
+  return result;
+}
 export const DEFAULT_PRUNE_BATCH = 200;
 
 export function retentionDays(): number {

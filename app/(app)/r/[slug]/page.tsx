@@ -16,6 +16,7 @@ import { hasEntitledSibling } from '@/lib/doubleSided';
 import { verifyMoment } from '@/lib/shareToken';
 import { ReplayViewer } from './ReplayViewer';
 import { sideboardDiff } from '@/lib/sideboardDiff';
+import { hydrateDecks, hydrateDecksForRows } from '@/lib/decklists';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,13 +48,16 @@ const loadLobbyForSeries = cache(async (lobbyId: string) => {
       winners: replays.winners,
       ownerPlayerId: replays.ownerPlayerId,
       players: replays.players,
+      deckRefs: replays.deckRefs,
       decks: replays.decks,
       fmt: sql<string | null>`${replays.match}->>'gamesToWinMode'`,
     })
     .from(replays)
     .where(sql`${replays.match}->>'lobbyId' = ${lobbyId}`)
     .orderBy(asc(replays.createdAt));
-  return reps;
+  // B236: decks live in `decklists`; rebuild the embedded shape once per lobby.
+  const hydrated = await hydrateDecksForRows(reps);
+  return reps.map((r, i) => ({ ...r, decks: hydrated[i] }));
 });
 
 type LobbyGame = Awaited<ReturnType<typeof loadLobbyForSeries>>[number];
@@ -271,7 +275,8 @@ export default async function ReplayPage({ params }: PageProps) {
   // B129: series hop + "Game N" title for the games of the same Bo3.
   const series = await seriesFor(row, anonymize);
   // B150: sideboard changes from the previous game (entitled viewers only).
-  const sideboard = await loadSideboardChanges({ slug: row.slug, match: row.match, decks: (row as any).decks }, anonymize);
+  const decks = await hydrateDecks(row);
+  const sideboard = await loadSideboardChanges({ slug: row.slug, match: row.match, decks }, anonymize);
   // B216: the uploader's other matches vs this opponent (owner-only) for the Matchup view.
   const opponentHistory = await loadMatchesVsOpponent(row, viewerUserId);
 
@@ -287,7 +292,8 @@ export default async function ReplayPage({ params }: PageProps) {
     // Full deck lists are dropped for unauthorized viewers (uploader/teammate-only)
     // — the DecksModal shows only the "seen" cards instead.
     displayName: (row as any).displayName,
-    decks: anonymize ? null : (row as any).decks,
+    decks: anonymize ? null : decks,
+    deckRefs: undefined,
   };
 
   // B71: tags are no longer SSR'd — the viewer fetches them from

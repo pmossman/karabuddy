@@ -26,6 +26,7 @@ const TABLES = [
   'teams',
   'tags',
   'replays',
+  'decklists',
   'extension_tokens',
   'sessions',
   'accounts',

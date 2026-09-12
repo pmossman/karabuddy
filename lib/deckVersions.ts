@@ -15,6 +15,7 @@ import { replays, extensionTokens, cards } from './schema';
 import { resolveBaseIdentities, type BaseIdentity } from './baseIdentity';
 import { leaderValue } from './sideboardGuides';
 import { cardIdFromSetNumber } from './cards';
+import { hydrateDecksForRows } from './decklists';
 
 export interface CardRef { id: string; count: number; name?: string | null; cost?: number | null }
 export interface DeckVersion {
@@ -107,9 +108,12 @@ async function scopedReplays(userId: string) {
   const db = getDb();
   const tokens = (await db.select({ token: extensionTokens.token }).from(extensionTokens).where(eq(extensionTokens.userId, userId))).map((r) => r.token);
   const owner = tokens.length ? or(eq(replays.userId, userId), inArray(replays.ownerToken, tokens)) : eq(replays.userId, userId);
-  return db.select({ players: replays.players, decks: replays.decks, pov: replays.ownerPlayerId, winners: replays.winners, createdAt: replays.createdAt })
+  const rows = await db.select({ players: replays.players, deckRefs: replays.deckRefs, decks: replays.decks, pov: replays.ownerPlayerId, winners: replays.winners, createdAt: replays.createdAt })
     .from(replays)
-    .where(and(owner, eq(replays.encrypted, false), isNotNull(replays.decks), isNotNull(replays.ownerPlayerId)));
+    .where(and(owner, eq(replays.encrypted, false), or(isNotNull(replays.deckRefs), isNotNull(replays.decks)), isNotNull(replays.ownerPlayerId)));
+  // B236: rebuild the embedded deck shape from `decklists` (two queries for all rows).
+  const hydrated = await hydrateDecksForRows(rows);
+  return rows.map((r, i) => ({ ...r, decks: hydrated[i] }));
 }
 
 /**

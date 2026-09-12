@@ -337,6 +337,13 @@
       "when": 1788892869634,
       "tag": "0047_card_events_backfill_again",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788892870634,
+      "tag": "0048_decklists",
+      "breakpoints": true
     }
   ]
 }
