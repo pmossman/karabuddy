@@ -8,7 +8,9 @@ const FIELDS: Record<string, number> = {
   extVersion: 32,      // manifest "version" — e.g. "0.5.10"
   extVersionName: 64,  // manifest "version_name"
   browser: 32,         // coarse: "chrome" | "firefox" | "edge" | "other"
-  ua: 256,             // raw navigator.userAgent (capped)
+  // B236: `ua` (raw navigator.userAgent) is no longer stored — 117 bytes on
+  // every replay row (17 MB) that nothing read; `browser` + `extVersion` carry
+  // the diagnostic value. Migration 0048 strips it from existing rows.
 };
 
 export type ClientMeta = Record<string, string>;

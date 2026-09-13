@@ -13,6 +13,10 @@ import {
 } from 'drizzle-orm/pg-core';
 import type { AdapterAccountType } from 'next-auth/adapters';
 
+// B235: per-side card facts on match_players.card_events — event → cardId →
+// first frame index. See lib/statsExtract.ts (writer) / lib/statsQuery.ts (reader).
+export type CardEventMap = Partial<Record<'drawn' | 'resourced' | 'played' | 'discarded', Record<string, number>>>;
+
 // ----- Auth.js standard tables (users / accounts / sessions / verificationTokens)
 //
 // Following the Auth.js Drizzle adapter spec exactly so the off-the-shelf
@@ -138,14 +142,37 @@ export const replays = pgTable(
     durationMs: integer('duration_ms').notNull().default(0),
     actionCount: integer('action_count').notNull().default(0),
     payloadBlobUrl: text('payload_blob_url').notNull(),
+    // Raw (uncompressed) JSON length — the upload cap + observability number.
     payloadSizeBytes: integer('payload_size_bytes').notNull().default(0),
+    // B234 (storage cost): how the blob body is stored. 'gzip' for anything
+    // written since compression shipped; null = legacy plain JSON (readers sniff
+    // the bytes either way — see lib/payloadFetch.ts). scripts/migrate-payloads.ts
+    // uses it to find rows still to re-write.
+    payloadEncoding: text('payload_encoding'),
+    // B234: retention. Set when the daily prune (lib/replayRetention.ts) deleted
+    // this replay's payload blob — never viewed within the retention window.
+    // The metadata row + every derived stats fact stay; the viewer shows an
+    // "expired" notice instead of fetching. Cleared if a late snapshot re-writes
+    // the blob.
+    payloadPrunedAt: timestamp('payload_pruned_at', { withTimezone: true }),
+    // B234: last time ANY viewer (signed-in or not) opened the replay — the
+    // retention signal. replay_views only tracks signed-in viewers, so this
+    // catches share-link visitors + anonymous uploaders too.
+    lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
     // B42: match metadata (format, cardPool, bo3 mode, etc.) + per-user
     // deck snapshots (leader/base for both players; full deck + sideboard
     // for the local player only — karabast masks opponent's full list).
     // Both null on historical replays uploaded before B42 + on any future
     // upload where the extension didn't catch a lobbystate first.
     match: jsonb('match'),
+    // B236: LEGACY — the embedded per-side deck snapshots. Superseded by
+    // `deckRefs` + the `decklists` table (one row per distinct list). Rows
+    // written before migration 0048 keep it until the contract migration drops
+    // the column; readers go through lib/decklists.hydrateDecks*, which falls
+    // back to it. New rows leave it null.
     decks: jsonb('decks'),
+    // B236: { [playerId]: { username, name, leader, base, decklist: <decklists.id>|null } }
+    deckRefs: jsonb('deck_refs'),
     // B59: winners extracted from the final gamestate at upload (and
     // re-extracted on snapshot upserts). Array of playerIds from the
     // payload's `players` map. Null on:
@@ -219,6 +246,9 @@ export const replays = pgTable(
     // replay for this game, on this seat?" (lib/statsQuery.personalSeatCond).
     // Covers that EXISTS end to end so it stays an index lookup as replays grow.
     userGameOwnerIdx: index('replays_user_game_owner_idx').on(t.userId, t.gameId, t.ownerPlayerId),
+    // B234: the daily prune scans "oldest rows whose payload is still stored";
+    // a partial index keeps that a small range scan as pruned rows accumulate.
+    pruneIdx: index('replays_prune_idx').on(t.createdAt).where(sql`${t.payloadPrunedAt} is null`),
   })
 );
 
@@ -290,8 +320,7 @@ export const teams = pgTable('teams', {
   slug: text('slug').primaryKey(),
   name: text('name').notNull(),
   createdBy: text('created_by')
-    .notNull()
-    .references(() => users.id, { onDelete: 'set null' as any }),
+    .references(() => users.id, { onDelete: 'set null' }),
   // B81: when the KaraBuddy bot is invited to a team's own Discord server, the
   // owner picks a channel; team activity (new shares, mentions) posts there via
   // the bot token. Null = no Discord posting configured for this team.
@@ -383,8 +412,7 @@ export const teamInvites = pgTable(
       .notNull()
       .references(() => teams.slug, { onDelete: 'cascade' }),
     createdBy: text('created_by')
-      .notNull()
-      .references(() => users.id, { onDelete: 'set null' as any }),
+      .references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     usesRemaining: integer('uses_remaining'),
@@ -416,8 +444,7 @@ export const replayTeamShares = pgTable(
       .notNull()
       .references(() => teams.slug, { onDelete: 'cascade' }),
     sharedBy: text('shared_by')
-      .notNull()
-      .references(() => users.id, { onDelete: 'set null' as any }),
+      .references(() => users.id, { onDelete: 'set null' }),
     sharedAt: timestamp('shared_at', { withTimezone: true }).notNull().defaultNow(),
     // B135: the uploader flagged this replay for review by this team. Null =
     // not requested; a timestamp = requested at. B149/ADR 0009: this now
@@ -673,6 +700,16 @@ export const matchPlayers = pgTable(
     resourceUnderspend: integer('resource_underspend'),
     resourceDeadCards: integer('resource_dead_cards'),
     resourceCountedRounds: integer('resource_counted_rounds'),
+    // B235 (DB size): this side's card facts, aggregated — replaces the
+    // per-event `card_events` rows (6.6M rows / 1.4 GB in prod for ~140 MB here).
+    // Shape: { drawn: { SET_NNN: firstFrameIndex }, resourced: {...}, played: {...},
+    // discarded: {...} } — one entry per (event, card) with the FIRST frame the
+    // event happened on. Every consumer only ever needed "did this card see this
+    // event on this side of this game" (getCardStats collapses copies) plus the
+    // first frame (card finder), so that's all that's kept. Attribution is
+    // implied by the event: drawn/resourced exist only on the recorder's side,
+    // played/discarded on both. Null on rows written before the backfill.
+    cardEvents: jsonb('card_events').$type<CardEventMap | null>(),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.gameId, t.playerId] }),
@@ -685,6 +722,11 @@ export const matchPlayers = pgTable(
 // `attribution` ('both' | 'recorder') keeps recorder-side vs whole-meta stats
 // honest at query time. `format` denormalized so the hot card-stat query can
 // filter without joining `matches`.
+// B235: LEGACY — superseded by match_players.card_events (jsonb). No code reads or
+// writes this table any more; it's kept in the schema until the contract
+// migration drops it (ADR 0005: drop only after the reading code has deployed).
+// To drop: remove this definition + `drizzle-kit generate`, or apply
+// `DROP TABLE "card_events";` as the next migration.
 export const cardEvents = pgTable(
   'card_events',
   {
@@ -705,6 +747,27 @@ export const cardEvents = pgTable(
     gameIdx: index('card_events_game_idx').on(t.gameId),
     cardEventIdx: index('card_events_card_event_idx').on(t.cardId, t.event),
   })
+);
+
+// B236 (DB size): decklists stored once, content-addressed. `id` = md5 of the
+// normalized "leader|base|main|sideboard" string (lib/decklists.ts, with an
+// identical SQL twin for the migration backfill). `cards`/`sideboard` are
+// compact `[[cardId, count], ...]` arrays sorted by card id; costs are
+// re-attached from `cards` on read. 142k replay sides → ~25k rows.
+export const decklists = pgTable(
+  'decklists',
+  {
+    id: text('id').primaryKey(),
+    leaderId: text('leader_id'),
+    baseId: text('base_id'),
+    cards: jsonb('cards').notNull(),
+    sideboard: jsonb('sideboard').notNull(),
+    cardCount: integer('card_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    leaderIdx: index('decklists_leader_idx').on(t.leaderId),
+  }),
 );
 
 export type Card = typeof cards.$inferSelect;

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { put } from '@/lib/blob';
+import { putPayload, readBlobJson } from '@/lib/blob';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { replays, replayParticipants, replayTeamShares, tags, teamMembers, teams } from '@/lib/schema';
@@ -13,6 +13,7 @@ import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayStats } from '@/lib/replayStatsPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
+import { storeDecks } from '@/lib/decklists';
 
 export const runtime = 'nodejs';
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -172,10 +173,7 @@ async function handleEncryptedUpload(opts: {
     if (actionCount < mine.actionCount) {
       return NextResponse.json({ ok: true, slug: mine.slug, url: `/r/${mine.slug}`, staleSnapshot: true }, { headers });
     }
-    await put(`replays/${mine.slug}.json`, payloadText, {
-      access: 'public',
-      contentType: 'application/json',
-      addRandomSuffix: false,
+    const blob = await putPayload(`replays/${mine.slug}.json`, payloadText, {
       cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS,
     });
     const updates: Record<string, unknown> = {
@@ -184,7 +182,9 @@ async function handleEncryptedUpload(opts: {
       teamKeyId,
       durationMs,
       actionCount,
+      payloadBlobUrl: blob.url,
       payloadSizeBytes: payloadText.length,
+      payloadEncoding: blob.encoding,
     };
     if (clientMeta) updates.clientMeta = clientMeta;
     await db.update(replays).set(updates).where(eq(replays.slug, mine.slug));
@@ -194,10 +194,7 @@ async function handleEncryptedUpload(opts: {
   }
 
   const slug = generateSlug();
-  const blob = await put(`replays/${slug}.json`, payloadText, {
-    access: 'public',
-    contentType: 'application/json',
-    addRandomSuffix: false,
+  const blob = await putPayload(`replays/${slug}.json`, payloadText, {
     cacheControlMaxAge: PAYLOAD_CACHE_MAX_AGE_SECONDS,
   });
   await db.insert(replays).values({
@@ -213,6 +210,7 @@ async function handleEncryptedUpload(opts: {
     actionCount,
     payloadBlobUrl: blob.url,
     payloadSizeBytes: payloadText.length,
+    payloadEncoding: blob.encoding,
     encrypted: true,
     teamKeyId,
     encryptedSummary,
@@ -335,8 +333,8 @@ export async function POST(req: Request) {
       let mergedOk = false;
       if (sliceHasKeys(parsed)) {
         try {
-          const storedBlob = await (await fetch(replay.payloadBlobUrl)).json();
-          if (sliceHasKeys(storedBlob)) {
+          const storedBlob = await readBlobJson(replay.payloadBlobUrl);
+          if (storedBlob && sliceHasKeys(storedBlob)) {
             const merged = mergeSlices([storedBlob, parsed]);
             const mergedText = merged ? JSON.stringify(merged) : '';
             if (merged && mergedText.length <= MAX_PAYLOAD_BYTES) {
@@ -368,10 +366,7 @@ export async function POST(req: Request) {
       // the path; in @vercel/blob 0.27.x this silently overwrites an existing
       // blob at the same path (no explicit allowOverwrite flag needed at this
       // version).
-      await put(`replays/${replay.slug}.json`, payloadText, {
-        access: 'public',
-        contentType: 'application/json',
-        addRandomSuffix: false,
+      const blob = await putPayload(`replays/${replay.slug}.json`, payloadText, {
         // This blob is overwritten in place as the game streams in (B120 merge),
         // so it must NOT carry the default 1-year browser cache — a viewer who
         // fetched an early partial would be pinned to it for a year. A short TTL
@@ -392,10 +387,16 @@ export async function POST(req: Request) {
         players,
         durationMs: parsed.durationMs || 0,
         actionCount: parsed.actionCount || 0,
+        // B234: a snapshot re-write lands on the CURRENT store (gzip) even if the
+        // row was first written to an older store/format — the URL follows.
+        payloadBlobUrl: blob.url,
         payloadSizeBytes: payloadText.length,
+        payloadEncoding: blob.encoding,
+        payloadPrunedAt: null,
       };
       if (parsed.match !== undefined) updates.match = parsed.match;
-      if (!replay.decks && parsed.decks) updates.decks = parsed.decks;
+      // B236: decks are stored once in `decklists`; the row keeps refs.
+      if (!replay.decks && !replay.deckRefs && parsed.decks) updates.deckRefs = await storeDecks(parsed.decks);
       // B114: refresh the recorder's client metadata (latest upload wins) —
       // only when this upload carried it, so we don't null a stored value.
       if (clientMeta) updates.clientMeta = clientMeta;
@@ -454,10 +455,7 @@ export async function POST(req: Request) {
 
     // New row → write payload to Blob, then insert metadata.
     const slug = generateSlug();
-    const blob = await put(`replays/${slug}.json`, payloadText, {
-      access: 'public',
-      contentType: 'application/json',
-      addRandomSuffix: false,
+    const blob = await putPayload(`replays/${slug}.json`, payloadText, {
       // Short TTL: this path is overwritten in place on later snapshots/merges
       // (see the upsert branch above), so an immutable-length cache poisons
       // early viewers. Self-heals within minutes instead.
@@ -474,10 +472,11 @@ export async function POST(req: Request) {
       actionCount: parsed.actionCount || 0,
       payloadBlobUrl: blob.url,
       payloadSizeBytes: payloadText.length,
+      payloadEncoding: blob.encoding,
       // B42: nullable JSONB columns — undefined for replays uploaded by
       // pre-B42 extension versions, populated for new uploads.
       match: parsed.match ?? null,
-      decks: parsed.decks ?? null,
+      deckRefs: await storeDecks(parsed.decks ?? null),
       winners,
       // B59-followup: stash the recorder's POV so the "Wins" filter on
       // /replays?tab=mine knows which player was "me" without a per-

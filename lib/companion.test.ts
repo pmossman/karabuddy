@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
+
   companionCapabilityState, getCompanionInfo, decryptForTeam, loadedTeamKeyIds,
   resolvePrivateReplayAccess, decryptSummary, decryptReplayPayload, hydrateEncryptedTags,
   extensionPresent, rewrapForTeam, rewrapReplay,
@@ -9,6 +10,14 @@ import {
 // B170 / ADR 0010: the page-side bridge client. The pure capability mapping is
 // unit-tested directly; the RPC is tested against a MOCK bridge that mirrors what
 // karabuddy-bridge.js does (listen for companionRequest → reply companionResult).
+
+// B234: payload readers go through lib/payloadFetch (bytes → maybe-gzip → text),
+// so a mocked blob response needs arrayBuffer() as well as json().
+const jsonResponse = (obj: unknown) => ({
+  ok: true,
+  json: async () => obj,
+  arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(obj)).buffer,
+});
 
 describe('companionCapabilityState', () => {
   it('no info + not present → absent (no extension at all)', () => {
@@ -127,7 +136,7 @@ describe('key rotation (rewrap) bridge helpers', () => {
 
   it('rewrapReplay re-wraps the blob payload, the summary, and every encrypted tag', async () => {
     // Blob fetch returns the payload envelope under the OLD kid.
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ v: 1, kid: 'old', wrap: { ct: 'P' }, data: { ct: 'PC' } }) }) as any));
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(({ v: 1, kid: 'old', wrap: { ct: 'P' }, data: { ct: 'PC' } }))) as any);
     // The SW re-wraps any envelope to the NEW kid.
     teardown = installMockBridge((req) =>
       req.type === 'rewrapForTeam'
@@ -153,7 +162,7 @@ describe('key rotation (rewrap) bridge helpers', () => {
   });
 
   it('rewrapReplay tolerates a null encryptedSummary (empty string out)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ v: 1, kid: 'old', wrap: {}, data: {} }) }) as any));
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(({ v: 1, kid: 'old', wrap: {}, data: {} }))) as any);
     teardown = installMockBridge((req) =>
       req.type === 'rewrapForTeam' ? { ok: true, data: { envelope: { v: 1, kid: 'new', wrap: {}, data: {} } } } : { ok: false });
     const out = await rewrapReplay('old', 'new', { slug: 'r2', payloadBlobUrl: 'https://b/r2.json', encryptedSummary: null, tags: [] });
@@ -195,7 +204,7 @@ describe('decrypt helpers', () => {
   it('decryptReplayPayload fetches the blob, decrypts, and returns the payload object', async () => {
     const payloadObj = { version: 2, events: [], localPlayerId: 'p1' };
     const envelope = { v: 1, alg: 'A256GCM', kid: 'kid1', wrap: {}, data: {} };
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => envelope }) as any));
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(envelope)) as any);
     teardown = installMockBridge((req) =>
       req.type === 'decryptForTeam' ? { ok: true, data: { plaintext: JSON.stringify(payloadObj) } } : { ok: false });
     expect(await decryptReplayPayload('kid1', 'https://blob/enc.json')).toEqual(payloadObj);

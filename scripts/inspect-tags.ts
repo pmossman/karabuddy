@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 config({ path: '.env.local' });
 import { eq } from 'drizzle-orm';
+import { readBlobJson } from '../lib/blob';
 
 async function main() {
   const { getDb } = await import('../lib/db');
@@ -12,8 +13,8 @@ async function main() {
   const r = await db.select({ payloadBlobUrl: replays.payloadBlobUrl }).from(replays).where(eq(replays.slug, slug));
   console.log('payload url:', r[0]?.payloadBlobUrl);
   if (r[0]) {
-    const res = await fetch(r[0].payloadBlobUrl);
-    const p = await res.json();
+    const p = await readBlobJson(r[0].payloadBlobUrl);
+    if (!p) { console.log('payload unavailable'); return; }
     console.log('tags in payload:', JSON.stringify(p.tags, null, 2));
   }
 }

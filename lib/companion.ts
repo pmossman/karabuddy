@@ -1,3 +1,4 @@
+import { fetchPayloadJson } from './payloadFetch';
 // B170 / ADR 0010 — webapp ↔ extension bridge client (karabuddy origin).
 //
 // The webapp can't hold the team key (a poisoned deploy could grab it), so it
@@ -179,9 +180,7 @@ export async function rewrapReplay(
   newTeamKeyId: string,
   replay: RotationReplay,
 ): Promise<RewrappedReplay> {
-  const res = await fetch(replay.payloadBlobUrl);
-  if (!res.ok) throw new Error(`payload fetch failed: ${res.status}`);
-  const payloadEnv = await res.json();
+  const payloadEnv = await fetchPayloadJson(replay.payloadBlobUrl);
   const payload = JSON.stringify(await rewrapForTeam(oldTeamKeyId, newTeamKeyId, payloadEnv));
 
   const summaryEnv = replay.encryptedSummary ? JSON.parse(replay.encryptedSummary) : null;
@@ -248,9 +247,7 @@ export async function decryptSummary<T = unknown>(teamKeyId: string, encryptedSu
 // payload object (same shape the plaintext viewer consumes). The envelope is the
 // blob body; the key never leaves the extension.
 export async function decryptReplayPayload<T = unknown>(teamKeyId: string, blobUrl: string): Promise<T> {
-  const res = await fetch(blobUrl);
-  if (!res.ok) throw new Error(`payload fetch failed: ${res.status}`);
-  const envelope = await res.json();
+  const envelope = await fetchPayloadJson(blobUrl);
   return JSON.parse(await decryptForTeam(teamKeyId, envelope)) as T;
 }
 

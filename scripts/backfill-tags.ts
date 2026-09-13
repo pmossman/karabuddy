@@ -10,6 +10,7 @@
 import 'dotenv/config';
 import { config as dotenvConfig } from 'dotenv';
 import { eq } from 'drizzle-orm';
+import { readBlobText } from '../lib/blob';
 
 dotenvConfig({ path: '.env.local' });
 
@@ -29,12 +30,12 @@ async function main() {
   for (const row of rows) {
     const existing = await db.select().from(tags).where(eq(tags.replaySlug, row.slug));
     const existingIds = new Set(existing.map((t) => t.id));
-    const res = await fetch(row.payloadBlobUrl);
-    if (!res.ok) {
-      console.log(`  ${row.slug}: payload fetch failed (${res.status}) — skipping`);
+    const payloadText = row.payloadPrunedAt ? null : await readBlobText(row.payloadBlobUrl);
+    if (payloadText === null) {
+      console.log(`  ${row.slug}: payload unavailable${row.payloadPrunedAt ? ' (pruned)' : ''} — skipping`);
       continue;
     }
-    const parsed = await res.json();
+    const parsed = JSON.parse(payloadText);
     const payloadTags = Array.isArray(parsed.tags) ? parsed.tags : [];
     if (payloadTags.length === 0) {
       console.log(`  ${row.slug}: no tags in payload`);

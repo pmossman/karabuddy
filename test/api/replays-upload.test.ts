@@ -139,7 +139,7 @@ describe('POST /api/replays — B114 client metadata', () => {
     as(null);
     await doUpload('kbx_cm', { gameId: 'gcm', actionCount: 5 }, { clientMeta: { extVersion: '0.5.12', browser: 'chrome', ua: 'UA1', evil: 'drop-me' } });
     let [row] = await getDb().select().from(replays).where(eq(replays.gameId, 'gcm'));
-    expect(row.clientMeta).toEqual({ extVersion: '0.5.12', browser: 'chrome', ua: 'UA1' }); // unknown key dropped
+    expect(row.clientMeta).toEqual({ extVersion: '0.5.12', browser: 'chrome' }); // unknown key dropped; B236: ua no longer stored
 
     // a later snapshot from a newer build refreshes it (latest wins)
     await doUpload('kbx_cm', { gameId: 'gcm', actionCount: 12 }, { clientMeta: { extVersion: '0.5.13', browser: 'chrome', ua: 'UA1' } });

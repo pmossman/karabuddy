@@ -20,6 +20,8 @@ interface ReplayRow {
   players: any;
   durationMs: number;
   actionCount: number;
+  // B234: retention removed the payload — playback unavailable, stats intact.
+  payloadPrunedAt?: string | Date | null;
   createdAt: string;
   // B42: match metadata. Null for replays uploaded by pre-B42 extension
   // versions; new replays carry { gameFormat, cardPool, gamesToWinMode, ... }.
@@ -181,6 +183,11 @@ export function ReplayCard({ replay, canManage, gameNumber, jumpFrame, jumpLabel
             </span>
           )}
           <span>{formatTimestamp(replay.createdAt)} · {replay.actionCount || 0} actions · {formatDuration(replay.durationMs || 0)}</span>
+          {replay.payloadPrunedAt && (
+            <span title="Playback data was removed after going unviewed for the retention window. Result, decks and stats are unaffected." style={{ opacity: 0.6 }}>
+              · expired
+            </span>
+          )}
           {replay.doubleSided && (
             <span
               data-testid="double-sided-chip"

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, replays, matches, matchPlayers, replayTeamShares, cardEvents, cards } from '@/lib/schema';
+import { and, eq } from 'drizzle-orm';
+import { users, teams, teamMembers, replays, matches, matchPlayers, replayTeamShares, cards } from '@/lib/schema';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, getEntityReplays } from '@/lib/statsQuery';
 import { teamGameIds } from '@/lib/teamSurface';
 
@@ -42,24 +43,26 @@ async function seedMatch(opts: {
     players: [], payloadBlobUrl: 'memory://x', durationMs: 1,
   });
   await db.insert(matches).values({ gameId: opts.gameId, replaySlug: slug, format, result: 'decisive', ...(opts.createdAt ? { createdAt: opts.createdAt } : {}) });
+  // B235: card facts ride on each side's match_players row as
+  // event → cardId → first frame. Copies collapse to one entry (min frame).
+  const cardMap = (side: 'p1' | 'p2') => {
+    const m: Record<string, Record<string, number>> = {};
+    (opts.events ?? []).forEach((e, i) => {
+      if (e.side !== side) return;
+      const byCard = (m[e.event] ??= {});
+      byCard[e.cardId] = Math.min(byCard[e.cardId] ?? Infinity, i * 10);
+    });
+    return Object.keys(m).length ? m : null;
+  };
   await db.insert(matchPlayers).values([
     { gameId: opts.gameId, playerId: 'p1', leader: opts.p1.leader, base: opts.p1.base ?? null, opponentLeader: opts.p2.leader, opponentBase: opts.p2.base ?? null, won: opts.p1.won, isRecorder: true, format,
       resourceAvailable: opts.p1.rating?.available ?? null, resourceWasted: opts.p1.rating?.wasted ?? null, resourceForced: opts.p1.rating?.forced ?? null,
-      resourceUnderspend: opts.p1.rating?.underspend ?? null, resourceDeadCards: opts.p1.rating?.deadCards ?? null, resourceCountedRounds: opts.p1.rating?.countedRounds ?? null },
-    { gameId: opts.gameId, playerId: 'p2', leader: opts.p2.leader, base: opts.p2.base ?? null, opponentLeader: opts.p1.leader, opponentBase: opts.p1.base ?? null, won: opts.p2.won, isRecorder: false, format },
+      resourceUnderspend: opts.p1.rating?.underspend ?? null, resourceDeadCards: opts.p1.rating?.deadCards ?? null, resourceCountedRounds: opts.p1.rating?.countedRounds ?? null,
+      cardEvents: cardMap('p1') },
+    { gameId: opts.gameId, playerId: 'p2', leader: opts.p2.leader, base: opts.p2.base ?? null, opponentLeader: opts.p1.leader, opponentBase: opts.p1.base ?? null, won: opts.p2.won, isRecorder: false, format,
+      cardEvents: cardMap('p2') },
   ]);
   if (opts.shareTeam) await db.insert(replayTeamShares).values({ replaySlug: slug, teamSlug: opts.shareTeam, sharedBy: opts.userId ?? null });
-  if (opts.events?.length) {
-    const wonBy = { p1: opts.p1.won, p2: opts.p2.won };
-    const rows = opts.events.flatMap((e, i) =>
-      Array.from({ length: e.copies ?? 1 }, (_, c) => ({
-        gameId: opts.gameId, playerId: e.side, isRecorder: e.side === 'p1', cardId: e.cardId,
-        event: e.event, attribution: e.event === 'drawn' || e.event === 'resourced' ? 'recorder' : 'both',
-        frameIndex: i * 10 + c, sideWon: wonBy[e.side], format,
-      })),
-    );
-    await db.insert(cardEvents).values(rows);
-  }
   return slug;
 }
 
@@ -188,13 +191,13 @@ describe('personal scope — co-recorded games (B233)', () => {
       { gameId: opts.gameId, playerId: 'p2', leader: opts.theirLeader, opponentLeader: opts.myLeader, won: !opts.iWon, isRecorder: !meIsRecorder, format: 'premier' },
     ]);
     if (opts.events?.length) {
-      const wonBy = { p1: opts.iWon, p2: !opts.iWon };
-      await db.insert(cardEvents).values(opts.events.map((e, i) => ({
-        gameId: opts.gameId, playerId: e.side, isRecorder: e.side === 'p1' ? meIsRecorder : !meIsRecorder,
-        cardId: e.cardId, event: e.event,
-        attribution: e.event === 'drawn' || e.event === 'resourced' ? 'recorder' : 'both',
-        frameIndex: i, sideWon: wonBy[e.side], format: 'premier',
-      })));
+      // B235: attach each side's card map to its match_players row.
+      for (const side of ['p1', 'p2'] as const) {
+        const m: Record<string, Record<string, number>> = {};
+        opts.events.forEach((e, i) => { if (e.side === side) (m[e.event] ??= {})[e.cardId] = Math.min((m[e.event][e.cardId] ?? Infinity), i); });
+        if (Object.keys(m).length)
+          await db.update(matchPlayers).set({ cardEvents: m }).where(and(eq(matchPlayers.gameId, opts.gameId), eq(matchPlayers.playerId, side)));
+      }
     }
     return { mySlug, theirSlug };
   }
@@ -391,12 +394,12 @@ describe('getCardStats', () => {
       await db.insert(matches).values({ gameId: gid, replaySlug: slugA, format: 'premier', result: 'decisive' });
       await db.insert(matchPlayers).values([
         { gameId: gid, playerId: 'p1', leader: 'LX', opponentLeader: 'LY', won: true, isRecorder: true, format: 'premier' },
-        { gameId: gid, playerId: 'p2', leader: 'LY', opponentLeader: 'LX', won: false, isRecorder: false, format: 'premier' },
+        // B237: an internal game is one BOTH teammates recorded (B84 ≥2 recorders);
+        // card facts exist only for recorded seats, so p2 is a recorded seat too.
+        { gameId: gid, playerId: 'p2', leader: 'LY', opponentLeader: 'LX', won: false, isRecorder: true, format: 'premier' },
       ]);
-      await db.insert(cardEvents).values([
-        { gameId: gid, playerId: 'p1', isRecorder: true, cardId: 'IA', event: 'played', attribution: 'both', frameIndex: 1, sideWon: true, format: 'premier' },
-        { gameId: gid, playerId: 'p2', isRecorder: false, cardId: 'IB', event: 'played', attribution: 'both', frameIndex: 2, sideWon: false, format: 'premier' },
-      ]);
+      await db.update(matchPlayers).set({ cardEvents: { played: { IA: 1 } } }).where(and(eq(matchPlayers.gameId, gid), eq(matchPlayers.playerId, 'p1')));
+      await db.update(matchPlayers).set({ cardEvents: { played: { IB: 2 } } }).where(and(eq(matchPlayers.gameId, gid), eq(matchPlayers.playerId, 'p2')));
       const sets = await teamGameIds('tT');
       expect(sets.internal).toContain(gid);
       const scope = { kind: 'team' as const, teamSlug: 'tT', restrictGameIds: sets.internal, internalGameIds: sets.internal };

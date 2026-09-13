@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { GET as cardPlays } from '@/app/api/card-plays/route';
 import { getDb } from '@/lib/db';
-import { users, teams, teamMembers, replays, matches, cardEvents, replayTeamShares, cards } from '@/lib/schema';
+import { users, teams, teamMembers, replays, matches, matchPlayers, replayTeamShares, cards } from '@/lib/schema';
 
 // B226: card finder — replays where the RECORDER did an event with a card,
 // mapped to the frame just before it. One endpoint, two scopes: a team's
@@ -42,8 +42,16 @@ async function seedGame(opts: {
   });
   await getDb().insert(matches).values({ gameId, replaySlug: slug, result: 'decisive' });
   if (opts.plays.length) {
-    await getDb().insert(cardEvents).values(opts.plays.map((p) => ({
-      gameId, playerId: p.playerId, cardId: p.cardId, event: p.event ?? 'played', frameIndex: p.frame, attribution: 'both',
+    // B235: one match_players row per side, carrying event → cardId → first frame.
+    const bySide = new Map<string, Record<string, Record<string, number>>>();
+    for (const p of opts.plays) {
+      const m = bySide.get(p.playerId) ?? {};
+      const ev = (m[p.event ?? 'played'] ??= {});
+      ev[p.cardId] = Math.min(ev[p.cardId] ?? Infinity, p.frame);
+      bySide.set(p.playerId, m);
+    }
+    await getDb().insert(matchPlayers).values([...bySide].map(([playerId, cardEvents]) => ({
+      gameId, playerId, isRecorder: playerId === opts.ownerPlayerId, cardEvents,
     })));
   }
   if (opts.team) await getDb().insert(replayTeamShares).values({ replaySlug: slug, teamSlug: opts.team, sharedBy: opts.owner });

@@ -8,6 +8,7 @@ import { buildMomentCard, type MomentCardModel } from '@/lib/momentCard';
 import { orderPlayersOwnerFirst } from '@/lib/players';
 import { anonByIdFromPlayers, anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { MomentCard } from '@/app/api/replays/[slug]/og-image/MomentCard';
+import { readBlobJson } from '@/lib/blob';
 
 export const runtime = 'nodejs';
 
@@ -68,7 +69,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     if (clip) {
       const [replay] = await db.select().from(replays).where(eq(replays.slug, clip.replaySlug)).limit(1);
       if (replay) {
-        const payload = await (await fetch((replay as any).payloadBlobUrl)).json();
+        const payload = await readBlobJson((replay as any).payloadBlobUrl);
+        if (!payload) throw new Error('payload unavailable');
         const decoded = decodeReplay(payload);
         const ownerPlayerId = ((replay as any).ownerPlayerId as string | null) ?? decoded.meta?.localPlayerId ?? null;
         const ordered = orderPlayersOwnerFirst((replay as any).players, ownerPlayerId);

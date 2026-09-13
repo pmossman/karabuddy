@@ -9,8 +9,8 @@
 
 import { eq } from 'drizzle-orm';
 import { getDb } from './db';
-import { cards, matches, matchPlayers, cardEvents } from './schema';
-import { extractReplayFacts, type ExtractOptions } from './statsExtract';
+import { cards, matches, matchPlayers } from './schema';
+import { aggregateCardEvents, extractReplayFacts, type ExtractOptions } from './statsExtract';
 import { analyzeResourcing, summarizeResourcing, type ResourcingRating } from './resourcingAnalysis';
 import type { DecodedReplay } from './replayDecoder';
 
@@ -90,6 +90,18 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
   // delete cascades the old children). The write is idempotent + replace-style,
   // so the lost atomicity is harmless: a concurrent stats read might briefly see
   // a match mid-rewrite, and the next upload/backfill re-writes it cleanly.
+  // B237 (DB size): card facts are kept for RECORDED seats only. The opponent's
+  // side of a single-recorder game carried only what's board-visible
+  // (played/discarded) — 38 MB nobody's stats needed. But a co-recorded game
+  // (both players upload) must keep BOTH recorders' full facts, and each upload
+  // replaces the match wholesale — so before replacing, remember the existing
+  // rows that were written as a recorder and carry their facts over.
+  const prior = await db
+    .select({ playerId: matchPlayers.playerId, isRecorder: matchPlayers.isRecorder, cardEvents: matchPlayers.cardEvents })
+    .from(matchPlayers)
+    .where(eq(matchPlayers.gameId, matchFact.gameId));
+  const recordedBefore = new Map(prior.filter((r) => r.isRecorder).map((r) => [r.playerId, r.cardEvents ?? null]));
+
   await db.delete(matches).where(eq(matches.gameId, matchFact.gameId)); // cascades children
   await db.insert(matches).values({
     gameId: matchFact.gameId,
@@ -100,17 +112,22 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
     result: matchFact.result,
     durationMs: matchFact.durationMs,
   });
+  // B235: card facts ride on the side's own row (event → cardId → first frame).
+  const cardMaps = aggregateCardEvents(events);
   await db.insert(matchPlayers).values(
     players.map((p) => {
       const opp = opponentOf(p.playerId);
+      const carried = !p.isRecorder && recordedBefore.has(p.playerId);
       return {
+        cardEvents: p.isRecorder ? (cardMaps.get(p.playerId) ?? null) : carried ? recordedBefore.get(p.playerId) ?? null : null,
         gameId: matchFact.gameId,
         playerId: p.playerId,
         username: p.username,
         leader: p.leader,
         base: p.base,
         aspects: p.aspects,
-        isRecorder: p.isRecorder,
+        // A seat that recorded its own upload earlier stays a recorded seat.
+        isRecorder: p.isRecorder || carried,
         won: p.won,
         opponentLeader: opp?.leader ?? null,
         opponentBase: opp?.base ?? null,
@@ -119,24 +136,6 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
       };
     }),
   );
-  if (events.length) {
-    await db.insert(cardEvents).values(
-      events.map((e) => ({
-        // Always the match's resolved gameId — early frames can carry a null
-        // gamestate id, and a null here violates card_events.game_id NOT NULL
-        // (and they all belong to this one match anyway).
-        gameId: matchFact.gameId,
-        playerId: e.playerId,
-        isRecorder: e.isRecorder,
-        cardId: e.cardId,
-        event: e.event,
-        attribution: e.attribution,
-        frameIndex: e.frameIndex,
-        sideWon: e.sideWon,
-        format: matchFact.format,
-      })),
-    );
-  }
 
   return { matchWritten: true, cardEvents: events.length };
 }

@@ -18,6 +18,7 @@ import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { useConfirm } from '@/app/_components/Confirm';
+import { fetchPayloadJson } from '@/lib/payloadFetch';
 
 // B136: the dedicated clip reel — a stripped, auto-playing, looping view of a
 // replay's [start,end] range. Reuses the board pipeline (own GameProvider +
@@ -169,8 +170,7 @@ function ClipPlayerInner({ clipSlug, replaySlug, payloadBlobUrl, startFrame, end
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(payloadBlobUrl);
-        const parsed = JSON.parse(await res.text());
+        const parsed = await fetchPayloadJson(payloadBlobUrl);
         const collapsed = collapseReplay(decodeReplay(parsed));
         const metaPov = collapsed.meta?.localPlayerId ?? null;
         if (anonymize) {

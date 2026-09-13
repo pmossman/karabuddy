@@ -29,7 +29,11 @@ function neonDb() {
 let pgPool: any = null;
 function pgDb() {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Pool } = require('pg');
+  const { Pool, types } = require('pg');
+  // int8 → number. Postgres only yields int8 where we ask for it (never), but
+  // CockroachDB's INT *is* int8, so every `count(*)::int` would come back as a
+  // string there. Nothing here counts past 2^53.
+  types.setTypeParser(20, (v: string) => parseInt(v, 10));
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { drizzle } = require('drizzle-orm/node-postgres');
   // KARABUDDY_PG_POOL_MAX lets batch scripts widen the pool for concurrency

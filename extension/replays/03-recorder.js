@@ -26,13 +26,19 @@
     let lastFullGamestate = null;    // most recent full snapshot, for author sniffing
     let lastFrameKey = null;         // B120: merge key (totalMessages) of the most recent frame, for tag anchoring
     let currentGameId = null;
-    // Periodic snapshot uploads (B26): every 5 min during an active match the
-    // recorder pushes the current payload to karabuddy.app. Server overwrites
-    // the existing slug for this gameId. Mitigates tab-close / lobby-disconnect
+    // Periodic snapshot uploads (B26): during an active match the recorder
+    // pushes the current payload to karabuddy.app. Server overwrites the
+    // existing slug for this gameId. Mitigates tab-close / lobby-disconnect
     // / browser-crash data loss — without this, a replay only persists to
     // karabuddy.app at clean game-end.
-    const PERIODIC_UPLOAD_INTERVAL_MS = 5 * 60 * 1000;
+    // B234 (storage cost): 15 min, was 5. Every snapshot is a paid blob write +
+    // a server-side read of the previous blob for the B120 merge, and the
+    // pagehide upload already covers the tab-close case; the interval only
+    // bounds what a hard crash loses. A snapshot is also skipped when nothing
+    // new was captured since the last upload (see snapshotUpload).
+    const PERIODIC_UPLOAD_INTERVAL_MS = 15 * 60 * 1000;
     let periodicUploadTimer = null;
+    let lastUploadedEventCount = 0;
     // B75: minimum actions EACH player must take before an automatic upload
     // (periodic / finalize / pagehide) is worth it — server-configurable per
     // user via /api/me/settings, default 5. Manual saves ignore it. Fetched
@@ -122,6 +128,7 @@
         prevNormalizedGamestate = null;
         lastFullGamestate = null;
         lastFrameKey = null;
+        lastUploadedEventCount = 0;
         if (autoDownloadTimer) { clearTimeout(autoDownloadTimer); autoDownloadTimer = null; }
         autoDownloadScheduled = false;
         localPlayerId = null;
@@ -435,10 +442,14 @@
     // so a slow periodic that lands after finalize can't roll back state.
     const snapshotUpload = () => {
         if (gamestateCount === 0) return;
+        // B234: nothing captured since the last upload → the server already
+        // holds this exact recording; skip the write.
+        if (recording.length === lastUploadedEventCount) return;
         const { actionCount, distinctActivePlayers, minPlayerActions } = analyzeRecording();
         if (distinctActivePlayers < 2 || minPlayerActions < minUploadActions) return;
         const durationMs = Date.now() - recordingStart;
         const payloadObject = buildPayloadObject('periodic', durationMs, actionCount);
+        lastUploadedEventCount = recording.length;
         B().uploadReplay(JSON.stringify(payloadObject), buildSummaryFor(payloadObject)).then((result) => {
             if (result && result.withheld) { onUploadWithheld(result); return; }
             if (!result || !result.slug) return;

@@ -26,6 +26,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '../lib/db';
 import { users, teams, teamMembers, replays, replayTeamShares, replayParticipants, tags, extensionReadiness } from '../lib/schema';
 import * as e2ee from '../lib/e2ee.js';
+import { fetchPayloadJson } from '../lib/payloadFetch';
 
 // Stable, NON-secret local-demo team keys (43 base64url chars = 32 bytes each).
 const DEMO_TEAM_KEY = 'demoDEMOdemoDEMOdemoDEMOdemoDEMOdemoDEMOdem';
@@ -97,7 +98,7 @@ async function seedEncryptedReplay(db: ReturnType<typeof getDb>, teamKeyId: stri
     const metaJson = await metaRes.json();
     const meta = metaJson.data ?? metaJson;
     if (!meta?.payloadBlobUrl) throw new Error('sample metadata missing payloadBlobUrl');
-    const payload = await (await fetch(meta.payloadBlobUrl)).json();
+    const payload = await fetchPayloadJson(meta.payloadBlobUrl);
 
     const summary = buildSummary(payload, meta);
     const payloadUrl = await dataUrl(JSON.stringify(payload));

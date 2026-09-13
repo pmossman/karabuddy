@@ -22,6 +22,7 @@ import { computeActionStops, nextActionStop } from '@/app/(app)/r/[slug]/actionS
 import { decodeReplay, collapseReplay, type Frame } from '@/lib/replayDecoder';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
 import { glowButtonStyle } from '@/app/_components/glowButton';
+import { fetchPayloadJson } from '@/lib/payloadFetch';
 
 // Decoded-payload cache so the player opens INSTANTLY: the stage calls
 // prepareWatch() as soon as a reveal renders, and the modal awaits the same
@@ -42,7 +43,7 @@ export function prepareWatch(replaySlug: string): Promise<WatchData> {
       const meta = await (await fetch(`/api/replays/${replaySlug}`)).json();
       const blobUrl: string | undefined = meta?.data?.payloadBlobUrl;
       if (!blobUrl) throw new Error('no payload');
-      const parsed = JSON.parse(await (await fetch(blobUrl)).text());
+      const parsed = await fetchPayloadJson(blobUrl);
       const collapsed = collapseReplay(decodeReplay(parsed));
       return {
         frames: collapsed.frames,

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
-import { replays, matches, matchPlayers, cardEvents, cards } from '@/lib/schema';
-import { eq } from 'drizzle-orm';
+import { replays, matches, matchPlayers, cards } from '@/lib/schema';
+import { and, eq } from 'drizzle-orm';
 import { persistReplayFacts } from '@/lib/statsPersist';
 
 // B101/P0: persisting mined facts is idempotent on gameId and self-heals the
@@ -106,13 +106,34 @@ describe('persistReplayFacts', () => {
     expect(alice.opponentLeader).toBe('SHD_005'); // denormalized opponent
     expect(alice.isRecorder).toBe(true);
 
-    const ev = await db.select().from(cardEvents).where(eq(cardEvents.gameId, gameId));
-    const kinds = ev.map((e) => `${e.cardId}:${e.event}`).sort();
+    // B235: card facts live on the side's row as event → cardId → first frame.
+    const kinds = Object.entries(alice.cardEvents ?? {}).flatMap(([ev, m]) => Object.keys(m!).map((c) => `${c}:${ev}`)).sort();
     expect(kinds).toEqual(['SOR_100:drawn', 'SOR_102:drawn', 'SOR_102:played']);
+    expect(alice.cardEvents!.played!.SOR_102).toBeGreaterThanOrEqual(alice.cardEvents!.drawn!.SOR_102); // played after drawn
+    const bob = mp.find((p) => p.playerId === 'p2')!;
+    expect(bob.cardEvents).toBeNull(); // B237: facts only for recorded seats
+    expect(bob.isRecorder).toBe(false);
 
     // Catalog self-heal: the two observed cards registered with payload metadata.
     const cat = await db.select().from(cards).where(eq(cards.cardId, 'SOR_102'));
     expect(cat[0]).toMatchObject({ name: 'Played Card', cost: 4, type: 'unit', source: 'observed' });
+  });
+
+  it('co-recorded game: the earlier recorder keeps its facts when the opponent persists later (B237)', async () => {
+    const gameId = 'gco-' + randomUUID().slice(0, 6);
+    const slugA = await seedReplay(gameId);
+    const slugB = await seedReplay(gameId);
+    // Alice (p1) uploads first, then Bob (p2) uploads his own recording of the same game.
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slugA, gameId, winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slugB, gameId, winners: ['p1'], ownerPlayerId: 'p2', durationMs: 1 });
+    const db = getDb();
+    const mp = await db.select().from(matchPlayers).where(eq(matchPlayers.gameId, gameId));
+    const alice = mp.find((p) => p.playerId === 'p1')!;
+    const bob = mp.find((p) => p.playerId === 'p2')!;
+    expect(bob.isRecorder).toBe(true);
+    expect(alice.isRecorder).toBe(true); // carried over: she recorded earlier
+    expect(alice.cardEvents?.drawn).toBeDefined(); // her full facts survived the replace
+    expect(bob.cardEvents).toBeDefined();
   });
 
   it('writes a resourcing rating on the recorder row only (≥1 counted round)', async () => {
@@ -156,7 +177,8 @@ describe('persistReplayFacts', () => {
     const db = getDb();
     expect(await db.select().from(matches).where(eq(matches.gameId, gameId))).toHaveLength(1);
     expect(await db.select().from(matchPlayers).where(eq(matchPlayers.gameId, gameId))).toHaveLength(2);
-    const ev = await db.select().from(cardEvents).where(eq(cardEvents.gameId, gameId));
-    expect(ev).toHaveLength(3); // not 6
+    // Replace-style write: the maps don't accumulate across re-persists.
+    const [alice] = await db.select().from(matchPlayers).where(and(eq(matchPlayers.gameId, gameId), eq(matchPlayers.playerId, 'p1')));
+    expect(Object.values(alice.cardEvents ?? {}).reduce((n, m) => n + Object.keys(m!).length, 0)).toBe(3); // not 6
   });
 });

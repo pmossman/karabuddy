@@ -13,17 +13,17 @@ import { eq, isNull } from 'drizzle-orm';
 import { getDb } from '../lib/db';
 import { replays } from '../lib/schema';
 import { extractWinners, reconstructFinalState } from '../lib/replayDecoder';
+import { readBlobText } from '../lib/blob';
 
 async function backfillOne(row: typeof replays.$inferSelect, force = false): Promise<{
   slug: string;
   updates: Record<string, unknown>;
   reason?: string;
 }> {
-  const payloadRes = await fetch(row.payloadBlobUrl);
-  if (!payloadRes.ok) {
-    return { slug: row.slug, updates: {}, reason: `blob fetch ${payloadRes.status}` };
+  const text = row.payloadPrunedAt ? null : await readBlobText(row.payloadBlobUrl);
+  if (text === null) {
+    return { slug: row.slug, updates: {}, reason: row.payloadPrunedAt ? 'payload pruned' : 'blob fetch failed' };
   }
-  const text = await payloadRes.text();
   let parsed: any;
   try { parsed = JSON.parse(text); } catch {
     return { slug: row.slug, updates: {}, reason: 'invalid JSON' };

@@ -26,6 +26,7 @@ const TABLES = [
   'teams',
   'tags',
   'replays',
+  'decklists',
   'extension_tokens',
   'sessions',
   'accounts',
@@ -62,7 +63,10 @@ beforeEach(async () => {
     const { Pool } = require('pg');
     const pool = new Pool({ connectionString: process.env.POSTGRES_URL! });
     try {
-      await pool.query(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
+      // RESTART IDENTITY is Postgres-only (CockroachDB rejects it); fall back so
+      // the same suite runs against either.
+      const list = TABLES.map((t) => `"${t}"`).join(', ');
+      await pool.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`).catch(() => pool.query(`TRUNCATE ${list} CASCADE`));
     } finally {
       await pool.end();
     }

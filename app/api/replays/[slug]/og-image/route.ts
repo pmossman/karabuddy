@@ -10,6 +10,7 @@ import { isSampleReplaySlug } from '@/lib/sampleReplays';
 import { anonByIdFromPlayers, anonymizePlayersSummary } from '@/lib/anonymizeReplay';
 import { verifyMoment } from '@/lib/shareToken';
 import { MomentCard } from './MomentCard';
+import { readBlobJson } from '@/lib/blob';
 
 export const runtime = 'nodejs';
 
@@ -67,7 +68,8 @@ async function buildModel(slug: string, fParam: string | null, tParam: string | 
   const [row] = await db.select().from(replays).where(eq(replays.slug, slug)).limit(1);
   if (!row) return defaultModel('Replay not found');
 
-  const payload = await (await fetch(row.payloadBlobUrl)).json();
+  const payload = row.payloadPrunedAt ? null : await readBlobJson(row.payloadBlobUrl);
+  if (!payload) return defaultModel('Replay expired');
   const decoded = decodeReplay(payload);
   const frameIndex = Math.max(0, (parseInt(fParam || '1', 10) || 1) - 1);
 

@@ -11,6 +11,7 @@ import { auth } from '@/auth';
 import { canViewReplayIdentities } from '@/lib/altPerspective';
 import type { DecksByUserId } from '@/lib/replayDecoder';
 import { DecksTabs } from '../../DecksTabs';
+import { hydrateDecks } from '@/lib/decklists';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,7 +61,7 @@ export default async function DeckPage({ params }: PageProps) {
   // identity anonymization: samples → "Player N" + drop deck title + uploader name.
   const anonymize = isSample;
   const ownerName = anonymize ? null : rawOwnerName;
-  let decks = (replay.decks as DecksByUserId | null) || null;
+  let decks = (await hydrateDecks(replay)) as DecksByUserId | null; // B236
   if (anonymize && decks) {
     const ordered = orderPlayersOwnerFirst((replay as any).players, (replay as any).ownerPlayerId);
     decks = anonymizeDecks(decks, anonByIdFromPlayers(ordered as any[])) as DecksByUserId;
