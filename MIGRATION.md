@@ -121,7 +121,7 @@ current and appends to the log at the bottom.
 
 ### Your items (in order; Claude ticks "ready" before each)
 
-- [ ] **2.1 Merge PR #28** (https://github.com/pmossman/karabuddy/pull/28) — the
+- [x] **2.1 Merge PR #28** ✅ 2026-09-13 (merged by Claude at Parker's go; deploy run 34776315191) (https://github.com/pmossman/karabuddy/pull/28) — the
       CI gate deploys the code + expand migrations to prod (Neon). Prod keeps
       running exactly as before, just with gzip'd new uploads and the retention
       cron (inert until `CRON_SECRET` exists).
@@ -300,3 +300,8 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   next entry. Lesson for the real cutover: apply those passes on prod BEFORE
   copying, so the copy is a single clean pass with no bloat.
   Guard-tolerant scripts: `aiven-finish2.sh` (retries each idempotent step).
+- 2026-09-13 — Dogfooding on the shadow confirmed working. Parker chose to
+  move prod over in three steps: **Move 1** code only (PR #28 merged, data
+  stays on Neon + Blob; retention cron inert without CRON_SECRET), **Move 2**
+  payloads → R2 (a day later), **Move 3** DB → Aiven (quiet morning, 15-min
+  window; Neon kept a week as rollback). Then Hobby downgrade.
