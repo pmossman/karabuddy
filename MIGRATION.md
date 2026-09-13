@@ -132,12 +132,12 @@ current and appends to the log at the bottom.
       Hobby is non-commercial use only; the other projects on the team stay.
 - [ ] **2.4 Delete the Vercel Blob store** — after Claude ticks ready.
 - [ ] **2.5 Delete the Neon database** — a week after cutover with no issues.
-- [ ] **2.6 Ship the extension update** (15-min snapshots): Actions →
+- [ ] **2.6 Ship the extension update** (15-min snapshots) — **ready**: CI cut release `ext-v1.2.1` on the merge. Actions →
       *extension-submit-cws* → Run workflow. Or tell Claude to trigger it.
 
 ### Claude's items
 
-- [ ] 2.A *(after 2.1)* Verify prod deploy; set `CRON_SECRET` +
+- [ ] 2.A *(after 2.1)* ✅ Move 1 verified 2026-09-13 19:11: 49 migrations applied, 24,936 decklists / 143,686 rows with refs, new uploads gzip'd with refs and no embedded decks, home/viewer/stats/teams 200, og-image renders a gzip'd payload. Remaining for 2.A: set `CRON_SECRET` + set `CRON_SECRET` +
       `REPLAY_PAYLOAD_RETENTION_DAYS` on prod; run `prune-payloads` (dry, then
       real: ~83k blobs / 28 GB); tick 2.2-ready.
 - [ ] 2.B *(after 2.2)* Verify `card_events` is gone; DB size.
@@ -305,3 +305,6 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   stays on Neon + Blob; retention cron inert without CRON_SECRET), **Move 2**
   payloads → R2 (a day later), **Move 3** DB → Aiven (quiet morning, 15-min
   window; Neon kept a week as rollback). Then Hobby downgrade.
+- 2026-09-13 19:11 — **Move 1 live** (deploy run 34776315191 green). Prod on
+  new code, data still on Neon + Blob. Extension release ext-v1.2.1 cut
+  automatically (CWS submit is item 2.6). Next: Move 2 tomorrow.
