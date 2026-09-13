@@ -96,10 +96,10 @@ current and appends to the log at the bottom.
 - [x] 0.F Shadow deployed via `scripts/deploy-shadow.sh` →
       **https://karabuddy-shadow.vercel.app** (home 200, cron 401 without the
       secret, extension status OK, viewer/lists render). ✅ 2026-09-12
-- [ ] 0.G *(in progress 2026-09-12)* Retention marked on the shadow DB (deletes
-      nothing — kill switch on), then `migrate-payloads --keep-old
-      --skip-existing` copying the surviving payloads into R2 (gzip'd). Shadow
-      viewer reads from R2 for migrated rows, prod Blob (read-only) for the rest.
+- [x] 0.G Shadow data complete (2026-09-12 21:18): 95,610 replays (60-day
+      window + public), 24,761 decklists / 94,782 rows with deck refs, 44,967
+      payloads marked expired (nothing deleted), 50,643 payloads on R2
+      (gzip'd, 332 MB stored). Shadow viewer reads from R2.
 
 ## Phase 1 — get confident (still no prod impact)
 
@@ -291,3 +291,12 @@ Pick a quiet hour (US early morning). Total window ≈ 15 min.
   seats only (B237).** Shadow reloading with `copy-db --since-days=60`
   (95.5k replays kept, 49k dropped); `REPLAY_ROW_RETENTION_DAYS=60` set on the
   shadow. Expected shadow DB ≈ 380 MB.
+- 2026-09-12 (night) — Shadow load complete on Aiven (see 0.G). Aiven disk
+  reading from Parker: **68% at 504 MB of data** → ~1 GB disk, ~320 MB
+  headroom. Decision: **60 days stands**, with a tripwire — if the guard trips
+  under normal traffic during dogfooding, drop to 45 days (~55% disk). The
+  derivation passes (deck refs, prune marks, R2 URLs) each rewrote the
+  `replays` table once, so it bloated to 582 MB; VACUUM FULL result in the
+  next entry. Lesson for the real cutover: apply those passes on prod BEFORE
+  copying, so the copy is a single clean pass with no bloat.
+  Guard-tolerant scripts: `aiven-finish2.sh` (retries each idempotent step).
