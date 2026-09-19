@@ -10,8 +10,10 @@ import { btnGhost } from '@/app/_components/buttonStyles';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import {
   FORGE_TEAM_NAME_MAX,
+  isForgeBlockCode,
   isRoleEditable,
   summarizePlan,
+  type ForgeBlock,
   type ForgeMemberAction,
   type ForgeMigrationPlan,
   type ForgeRole,
@@ -92,13 +94,16 @@ const ACTION_TAG: Record<ForgeMemberAction, { label: string; fg: string; bg: str
 const GRID = 'minmax(0, 1fr) 140px 160px';
 
 export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initialTeamName: string }) {
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'no-account' | 'error' | 'sending' | 'done'>('loading');
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'blocked' | 'error' | 'sending' | 'done'>('loading');
   const [preview, setPreview] = useState<MigrationResponse | null>(null);
   const [result, setResult] = useState<MigrationResponse | null>(null);
   const [teamName, setTeamName] = useState(initialTeamName.slice(0, FORGE_TEAM_NAME_MAX));
   const [roles, setRoles] = useState<Record<string, ForgeRole>>({});
   const [error, setError] = useState<string | null>(null);
-  const [signInUrl, setSignInUrl] = useState<string | null>(null);
+  // Forge's designed refusals. Each renders as its own screen, because each
+  // names a different thing the owner has to go and do — and all of them come
+  // back from the DRY RUN, before anything has been written.
+  const [block, setBlock] = useState<ForgeBlock | null>(null);
 
   // The live values the send closure needs, without making it depend on them
   // (and without a stale-closure bug if the owner edits while a call is out).
@@ -125,9 +130,10 @@ export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initi
     setPhase('loading');
     try {
       const { res, body } = await call(true);
-      if (res.status === 409 && body?.error === 'initiator_has_no_forge_account') {
-        setSignInUrl(typeof body.signInUrl === 'string' ? body.signInUrl : null);
-        setPhase('no-account');
+      const blocked = blockFrom(res.status, body);
+      if (blocked) {
+        setBlock(blocked);
+        setPhase('blocked');
         return;
       }
       if (!res.ok || !body?.ok) {
@@ -159,9 +165,13 @@ export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initi
     setPhase('sending');
     try {
       const { res, body } = await call(false);
-      if (res.status === 409 && body?.error === 'initiator_has_no_forge_account') {
-        setSignInUrl(typeof body.signInUrl === 'string' ? body.signInUrl : null);
-        setPhase('no-account');
+      // A refusal can arrive on the commit too — someone filled the last seat,
+      // or the owner lost their Forge admin role, between the preview and the
+      // press. Same screens, and nothing was written.
+      const blocked = blockFrom(res.status, body);
+      if (blocked) {
+        setBlock(blocked);
+        setPhase('blocked');
         return;
       }
       if (!res.ok || !body?.ok) {
@@ -186,8 +196,8 @@ export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initi
     );
   }
 
-  if (phase === 'no-account') {
-    return <NoForgeAccount signInUrl={signInUrl} slug={slug} onRecheck={runDryRun} />;
+  if (phase === 'blocked' && block) {
+    return <MoveBlocked block={block} slug={slug} onRecheck={runDryRun} />;
   }
 
   if (phase === 'error' || !preview) {
@@ -224,6 +234,21 @@ export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initi
       error={error}
     />
   );
+}
+
+// Forge's 409s, read off the body our own route forwarded verbatim. Anything
+// else — 403 (our credential), 422 (our payload) — has already collapsed into a
+// generic 502 server-side and is none of the owner's business.
+function blockFrom(status: number, body: any): ForgeBlock | null {
+  if (status !== 409 || !isForgeBlockCode(body?.error)) return null;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    code: body.error,
+    signInUrl: typeof body.signInUrl === 'string' ? body.signInUrl : null,
+    cap: num(body.cap),
+    used: num(body.used),
+    requested: num(body.requested),
+  };
 }
 
 function messageFor(status: number): string {
@@ -299,6 +324,27 @@ function MoveForm({
           <p style={{ margin: '6px 0 0', fontSize: 11.5, color: tokens.color.textMuted }}>
             SWU Forge allows {FORGE_TEAM_NAME_MAX} characters ({teamName.trim().length}/{FORGE_TEAM_NAME_MAX}).
             {isRerun && ' This team already exists on Forge, so the name there is left as it is.'}
+          </p>
+          {/* ⚠ `teamUrl` is NULL on the first preview — the Forge team does not
+              exist yet, so it has no id and no URL, and Forge refuses to invent
+              one. We say so rather than printing a link that 404s. */}
+          <p data-testid="forge-team-url-note" style={{ margin: '4px 0 0', fontSize: 11.5, color: tokens.color.textMuted }}>
+            {data.plan.teamUrl ? (
+              <>
+                Already on SWU Forge:{' '}
+                <a
+                  href={data.plan.teamUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="forge-existing-team-link"
+                  style={{ color: tokens.color.accentBright, textDecoration: 'none', fontFamily: tokens.led.mono }}
+                >
+                  {data.plan.teamUrl}
+                </a>
+              </>
+            ) : (
+              'Nothing exists on SWU Forge yet — the team and its link are created when you confirm.'
+            )}
           </p>
         </div>
 
@@ -573,12 +619,18 @@ function Totals({ summary }: { summary: ReturnType<typeof summarizePlan> }) {
   );
 }
 
-// --- The two terminal states ---
+// --- The terminal states ---
 
-function NoForgeAccount({ signInUrl, slug, onRecheck }: { signInUrl: string | null; slug: string; onRecheck: () => void }) {
+// One screen per refusal. ⛔ NOT a shared "couldn't move the team" message:
+// each of these names a different thing the owner has to go and do, and the
+// whole reason Forge answers them on a dry run is so a human reads them here,
+// with nothing written and the roster still in front of them.
+function MoveBlocked({ block, slug, onRecheck }: { block: ForgeBlock; slug: string; onRecheck: () => void }) {
+  const copy = describeBlock(block);
   return (
     <Panel style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
       <div
+        data-testid={`forge-blocked-${block.code}`}
         style={{
           display: 'flex',
           gap: 12,
@@ -590,25 +642,31 @@ function NoForgeAccount({ signInUrl, slug, onRecheck }: { signInUrl: string | nu
         }}
       >
         <span style={{ fontSize: 17, lineHeight: 1.3 }} aria-hidden>
-          ✋
+          {copy.icon}
         </span>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#ffd0d0' }}>You need an SWU Forge account first</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#ffd0d0' }}>{copy.title}</div>
           <p style={{ margin: '4px 0 0', fontSize: 12.5, color: tokens.color.textSecondary, lineHeight: 1.55 }}>
-            A team needs an owner, and an invitation can&apos;t own anything — so we check before offering the
-            move rather than creating a half-owned team. Sign in to SWU Forge once with the same email or
-            Discord account, then come back.
+            {copy.body}
           </p>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {signInUrl && (
-          <a href={signInUrl} target="_blank" rel="noopener noreferrer" data-testid="forge-signup" style={glowButtonStyle}>
+        {/* 🔒 Forge's own sign-in URL, returned in the 409 body. Absent = no
+            button, because the alternative is a link we invented. */}
+        {block.code === 'initiator_has_no_forge_account' && block.signInUrl && (
+          <a
+            href={block.signInUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="forge-signup"
+            style={glowButtonStyle}
+          >
             Create your Forge account →
           </a>
         )}
-        <button type="button" onClick={onRecheck} style={btnGhost}>
-          I&apos;ve done that — check again
+        <button type="button" onClick={onRecheck} style={btnGhost} data-testid="forge-recheck">
+          {copy.recheck}
         </button>
         <Link href={`/teams/${slug}?tab=settings`} style={{ ...btnGhost, textDecoration: 'none' }}>
           Back to settings
@@ -616,6 +674,69 @@ function NoForgeAccount({ signInUrl, slug, onRecheck }: { signInUrl: string | nu
       </div>
     </Panel>
   );
+}
+
+// The numbers in these sentences are FORGE'S, carried through from its body —
+// a cap hardcoded here would be wrong the day Forge changed it, and silently.
+function describeBlock(block: ForgeBlock): { icon: string; title: string; body: string; recheck: string } {
+  const cap = block.cap;
+  switch (block.code) {
+    case 'initiator_has_no_forge_account':
+      return {
+        icon: '✋',
+        title: 'You need an SWU Forge account first',
+        body:
+          'A team needs an owner, and an invitation can’t own anything — so we check before offering the move ' +
+          'rather than creating a half-owned team. Sign in to SWU Forge once with the same email or Discord ' +
+          'account, then come back.',
+        recheck: 'I’ve done that — check again',
+      };
+    case 'initiator_has_no_profile':
+      return {
+        icon: '⚠️',
+        title: 'Your SWU Forge account has no profile',
+        body:
+          'Forge gives every account a profile the moment it’s created, so this one is broken rather than new — ' +
+          'and a profile is what actually holds a team membership there. Open SWU Forge once and check your ' +
+          'profile; if it’s still missing, that one is for Forge support.',
+        recheck: 'Check again',
+      };
+    case 'initiator_not_team_admin':
+      return {
+        icon: '🔒',
+        title: 'This team has already moved, and you’re not an admin of it on SWU Forge',
+        body:
+          'Pressing again writes into the team that already exists over there, so it needs the same permission ' +
+          'any other change to that team needs. Ask one of its Forge owners or admins to make you an admin — or ' +
+          'to press this themselves. Nothing here was changed.',
+        recheck: 'Check again',
+      };
+    case 'seats_full':
+      return {
+        icon: '🪑',
+        title: cap === null ? 'That team is full on SWU Forge' : `SWU Forge teams hold ${cap} people`,
+        body:
+          (block.used !== null && block.requested !== null
+            ? `The Forge team already accounts for ${block.used} (members plus invitations still outstanding), and ` +
+              `this move would add ${block.requested} more. `
+            : 'This roster needs more seats than the Forge team has left. ') +
+          'Nobody was moved. Remove people from the KaraBuddy team — or free seats on Forge — and come back; ' +
+          'anyone already offered a place stays offered, so a later press only picks up who is left.',
+        recheck: 'Check again',
+      };
+    case 'team_cap_reached':
+      return {
+        icon: '🪐',
+        title:
+          cap === null
+            ? 'You’re in the maximum number of teams on SWU Forge'
+            : `You’re already in ${cap} teams on SWU Forge`,
+        body:
+          'The new team needs a seat for you too — you own it — and your Forge profile has none left. Leave a ' +
+          'team on SWU Forge, or switch to a profile with room, then check again.',
+        recheck: 'Check again',
+      };
+  }
 }
 
 function MoveResult({ slug, data }: { slug: string; data: MigrationResponse }) {
@@ -652,33 +773,43 @@ function MoveResult({ slug, data }: { slug: string; data: MigrationResponse }) {
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
-            background: tokens.color.bgDeep,
-            border: `1px solid ${tokens.color.border}`,
-            borderRadius: tokens.radius.md,
-            padding: '9px 12px',
-            fontFamily: tokens.led.mono,
-            fontSize: 12,
-            color: tokens.color.textSecondary,
-            overflowWrap: 'anywhere',
-          }}
-        >
-          <span>{data.plan.teamUrl}</span>
-          <a
-            href={data.plan.teamUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            data-testid="forge-team-link"
-            style={{ ...btnGhost, marginLeft: 'auto', textDecoration: 'none', fontFamily: 'inherit' }}
+        {/* A commit always comes back with the team's id, so this is the normal
+            shape. Still guarded: the link is Forge's to give, and we render no
+            link at all rather than assembling one out of an origin and a guess. */}
+        {data.plan.teamUrl ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              background: tokens.color.bgDeep,
+              border: `1px solid ${tokens.color.border}`,
+              borderRadius: tokens.radius.md,
+              padding: '9px 12px',
+              fontFamily: tokens.led.mono,
+              fontSize: 12,
+              color: tokens.color.textSecondary,
+              overflowWrap: 'anywhere',
+            }}
           >
-            Open on Forge →
-          </a>
-        </div>
+            <span>{data.plan.teamUrl}</span>
+            <a
+              href={data.plan.teamUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="forge-team-link"
+              style={{ ...btnGhost, marginLeft: 'auto', textDecoration: 'none', fontFamily: 'inherit' }}
+            >
+              Open on Forge →
+            </a>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: 12.5, color: tokens.color.textMuted, lineHeight: 1.55 }}>
+            SWU Forge didn’t return a link for the team. Everything above was still carried out — open SWU Forge
+            and it will be in your teams list.
+          </p>
+        )}
 
         <p style={{ margin: 0, fontSize: 12.5, color: tokens.color.textSecondary, lineHeight: 1.55 }}>
           Your KaraBuddy team is unchanged — not archived, not locked, not deleted. Press{' '}

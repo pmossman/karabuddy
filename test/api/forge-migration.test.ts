@@ -7,12 +7,17 @@ import type { ForgeMigrationPlan } from '@/lib/forgeMigration';
 
 // KaraBuddy → SWU Forge team migration, sending side.
 //
-// ⚠ The Forge receive route is being built in parallel and is NOT reachable:
-// every Forge response here is a stub whose shape is copied verbatim from the
-// pinned contract. The two sides have not been run against each other.
+// Forge's responses are stubbed here so the proxy's own rules (owner-only, the
+// roster read server-side, the secret never leaving it) can be tested without a
+// second app — but every stub shape below has since been observed coming off
+// the REAL receive route in a local end-to-end run: the null ids of a first
+// preview, and all five 409 bodies.
 
 const ORIGIN = 'https://forge.test';
 const SECRET = 'shared-secret';
+// KaraBuddy's own origin. The api project sets AUTH_URL to localhost:3001, and
+// that is what Forge's allow-list is pinned on — see the Origin assertion below.
+const SELF = 'http://localhost:3001';
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
 const { auth } = await import('@/auth');
@@ -130,6 +135,9 @@ describe('the payload KaraBuddy sends', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${ORIGIN}/api/team-migration`);
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${SECRET}`);
+    // 🔴 Node sends no Origin server-to-server and Forge refuses a call without
+    // one, so KaraBuddy states its own. Drop this and every call 403s.
+    expect((init.headers as Record<string, string>).Origin).toBe(SELF);
 
     const body = sentBody(fetchMock);
     expect(body.sourceTeamId).toBe(`kb_team_${slug}`);
@@ -259,17 +267,97 @@ describe('what comes back', () => {
     expect(body.initiator.email).toBe('o@e.com');
   });
 
-  it('maps 409 initiator_has_no_forge_account to its own state with a sign-in link', async () => {
+  it('renders the plan of a dry run that would CREATE the team — null id, null url', async () => {
+    // The primary path: the first preview of a team that is not on Forge yet.
+    // Forge has no id to give and refuses to invent one; KaraBuddy's validator
+    // used to reject exactly this response.
+    const o = await seedUser({ email: 'o@e.com' });
+    const a = await seedUser({ email: 'a@e.com' });
+    const slug = await seedTeam(o.id, [{ id: a.id }]);
+    as(o.id);
+    const dryCreate = planFor(['a@e.com'], { forgeTeamId: null, teamUrl: null });
+    stubForge(200, dryCreate);
+
+    const res = await post(slug, { dryRun: true });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.plan).toEqual(dryCreate);
+  });
+
+  it('forwards 409 initiator_has_no_forge_account with FORGE’S sign-in link', async () => {
     const o = await seedUser();
     const slug = await seedTeam(o.id);
     as(o.id);
-    stubForge(409, { error: 'initiator_has_no_forge_account' });
+    // 🔒 Amendment 3: the url comes off the wire. KaraBuddy no longer derives
+    // `${SWU_FORGE_ORIGIN}/auth/signin` — that was a guess about another app's
+    // Auth.js mount, and a refactor there would have 404'd every owner silently.
+    stubForge(409, { error: 'initiator_has_no_forge_account', signInUrl: 'https://forge.test/auth/signin' });
 
     const res = await post(slug, { dryRun: true });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toBe('initiator_has_no_forge_account');
-    expect(body.signInUrl).toBe(`${ORIGIN}/auth/signin`);
+    expect(body.signInUrl).toBe('https://forge.test/auth/signin');
+  });
+
+  it('sends no sign-in link at all when Forge didn’t send one', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    stubForge(409, { error: 'initiator_has_no_forge_account' });
+    const body = await (await post(slug, { dryRun: true })).json();
+    expect(body.signInUrl).toBeUndefined();
+  });
+
+  // Forge answers four more 409s, all reachable on a dry run by design — the
+  // preview is where the owner is meant to read them. ⛔ Each keeps its own
+  // code and Forge's own numbers: collapsed into one generic failure, the
+  // screen would hide the single fact the owner needs to act on.
+  it('forwards every other designed refusal with its code and Forge’s numbers', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+
+    stubForge(409, { error: 'seats_full', message: 'Teams are limited to 25 members.', cap: 25, used: 20, requested: 9 });
+    expect(await (await post(slug, { dryRun: true })).json()).toEqual({
+      ok: false,
+      error: 'seats_full',
+      cap: 25,
+      used: 20,
+      requested: 9,
+    });
+
+    stubForge(409, { error: 'team_cap_reached', message: 'maximum number of teams (10)', cap: 10 });
+    expect(await (await post(slug, { dryRun: true })).json()).toEqual({ ok: false, error: 'team_cap_reached', cap: 10 });
+
+    stubForge(409, { error: 'initiator_not_team_admin', message: 'not an owner or admin' });
+    expect(await (await post(slug, { dryRun: true })).json()).toEqual({ ok: false, error: 'initiator_not_team_admin' });
+
+    stubForge(409, { error: 'initiator_has_no_profile', message: 'no SWU Forge profile' });
+    expect(await (await post(slug, { dryRun: true })).json()).toEqual({ ok: false, error: 'initiator_has_no_profile' });
+  });
+
+  it('keeps the refusal on a COMMIT too — a seat can fill between preview and press', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    stubForge(409, { error: 'seats_full', cap: 25, used: 25, requested: 1 });
+    const res = await post(slug, { dryRun: false });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('seats_full');
+  });
+
+  it('still hides a 409 code it has never heard of behind the generic failure', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    stubForge(409, { error: 'some_future_refusal' });
+    const res = await post(slug, { dryRun: true });
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toBe('forge_unavailable');
+    spy.mockRestore();
   });
 
   it('turns a bad credential into a generic 502 that never echoes the secret', async () => {

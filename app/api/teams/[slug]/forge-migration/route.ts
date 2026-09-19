@@ -8,7 +8,6 @@ import {
   clampTeamName,
   defaultRoleFor,
   forgeMigrationEnabled,
-  forgeSignInUrl,
   isForgeRole,
   normalizeEmail,
   sourceTeamId,
@@ -146,9 +145,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
   if (!result.ok) {
     const { failure } = result;
-    if (failure.kind === 'no_forge_account') {
+    // Forge's designed refusals, forwarded with Forge's own vocabulary and
+    // Forge's own numbers. Each is a state the preview renders in full: they all
+    // name something the owner has to go and do, and every one of them is
+    // reachable on the DRY RUN — which is the point, because nothing has been
+    // written when they see it.
+    //
+    // `signInUrl` is the one Forge returned (amendment 3); KaraBuddy no longer
+    // derives it. `cap` / `used` / `requested` are Forge's caps, not ours.
+    if (failure.kind === 'blocked') {
+      const { code, signInUrl, cap, used, requested } = failure.block;
       return NextResponse.json(
-        { ok: false, error: 'initiator_has_no_forge_account', signInUrl: forgeSignInUrl() },
+        {
+          ok: false,
+          error: code,
+          ...(signInUrl ? { signInUrl } : {}),
+          ...(cap !== null ? { cap } : {}),
+          ...(used !== null ? { used } : {}),
+          ...(requested !== null ? { requested } : {}),
+        },
         { status: 409 },
       );
     }

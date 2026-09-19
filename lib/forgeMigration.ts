@@ -48,18 +48,63 @@ export interface ForgeMigrationPlanMember {
   role: ForgeRole;
 }
 
+// ⚠ `forgeTeamId` and `teamUrl` are NULL on the primary path: a dry run for a
+// team that does not exist on Forge yet. There is no id until the row is
+// written, and Forge refuses to invent one — a preview that showed a team URL
+// nobody could open would be the preview lying, which is the single thing this
+// whole one-route shape exists to prevent. They are non-null on any dry run for
+// a team that already moved, and on every commit.
 export interface ForgeMigrationPlan {
   outcome: ForgeOutcome;
-  forgeTeamId: string;
-  teamUrl: string;
+  forgeTeamId: string | null;
+  teamUrl: string | null;
   members: ForgeMigrationPlanMember[];
 }
 
-// Failures that are part of the design, not edge cases. `no_forge_account` is
-// the only one the UI renders specifically — the rest collapse to one generic
-// message so a bad or missing credential never reaches a browser.
+// The 409s Forge answers with. Every one of them is reachable ON A DRY RUN by
+// design — the preview is where a human is supposed to see them, while nothing
+// has been written yet — so every one of them gets its own state in the UI.
+// ⛔ Do not collapse these into one "couldn't move the team": each names a
+// different thing the owner has to go and do, and a generic failure hides
+// exactly the fact they need. `rejected` stays generic on purpose (403 = our
+// credential, 422 = our payload — neither is the owner's to read about).
+export type ForgeBlockCode =
+  | 'initiator_has_no_forge_account'
+  | 'initiator_has_no_profile'
+  | 'initiator_not_team_admin'
+  | 'seats_full'
+  | 'team_cap_reached';
+
+export const FORGE_BLOCK_CODES: readonly ForgeBlockCode[] = [
+  'initiator_has_no_forge_account',
+  'initiator_has_no_profile',
+  'initiator_not_team_admin',
+  'seats_full',
+  'team_cap_reached',
+] as const;
+
+export function isForgeBlockCode(value: unknown): value is ForgeBlockCode {
+  return typeof value === 'string' && (FORGE_BLOCK_CODES as readonly string[]).includes(value);
+}
+
+// What the UI needs to render each refusal, carried straight through from
+// Forge's body. The numbers are Forge's ("teams hold 25 and this roster needs
+// 31"), never ours — a cap KaraBuddy hardcoded would be wrong the day Forge
+// changed it, and silently.
+export interface ForgeBlock {
+  code: ForgeBlockCode;
+  // 🔒 Amendment 3: Forge OWNS its sign-in URL and returns it. Null only if a
+  // Forge old enough to omit it answers — we show the state without the button
+  // rather than sending anyone to a URL we made up.
+  signInUrl: string | null;
+  cap: number | null;
+  used: number | null;
+  requested: number | null;
+}
+
+// Failures that are part of the design, not edge cases.
 export type ForgeFailure =
-  | { kind: 'no_forge_account' }
+  | { kind: 'blocked'; block: ForgeBlock }
   | { kind: 'rejected'; status: number }
   | { kind: 'unreachable'; detail: string }
   | { kind: 'bad_response'; detail: string };
@@ -88,11 +133,33 @@ export function forgeMigrationEnabled(): boolean {
   return !!forgeOrigin() && !!migrationSecret();
 }
 
-// Where we send an owner who has no Forge account yet. Auth.js on Forge is
-// mounted at basePath `/auth`, so `/auth/signin` is its built-in provider page.
-export function forgeSignInUrl(): string {
-  const origin = forgeOrigin();
-  return origin ? `${origin}/auth/signin` : '';
+// ⛔ There is deliberately no forgeSignInUrl() here. Forge's sign-in URL is
+// Forge's to know: it comes back in the 409 body (amendment 3). Deriving it
+// from SWU_FORGE_ORIGIN meant guessing that Auth.js is mounted at `/auth` and
+// that `pages.signIn` is unset — one refactor on the other side from sending
+// every owner to a 404, with nothing here able to notice.
+
+// The origin KaraBuddy states it is calling from. ⚠ Node's `fetch` sends NO
+// `Origin` header server-to-server, and Forge refuses any request that arrives
+// without one, so this must be set explicitly and must be one of the values in
+// Forge's TEAM_MIGRATION_ALLOWED_ORIGINS (comma-separated: KaraBuddy has two
+// Vercel projects, and each states its own).
+//
+// AUTH_URL is the source because it is already this deploy's own origin, set in
+// every environment, and wrong AUTH_URL means broken sign-in long before it
+// means a refused migration — so there is no new switch to forget. KARABUDDY_ORIGIN
+// overrides it for a deploy that is reached at a different origin than Auth.js
+// is configured with.
+export function callerOrigin(): string {
+  const raw = (process.env.KARABUDDY_ORIGIN || process.env.AUTH_URL || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    return url.origin;
+  } catch {
+    return '';
+  }
 }
 
 // The idempotency key Forge stores on its Team. Namespaced so Forge can tell a
@@ -127,15 +194,26 @@ export function clampTeamName(raw: string): string {
   return raw.trim().slice(0, FORGE_TEAM_NAME_MAX);
 }
 
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
 function isPlanShape(value: unknown): value is ForgeMigrationPlan {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
   if (v.outcome !== 'created' && v.outcome !== 'updated' && v.outcome !== 'noop') return false;
-  if (typeof v.forgeTeamId !== 'string' || typeof v.teamUrl !== 'string') return false;
+  // ⚠ null, not a string, whenever the team does not exist on Forge yet — which
+  // is the FIRST preview of every move, i.e. the primary path. Requiring a
+  // string here rejected the one response this screen is built for.
+  if (!isStringOrNull(v.forgeTeamId) || !isStringOrNull(v.teamUrl)) return false;
   if (!Array.isArray(v.members)) return false;
   return v.members.every(
     (m) => !!m && typeof m === 'object' && typeof (m as any).email === 'string' && typeof (m as any).action === 'string',
   );
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 // The single call. Same payload for preview and commit; `dryRun` is the only
@@ -147,6 +225,15 @@ export async function callForgeMigration(payload: ForgeMigrationRequest): Promis
   if (!origin || !secret) {
     return { ok: false, failure: { kind: 'unreachable', detail: 'team migration is not configured' } };
   }
+  const sentFrom = callerOrigin();
+  if (!sentFrom) {
+    // Refusing beats sending a call Forge can only 403. ⛔ Never fall back to a
+    // plausible-looking origin: the pin exists to say where we really are.
+    return {
+      ok: false,
+      failure: { kind: 'unreachable', detail: 'KaraBuddy cannot state its own origin (AUTH_URL unset)' },
+    };
+  }
 
   let res: Response;
   try {
@@ -155,6 +242,9 @@ export async function callForgeMigration(payload: ForgeMigrationRequest): Promis
       headers: {
         Authorization: `Bearer ${secret}`,
         'Content-Type': 'application/json',
+        // ⚠ Explicit because Node sets no Origin server-to-server, and Forge
+        // refuses a request without one. Removing this line 403s every call.
+        Origin: sentFrom,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(FORGE_TIMEOUT_MS),
@@ -167,12 +257,24 @@ export async function callForgeMigration(payload: ForgeMigrationRequest): Promis
   const body: unknown = await res.json().catch(() => null);
 
   if (!res.ok) {
-    // The one error the UI renders as its own state: a team needs an OWNER, and
-    // an invitation cannot own anything — so the owner creates a Forge account
-    // before we offer the move rather than after we half-create a team.
-    const error = body && typeof body === 'object' ? (body as Record<string, unknown>).error : undefined;
-    if (res.status === 409 && error === 'initiator_has_no_forge_account') {
-      return { ok: false, failure: { kind: 'no_forge_account' } };
+    // The 409s are the designed refusals, and each gets its own screen. They are
+    // reachable on a dry run precisely so the owner meets them in the preview,
+    // before anything has been written.
+    const fields = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    if (res.status === 409 && isForgeBlockCode(fields.error)) {
+      return {
+        ok: false,
+        failure: {
+          kind: 'blocked',
+          block: {
+            code: fields.error,
+            signInUrl: typeof fields.signInUrl === 'string' ? fields.signInUrl : null,
+            cap: numberOrNull(fields.cap),
+            used: numberOrNull(fields.used),
+            requested: numberOrNull(fields.requested),
+          },
+        },
+      };
     }
     // 403 = bad/missing credential, 422 = payload rejected. Both are ours to
     // fix, not the owner's to read about, and neither may leak the secret.

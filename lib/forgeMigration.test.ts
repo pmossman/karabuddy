@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   callForgeMigration,
+  callerOrigin,
   clampTeamName,
   defaultRoleFor,
   forgeMigrationEnabled,
-  forgeSignInUrl,
+  forgeOrigin,
   isForgeRole,
   isRoleEditable,
   normalizeEmail,
@@ -15,12 +16,17 @@ import {
   type ForgeMigrationRequest,
 } from './forgeMigration';
 
-// Sending side of the KaraBuddy → SWU Forge team migration. Forge is being
-// built in parallel and is not reachable, so every call here is exercised
-// against a stub whose shapes come verbatim from the pinned contract.
+// Sending side of the KaraBuddy → SWU Forge team migration. The stubs here are
+// shaped from the pinned contract and its amendments, and every shape in this
+// file has since been seen coming off the real receive route in a local
+// end-to-end run — including the null `forgeTeamId` / `teamUrl` of a first
+// preview and all five 409 bodies.
 
 const ORIGIN = 'https://forge.test';
 const SECRET = 'shared-secret';
+// KaraBuddy's OWN origin — what it states in the `Origin` header, and what
+// Forge pins in TEAM_MIGRATION_ALLOWED_ORIGINS.
+const SELF = 'https://karabuddy.app';
 
 function plan(overrides: Partial<ForgeMigrationPlan> = {}): ForgeMigrationPlan {
   return {
@@ -57,6 +63,8 @@ function stubFetch(status: number, body: unknown) {
 beforeEach(() => {
   vi.stubEnv('SWU_FORGE_ORIGIN', ORIGIN);
   vi.stubEnv('TEAM_MIGRATION_SECRET', SECRET);
+  vi.stubEnv('AUTH_URL', SELF);
+  vi.stubEnv('KARABUDDY_ORIGIN', '');
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -75,7 +83,41 @@ describe('flag gating', () => {
 
   it('tolerates a trailing slash on the origin', () => {
     vi.stubEnv('SWU_FORGE_ORIGIN', 'https://forge.test/');
-    expect(forgeSignInUrl()).toBe('https://forge.test/auth/signin');
+    expect(forgeOrigin()).toBe('https://forge.test');
+  });
+});
+
+// ⚠ Node's fetch sends NO Origin header server-to-server, and Forge refuses any
+// request that arrives without one — every call 403'd until KaraBuddy stated it
+// itself. The value has to be something TEAM_MIGRATION_ALLOWED_ORIGINS can hold:
+// a bare scheme://host[:port], never a path.
+describe('the origin KaraBuddy states it is calling from', () => {
+  it('is this deploy’s own origin, taken from AUTH_URL', () => {
+    vi.stubEnv('AUTH_URL', 'https://karabuddy.app');
+    expect(callerOrigin()).toBe('https://karabuddy.app');
+  });
+
+  it('strips any path, so the value is one an allow-list can hold verbatim', () => {
+    vi.stubEnv('AUTH_URL', 'https://karabuddy.app/api/auth');
+    expect(callerOrigin()).toBe('https://karabuddy.app');
+  });
+
+  it('keeps the port — localhost:3001 and the prod host are different origins', () => {
+    vi.stubEnv('AUTH_URL', 'http://localhost:3001');
+    expect(callerOrigin()).toBe('http://localhost:3001');
+  });
+
+  it('lets KARABUDDY_ORIGIN override it — the shadow project is reached elsewhere', () => {
+    vi.stubEnv('AUTH_URL', 'https://karabuddy.app');
+    vi.stubEnv('KARABUDDY_ORIGIN', 'https://karabuddy-shadow.vercel.app');
+    expect(callerOrigin()).toBe('https://karabuddy-shadow.vercel.app');
+  });
+
+  it('is empty rather than guessed when there is nothing to read it from', () => {
+    vi.stubEnv('AUTH_URL', '');
+    expect(callerOrigin()).toBe('');
+    vi.stubEnv('AUTH_URL', 'not a url');
+    expect(callerOrigin()).toBe('');
   });
 });
 
@@ -120,7 +162,23 @@ describe('callForgeMigration', () => {
     expect(url).toBe(`${ORIGIN}/api/team-migration`);
     expect(init.method).toBe('POST');
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${SECRET}`);
+    // 🔴 Without this header Forge answers 403 to every single call — Node sets
+    // no Origin on a server-to-server request, and an absent one is refused.
+    expect((init.headers as Record<string, string>).Origin).toBe(SELF);
     expect(JSON.parse(init.body as string)).toEqual(request());
+  });
+
+  it('refuses to call at all when it cannot state its own origin', async () => {
+    vi.stubEnv('AUTH_URL', '');
+    const fetchMock = stubFetch(200, plan());
+    const result = await callForgeMigration(request());
+    // ⛔ Never a plausible-looking fallback: the pin exists to say where we
+    // really are, and a guessed origin is either a 403 or a lie.
+    expect(result).toEqual({
+      ok: false,
+      failure: { kind: 'unreachable', detail: 'KaraBuddy cannot state its own origin (AUTH_URL unset)' },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('the dry run and the commit differ ONLY by dryRun', async () => {
@@ -133,9 +191,59 @@ describe('callForgeMigration', () => {
     expect({ ...bodies[0], dryRun: null }).toEqual({ ...bodies[1], dryRun: null });
   });
 
-  it('maps 409 initiator_has_no_forge_account to its own state', async () => {
+  it('maps 409 initiator_has_no_forge_account to its own state, with FORGE’S sign-in url', async () => {
+    // 🔒 Amendment 3: the URL is Forge's to own and it ships it in the body.
+    // KaraBuddy used to derive `${SWU_FORGE_ORIGIN}/auth/signin` — a guess about
+    // another app's Auth.js config, one refactor from a 404 nobody would notice.
+    stubFetch(409, { error: 'initiator_has_no_forge_account', signInUrl: 'https://forge.test/auth/signin' });
+    expect(await callForgeMigration(request())).toEqual({
+      ok: false,
+      failure: {
+        kind: 'blocked',
+        block: {
+          code: 'initiator_has_no_forge_account',
+          signInUrl: 'https://forge.test/auth/signin',
+          cap: null,
+          used: null,
+          requested: null,
+        },
+      },
+    });
+  });
+
+  it('shows the state with no button rather than inventing a url Forge didn’t send', async () => {
     stubFetch(409, { error: 'initiator_has_no_forge_account' });
-    expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'no_forge_account' } });
+    const result = await callForgeMigration(request());
+    expect(result.ok === false && result.failure.kind === 'blocked' && result.failure.block.signInUrl).toBe(null);
+  });
+
+  // Every one of these is reachable on a DRY RUN by design — the preview is
+  // where a human is meant to meet them, with nothing written yet. Collapsing
+  // them into one generic failure hides the single fact the owner needs.
+  it('gives the seat/cap/authority refusals their own states, carrying Forge’s numbers', async () => {
+    stubFetch(409, { error: 'seats_full', message: 'Teams are limited to 25 members.', cap: 25, used: 20, requested: 9 });
+    expect(await callForgeMigration(request())).toEqual({
+      ok: false,
+      failure: { kind: 'blocked', block: { code: 'seats_full', signInUrl: null, cap: 25, used: 20, requested: 9 } },
+    });
+
+    stubFetch(409, { error: 'team_cap_reached', message: 'This profile is already in the maximum number of teams (10).', cap: 10 });
+    expect(await callForgeMigration(request())).toEqual({
+      ok: false,
+      failure: { kind: 'blocked', block: { code: 'team_cap_reached', signInUrl: null, cap: 10, used: null, requested: null } },
+    });
+
+    stubFetch(409, { error: 'initiator_not_team_admin', message: 'This team has already moved to SWU Forge…' });
+    expect(await callForgeMigration(request())).toEqual({
+      ok: false,
+      failure: { kind: 'blocked', block: { code: 'initiator_not_team_admin', signInUrl: null, cap: null, used: null, requested: null } },
+    });
+
+    stubFetch(409, { error: 'initiator_has_no_profile', message: 'The team owner has no SWU Forge profile…' });
+    expect(await callForgeMigration(request())).toEqual({
+      ok: false,
+      failure: { kind: 'blocked', block: { code: 'initiator_has_no_profile', signInUrl: null, cap: null, used: null, requested: null } },
+    });
   });
 
   it('collapses 403 and 422 into a generic rejection (never surfacing the secret)', async () => {
@@ -145,7 +253,7 @@ describe('callForgeMigration', () => {
     expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'rejected', status: 422 } });
   });
 
-  it('does not treat a 409 with a DIFFERENT error code as "no account"', async () => {
+  it('does not invent a state for a 409 code it has never heard of', async () => {
     stubFetch(409, { error: 'something_else' });
     expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'rejected', status: 409 } });
   });
@@ -162,6 +270,23 @@ describe('callForgeMigration', () => {
     const result = await callForgeMigration(request());
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.failure.kind).toBe('bad_response');
+  });
+
+  // 🔴 THE PRIMARY PATH: the first preview of a team that does not exist on
+  // Forge yet. There is no id until the row is written and Forge refuses to
+  // invent one, so both fields are null — and requiring strings here rejected
+  // the one response this entire screen was built for.
+  it('accepts the null forgeTeamId/teamUrl of a dry run that would CREATE the team', async () => {
+    const dryCreate = plan({ outcome: 'created', forgeTeamId: null, teamUrl: null });
+    stubFetch(200, dryCreate);
+    expect(await callForgeMigration(request())).toEqual({ ok: true, plan: dryCreate });
+  });
+
+  it('still rejects a forgeTeamId/teamUrl that is neither a string nor null', async () => {
+    stubFetch(200, plan({ forgeTeamId: 42 as unknown as string }));
+    expect((await callForgeMigration(request())).ok).toBe(false);
+    stubFetch(200, plan({ teamUrl: { href: 'x' } as unknown as string }));
+    expect((await callForgeMigration(request())).ok).toBe(false);
   });
 
   it('is unreachable when the feature is not configured', async () => {
