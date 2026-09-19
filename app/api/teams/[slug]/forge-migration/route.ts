@@ -7,6 +7,7 @@ import {
   callForgeMigration,
   clampTeamName,
   defaultRoleFor,
+  FORGE_MAX_MEMBERS,
   forgeMigrationEnabled,
   isForgeRole,
   normalizeEmail,
@@ -123,17 +124,49 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       role: roleOverrides[r.userId] ?? defaultRoleFor(r.kbRole),
     }));
 
-  // A member with no email can't be identified on Forge and can't be invited —
-  // Forge's whole identity story is the lowercased email. Named in the preview
-  // rather than silently dropped.
-  const migratable = roster.filter((r) => !!r.email);
-  const excluded = roster.filter((r) => !r.email).map((r) => ({ userId: r.userId, name: r.name }));
+  // Who can actually cross, and who is named in the preview instead.
+  //
+  // ⚠ Both exclusions exist because Forge's identity key is the lowercased
+  // email and nothing else. A member without one cannot be matched or invited;
+  // two KaraBuddy accounts that lowercase to the SAME address are one person to
+  // Forge, and sending both is a 422 for the whole payload — which would reach
+  // the owner as "SWU Forge did not accept the request" over a fact they can
+  // see. (Reachable today: `users.email` is unique, but Postgres uniqueness is
+  // case-sensitive, so `Ana@e.com` and `ana@e.com` are two rows and one person.)
+  //
+  // ⛔ Neither is dropped silently — the preview names them and says why.
+  const migratable: typeof roster = [];
+  const excluded: { userId: string; name: string | null; email: string | null; reason: 'no_email' | 'duplicate_email' }[] = [];
+  const seenEmails = new Set<string>();
+  for (const r of roster) {
+    if (!r.email) {
+      excluded.push({ userId: r.userId, name: r.name, email: null, reason: 'no_email' });
+      continue;
+    }
+    if (seenEmails.has(r.email)) {
+      // The earlier member wins — `rows` is ordered by joinedAt, so the account
+      // that has been on the team longest is the one that moves.
+      excluded.push({ userId: r.userId, name: r.name, email: r.email, reason: 'duplicate_email' });
+      continue;
+    }
+    seenEmails.add(r.email);
+    migratable.push(r);
+  }
 
   const members: ForgeMigrationMemberInput[] = migratable.map((r) => ({
     email: r.email,
     discordUserId: r.discordUserId,
     role: r.role,
   }));
+
+  // Forge's own ceiling on members[]. Checked here so an oversized roster is a
+  // sentence about this team rather than a generic failure about the request.
+  if (members.length > FORGE_MAX_MEMBERS) {
+    return NextResponse.json(
+      { ok: false, error: 'roster_too_large', cap: FORGE_MAX_MEMBERS, requested: members.length },
+      { status: 409 },
+    );
+  }
 
   const result = await callForgeMigration({
     sourceTeamId: sourceTeamId(slug),

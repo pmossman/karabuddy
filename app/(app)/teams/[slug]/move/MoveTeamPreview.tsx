@@ -10,10 +10,10 @@ import { btnGhost } from '@/app/_components/buttonStyles';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import {
   FORGE_TEAM_NAME_MAX,
-  isForgeBlockCode,
+  isMigrationBlockCode,
   isRoleEditable,
   summarizePlan,
-  type ForgeBlock,
+  type MigrationBlock,
   type ForgeMemberAction,
   type ForgeMigrationPlan,
   type ForgeRole,
@@ -45,7 +45,7 @@ interface MigrationResponse {
   teamName: string;
   plan: ForgeMigrationPlan;
   roster: RosterEntry[];
-  excluded: { userId: string; name: string | null }[];
+  excluded: { userId: string; name: string | null; email: string | null; reason: 'no_email' | 'duplicate_email' }[];
   initiator: { userId: string; name: string | null; email: string };
 }
 
@@ -103,7 +103,7 @@ export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initi
   // Forge's designed refusals. Each renders as its own screen, because each
   // names a different thing the owner has to go and do — and all of them come
   // back from the DRY RUN, before anything has been written.
-  const [block, setBlock] = useState<ForgeBlock | null>(null);
+  const [block, setBlock] = useState<MigrationBlock | null>(null);
 
   // The live values the send closure needs, without making it depend on them
   // (and without a stale-closure bug if the owner edits while a call is out).
@@ -239,8 +239,8 @@ export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initi
 // Forge's 409s, read off the body our own route forwarded verbatim. Anything
 // else — 403 (our credential), 422 (our payload) — has already collapsed into a
 // generic 502 server-side and is none of the owner's business.
-function blockFrom(status: number, body: any): ForgeBlock | null {
-  if (status !== 409 || !isForgeBlockCode(body?.error)) return null;
+function blockFrom(status: number, body: any): MigrationBlock | null {
+  if (status !== 409 || !isMigrationBlockCode(body?.error)) return null;
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   return {
     code: body.error,
@@ -483,16 +483,33 @@ function MemberTable({
         );
       })}
 
-      {/* Every KaraBuddy account came from an OAuth email, so this is rare — but
-          Forge identifies people by lowercased email, so a member without one
-          can't be matched or invited. Named rather than silently dropped. */}
+      {/* Forge identifies people by lowercased email and nothing else, so a
+          member without one can't be matched or invited — and two KaraBuddy
+          accounts that lowercase to the same address are ONE person over there.
+          Both are named here rather than silently dropped. */}
       {data.excluded.map((m) => (
         <Row
           key={m.userId}
           name={m.name}
-          email="no email on file"
+          email={m.email ?? 'no email on file'}
           dim
-          tag={<Tag label="can't move" fg={tokens.color.dangerSoft} bg="rgba(255, 122, 122, 0.1)" title="SWU Forge identifies people by email address." />}
+          tag={
+            m.reason === 'duplicate_email' ? (
+              <Tag
+                label="duplicate"
+                fg={tokens.color.warn}
+                bg="rgba(224, 198, 74, 0.12)"
+                title="Another account on this team has the same email address. SWU Forge would see one person, so only the longest-standing one moves."
+              />
+            ) : (
+              <Tag
+                label="can't move"
+                fg={tokens.color.dangerSoft}
+                bg="rgba(255, 122, 122, 0.1)"
+                title="SWU Forge identifies people by email address."
+              />
+            )
+          }
           roleCell={<span style={{ fontSize: 11.5, color: tokens.color.textMuted }}>—</span>}
         />
       ))}
@@ -625,7 +642,7 @@ function Totals({ summary }: { summary: ReturnType<typeof summarizePlan> }) {
 // each of these names a different thing the owner has to go and do, and the
 // whole reason Forge answers them on a dry run is so a human reads them here,
 // with nothing written and the roster still in front of them.
-function MoveBlocked({ block, slug, onRecheck }: { block: ForgeBlock; slug: string; onRecheck: () => void }) {
+function MoveBlocked({ block, slug, onRecheck }: { block: MigrationBlock; slug: string; onRecheck: () => void }) {
   const copy = describeBlock(block);
   return (
     <Panel style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
@@ -678,7 +695,7 @@ function MoveBlocked({ block, slug, onRecheck }: { block: ForgeBlock; slug: stri
 
 // The numbers in these sentences are FORGE'S, carried through from its body —
 // a cap hardcoded here would be wrong the day Forge changed it, and silently.
-function describeBlock(block: ForgeBlock): { icon: string; title: string; body: string; recheck: string } {
+function describeBlock(block: MigrationBlock): { icon: string; title: string; body: string; recheck: string } {
   const cap = block.cap;
   switch (block.code) {
     case 'initiator_has_no_forge_account':
@@ -722,6 +739,19 @@ function describeBlock(block: ForgeBlock): { icon: string; title: string; body: 
             : 'This roster needs more seats than the Forge team has left. ') +
           'Nobody was moved. Remove people from the KaraBuddy team — or free seats on Forge — and come back; ' +
           'anyone already offered a place stays offered, so a later press only picks up who is left.',
+        recheck: 'Check again',
+      };
+    case 'roster_too_large':
+      return {
+        icon: '📋',
+        title:
+          cap === null
+            ? 'This team is too big to move in one go'
+            : `SWU Forge takes up to ${cap} people in one move`,
+        body:
+          (block.requested !== null ? `This team has ${block.requested}. ` : '') +
+          'Nothing was sent. This is a limit on the move, not on SWU Forge teams — tell us if you have hit it, ' +
+          'because we would rather fix the move than ask you to split the team.',
         recheck: 'Check again',
       };
     case 'team_cap_reached':

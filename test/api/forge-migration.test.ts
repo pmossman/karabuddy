@@ -215,8 +215,50 @@ describe('the payload KaraBuddy sends', () => {
 
     const body = await (await post(slug, { dryRun: true })).json();
     expect(sentBody(fetchMock).members).toHaveLength(1);
-    expect(body.excluded).toEqual([{ userId: without.id, name: 'Ghost' }]);
+    expect(body.excluded).toEqual([
+      { userId: without.id, name: 'Ghost', email: null, reason: 'no_email' },
+    ]);
     expect(body.roster.map((r: any) => r.email)).toEqual(['a@e.com']);
+  });
+
+  it('sends one entry per PERSON — two accounts with the same email are one on Forge', async () => {
+    // ⚠ Reachable today, not hypothetical: `users.email` is unique, but Postgres
+    // uniqueness is case-SENSITIVE, so a Google sign-up as `Ana@e.com` and a
+    // Discord sign-up as `ana@e.com` are two rows and one person. Both lowercase
+    // to the ledger's key, and Forge 422s a duplicate — which would have reached
+    // the owner as a generic "SWU Forge did not accept the request".
+    const o = await seedUser();
+    const first = await seedUser({ email: 'Ana@e.com', name: 'Ana' });
+    const second = await seedUser({ email: 'ana@e.com', name: 'Ana (Discord)' });
+    const slug = await seedTeam(o.id, [{ id: first.id }, { id: second.id }]);
+    as(o.id);
+    const fetchMock = stubForge(200, planFor(['ana@e.com']));
+
+    const body = await (await post(slug, { dryRun: true })).json();
+    expect(sentBody(fetchMock).members).toEqual([
+      { email: 'ana@e.com', discordUserId: null, role: 'EDITOR' },
+    ]);
+    // The longest-standing account moves; the other is NAMED, not dropped.
+    expect(body.excluded).toEqual([
+      { userId: second.id, name: 'Ana (Discord)', email: 'ana@e.com', reason: 'duplicate_email' },
+    ]);
+  });
+
+  it('refuses a roster over Forge’s 500-member cap before sending it', async () => {
+    const o = await seedUser();
+    const ids: { id: string }[] = [];
+    for (let i = 0; i < 501; i++) ids.push({ id: (await seedUser({ email: `m${i}@e.com` })).id });
+    const slug = await seedTeam(o.id, ids);
+    as(o.id);
+    const fetchMock = stubForge(200, planFor([]));
+
+    const res = await post(slug, { dryRun: true });
+    // Forge would 422 this, and a 422 is by design a GENERIC failure here —
+    // right for a payload shape we got wrong, wrong for a fact about this team
+    // the owner can see. So we answer it ourselves, with the real number.
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: 'roster_too_large', cap: 500, requested: 501 });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('the commit re-sends the identical payload with dryRun: false', async () => {

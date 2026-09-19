@@ -87,12 +87,29 @@ export function isForgeBlockCode(value: unknown): value is ForgeBlockCode {
   return typeof value === 'string' && (FORGE_BLOCK_CODES as readonly string[]).includes(value);
 }
 
+// KaraBuddy's OWN refusal, raised before the call rather than read off a
+// response. Forge 422s a roster over its cap, and a 422 is by design a generic
+// failure here — right for a payload shape we got wrong, wrong for a fact about
+// this team that the owner can see and act on. So we check it ourselves and say
+// the real number.
+export type CallerBlockCode = 'roster_too_large';
+
+export type MigrationBlockCode = ForgeBlockCode | CallerBlockCode;
+
+export function isMigrationBlockCode(value: unknown): value is MigrationBlockCode {
+  return isForgeBlockCode(value) || value === 'roster_too_large';
+}
+
+// Forge's own ceiling on members[] (its MAX_MEMBERS). ⚠ A roster over it is a
+// 422, which would reach the owner as "SWU Forge did not accept the request".
+export const FORGE_MAX_MEMBERS = 500;
+
 // What the UI needs to render each refusal, carried straight through from
 // Forge's body. The numbers are Forge's ("teams hold 25 and this roster needs
 // 31"), never ours — a cap KaraBuddy hardcoded would be wrong the day Forge
 // changed it, and silently.
-export interface ForgeBlock {
-  code: ForgeBlockCode;
+export interface MigrationBlock {
+  code: MigrationBlockCode;
   // 🔒 Amendment 3: Forge OWNS its sign-in URL and returns it. Null only if a
   // Forge old enough to omit it answers — we show the state without the button
   // rather than sending anyone to a URL we made up.
@@ -104,7 +121,7 @@ export interface ForgeBlock {
 
 // Failures that are part of the design, not edge cases.
 export type ForgeFailure =
-  | { kind: 'blocked'; block: ForgeBlock }
+  | { kind: 'blocked'; block: MigrationBlock }
   | { kind: 'rejected'; status: number }
   | { kind: 'unreachable'; detail: string }
   | { kind: 'bad_response'; detail: string };

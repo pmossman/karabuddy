@@ -6,11 +6,14 @@ import {
   defaultRoleFor,
   forgeMigrationEnabled,
   forgeOrigin,
+  isForgeBlockCode,
   isForgeRole,
+  isMigrationBlockCode,
   isRoleEditable,
   normalizeEmail,
   sourceTeamId,
   summarizePlan,
+  FORGE_MAX_MEMBERS,
   FORGE_TEAM_NAME_MAX,
   type ForgeMigrationPlan,
   type ForgeMigrationRequest,
@@ -251,6 +254,20 @@ describe('callForgeMigration', () => {
     expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'rejected', status: 403 } });
     stubFetch(422, { error: 'invalid payload' });
     expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'rejected', status: 422 } });
+  });
+
+  it('keeps KaraBuddy’s own refusal out of the codes it reads off Forge', async () => {
+    // `roster_too_large` is raised HERE, before the call — Forge has never sent
+    // it and never will. The preview renders it like the others, but a body
+    // claiming it would not be a state Forge is entitled to put us in.
+    expect(isForgeBlockCode('seats_full')).toBe(true);
+    expect(isForgeBlockCode('roster_too_large')).toBe(false);
+    expect(isMigrationBlockCode('roster_too_large')).toBe(true);
+    expect(isMigrationBlockCode('nonsense')).toBe(false);
+    expect(FORGE_MAX_MEMBERS).toBe(500);
+
+    stubFetch(409, { error: 'roster_too_large' });
+    expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'rejected', status: 409 } });
   });
 
   it('does not invent a state for a 409 code it has never heard of', async () => {
