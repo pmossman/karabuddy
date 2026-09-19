@@ -13,6 +13,7 @@ import { TransferOwnership } from './TransferOwnership';
 import { RemoveMember } from './RemoveMember';
 import { DeleteTeam } from './DeleteTeam';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
+import { MoveTeamToForge } from './MoveTeamToForge';
 import { TeamOverview } from './TeamOverview';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
@@ -24,6 +25,7 @@ import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
 import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { forgeMigrationEnabled } from '@/lib/forgeMigration';
 
 export const dynamic = 'force-dynamic';
 
@@ -259,6 +261,13 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                   initialGuildId={team.discordGuildId}
                   initialChannelId={team.discordChannelId}
                 />
+                {/* KaraBuddy → SWU Forge team migration. Owner-only, and dark
+                    until SWU_FORGE_ORIGIN + TEAM_MIGRATION_SECRET are both set
+                    (the presence of the shared secret IS the flag). Entry point
+                    only — the preview screen is where anything happens. */}
+                {forgeMigrationEnabled() && (
+                  <MoveTeamToForge slug={slug} teamName={team.name} memberCount={members.length} />
+                )}
                 {/* B160: hand the team to another member (you step down). */}
                 <TransferOwnership slug={slug} members={members} viewerUserId={userId} />
                 {/* Remove a member from the team (owner only, are-you-sure confirm). */}
