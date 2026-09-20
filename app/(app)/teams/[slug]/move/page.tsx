@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { teamMembers, teams } from '@/lib/schema';
-import { forgeMigrationEnabled } from '@/lib/forgeMigration';
+import { forgeMigrationEnabled, isTeamMigrationAllowedUser } from '@/lib/forgeMigration';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { MoveTeamPreview } from './MoveTeamPreview';
 
@@ -21,8 +21,9 @@ interface PageProps {
 // offered", "declined" and "new since" are Forge's answers — it owns the
 // idempotency ledger and is the only side that knows them.
 //
-// 404 (not 403) for non-owners and while the feature is dark, so a route that
-// isn't live yet is indistinguishable from one that doesn't exist.
+// 404 (not 403) for non-owners, while the feature is dark, and for anyone
+// outside the limited-trial allowlist — so a route that isn't live yet, or
+// isn't live for you, is indistinguishable from one that doesn't exist.
 export default async function MoveTeamPage({ params }: PageProps) {
   const { slug } = await params;
 
@@ -33,6 +34,11 @@ export default async function MoveTeamPage({ params }: PageProps) {
   }
 
   if (!forgeMigrationEnabled()) notFound();
+  // ⏳ Limited production trial: the move is only reachable by the addresses in
+  // TEAM_MIGRATION_ALLOWED_USERS (empty/absent = nobody). Stacks with the
+  // owner check below — an owner who is not on the list gets the same 404 as a
+  // stranger, because typing the URL is exactly how someone would find this.
+  if (!isTeamMigrationAllowedUser(session?.user?.email)) notFound();
 
   const db = getDb();
   const [team] = await db.select().from(teams).where(eq(teams.slug, slug)).limit(1);

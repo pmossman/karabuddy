@@ -21,8 +21,13 @@ const SELF = 'http://localhost:3001';
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
 const { auth } = await import('@/auth');
-const as = (userId: string | null) =>
-  vi.mocked(auth).mockResolvedValue(userId ? ({ user: { id: userId } } as any) : (null as any));
+// ⏳ The signed-in session carries the email the limited-trial allowlist is
+// matched on, so `as()` defaults to the allowlisted address — every test that
+// isn't about the allowlist is signed in as someone who is on it. Pass a second
+// argument to sign in as someone who is not.
+const ALLOWED = 'trial@e.com';
+const as = (userId: string | null, email: string | null = ALLOWED) =>
+  vi.mocked(auth).mockResolvedValue(userId ? ({ user: { id: userId, email } } as any) : (null as any));
 
 function stubForge(status: number, body: unknown) {
   const fn = vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
@@ -77,6 +82,7 @@ beforeEach(() => {
   vi.mocked(auth).mockReset();
   vi.stubEnv('SWU_FORGE_ORIGIN', ORIGIN);
   vi.stubEnv('TEAM_MIGRATION_SECRET', SECRET);
+  vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ALLOWED);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -117,6 +123,89 @@ describe('gating', () => {
     const slug = await seedTeam(o.id);
     as(stranger.id);
     expect((await post(slug, { dryRun: true })).status).toBe(403);
+  });
+
+  // ⏳ The limited production trial. THIS route is the boundary — hiding the
+  // settings card only hides it, and anyone can POST here directly. Confirming
+  // creates a real team on Forge and sends real invitation emails that Forge's
+  // ledger will not let us re-offer, so an owner who is not running the trial
+  // must get the same nothing as someone who guessed the URL.
+  it('404s for an owner who is not on the trial allowlist — and never calls Forge', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id, 'someone-else@e.com');
+    const fetchMock = stubForge(200, planFor([]));
+    const res = await post(slug, { dryRun: true });
+    expect(res.status).toBe(404);
+    // Identical to the dark-feature answer above: nothing here says the route
+    // exists and you are merely not invited.
+    expect(await res.json()).toEqual({ ok: false, error: 'not_found' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('404s a non-allowlisted owner on the COMMIT too, not just the dry run', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id, 'someone-else@e.com');
+    const fetchMock = stubForge(200, planFor([]));
+    expect((await post(slug, { dryRun: false })).status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('404s an owner with no session email at all', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id, null);
+    const fetchMock = stubForge(200, planFor([]));
+    expect((await post(slug, { dryRun: true })).status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // ⛔ FAIL CLOSED. An unset list is off for everyone, including the address
+  // that would otherwise be allowed — forgetting the variable can only mean
+  // "off", never "open to all".
+  it('404s the allowlisted owner when the list is empty', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    const fetchMock = stubForge(200, planFor([]));
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', '');
+    expect((await post(slug, { dryRun: true })).status).toBe(404);
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', undefined);
+    expect((await post(slug, { dryRun: true })).status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('lets the allowlisted owner through, matching case-insensitively', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id, 'Trial@E.com');
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ` ${ALLOWED} , other@e.com `);
+    const fetchMock = stubForge(200, planFor([]));
+    expect((await post(slug, { dryRun: true })).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // The allowlist STACKS: being on it is never a way past owners-only or past
+  // the dark-feature check.
+  it('still 403s an allowlisted plain member — owners only', async () => {
+    const o = await seedUser();
+    const m = await seedUser();
+    const slug = await seedTeam(o.id, [{ id: m.id }]);
+    as(m.id);
+    const fetchMock = stubForge(200, planFor([]));
+    expect((await post(slug, { dryRun: true })).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still 404s an allowlisted owner while the feature is dark', async () => {
+    vi.stubEnv('TEAM_MIGRATION_SECRET', '');
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    const fetchMock = stubForge(200, planFor([]));
+    expect((await post(slug, { dryRun: true })).status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

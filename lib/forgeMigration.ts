@@ -11,7 +11,10 @@
 //
 // Ships dark. `forgeMigrationEnabled()` is false until BOTH env vars are set,
 // so the settings card, the preview route and the API route are all invisible
-// until the shared secret exists in Vercel.
+// until the shared secret exists in Vercel. On top of that, and for the
+// duration of the production trial only, `isTeamMigrationAllowedUser()` limits
+// the feature to the addresses in TEAM_MIGRATION_ALLOWED_USERS — see the
+// comment at its definition.
 
 export type ForgeRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
 export const FORGE_ROLES: readonly ForgeRole[] = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
@@ -148,6 +151,49 @@ function migrationSecret(): string {
 // every call, and a secret with no origin has nowhere to go.
 export function forgeMigrationEnabled(): boolean {
   return !!forgeOrigin() && !!migrationSecret();
+}
+
+// --- The limited-trial allowlist (TEMPORARY SCAFFOLDING) ---
+//
+// ⏳ This exists so the move can be exercised on PRODUCTION, against the real
+// Forge, by the people running the trial — and by nobody else — while it is
+// still being shaken out. It is not permanent policy.
+//
+// A hidden URL would not be enough on its own: pressing confirm CREATES a real
+// team on SWU Forge and sends real invitation emails to real people, and
+// Forge's ledger then refuses to re-offer an address, so a stranger's
+// accidental press is not cleanly undoable. A secret URL restricts who can
+// FIND the feature; this restricts who can ACT.
+//
+// ⛔ FAIL CLOSED. Absent or empty means OFF FOR EVERYONE — exactly as if the
+// shared secret were missing. Forgetting to set it can only ever mean "off",
+// never "open to all".
+//
+// It STACKS with the existing gates and replaces none of them: still
+// owners-only, still dark unless SWU_FORGE_ORIGIN + TEAM_MIGRATION_SECRET are
+// both set.
+//
+// 🔓 TO OPEN IT UP to every team owner, delete `isTeamMigrationAllowedUser`
+// and its three call sites (the settings card in the team page, the
+// /teams/<slug>/move preview, and POST /api/teams/<slug>/forge-migration) in a
+// deliberate code change. Deliberately NOT "clear the env var in Vercel" — an
+// empty list is off, so there is no way to widen this by forgetting something.
+export function teamMigrationAllowlist(): string[] {
+  return (process.env.TEAM_MIGRATION_ALLOWED_USERS || '')
+    .split(',')
+    .map((entry) => normalizeEmail(entry))
+    .filter(Boolean);
+}
+
+// Matched against the signed-in KaraBuddy user's email, case-insensitively and
+// ignoring surrounding whitespace on both sides (the env list is hand-typed
+// into a Vercel field; the address comes off an OAuth profile).
+export function isTeamMigrationAllowedUser(email: string | null | undefined): boolean {
+  const allowed = teamMigrationAllowlist();
+  if (allowed.length === 0) return false;
+  const candidate = normalizeEmail(email);
+  if (!candidate) return false;
+  return allowed.includes(candidate);
 }
 
 // ⛔ There is deliberately no forgeSignInUrl() here. Forge's sign-in URL is

@@ -25,7 +25,7 @@ import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
 import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { forgeMigrationEnabled } from '@/lib/forgeMigration';
+import { forgeMigrationEnabled, isTeamMigrationAllowedUser } from '@/lib/forgeMigration';
 
 export const dynamic = 'force-dynamic';
 
@@ -264,8 +264,13 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                 {/* KaraBuddy → SWU Forge team migration. Owner-only, and dark
                     until SWU_FORGE_ORIGIN + TEAM_MIGRATION_SECRET are both set
                     (the presence of the shared secret IS the flag). Entry point
-                    only — the preview screen is where anything happens. */}
-                {forgeMigrationEnabled() && (
+                    only — the preview screen is where anything happens.
+                    ⏳ Plus the limited-trial allowlist: during the production
+                    trial only the addresses in TEAM_MIGRATION_ALLOWED_USERS see
+                    it. ⚠ This is cosmetics — hiding the card hides nothing on
+                    its own. The real boundary is the same check on
+                    /teams/<slug>/move and on the API route, which 404. */}
+                {forgeMigrationEnabled() && isTeamMigrationAllowedUser(session?.user?.email) && (
                   <MoveTeamToForge slug={slug} teamName={team.name} memberCount={members.length} />
                 )}
                 {/* B160: hand the team to another member (you step down). */}

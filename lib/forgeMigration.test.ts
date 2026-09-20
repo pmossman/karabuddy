@@ -10,7 +10,9 @@ import {
   isForgeRole,
   isMigrationBlockCode,
   isRoleEditable,
+  isTeamMigrationAllowedUser,
   normalizeEmail,
+  teamMigrationAllowlist,
   sourceTeamId,
   summarizePlan,
   FORGE_MAX_MEMBERS,
@@ -87,6 +89,58 @@ describe('flag gating', () => {
   it('tolerates a trailing slash on the origin', () => {
     vi.stubEnv('SWU_FORGE_ORIGIN', 'https://forge.test/');
     expect(forgeOrigin()).toBe('https://forge.test');
+  });
+});
+
+// ⏳ The limited production trial gate. Confirming the move sends real
+// invitation emails that Forge's ledger will not let us re-offer, so "hidden"
+// is not the same as "restricted" — this decides who may ACT.
+describe('the limited-trial allowlist', () => {
+  it('is FAIL CLOSED — an absent list is off for everyone', () => {
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', undefined);
+    expect(teamMigrationAllowlist()).toEqual([]);
+    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
+  });
+
+  it('is FAIL CLOSED — an empty (or comma-only) list is off for everyone', () => {
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', '');
+    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', '  ');
+    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
+    // ⛔ The one shape that must never read as "allow all": a stray comma.
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ',,');
+    expect(teamMigrationAllowlist()).toEqual([]);
+    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
+  });
+
+  it('lets through exactly the listed addresses, and nobody else', () => {
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', 'parker@e.com,ana@e.com');
+    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(true);
+    expect(isTeamMigrationAllowedUser('ana@e.com')).toBe(true);
+    expect(isTeamMigrationAllowedUser('corin@e.com')).toBe(false);
+  });
+
+  it('matches case-insensitively and ignores surrounding whitespace on both sides', () => {
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ' Parker@E.Com , ana@e.com ');
+    expect(teamMigrationAllowlist()).toEqual(['parker@e.com', 'ana@e.com']);
+    expect(isTeamMigrationAllowedUser('PARKER@e.com')).toBe(true);
+    expect(isTeamMigrationAllowedUser('  parker@e.com  ')).toBe(true);
+  });
+
+  it('refuses a user with no email rather than matching an empty entry', () => {
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', 'parker@e.com');
+    expect(isTeamMigrationAllowedUser(null)).toBe(false);
+    expect(isTeamMigrationAllowedUser(undefined)).toBe(false);
+    expect(isTeamMigrationAllowedUser('')).toBe(false);
+  });
+
+  it('stacks with the env flag instead of replacing it — both are separate answers', () => {
+    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', 'parker@e.com');
+    vi.stubEnv('TEAM_MIGRATION_SECRET', '');
+    // The allowlist still says yes; the feature is still dark. Callers must ask
+    // both, which is what the card and the two routes do.
+    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(true);
+    expect(forgeMigrationEnabled()).toBe(false);
   });
 });
 

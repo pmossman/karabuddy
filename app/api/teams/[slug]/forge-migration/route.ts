@@ -10,6 +10,7 @@ import {
   FORGE_MAX_MEMBERS,
   forgeMigrationEnabled,
   isForgeRole,
+  isTeamMigrationAllowedUser,
   normalizeEmail,
   sourceTeamId,
   type ForgeMigrationMemberInput,
@@ -37,7 +38,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const { slug } = await params;
 
   // Ships dark — indistinguishable from "no such route" until the shared secret
-  // and the Forge origin are both set.
+  // and the Forge origin are both set. The trial allowlist stacks on top of
+  // this, just below, once we know who is asking.
   if (!forgeMigrationEnabled()) {
     return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
   }
@@ -46,6 +48,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const userId = session?.user?.id;
   if (!userId) {
     return NextResponse.json({ ok: false, error: 'sign in required' }, { status: 401 });
+  }
+
+  // ⏳ Limited production trial. THIS is the boundary — not the hidden card,
+  // which is cosmetics anyone can step around by POSTing here directly. An
+  // owner who is not in TEAM_MIGRATION_ALLOWED_USERS gets the same 404 as if
+  // the feature did not exist, because confirming sends real invitation
+  // emails that Forge's ledger will not let us take back. Absent/empty list =
+  // nobody. See lib/forgeMigration.isTeamMigrationAllowedUser.
+  if (!isTeamMigrationAllowedUser(session?.user?.email)) {
+    return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
   }
 
   const db = getDb();
