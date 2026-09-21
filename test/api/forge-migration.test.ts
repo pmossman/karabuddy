@@ -15,18 +15,12 @@ import type { ForgeMigrationPlan } from '@/lib/forgeMigration';
 
 const ORIGIN = 'https://forge.test';
 const SECRET = 'shared-secret';
-// KaraBuddy's own origin. The api project sets AUTH_URL to localhost:3001, and
-// that is what Forge's allow-list is pinned on — see the Origin assertion below.
-const SELF = 'http://localhost:3001';
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
 const { auth } = await import('@/auth');
-// ⏳ The signed-in session carries the email the limited-trial allowlist is
-// matched on, so `as()` defaults to the allowlisted address — every test that
-// isn't about the allowlist is signed in as someone who is on it. Pass a second
-// argument to sign in as someone who is not.
-const ALLOWED = 'trial@e.com';
-const as = (userId: string | null, email: string | null = ALLOWED) =>
+// The signed-in session. The email is carried because the payload's `initiator`
+// needs one; ⛔ nothing gates on it — the boundary is owners-only.
+const as = (userId: string | null, email: string | null = 'owner@e.com') =>
   vi.mocked(auth).mockResolvedValue(userId ? ({ user: { id: userId, email } } as any) : (null as any));
 
 function stubForge(status: number, body: unknown) {
@@ -82,7 +76,6 @@ beforeEach(() => {
   vi.mocked(auth).mockReset();
   vi.stubEnv('SWU_FORGE_ORIGIN', ORIGIN);
   vi.stubEnv('TEAM_MIGRATION_SECRET', SECRET);
-  vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ALLOWED);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -125,87 +118,27 @@ describe('gating', () => {
     expect((await post(slug, { dryRun: true })).status).toBe(403);
   });
 
-  // ⏳ The limited production trial. THIS route is the boundary — hiding the
-  // settings card only hides it, and anyone can POST here directly. Confirming
-  // creates a real team on Forge and sends real invitation emails that Forge's
-  // ledger will not let us re-offer, so an owner who is not running the trial
-  // must get the same nothing as someone who guessed the URL.
-  it('404s for an owner who is not on the trial allowlist — and never calls Forge', async () => {
-    const o = await seedUser();
+  // ⭐ There is no per-user allowlist here any more. The settings card is
+  // hidden behind a localStorage flag, which hides only the entry point; the
+  // boundary this route enforces is owners-only plus the shared secret, both
+  // above. An owner who finds the flag can move their OWN team — a deliberate,
+  // accepted trade on a hobby site.
+  it('lets any owner through once the secret is set', async () => {
+    const o = await seedUser({ email: 'anyone@e.com' });
     const slug = await seedTeam(o.id);
-    as(o.id, 'someone-else@e.com');
-    const fetchMock = stubForge(200, planFor([]));
-    const res = await post(slug, { dryRun: true });
-    expect(res.status).toBe(404);
-    // Identical to the dark-feature answer above: nothing here says the route
-    // exists and you are merely not invited.
-    expect(await res.json()).toEqual({ ok: false, error: 'not_found' });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('404s a non-allowlisted owner on the COMMIT too, not just the dry run', async () => {
-    const o = await seedUser();
-    const slug = await seedTeam(o.id);
-    as(o.id, 'someone-else@e.com');
-    const fetchMock = stubForge(200, planFor([]));
-    expect((await post(slug, { dryRun: false })).status).toBe(404);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('404s an owner with no session email at all', async () => {
-    const o = await seedUser();
-    const slug = await seedTeam(o.id);
-    as(o.id, null);
-    const fetchMock = stubForge(200, planFor([]));
-    expect((await post(slug, { dryRun: true })).status).toBe(404);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  // ⛔ FAIL CLOSED. An unset list is off for everyone, including the address
-  // that would otherwise be allowed — forgetting the variable can only mean
-  // "off", never "open to all".
-  it('404s the allowlisted owner when the list is empty', async () => {
-    const o = await seedUser();
-    const slug = await seedTeam(o.id);
-    as(o.id);
-    const fetchMock = stubForge(200, planFor([]));
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', '');
-    expect((await post(slug, { dryRun: true })).status).toBe(404);
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', undefined);
-    expect((await post(slug, { dryRun: true })).status).toBe(404);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('lets the allowlisted owner through, matching case-insensitively', async () => {
-    const o = await seedUser();
-    const slug = await seedTeam(o.id);
-    as(o.id, 'Trial@E.com');
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ` ${ALLOWED} , other@e.com `);
+    as(o.id, 'anyone@e.com');
     const fetchMock = stubForge(200, planFor([]));
     expect((await post(slug, { dryRun: true })).status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  // The allowlist STACKS: being on it is never a way past owners-only or past
-  // the dark-feature check.
-  it('still 403s an allowlisted plain member — owners only', async () => {
-    const o = await seedUser();
-    const m = await seedUser();
-    const slug = await seedTeam(o.id, [{ id: m.id }]);
-    as(m.id);
-    const fetchMock = stubForge(200, planFor([]));
-    expect((await post(slug, { dryRun: true })).status).toBe(403);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('still 404s an allowlisted owner while the feature is dark', async () => {
-    vi.stubEnv('TEAM_MIGRATION_SECRET', '');
+  it('lets an owner with no session email through — the email gated nothing', async () => {
     const o = await seedUser();
     const slug = await seedTeam(o.id);
-    as(o.id);
+    as(o.id, null);
     const fetchMock = stubForge(200, planFor([]));
-    expect((await post(slug, { dryRun: true })).status).toBe(404);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await post(slug, { dryRun: true })).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -224,9 +157,10 @@ describe('the payload KaraBuddy sends', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${ORIGIN}/api/team-migration`);
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${SECRET}`);
-    // 🔴 Node sends no Origin server-to-server and Forge refuses a call without
-    // one, so KaraBuddy states its own. Drop this and every call 403s.
-    expect((init.headers as Record<string, string>).Origin).toBe(SELF);
+    // ⛔ No `Origin` header, and Forge no longer pins one. The pin only stopped
+    // browser calls — which a server-only bearer secret already makes
+    // impossible — and while it existed it 403'd every real call.
+    expect((init.headers as Record<string, string>).Origin).toBeUndefined();
 
     const body = sentBody(fetchMock);
     expect(body.sourceTeamId).toBe(`kb_team_${slug}`);

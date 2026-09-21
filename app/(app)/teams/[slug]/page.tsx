@@ -14,6 +14,7 @@ import { RemoveMember } from './RemoveMember';
 import { DeleteTeam } from './DeleteTeam';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { MoveTeamToForge } from './MoveTeamToForge';
+import { ForgeMoveFlag } from './ForgeMoveFlag';
 import { TeamOverview } from './TeamOverview';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
@@ -25,7 +26,7 @@ import { ClipsBrowser } from '@/app/(app)/clips/ClipsBrowser';
 import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { forgeMigrationEnabled, isTeamMigrationAllowedUser } from '@/lib/forgeMigration';
+import { forgeMigrationEnabled } from '@/lib/forgeMigration';
 
 export const dynamic = 'force-dynamic';
 
@@ -262,16 +263,17 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                   initialChannelId={team.discordChannelId}
                 />
                 {/* KaraBuddy → SWU Forge team migration. Owner-only, and dark
-                    until SWU_FORGE_ORIGIN + TEAM_MIGRATION_SECRET are both set
-                    (the presence of the shared secret IS the flag). Entry point
-                    only — the preview screen is where anything happens.
-                    ⏳ Plus the limited-trial allowlist: during the production
-                    trial only the addresses in TEAM_MIGRATION_ALLOWED_USERS see
-                    it. ⚠ This is cosmetics — hiding the card hides nothing on
-                    its own. The real boundary is the same check on
-                    /teams/<slug>/move and on the API route, which 404. */}
-                {forgeMigrationEnabled() && isTeamMigrationAllowedUser(session?.user?.email) && (
-                  <MoveTeamToForge slug={slug} teamName={team.name} memberCount={members.length} />
+                    until TEAM_MIGRATION_SECRET is set — the shared secret IS
+                    the flag, and it is the one variable this feature needs.
+                    Entry point only — the preview screen is where anything
+                    happens. ⚠ ForgeMoveFlag only HIDES this card behind a
+                    localStorage key; it is not a security boundary. The real
+                    one is owners-only, right here and on both server
+                    entrances. */}
+                {forgeMigrationEnabled() && (
+                  <ForgeMoveFlag>
+                    <MoveTeamToForge slug={slug} teamName={team.name} memberCount={members.length} />
+                  </ForgeMoveFlag>
                 )}
                 {/* B160: hand the team to another member (you step down). */}
                 <TransferOwnership slug={slug} members={members} viewerUserId={userId} />

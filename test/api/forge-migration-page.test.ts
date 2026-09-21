@@ -3,12 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
 import { teamMembers, teams, users } from '@/lib/schema';
 
-// The /teams/<slug>/move PREVIEW SCREEN's own gate.
-//
-// ⏳ The limited production trial allowlist has to hold here as well as on the
-// API route, because typing the URL is exactly how someone finds a feature
-// whose settings card has merely been hidden. A non-allowlisted owner gets
-// `notFound()` — the same nothing as a stranger, and the same nothing as while
+// The /teams/<slug>/move PREVIEW SCREEN's own gate: the shared secret, then
+// owners-only. It has to hold here and not just on the API route, because
+// typing the URL is exactly how someone finds a feature whose settings card is
+// merely hidden — and hiding the card is all the localStorage flag does.
+// Anyone who fails either check gets `notFound()`, the same nothing as while
 // the feature is dark.
 //
 // The preview component is stubbed: this test is about who reaches the screen,
@@ -39,8 +38,8 @@ vi.mock('next/navigation', () => ({
 const { auth } = await import('@/auth');
 const MoveTeamPage = (await import('@/app/(app)/teams/[slug]/move/page')).default;
 
-const ALLOWED = 'trial@e.com';
-const as = (userId: string | null, email: string | null = ALLOWED) =>
+// ⛔ The email gates nothing; it is only what the payload's `initiator` carries.
+const as = (userId: string | null, email: string | null = 'owner@e.com') =>
   vi.mocked(auth).mockResolvedValue(userId ? ({ user: { id: userId, email } } as any) : (null as any));
 
 async function seedUser() {
@@ -78,50 +77,33 @@ beforeEach(() => {
   vi.mocked(auth).mockReset();
   vi.stubEnv('SWU_FORGE_ORIGIN', 'https://forge.test');
   vi.stubEnv('TEAM_MIGRATION_SECRET', 'shared-secret');
-  vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ALLOWED);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe('the move preview screen', () => {
-  it('renders for an allowlisted owner', async () => {
+  // ⭐ No per-user allowlist. The settings card is hidden behind a localStorage
+  // flag, which hides only the entry point; this page's boundary is owners-only
+  // plus the shared secret. An owner who types the URL can preview their OWN
+  // team's move — a deliberate, accepted trade.
+  it('renders for any owner once the secret is set', async () => {
     const owner = await seedUser();
     const slug = await seedTeam(owner);
     as(owner);
     expect(await opening(slug)).toBe('rendered');
   });
 
-  it('404s for an owner who is not on the trial allowlist', async () => {
+  it('renders for an owner whatever their email, and with none at all', async () => {
     const owner = await seedUser();
     const slug = await seedTeam(owner);
     as(owner, 'someone-else@e.com');
-    expect(await opening(slug)).toBe('not_found');
-  });
-
-  // ⛔ FAIL CLOSED: an empty or absent list is off for everyone, including the
-  // address that would otherwise be allowed.
-  it('404s the allowlisted owner when the list is empty or absent', async () => {
-    const owner = await seedUser();
-    const slug = await seedTeam(owner);
-    as(owner);
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', '');
-    expect(await opening(slug)).toBe('not_found');
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', undefined);
-    expect(await opening(slug)).toBe('not_found');
-  });
-
-  it('matches the allowlist case-insensitively and past stray whitespace', async () => {
-    const owner = await seedUser();
-    const slug = await seedTeam(owner);
-    as(owner, 'Trial@E.com');
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ` ${ALLOWED} , other@e.com `);
+    expect(await opening(slug)).toBe('rendered');
+    as(owner, null);
     expect(await opening(slug)).toBe('rendered');
   });
 
-  // The allowlist STACKS with what was already here — it is never a way past
-  // owners-only or past the dark-feature check.
-  it('still 404s an allowlisted plain member — owners only', async () => {
+  it('404s a plain member — owners only', async () => {
     const owner = await seedUser();
     const member = await seedUser();
     const slug = await seedTeam(owner, [{ id: member }]);
@@ -129,7 +111,7 @@ describe('the move preview screen', () => {
     expect(await opening(slug)).toBe('not_found');
   });
 
-  it('still 404s an allowlisted owner while the feature is dark', async () => {
+  it('404s an owner while the feature is dark', async () => {
     vi.stubEnv('TEAM_MIGRATION_SECRET', '');
     const owner = await seedUser();
     const slug = await seedTeam(owner);

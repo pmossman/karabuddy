@@ -9,12 +9,16 @@
 // idempotency ledger. KaraBuddy deliberately stores NOTHING about migration
 // state: a second source of truth for something Forge owns would drift.
 //
-// Ships dark. `forgeMigrationEnabled()` is false until BOTH env vars are set,
-// so the settings card, the preview route and the API route are all invisible
-// until the shared secret exists in Vercel. On top of that, and for the
-// duration of the production trial only, `isTeamMigrationAllowedUser()` limits
-// the feature to the addresses in TEAM_MIGRATION_ALLOWED_USERS — see the
-// comment at its definition.
+// Ships dark. ⭐ ONE environment variable runs this whole feature:
+// TEAM_MIGRATION_SECRET, the credential Forge authenticates us with. It is also
+// the flag — until it is set, the settings card, the preview route and the API
+// route are all invisible. What protects the move once it IS set is that both
+// server entrances are owners-only.
+//
+// ⛔ Resist adding a second variable. An on/off flag beside the secret is a
+// switch that does nothing the secret does not already do, and an origin pin
+// on either side is a stop on browser calls that a server-only bearer secret
+// already makes impossible.
 
 export type ForgeRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
 export const FORGE_ROLES: readonly ForgeRole[] = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
@@ -139,61 +143,28 @@ export const FORGE_TEAM_NAME_MAX = 80;
 // KaraBuddy serverless function open for its whole timeout.
 const FORGE_TIMEOUT_MS = 20_000;
 
+// Where SWU Forge lives. ⭐ A CONSTANT, not configuration: Forge's origin is
+// neither secret nor variable, and production needs nobody to set it. The
+// SWU_FORGE_ORIGIN override exists ONLY so local development can point at a
+// Forge dev server (and so the end-to-end lab can); unset or empty in
+// production is the correct, working state.
+const FORGE_ORIGIN = 'https://swuforge.com';
+
 export function forgeOrigin(): string {
-  return (process.env.SWU_FORGE_ORIGIN || '').trim().replace(/\/+$/, '');
+  const override = (process.env.SWU_FORGE_ORIGIN || '').trim().replace(/\/+$/, '');
+  return override || FORGE_ORIGIN;
 }
 
 function migrationSecret(): string {
   return (process.env.TEAM_MIGRATION_SECRET || '').trim();
 }
 
-// The flag. Both halves must be present: an origin with no secret would 403 on
-// every call, and a secret with no origin has nowhere to go.
+// The flag, and the credential, and the only variable this feature needs. ⭐ No
+// secret means no call KaraBuddy could make that Forge would not 403, so there
+// is nothing to show — and "off" is the default rather than a second switch
+// somebody has to remember to leave alone.
 export function forgeMigrationEnabled(): boolean {
-  return !!forgeOrigin() && !!migrationSecret();
-}
-
-// --- The limited-trial allowlist (TEMPORARY SCAFFOLDING) ---
-//
-// ⏳ This exists so the move can be exercised on PRODUCTION, against the real
-// Forge, by the people running the trial — and by nobody else — while it is
-// still being shaken out. It is not permanent policy.
-//
-// A hidden URL would not be enough on its own: pressing confirm CREATES a real
-// team on SWU Forge and sends real invitation emails to real people, and
-// Forge's ledger then refuses to re-offer an address, so a stranger's
-// accidental press is not cleanly undoable. A secret URL restricts who can
-// FIND the feature; this restricts who can ACT.
-//
-// ⛔ FAIL CLOSED. Absent or empty means OFF FOR EVERYONE — exactly as if the
-// shared secret were missing. Forgetting to set it can only ever mean "off",
-// never "open to all".
-//
-// It STACKS with the existing gates and replaces none of them: still
-// owners-only, still dark unless SWU_FORGE_ORIGIN + TEAM_MIGRATION_SECRET are
-// both set.
-//
-// 🔓 TO OPEN IT UP to every team owner, delete `isTeamMigrationAllowedUser`
-// and its three call sites (the settings card in the team page, the
-// /teams/<slug>/move preview, and POST /api/teams/<slug>/forge-migration) in a
-// deliberate code change. Deliberately NOT "clear the env var in Vercel" — an
-// empty list is off, so there is no way to widen this by forgetting something.
-export function teamMigrationAllowlist(): string[] {
-  return (process.env.TEAM_MIGRATION_ALLOWED_USERS || '')
-    .split(',')
-    .map((entry) => normalizeEmail(entry))
-    .filter(Boolean);
-}
-
-// Matched against the signed-in KaraBuddy user's email, case-insensitively and
-// ignoring surrounding whitespace on both sides (the env list is hand-typed
-// into a Vercel field; the address comes off an OAuth profile).
-export function isTeamMigrationAllowedUser(email: string | null | undefined): boolean {
-  const allowed = teamMigrationAllowlist();
-  if (allowed.length === 0) return false;
-  const candidate = normalizeEmail(email);
-  if (!candidate) return false;
-  return allowed.includes(candidate);
+  return !!migrationSecret();
 }
 
 // ⛔ There is deliberately no forgeSignInUrl() here. Forge's sign-in URL is
@@ -202,28 +173,13 @@ export function isTeamMigrationAllowedUser(email: string | null | undefined): bo
 // that `pages.signIn` is unset — one refactor on the other side from sending
 // every owner to a 404, with nothing here able to notice.
 
-// The origin KaraBuddy states it is calling from. ⚠ Node's `fetch` sends NO
-// `Origin` header server-to-server, and Forge refuses any request that arrives
-// without one, so this must be set explicitly and must be one of the values in
-// Forge's TEAM_MIGRATION_ALLOWED_ORIGINS (comma-separated: KaraBuddy has two
-// Vercel projects, and each states its own).
-//
-// AUTH_URL is the source because it is already this deploy's own origin, set in
-// every environment, and wrong AUTH_URL means broken sign-in long before it
-// means a refused migration — so there is no new switch to forget. KARABUDDY_ORIGIN
-// overrides it for a deploy that is reached at a different origin than Auth.js
-// is configured with.
-export function callerOrigin(): string {
-  const raw = (process.env.KARABUDDY_ORIGIN || process.env.AUTH_URL || '').trim();
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-    return url.origin;
-  } catch {
-    return '';
-  }
-}
+// ⛔ There is deliberately no callerOrigin() here either, and the call below
+// sets no `Origin` header. Forge used to pin the caller's origin; it was
+// removed on both sides. An origin pin stops calls made from a BROWSER, and a
+// browser cannot hold a server-only bearer secret in the first place — while
+// anyone who does hold the secret can set any header they please, so it was
+// never a defence against a leaked credential. What it did do was 403 every
+// real call the moment the two lists disagreed.
 
 // The idempotency key Forge stores on its Team. Namespaced so Forge can tell a
 // KaraBuddy team id apart from any other source it grows later — a bare 6-char
@@ -285,17 +241,10 @@ function numberOrNull(value: unknown): number | null {
 export async function callForgeMigration(payload: ForgeMigrationRequest): Promise<ForgeCallResult> {
   const origin = forgeOrigin();
   const secret = migrationSecret();
-  if (!origin || !secret) {
+  // ⭐ Only the secret can be missing — `forgeOrigin()` is a constant with a
+  // dev-only override and always answers something.
+  if (!secret) {
     return { ok: false, failure: { kind: 'unreachable', detail: 'team migration is not configured' } };
-  }
-  const sentFrom = callerOrigin();
-  if (!sentFrom) {
-    // Refusing beats sending a call Forge can only 403. ⛔ Never fall back to a
-    // plausible-looking origin: the pin exists to say where we really are.
-    return {
-      ok: false,
-      failure: { kind: 'unreachable', detail: 'KaraBuddy cannot state its own origin (AUTH_URL unset)' },
-    };
   }
 
   let res: Response;
@@ -305,9 +254,6 @@ export async function callForgeMigration(payload: ForgeMigrationRequest): Promis
       headers: {
         Authorization: `Bearer ${secret}`,
         'Content-Type': 'application/json',
-        // ⚠ Explicit because Node sets no Origin server-to-server, and Forge
-        // refuses a request without one. Removing this line 403s every call.
-        Origin: sentFrom,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(FORGE_TIMEOUT_MS),

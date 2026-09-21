@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   callForgeMigration,
-  callerOrigin,
   clampTeamName,
   defaultRoleFor,
   forgeMigrationEnabled,
@@ -10,9 +9,7 @@ import {
   isForgeRole,
   isMigrationBlockCode,
   isRoleEditable,
-  isTeamMigrationAllowedUser,
   normalizeEmail,
-  teamMigrationAllowlist,
   sourceTeamId,
   summarizePlan,
   FORGE_MAX_MEMBERS,
@@ -29,9 +26,6 @@ import {
 
 const ORIGIN = 'https://forge.test';
 const SECRET = 'shared-secret';
-// KaraBuddy's OWN origin — what it states in the `Origin` header, and what
-// Forge pins in TEAM_MIGRATION_ALLOWED_ORIGINS.
-const SELF = 'https://karabuddy.app';
 
 function plan(overrides: Partial<ForgeMigrationPlan> = {}): ForgeMigrationPlan {
   return {
@@ -66,10 +60,11 @@ function stubFetch(status: number, body: unknown) {
 }
 
 beforeEach(() => {
+  // ⚠ SWU_FORGE_ORIGIN is a LOCAL-DEV override of a constant, not configuration
+  // production sets. It is stubbed here only so these tests do not aim real
+  // fetches at swuforge.com.
   vi.stubEnv('SWU_FORGE_ORIGIN', ORIGIN);
   vi.stubEnv('TEAM_MIGRATION_SECRET', SECRET);
-  vi.stubEnv('AUTH_URL', SELF);
-  vi.stubEnv('KARABUDDY_ORIGIN', '');
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -77,104 +72,27 @@ afterEach(() => {
 });
 
 describe('flag gating', () => {
-  it('needs BOTH the origin and the secret — a half-configured deploy stays dark', () => {
+  // ⭐ ONE variable. The secret is the flag, and it is the only thing a
+  // production deploy has to be given.
+  it('is the shared secret and nothing else', () => {
     expect(forgeMigrationEnabled()).toBe(true);
     vi.stubEnv('TEAM_MIGRATION_SECRET', '');
     expect(forgeMigrationEnabled()).toBe(false);
-    vi.stubEnv('TEAM_MIGRATION_SECRET', SECRET);
+    vi.stubEnv('TEAM_MIGRATION_SECRET', '   ');
+    expect(forgeMigrationEnabled()).toBe(false);
+  });
+
+  it('stays on with no SWU_FORGE_ORIGIN set — production configures nothing', () => {
     vi.stubEnv('SWU_FORGE_ORIGIN', '');
-    expect(forgeMigrationEnabled()).toBe(false);
+    expect(forgeOrigin()).toBe('https://swuforge.com');
+    expect(forgeMigrationEnabled()).toBe(true);
+    vi.stubEnv('SWU_FORGE_ORIGIN', undefined);
+    expect(forgeOrigin()).toBe('https://swuforge.com');
   });
 
-  it('tolerates a trailing slash on the origin', () => {
-    vi.stubEnv('SWU_FORGE_ORIGIN', 'https://forge.test/');
-    expect(forgeOrigin()).toBe('https://forge.test');
-  });
-});
-
-// ⏳ The limited production trial gate. Confirming the move sends real
-// invitation emails that Forge's ledger will not let us re-offer, so "hidden"
-// is not the same as "restricted" — this decides who may ACT.
-describe('the limited-trial allowlist', () => {
-  it('is FAIL CLOSED — an absent list is off for everyone', () => {
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', undefined);
-    expect(teamMigrationAllowlist()).toEqual([]);
-    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
-  });
-
-  it('is FAIL CLOSED — an empty (or comma-only) list is off for everyone', () => {
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', '');
-    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', '  ');
-    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
-    // ⛔ The one shape that must never read as "allow all": a stray comma.
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ',,');
-    expect(teamMigrationAllowlist()).toEqual([]);
-    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(false);
-  });
-
-  it('lets through exactly the listed addresses, and nobody else', () => {
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', 'parker@e.com,ana@e.com');
-    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(true);
-    expect(isTeamMigrationAllowedUser('ana@e.com')).toBe(true);
-    expect(isTeamMigrationAllowedUser('corin@e.com')).toBe(false);
-  });
-
-  it('matches case-insensitively and ignores surrounding whitespace on both sides', () => {
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', ' Parker@E.Com , ana@e.com ');
-    expect(teamMigrationAllowlist()).toEqual(['parker@e.com', 'ana@e.com']);
-    expect(isTeamMigrationAllowedUser('PARKER@e.com')).toBe(true);
-    expect(isTeamMigrationAllowedUser('  parker@e.com  ')).toBe(true);
-  });
-
-  it('refuses a user with no email rather than matching an empty entry', () => {
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', 'parker@e.com');
-    expect(isTeamMigrationAllowedUser(null)).toBe(false);
-    expect(isTeamMigrationAllowedUser(undefined)).toBe(false);
-    expect(isTeamMigrationAllowedUser('')).toBe(false);
-  });
-
-  it('stacks with the env flag instead of replacing it — both are separate answers', () => {
-    vi.stubEnv('TEAM_MIGRATION_ALLOWED_USERS', 'parker@e.com');
-    vi.stubEnv('TEAM_MIGRATION_SECRET', '');
-    // The allowlist still says yes; the feature is still dark. Callers must ask
-    // both, which is what the card and the two routes do.
-    expect(isTeamMigrationAllowedUser('parker@e.com')).toBe(true);
-    expect(forgeMigrationEnabled()).toBe(false);
-  });
-});
-
-// ⚠ Node's fetch sends NO Origin header server-to-server, and Forge refuses any
-// request that arrives without one — every call 403'd until KaraBuddy stated it
-// itself. The value has to be something TEAM_MIGRATION_ALLOWED_ORIGINS can hold:
-// a bare scheme://host[:port], never a path.
-describe('the origin KaraBuddy states it is calling from', () => {
-  it('is this deploy’s own origin, taken from AUTH_URL', () => {
-    vi.stubEnv('AUTH_URL', 'https://karabuddy.app');
-    expect(callerOrigin()).toBe('https://karabuddy.app');
-  });
-
-  it('strips any path, so the value is one an allow-list can hold verbatim', () => {
-    vi.stubEnv('AUTH_URL', 'https://karabuddy.app/api/auth');
-    expect(callerOrigin()).toBe('https://karabuddy.app');
-  });
-
-  it('keeps the port — localhost:3001 and the prod host are different origins', () => {
-    vi.stubEnv('AUTH_URL', 'http://localhost:3001');
-    expect(callerOrigin()).toBe('http://localhost:3001');
-  });
-
-  it('lets KARABUDDY_ORIGIN override it — the shadow project is reached elsewhere', () => {
-    vi.stubEnv('AUTH_URL', 'https://karabuddy.app');
-    vi.stubEnv('KARABUDDY_ORIGIN', 'https://karabuddy-shadow.vercel.app');
-    expect(callerOrigin()).toBe('https://karabuddy-shadow.vercel.app');
-  });
-
-  it('is empty rather than guessed when there is nothing to read it from', () => {
-    vi.stubEnv('AUTH_URL', '');
-    expect(callerOrigin()).toBe('');
-    vi.stubEnv('AUTH_URL', 'not a url');
-    expect(callerOrigin()).toBe('');
+  it('lets local dev point at a Forge dev server, trailing slash and all', () => {
+    vi.stubEnv('SWU_FORGE_ORIGIN', 'http://localhost:5173/');
+    expect(forgeOrigin()).toBe('http://localhost:5173');
   });
 });
 
@@ -219,23 +137,11 @@ describe('callForgeMigration', () => {
     expect(url).toBe(`${ORIGIN}/api/team-migration`);
     expect(init.method).toBe('POST');
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${SECRET}`);
-    // 🔴 Without this header Forge answers 403 to every single call — Node sets
-    // no Origin on a server-to-server request, and an absent one is refused.
-    expect((init.headers as Record<string, string>).Origin).toBe(SELF);
+    // ⛔ No `Origin` header. Forge's origin pin is gone on both sides — it only
+    // stopped browser calls, which a server-only bearer secret already makes
+    // impossible, and while it existed it 403'd every real call.
+    expect((init.headers as Record<string, string>).Origin).toBeUndefined();
     expect(JSON.parse(init.body as string)).toEqual(request());
-  });
-
-  it('refuses to call at all when it cannot state its own origin', async () => {
-    vi.stubEnv('AUTH_URL', '');
-    const fetchMock = stubFetch(200, plan());
-    const result = await callForgeMigration(request());
-    // ⛔ Never a plausible-looking fallback: the pin exists to say where we
-    // really are, and a guessed origin is either a 403 or a lie.
-    expect(result).toEqual({
-      ok: false,
-      failure: { kind: 'unreachable', detail: 'KaraBuddy cannot state its own origin (AUTH_URL unset)' },
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('the dry run and the commit differ ONLY by dryRun', async () => {
