@@ -1,5 +1,5 @@
-// B144: post to a team's Discord channel when a replay is added to (or cleared
-// from) the team's review queue. Best-effort, never throws — awaited from the
+// B144: post to a team's Discord channel when a replay is added to the team's
+// review queue. Cancelling a request is silent. Best-effort, never throws — awaited from the
 // review route with the same posture as notifyMentions / tournamentNotify.
 // No-ops when the team has no review channel (override ?? main) or the bot token
 // is unset. Channel posts are broadcasts — no per-user DM opt-in applies.
@@ -16,21 +16,17 @@ function publicUrl(): string {
 
 // Pure, unit-tested.
 export function formatReviewMessage(opts: {
-  added: boolean;
   matchup: string;
   teamName: string;
   actorName: string;
   url: string;
 }): string {
-  return opts.added
-    ? `🔍 **${opts.matchup}** added to **${opts.teamName}**'s review queue by **${opts.actorName}** — ${opts.url}`
-    : `🗑️ **${opts.matchup}** review request cleared in **${opts.teamName}** by **${opts.actorName}** — ${opts.url}`;
+  return `🔍 **${opts.matchup}** added to **${opts.teamName}**'s review queue by **${opts.actorName}** — ${opts.url}`;
 }
 
-// B149: a member left their "I reviewed this" mark — the request STAYS open
-// (more eyes welcome), so this is distinct from clearing the request.
+// B149: a member completed their review. The request stays open for more eyes.
 export function formatReviewedByMessage(opts: { matchup: string; teamName: string; actorName: string; url: string }): string {
-  return `✅ **${opts.actorName}** reviewed **${opts.matchup}** in **${opts.teamName}** — ${opts.url}`;
+  return `✅ **${opts.actorName}** completed their review of **${opts.matchup}** in **${opts.teamName}** — ${opts.url}`;
 }
 
 // Build the "Leader vs Leader" matchup (the uploader's side first), preferring a
@@ -44,7 +40,6 @@ function matchupOf(replay: any): string {
 export async function notifyTeamReview(opts: {
   replaySlug: string;
   teamSlug: string;
-  requested: boolean;
   actingUserId: string | null;
 }): Promise<void> {
   try {
@@ -58,7 +53,6 @@ export async function notifyTeamReview(opts: {
       ? (await db.select({ name: users.name }).from(users).where(eq(users.id, opts.actingUserId)).limit(1))[0]?.name
       : null;
     await postToChannel(channel, formatReviewMessage({
-      added: opts.requested,
       matchup: matchupOf(replay),
       teamName: team?.name ?? opts.teamSlug,
       actorName: actor ?? 'Someone',
