@@ -59,11 +59,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
   revalidateForOps([requested ? 'review-request' : 'review-cancel']); // refresh the team dashboard cache
 
-  // B144: best-effort Discord post (review added/cleared) — never blocks the write.
-  try {
-    await notifyTeamReview({ replaySlug: slug, teamSlug, requested, actingUserId: userId });
-  } catch (e) {
-    console.error('[karabuddy] notifyTeamReview failed (review persisted):', e);
+  // Only a new request is announced. Cancelling silently removes it from the queue;
+  // a completed review is announced by the separate /reviewed action.
+  if (requested) {
+    try {
+      await notifyTeamReview({ replaySlug: slug, teamSlug, actingUserId: userId });
+    } catch (e) {
+      console.error('[karabuddy] notifyTeamReview failed (review persisted):', e);
+    }
   }
 
   return NextResponse.json({ ok: true, reviewRequested: requested });
