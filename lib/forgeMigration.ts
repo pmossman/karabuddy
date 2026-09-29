@@ -23,9 +23,12 @@
 export type ForgeRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
 export const FORGE_ROLES: readonly ForgeRole[] = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
-// What Forge reports it did (or would do) for each member. `joined` = matched an
-// existing Forge user; `invited` = a TeamInvite at the handed role; the three
-// `skipped_*` are the idempotency rules refusing to touch someone.
+// What Forge reports it did (or would do) for each member. `invited` = a
+// TeamInvite at the handed role, sent to everyone Forge would still act on,
+// Forge account or not; the three `skipped_*` are the idempotency rules refusing
+// to touch someone. ⚠ `joined` (added straight onto the team) comes only from
+// an older Forge that still auto-adds; it stays readable so one doesn't break
+// the preview.
 export type ForgeMemberAction =
   | 'joined'
   | 'invited'
@@ -34,6 +37,14 @@ export type ForgeMemberAction =
   | 'skipped_existing_member';
 
 export type ForgeOutcome = 'created' | 'updated' | 'noop';
+
+// Forge's own four. OWNER is never handed to anyone, but a member who already
+// owns the Forge team is reported as one.
+export type ForgeTeamRole = 'OWNER' | ForgeRole;
+
+export function isForgeTeamRole(value: unknown): value is ForgeTeamRole {
+  return value === 'OWNER' || isForgeRole(value);
+}
 
 export interface ForgeMigrationMemberInput {
   email: string;
@@ -52,7 +63,9 @@ export interface ForgeMigrationRequest {
 export interface ForgeMigrationPlanMember {
   email: string;
   action: ForgeMemberAction;
-  role: ForgeRole;
+  // The role held or offered ON FORGE. For a skipped row that is Forge's
+  // record, not the role KaraBuddy asked for.
+  role: ForgeTeamRole;
 }
 
 // ⚠ `forgeTeamId` and `teamUrl` are NULL on the primary path: a dry run for a
@@ -65,6 +78,9 @@ export interface ForgeMigrationPlan {
   outcome: ForgeOutcome;
   forgeTeamId: string | null;
   teamUrl: string | null;
+  // The team's CURRENT name on Forge, which keeps renames. Null on a dry run
+  // that would create it; absent from a Forge older than the field.
+  teamName?: string | null;
   members: ForgeMigrationPlanMember[];
 }
 
@@ -99,12 +115,14 @@ export function isForgeBlockCode(value: unknown): value is ForgeBlockCode {
 // failure here — right for a payload shape we got wrong, wrong for a fact about
 // this team that the owner can see and act on. So we check it ourselves and say
 // the real number.
-export type CallerBlockCode = 'roster_too_large';
+export type CallerBlockCode = 'roster_too_large' | 'initiator_has_no_email';
+
+export const CALLER_BLOCK_CODES: readonly CallerBlockCode[] = ['roster_too_large', 'initiator_has_no_email'] as const;
 
 export type MigrationBlockCode = ForgeBlockCode | CallerBlockCode;
 
 export function isMigrationBlockCode(value: unknown): value is MigrationBlockCode {
-  return isForgeBlockCode(value) || value === 'roster_too_large';
+  return isForgeBlockCode(value) || (CALLER_BLOCK_CODES as readonly string[]).includes(value as string);
 }
 
 // Forge's own ceiling on members[] (its MAX_MEMBERS). ⚠ A roster over it is a
@@ -225,9 +243,15 @@ function isPlanShape(value: unknown): value is ForgeMigrationPlan {
   // is the FIRST preview of every move, i.e. the primary path. Requiring a
   // string here rejected the one response this screen is built for.
   if (!isStringOrNull(v.forgeTeamId) || !isStringOrNull(v.teamUrl)) return false;
+  if (v.teamName !== undefined && !isStringOrNull(v.teamName)) return false;
   if (!Array.isArray(v.members)) return false;
   return v.members.every(
-    (m) => !!m && typeof m === 'object' && typeof (m as any).email === 'string' && typeof (m as any).action === 'string',
+    (m) =>
+      !!m &&
+      typeof m === 'object' &&
+      typeof (m as any).email === 'string' &&
+      typeof (m as any).action === 'string' &&
+      isForgeTeamRole((m as any).role),
   );
 }
 
@@ -331,4 +355,19 @@ export function summarizePlan(plan: ForgeMigrationPlan): ForgePlanSummary {
 // retroactively set a role, so the dropdown locks.
 export function isRoleEditable(action: ForgeMemberAction): boolean {
   return action === 'joined' || action === 'invited';
+}
+
+// A roster row's role column. Where the dropdown locks, the role shown is the
+// one Forge reports, never the default KaraBuddy would have handed.
+export type RosterRole = { editable: true; role: ForgeRole } | { editable: false; role: ForgeTeamRole };
+
+export function rosterRole(planned: ForgeMigrationPlanMember | undefined, chosen: ForgeRole): RosterRole {
+  if (!planned) return { editable: false, role: chosen };
+  return isRoleEditable(planned.action) ? { editable: true, role: chosen } : { editable: false, role: planned.role };
+}
+
+// Forge keeps a rename, so after a re-run the team is called whatever Forge
+// says, not what was sent.
+export function forgeTeamName(plan: ForgeMigrationPlan, sentName: string): string {
+  return plan.teamName || sentName;
 }

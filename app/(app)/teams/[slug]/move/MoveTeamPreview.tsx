@@ -10,12 +10,14 @@ import { btnGhost } from '@/app/_components/buttonStyles';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import {
   FORGE_TEAM_NAME_MAX,
+  forgeTeamName,
   isMigrationBlockCode,
-  isRoleEditable,
+  rosterRole,
   summarizePlan,
   type MigrationBlock,
   type ForgeMemberAction,
   type ForgeMigrationPlan,
+  type ForgeMigrationPlanMember,
   type ForgeRole,
 } from '@/lib/forgeMigration';
 
@@ -56,8 +58,9 @@ const ROLE_OPTIONS: ReadonlyArray<readonly [ForgeRole, string]> = [
 ];
 
 // Forge's verdict per member, in the owner's language. `joined` and `invited`
-// are the two that change anything; the rest are the idempotency rules refusing
-// to touch someone, and their role dropdown locks accordingly.
+// are the two that change anything (and only an older Forge still sends
+// `joined`); the rest are the idempotency rules refusing to touch someone, and
+// their role dropdown locks accordingly.
 const ACTION_TAG: Record<ForgeMemberAction, { label: string; fg: string; bg: string; title: string }> = {
   joined: {
     label: 'has account',
@@ -69,7 +72,7 @@ const ACTION_TAG: Record<ForgeMemberAction, { label: string; fg: string; bg: str
     label: 'will be invited',
     fg: tokens.color.warn,
     bg: 'rgba(224, 198, 74, 0.12)',
-    title: 'No Forge account yet — gets an email invitation that binds on first sign-in.',
+    title: 'Gets an email invitation, and joins the Forge team on accepting it.',
   },
   skipped_already_offered: {
     label: 'already offered',
@@ -286,8 +289,8 @@ function MoveForm({
   // Forge keys its plan on the lowercased email; our roster keys on userId. The
   // email is the join, exactly as the contract says.
   const byEmail = useMemo(() => {
-    const m = new Map<string, ForgeMemberAction>();
-    for (const p of data.plan.members) m.set(p.email.toLowerCase(), p.action);
+    const m = new Map<string, ForgeMigrationPlanMember>();
+    for (const p of data.plan.members) m.set(p.email.toLowerCase(), p);
     return m;
   }, [data.plan]);
 
@@ -323,7 +326,10 @@ function MoveForm({
           />
           <p style={{ margin: '6px 0 0', fontSize: 11.5, color: tokens.color.textMuted }}>
             SWU Forge allows {FORGE_TEAM_NAME_MAX} characters ({teamName.trim().length}/{FORGE_TEAM_NAME_MAX}).
-            {isRerun && ' This team already exists on Forge, so the name there is left as it is.'}
+            {isRerun &&
+              (data.plan.teamName
+                ? ` This team already exists on Forge as “${data.plan.teamName}”, so that name is left as it is.`
+                : ' This team already exists on Forge, so the name there is left as it is.')}
           </p>
           {/* ⚠ `teamUrl` is NULL on the first preview — the Forge team does not
               exist yet, so it has no id and no URL, and Forge refuses to invent
@@ -400,7 +406,7 @@ function MemberTable({
   highlightActionable,
 }: {
   data: MigrationResponse;
-  byEmail: Map<string, ForgeMemberAction>;
+  byEmail: Map<string, ForgeMigrationPlanMember>;
   roles: Record<string, ForgeRole>;
   setRoles: (fn: (prev: Record<string, ForgeRole>) => Record<string, ForgeRole>) => void;
   highlightActionable: boolean;
@@ -437,9 +443,11 @@ function MemberTable({
       />
 
       {data.roster.map((m) => {
-        const action = byEmail.get(m.email);
+        const planned = byEmail.get(m.email);
+        const action = planned?.action;
         const tagInfo = action ? ACTION_TAG[action] : null;
-        const editable = !!action && isRoleEditable(action);
+        const shown = rosterRole(planned, roles[m.userId] ?? m.defaultRole);
+        const editable = shown.editable;
         const fresh = highlightActionable && editable;
         return (
           <Row
@@ -463,9 +471,9 @@ function MemberTable({
               )
             }
             roleCell={
-              editable ? (
+              shown.editable ? (
                 <Select<ForgeRole>
-                  value={roles[m.userId] ?? m.defaultRole}
+                  value={shown.role}
                   onChange={(v) => setRoles((prev) => ({ ...prev, [m.userId]: v }))}
                   options={ROLE_OPTIONS}
                   ariaLabel={`Role for ${m.name || m.email}`}
@@ -474,7 +482,7 @@ function MemberTable({
                 />
               ) : (
                 <LockedRole
-                  role={roles[m.userId] ?? m.defaultRole}
+                  role={shown.role}
                   title="Forge already has a decision for this person — the migration never overwrites one."
                 />
               )
@@ -494,7 +502,14 @@ function MemberTable({
           email={m.email ?? 'no email on file'}
           dim
           tag={
-            m.reason === 'duplicate_email' ? (
+            m.reason === 'duplicate_email' && m.email === data.initiator.email ? (
+              <Tag
+                label="duplicate of you"
+                fg={tokens.color.warn}
+                bg="rgba(224, 198, 74, 0.12)"
+                title="This account has the same email address as yours. SWU Forge would see one person — you, as the team’s owner — so it doesn’t move separately."
+              />
+            ) : m.reason === 'duplicate_email' ? (
               <Tag
                 label="duplicate"
                 fg={tokens.color.warn}
@@ -605,7 +620,7 @@ function Totals({ summary }: { summary: ReturnType<typeof summarizePlan> }) {
   if (summary.joined) {
     parts.push({
       n: summary.joined,
-      label: summary.joined === 1 ? 'already has a Forge account' : 'already have Forge accounts',
+      label: 'will be added straight away',
     });
   }
   if (summary.invited) parts.push({ n: summary.invited, label: 'will be invited by email' });
@@ -741,6 +756,17 @@ function describeBlock(block: MigrationBlock): { icon: string; title: string; bo
           'anyone already offered a place stays offered, so a later press only picks up who is left.',
         recheck: 'Check again',
       };
+    case 'initiator_has_no_email':
+      return {
+        icon: '✉️',
+        title: 'Your KaraBuddy account has no email address',
+        body:
+          'SWU Forge knows people by email and nothing else, so it can’t tell who is moving the team — and whoever ' +
+          'moves it becomes its owner there. KaraBuddy keeps the email your Discord or Google account gave it the ' +
+          'first time you signed in; yours didn’t give one, and signing in again won’t add it. Another owner of ' +
+          'this team can move it instead, or ask us on the KaraBuddy Discord to add your email. Nothing was sent.',
+        recheck: 'Check again',
+      };
     case 'roster_too_large':
       return {
         icon: '📋',
@@ -790,12 +816,12 @@ function MoveResult({ slug, data }: { slug: string; data: MigrationResponse }) {
           </span>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: tokens.color.text }} data-testid="forge-result-heading">
-              {data.teamName} is on SWU Forge
+              {forgeTeamName(data.plan, data.teamName)} is on SWU Forge
             </div>
             <p style={{ margin: '4px 0 0', fontSize: 12.5, color: tokens.color.textSecondary, lineHeight: 1.55 }}>
-              <strong style={{ color: tokens.color.text }}>{summary.joined}</strong> added straight away (they already
-              had Forge accounts) · <strong style={{ color: tokens.color.text }}>{summary.invited}</strong> invited by
-              email — they join on first sign-in
+              <strong style={{ color: tokens.color.text }}>{summary.invited}</strong> invited by email — each joins
+              when they accept
+              {summary.joined > 0 && <> · {summary.joined} added straight away</>}
               {summary.alreadyOffered > 0 && <> · {summary.alreadyOffered} already offered, not asked again</>}
               {summary.declined > 0 && <> · {summary.declined} declined, not asked again</>}
               {summary.existingMember > 0 && <> · {summary.existingMember} already on the team</>}.

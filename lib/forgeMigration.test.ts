@@ -5,11 +5,13 @@ import {
   defaultRoleFor,
   forgeMigrationEnabled,
   forgeOrigin,
+  forgeTeamName,
   isForgeBlockCode,
   isForgeRole,
   isMigrationBlockCode,
   isRoleEditable,
   normalizeEmail,
+  rosterRole,
   sourceTeamId,
   summarizePlan,
   FORGE_MAX_MEMBERS,
@@ -33,7 +35,7 @@ function plan(overrides: Partial<ForgeMigrationPlan> = {}): ForgeMigrationPlan {
     forgeTeamId: 'ckteam1',
     teamUrl: 'https://forge.test/teams/ckteam1',
     members: [
-      { email: 'ana@e.com', action: 'joined', role: 'ADMIN' },
+      { email: 'ana@e.com', action: 'invited', role: 'ADMIN' },
       { email: 'corin@e.com', action: 'invited', role: 'EDITOR' },
     ],
     ...overrides,
@@ -223,10 +225,14 @@ describe('callForgeMigration', () => {
     expect(isForgeBlockCode('seats_full')).toBe(true);
     expect(isForgeBlockCode('roster_too_large')).toBe(false);
     expect(isMigrationBlockCode('roster_too_large')).toBe(true);
+    expect(isForgeBlockCode('initiator_has_no_email')).toBe(false);
+    expect(isMigrationBlockCode('initiator_has_no_email')).toBe(true);
     expect(isMigrationBlockCode('nonsense')).toBe(false);
     expect(FORGE_MAX_MEMBERS).toBe(500);
 
     stubFetch(409, { error: 'roster_too_large' });
+    expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'rejected', status: 409 } });
+    stubFetch(409, { error: 'initiator_has_no_email' });
     expect(await callForgeMigration(request())).toEqual({ ok: false, failure: { kind: 'rejected', status: 409 } });
   });
 
@@ -266,6 +272,30 @@ describe('callForgeMigration', () => {
     expect((await callForgeMigration(request())).ok).toBe(false);
   });
 
+  it('accepts the team’s current name on Forge, null, or no name field at all', async () => {
+    for (const teamName of ['Renamed on Forge', null, undefined]) {
+      const body = plan({ outcome: 'noop', teamName });
+      stubFetch(200, body);
+      expect(await callForgeMigration(request())).toEqual({ ok: true, plan: body });
+    }
+  });
+
+  it('rejects a teamName that is neither a string nor null', async () => {
+    stubFetch(200, plan({ teamName: 7 as unknown as string }));
+    expect((await callForgeMigration(request())).ok).toBe(false);
+  });
+
+  it('accepts any of Forge’s four roles on a member, OWNER included, and nothing else', async () => {
+    const owned = plan({ members: [{ email: 'ana@e.com', action: 'skipped_existing_member', role: 'OWNER' }] });
+    stubFetch(200, owned);
+    expect(await callForgeMigration(request())).toEqual({ ok: true, plan: owned });
+
+    for (const role of ['MEMBER', undefined]) {
+      stubFetch(200, plan({ members: [{ email: 'ana@e.com', action: 'invited', role: role as 'EDITOR' }] }));
+      expect((await callForgeMigration(request())).ok).toBe(false);
+    }
+  });
+
   it('is unreachable when the feature is not configured', async () => {
     vi.stubEnv('TEAM_MIGRATION_SECRET', '');
     const fetchMock = stubFetch(200, plan());
@@ -276,6 +306,7 @@ describe('callForgeMigration', () => {
 });
 
 describe('reading Forge’s plan', () => {
+  // Nothing on Forge produces `joined` any more, but an older Forge still can.
   it('counts every action the contract defines', () => {
     const s = summarizePlan(
       plan({
@@ -309,5 +340,43 @@ describe('reading Forge’s plan', () => {
     expect(isRoleEditable('skipped_already_offered')).toBe(false);
     expect(isRoleEditable('skipped_declined')).toBe(false);
     expect(isRoleEditable('skipped_existing_member')).toBe(false);
+  });
+});
+
+describe('what the preview shows', () => {
+  // Prod r1: r1-2 was offered VIEWER, and the re-press preview showed the
+  // EDITOR KaraBuddy would have handed them.
+  it('shows the role Forge reports on a locked row, not KaraBuddy’s default', () => {
+    expect(rosterRole({ email: 'r@e.com', action: 'skipped_already_offered', role: 'VIEWER' }, 'EDITOR')).toEqual({
+      editable: false,
+      role: 'VIEWER',
+    });
+    expect(rosterRole({ email: 'r@e.com', action: 'skipped_declined', role: 'ADMIN' }, 'EDITOR')).toEqual({
+      editable: false,
+      role: 'ADMIN',
+    });
+    expect(rosterRole({ email: 'r@e.com', action: 'skipped_existing_member', role: 'OWNER' }, 'EDITOR')).toEqual({
+      editable: false,
+      role: 'OWNER',
+    });
+  });
+
+  it('keeps the owner’s pick on a row Forge would still act on', () => {
+    expect(rosterRole({ email: 'r@e.com', action: 'invited', role: 'EDITOR' }, 'VIEWER')).toEqual({
+      editable: true,
+      role: 'VIEWER',
+    });
+    expect(rosterRole({ email: 'r@e.com', action: 'joined', role: 'EDITOR' }, 'ADMIN')).toEqual({
+      editable: true,
+      role: 'ADMIN',
+    });
+    expect(rosterRole(undefined, 'EDITOR')).toEqual({ editable: false, role: 'EDITOR' });
+  });
+
+  // Prod r1: renamed on Forge, and the re-run heading still used KaraBuddy's name.
+  it('names the team by what Forge calls it, falling back to the name sent', () => {
+    expect(forgeTeamName(plan({ outcome: 'noop', teamName: 'ZZ renamed' }), 'ZZ move test r1')).toBe('ZZ renamed');
+    expect(forgeTeamName(plan({ teamName: null }), 'Rebel Cell')).toBe('Rebel Cell');
+    expect(forgeTeamName(plan(), 'Rebel Cell')).toBe('Rebel Cell');
   });
 });

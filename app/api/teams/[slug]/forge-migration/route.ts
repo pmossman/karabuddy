@@ -139,14 +139,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   // ⛔ Neither is dropped silently — the preview names them and says why.
   const migratable: typeof roster = [];
   const excluded: { userId: string; name: string | null; email: string | null; reason: 'no_email' | 'duplicate_email' }[] = [];
-  const seenEmails = new Set<string>();
+  const seenEmails = new Set<string>([initiatorEmail]);
   for (const r of roster) {
     if (!r.email) {
       excluded.push({ userId: r.userId, name: r.name, email: null, reason: 'no_email' });
       continue;
     }
     if (seenEmails.has(r.email)) {
-      // The earlier member wins — `rows` is ordered by joinedAt, so the account
+      // The initiator always wins (they cross as the owner); between members
+      // the earlier one does — `rows` is ordered by joinedAt, so the account
       // that has been on the team longest is the one that moves.
       excluded.push({ userId: r.userId, name: r.name, email: r.email, reason: 'duplicate_email' });
       continue;

@@ -267,6 +267,39 @@ describe('the payload KaraBuddy sends', () => {
     ]);
   });
 
+  // Prod r1: a member whose email matched the owner's but for case went out in
+  // members[], and Forge rejected the whole payload as a generic failure.
+  it('treats a member with the OWNER’s email, in any case, as a duplicate of the owner', async () => {
+    const o = await seedUser({ email: 'owner@e.com', name: 'Owner' });
+    const alt = await seedUser({ email: 'Owner@E.com', name: 'Owner (Discord)' });
+    const a = await seedUser({ email: 'a@e.com' });
+    const slug = await seedTeam(o.id, [{ id: alt.id }, { id: a.id }]);
+    as(o.id);
+    const fetchMock = stubForge(200, planFor(['a@e.com']));
+
+    const body = await (await post(slug, { dryRun: true })).json();
+    expect(sentBody(fetchMock).initiator.email).toBe('owner@e.com');
+    expect(sentBody(fetchMock).members.map((m: any) => m.email)).toEqual(['a@e.com']);
+    expect(body.excluded).toEqual([
+      { userId: alt.id, name: 'Owner (Discord)', email: 'owner@e.com', reason: 'duplicate_email' },
+    ]);
+    // The preview names the row as the owner's duplicate by this match.
+    expect(body.excluded[0].email).toBe(body.initiator.email);
+  });
+
+  it('409s an owner with no email before calling Forge, with a code the preview knows', async () => {
+    const o = await seedUser({ email: null });
+    const a = await seedUser({ email: 'a@e.com' });
+    const slug = await seedTeam(o.id, [{ id: a.id }]);
+    as(o.id, null);
+    const fetchMock = stubForge(200, planFor(['a@e.com']));
+
+    const res = await post(slug, { dryRun: true });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: 'initiator_has_no_email' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('refuses a roster over Forge’s 500-member cap before sending it', async () => {
     const o = await seedUser();
     const ids: { id: string }[] = [];
@@ -330,6 +363,26 @@ describe('what comes back', () => {
       { userId: a.id, name: 'Ana', image: null, email: 'a@e.com', kbRole: 'member', defaultRole: 'EDITOR', hasDiscord: false },
     ]);
     expect(body.initiator.email).toBe('o@e.com');
+  });
+
+  // Prod r1: renamed on Forge, and an already-offered VIEWER shown as EDITOR.
+  it('passes through Forge’s current team name and the Forge-side role of a skipped member', async () => {
+    const o = await seedUser({ email: 'o@e.com' });
+    const a = await seedUser({ email: 'a@e.com' });
+    const slug = await seedTeam(o.id, [{ id: a.id }]);
+    as(o.id);
+    const rerun = planFor(['a@e.com'], {
+      outcome: 'noop',
+      teamName: 'Rebel Cell renamed',
+      members: [{ email: 'a@e.com', action: 'skipped_already_offered', role: 'VIEWER' }],
+    });
+    stubForge(200, rerun);
+
+    const body = await (await post(slug, { dryRun: true, teamName: 'Rebel Cell' })).json();
+    expect(body.plan.teamName).toBe('Rebel Cell renamed');
+    expect(body.plan.members).toEqual([{ email: 'a@e.com', action: 'skipped_already_offered', role: 'VIEWER' }]);
+    expect(body.roster[0].defaultRole).toBe('EDITOR');
+    expect(body.teamName).toBe('Rebel Cell');
   });
 
   it('renders the plan of a dry run that would CREATE the team — null id, null url', async () => {
