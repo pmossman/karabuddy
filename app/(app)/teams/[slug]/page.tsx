@@ -272,7 +272,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                     entrances. */}
                 {forgeMigrationEnabled() && (
                   <ForgeMoveFlag>
-                    <MoveTeamToForge slug={slug} teamName={team.name} memberCount={members.length} />
+                    <MoveTeamToForge slug={slug} teamName={team.name} />
                   </ForgeMoveFlag>
                 )}
                 {/* B160: hand the team to another member (you step down). */}

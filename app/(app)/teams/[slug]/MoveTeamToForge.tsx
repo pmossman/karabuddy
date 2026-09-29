@@ -12,15 +12,7 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 // where the roster is decided. Deliberately a card in Team Settings rather than
 // a banner or a nav item — the owner goes looking and finds it where teams are
 // already managed.
-export function MoveTeamToForge({
-  slug,
-  teamName,
-  memberCount,
-}: {
-  slug: string;
-  teamName: string;
-  memberCount: number;
-}) {
+export function MoveTeamToForge({ slug, teamName }: { slug: string; teamName: string }) {
   return (
     <Panel accent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div
@@ -37,9 +29,8 @@ export function MoveTeamToForge({
             Move this team to SWU Forge
           </div>
           <p style={{ margin: '6px 0 0', fontSize: 12, color: tokens.color.textSecondary, lineHeight: 1.5 }}>
-            Creates <strong style={{ color: tokens.color.text }}>{teamName}</strong> on SWU Forge and invites{' '}
-            {memberCount === 1 ? 'you' : `all ${memberCount} members`}. Decks, replays and stats do not come
-            along — your KaraBuddy team is unaffected.
+            Creates <strong style={{ color: tokens.color.text }}>{teamName}</strong> on SWU Forge and invites your
+            team by email. Decks, replays and stats do not come along — your KaraBuddy team is unaffected.
           </p>
         </div>
         <Link
@@ -51,7 +42,7 @@ export function MoveTeamToForge({
         </Link>
       </div>
       <p style={{ margin: 0, fontSize: 11.5, color: tokens.color.textMuted, lineHeight: 1.5 }}>
-        You&apos;ll see the full roster and pick everyone&apos;s role before anything is sent.
+        You&apos;ll see exactly who is invited, and pick everyone&apos;s role, before anything is sent.
       </p>
     </Panel>
   );
