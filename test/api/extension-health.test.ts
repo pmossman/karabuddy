@@ -20,6 +20,13 @@ describe('POST /api/extension/health', () => {
     expect(logged).toContain('0.5.3');
   });
 
+  it('records missing_leader (the leaders[] drift code)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await post({ version: '1.2.2', issues: ['missing_leader'] });
+    expect((await res.json())).toMatchObject({ ok: true, recorded: true });
+    expect(warn.mock.calls[0][0] as string).toContain('missing_leader');
+  });
+
   it('DROPS any code not in the enum — nothing arbitrary can be recorded', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const res = await post({

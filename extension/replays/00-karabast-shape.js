@@ -26,6 +26,7 @@ const KB_ISSUE = {
   NO_ACTIVE_FLAG: 'no_active_flag',
   LEADER_NO_SETID: 'leader_no_setid',
   BASE_NO_SETID: 'base_no_setid',
+  MISSING_LEADER: 'missing_leader',
 };
 
 // The beacon's entire vocabulary — the server validates incoming codes against
