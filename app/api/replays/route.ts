@@ -9,7 +9,7 @@ import { generateSlug, generateTagId } from '@/lib/slug';
 import { corsHeaders, preflight } from '@/lib/cors';
 import { resolveUserId } from '@/lib/userResolution';
 import { sanitizeIncomingMentions } from '@/lib/mentions';
-import { extractWinners, reconstructFinalState } from '@/lib/replayDecoder';
+import { extractWinners, firstSnapshot, reconstructFinalState, summarizePlayers } from '@/lib/replayDecoder';
 import { mergeSlices, sliceHasKeys } from '@/lib/replayMerge';
 import { persistReplayStats } from '@/lib/replayStatsPersist';
 import { resolveTagScope, writeTagScope } from '@/lib/tagScope';
@@ -263,25 +263,13 @@ export async function POST(req: Request) {
     if (parsed?.version !== 1 && parsed?.version !== 2) {
       return NextResponse.json({ ok: false, error: 'unsupported replay version' }, { status: 400, headers });
     }
-    const firstGamestate = (parsed.events || []).find(
-      (e: any) => e.event === 'gamestate' && e.args?.[0]
-    );
-    const snapshot = firstGamestate?.args?.[0]?.full
-      || (parsed.version === 1 ? firstGamestate?.args?.[0] : null);
+    const snapshot = firstSnapshot(parsed);
     const gameId: string | null = snapshot?.id || null;
     if (!gameId) {
       return NextResponse.json({ ok: false, error: 'no gameId in payload' }, { status: 400, headers });
     }
-    const players = snapshot?.players
-      ? Object.entries(snapshot.players).map(([id, p]: [string, any]) => ({
-          // B59: keep the playerId on each serialized player so the UI
-          // can match winners[] → player and render the W/L badge.
-          id,
-          username: p.user?.username || '',
-          leader: p.leader ? { name: p.leader.name || '', set: p.leader.setId?.set || '', number: p.leader.setId?.number || 0 } : null,
-          base: p.base ? { name: p.base.name || '', set: p.base.setId?.set || '', number: p.base.setId?.number || 0 } : null,
-        }))
-      : [];
+    // B59: each entry keeps its playerId so the UI can match winners[] → player.
+    const players = summarizePlayers(snapshot?.players);
 
     const db = getDb();
     const userId = await resolveUserId({ installToken });

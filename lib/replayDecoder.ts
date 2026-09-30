@@ -114,6 +114,25 @@ export function injectDefaultPromptState(state: any): any {
   return state;
 }
 
+// karabast replaced players[pid].leader with a leaders[] array (twin-leader
+// formats) on 2026-09-29; replays recorded before that carry only `leader`.
+export function leadersOf(player: any): any[] {
+  if (Array.isArray(player?.leaders) && player.leaders.some(Boolean)) return player.leaders.filter(Boolean);
+  return player?.leader ? [player.leader] : [];
+}
+
+export function normalizeLeaders(state: any): any {
+  if (!state?.players || typeof state.players !== 'object') return state;
+  for (const pid of Object.keys(state.players)) {
+    const p = state.players[pid];
+    if (p && !p.leader) {
+      const [first] = leadersOf(p);
+      if (first) p.leader = first;
+    }
+  }
+  return state;
+}
+
 export interface Frame {
   t: number;
   state: any;
@@ -242,6 +261,38 @@ export function reconstructFinalState(parsed: any): any | null {
   return state;
 }
 
+export function firstSnapshot(parsed: any): any | null {
+  const first = (parsed?.events || []).find((e: any) => e?.event === 'gamestate' && e.args?.[0]);
+  const arg = first?.args?.[0];
+  return arg?.full || (parsed?.version === 1 ? arg : null) || null;
+}
+
+export interface PlayerCardSummary { name: string; set: string; number: number }
+export interface ReplayPlayerSummary {
+  id: string;
+  username: string;
+  leader: PlayerCardSummary | null;
+  secondLeader?: PlayerCardSummary;
+  base: PlayerCardSummary | null;
+}
+
+const cardSummary = (c: any): PlayerCardSummary => ({ name: c.name || '', set: c.setId?.set || '', number: c.setId?.number || 0 });
+
+// The `replays.players` column shape.
+export function summarizePlayers(snapshotPlayers: any): ReplayPlayerSummary[] {
+  if (!snapshotPlayers || typeof snapshotPlayers !== 'object') return [];
+  return Object.entries(snapshotPlayers).map(([id, p]: [string, any]) => {
+    const [leader, secondLeader] = leadersOf(p);
+    return {
+      id,
+      username: p?.user?.username || '',
+      leader: leader ? cardSummary(leader) : null,
+      ...(secondLeader ? { secondLeader: cardSummary(secondLeader) } : {}),
+      base: p?.base ? cardSummary(p.base) : null,
+    };
+  });
+}
+
 // B65: scan every frame's gamestate for cards that appeared in a given
 // player's VISIBLE zones (groundArena, spaceArena, discard, capturedZone,
 // plus attached upgrades). Hand + deck + resources are masked/face-down
@@ -364,6 +415,7 @@ export function decodeReplay(file: any): DecodedReplay {
       const snapshot = structuredClone(current);
       stripHiddenHandCards(snapshot);
       injectDefaultPromptState(snapshot);
+      normalizeLeaders(snapshot);
       frames.push({ t: e.t, state: snapshot });
     } else {
       sideEvents.push({
