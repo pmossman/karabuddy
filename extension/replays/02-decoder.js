@@ -238,21 +238,29 @@
 
     const isAnonymousUsername = (u) => !u || /^anonymous\s/i.test(u);
 
+    // karabast replaced players[pid].leader with a leaders[] array (twin-leader
+    // formats) on 2026-09-29; replays recorded before that carry only `leader`.
+    // Mirrors lib/replayDecoder.ts leadersOf().
+    const leadersOf = (p) => {
+        if (Array.isArray(p?.leaders) && p.leaders.some(Boolean)) return p.leaders.filter(Boolean);
+        return p?.leader ? [p.leader] : [];
+    };
+
+    const cardSummary = (c) => ({ name: c.name || '', set: c.setId?.set || '', number: c.setId?.number || 0 });
+
+    const summarizePlayer = (p) => {
+        const [leader, secondLeader] = leadersOf(p);
+        return {
+            username: p?.user?.username || '',
+            leader: leader ? cardSummary(leader) : null,
+            ...(secondLeader ? { secondLeader: cardSummary(secondLeader) } : {}),
+            base: p?.base ? cardSummary(p.base) : null
+        };
+    };
+
     const extractPlayerSummaries = (players) => {
         if (!players || typeof players !== 'object') return [];
-        return Object.values(players).map((p) => ({
-            username: p.user?.username || '',
-            leader: p.leader ? {
-                name: p.leader.name || '',
-                set: p.leader.setId?.set || '',
-                number: p.leader.setId?.number || 0
-            } : null,
-            base: p.base ? {
-                name: p.base.name || '',
-                set: p.base.setId?.set || '',
-                number: p.base.setId?.number || 0
-            } : null
-        }));
+        return Object.values(players).map((p) => summarizePlayer(p));
     };
 
     // Live extractor: walks the in-memory recording array (recorder owns it).
@@ -296,14 +304,7 @@
         const players = {};
         const src = firstSnap?.players;
         if (src && typeof src === 'object') {
-            for (const pid of Object.keys(src)) {
-                const p = src[pid] || {};
-                players[pid] = {
-                    username: p.user?.username || '',
-                    leader: p.leader ? { name: p.leader.name || '', set: p.leader.setId?.set || '', number: p.leader.setId?.number || 0 } : null,
-                    base: p.base ? { name: p.base.name || '', set: p.base.setId?.set || '', number: p.base.setId?.number || 0 } : null,
-                };
-            }
+            for (const pid of Object.keys(src)) players[pid] = summarizePlayer(src[pid]);
         }
         // Final reconstructed state → the raw winner signal (winners/winner/
         // endGameInfo) the webapp normalizes against `players`. decodeReplay folds

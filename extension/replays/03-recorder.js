@@ -220,6 +220,7 @@
                 username: u.username || null,
                 name: deck.name || null,
                 leader: deck.leader || null,
+                ...(deck.secondLeader ? { secondLeader: deck.secondLeader } : {}),
                 base: deck.base || null,
                 deck: Array.isArray(deck.deck) ? deck.deck : null,
                 sideboard: Array.isArray(deck.sideboard) ? deck.sideboard : null

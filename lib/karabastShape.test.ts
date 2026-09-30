@@ -8,8 +8,8 @@ import { validateKarabastGamestate, knownIssueCodes, structuralIssueCodes } from
 const goodSnapshot = () => ({
   id: 'game-1',
   players: {
-    p1: { user: { username: 'Alice' }, isActionPhaseActivePlayer: true, leader: { setId: { set: 'SOR', number: 1 } }, base: { setId: { set: 'SOR', number: 2 } }, cardPiles: { hand: [{ id: 'SOR_010', setId: { set: 'SOR', number: 10 } }] } },
-    p2: { user: { username: 'Bob' }, isActionPhaseActivePlayer: false, cardPiles: { hand: [{ controllerId: 'p2' }] } },
+    p1: { user: { username: 'Alice' }, isActionPhaseActivePlayer: true, leaders: [{ setId: { set: 'SOR', number: 1 } }], base: { setId: { set: 'SOR', number: 2 } }, cardPiles: { hand: [{ id: 'SOR_010', setId: { set: 'SOR', number: 10 } }] } },
+    p2: { user: { username: 'Bob' }, isActionPhaseActivePlayer: false, leaders: [{ setId: { set: 'SOR', number: 5 } }], base: { setId: { set: 'SOR', number: 6 } }, cardPiles: { hand: [{ controllerId: 'p2' }] } },
   },
 });
 
@@ -29,8 +29,26 @@ describe('validateKarabastGamestate', () => {
   });
   it('flags leader/base that lost setId (card-art drift)', () => {
     const s = goodSnapshot();
-    (s.players.p1 as any).leader = { name: 'X' };
+    (s.players.p1 as any).leaders = [{ name: 'X' }];
     expect(validateKarabastGamestate(s).issues).toContain('leader_no_setid');
+  });
+  it('accepts the legacy single `leader` shape (pre-2026-09-29 karabast)', () => {
+    const s = goodSnapshot();
+    for (const p of Object.values(s.players) as any[]) { p.leader = p.leaders[0]; delete p.leaders; }
+    expect(validateKarabastGamestate(s)).toEqual({ ok: true, issues: [] });
+  });
+  it('accepts twin leaders and checks the second one too', () => {
+    const s = goodSnapshot();
+    (s.players.p1 as any).leaders.push({ name: 'Second' });
+    expect(validateKarabastGamestate(s).issues).toEqual(['leader_no_setid']);
+  });
+  it('flags a player with neither leader nor leaders[] as missing_leader (structural)', () => {
+    const s = goodSnapshot();
+    delete (s.players.p2 as any).leaders;
+    expect(validateKarabastGamestate(s).issues).toEqual(['missing_leader']);
+    (s.players.p2 as any).leaders = [];
+    expect(validateKarabastGamestate(s).issues).toEqual(['missing_leader']);
+    expect(structuralIssueCodes()).toContain('missing_leader');
   });
   it('dedupes a code even when multiple players trigger it', () => {
     const s = goodSnapshot();

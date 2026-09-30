@@ -37,8 +37,8 @@ const sio = (event, payload) => '42' + JSON.stringify([event, payload]);
 const gs = (id, active, extra = {}) => ({
   id,
   players: {
-    p1: { user: { username: 'Alice' }, cardPiles: { hand: [{ id: 'SOR_001', setId: { set: 'SOR', number: 1 } }] }, isActionPhaseActivePlayer: active === 'p1' },
-    p2: { user: { username: 'Bob' }, cardPiles: { hand: [{ controllerId: 'p2' }] }, isActionPhaseActivePlayer: active === 'p2' },
+    p1: { user: { username: 'Alice' }, leaders: [{ name: 'Luke', setId: { set: 'SOR', number: 5 } }], base: { name: 'Echo Base', setId: { set: 'SOR', number: 20 } }, cardPiles: { hand: [{ id: 'SOR_001', setId: { set: 'SOR', number: 1 } }] }, isActionPhaseActivePlayer: active === 'p1' },
+    p2: { user: { username: 'Bob' }, leaders: [{ name: 'Vader', setId: { set: 'SOR', number: 10 } }], base: { name: 'Command Center', setId: { set: 'SOR', number: 21 } }, cardPiles: { hand: [{ controllerId: 'p2' }] }, isActionPhaseActivePlayer: active === 'p2' },
   },
   ...extra,
 });
@@ -110,6 +110,8 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
     expect(s.ownerPlayerId).toBe('p1');
     // Matchup players present, keyed by playerId.
     expect(Object.keys(s.players)).toEqual(expect.arrayContaining(['p1', 'p2']));
+    expect(s.players.p1.leader).toEqual({ name: 'Luke', set: 'SOR', number: 5 });
+    expect(s.players.p2.leader).toEqual({ name: 'Vader', set: 'SOR', number: 10 });
     // Raw winner signal carried through for the webapp to normalize.
     expect(s.winners).toEqual(['Alice']);
     // The summary is matchup-only — no card piles / hands.
@@ -138,6 +140,23 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
     expect(uploads[0].match.gamesToWinMode).toBe('bestOfThree');
   });
 
+  it('keeps a twin-leader lobby deck\'s secondLeader in payload.decks', async () => {
+    const { uploads } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    ws.recv(sio('lobbystate', { users: [
+      { id: 'u1', username: 'Alice', deck: { leader: { id: 'SOR_005' }, secondLeader: { id: 'SOR_009' }, base: { id: 'SOR_020' } } },
+      { id: 'u2', username: 'Bob', deck: { leader: { id: 'SOR_010' }, base: { id: 'SOR_021' } } },
+    ] }));
+    ws.recv(sio('gamestate', gs('g1', 'p1')));
+    for (let i = 0; i < 10; i++) ws.recv(sio('gamestate', gs('g1', i % 2 === 0 ? 'p2' : 'p1')));
+    ws.recv(sio('gamestate', gs('g1', 'p2', { gameOver: true })));
+    await vi.advanceTimersByTimeAsync(1500);
+    const decks = uploads[0].decks;
+    expect(decks.u1.leader).toEqual({ id: 'SOR_005' });
+    expect(decks.u1.secondLeader).toEqual({ id: 'SOR_009' });
+    expect(decks.u2).not.toHaveProperty('secondLeader');
+  });
+
   it('fires a content-free drift beacon when karabast gamestate shape drifts', async () => {
     const { beacons } = setup();
     const ws = new window.WebSocket('wss://api.karabast.net/socket');
@@ -152,6 +171,15 @@ describe('recorder end-to-end (WebSocket → payload)', () => {
     }));
     expect(beacons).toHaveLength(1);
     expect(beacons[0]).toContain('leader_no_setid'); // a fixed enum code, no game data
+  });
+
+  it('beacons missing_leader when a player has neither leader nor leaders[]', async () => {
+    const { beacons } = setup();
+    const ws = new window.WebSocket('wss://api.karabast.net/socket');
+    const frame = gs('g1', 'p1');
+    delete frame.players.p2.leaders;
+    ws.recv(sio('gamestate', frame));
+    expect(beacons).toEqual([['missing_leader']]);
   });
 
   it('does NOT beacon on a healthy match (silent in steady state)', async () => {
@@ -344,5 +372,6 @@ describe('forward contract: server decodes the current recorder payload', () => 
     // Winner-by-username ('Alice') still resolves to a playerId the server understands.
     const finalState = decoded.frames[decoded.frames.length - 1].state;
     expect(extractWinners(finalState)).toContain('p1');
+    expect(finalState.players.p2.leader.name).toBe('Vader'); // leaders[] → server's leader alias
   });
 });

@@ -77,6 +77,21 @@ describe('buildEncryptedSummary', () => {
     expect(json).not.toContain('hand');
   });
 
+  it('reads karabast\'s leaders[] shape and keeps a twin second leader', () => {
+    const p = payload();
+    const players = p.events[0].args[0].full.players;
+    players.p1.leaders = [players.p1.leader, { name: 'Leia', setId: { set: 'SOR', number: 9 } }];
+    players.p2.leaders = [players.p2.leader];
+    delete players.p1.leader;
+    delete players.p2.leader;
+    const s = D.buildEncryptedSummary(p, 'p1');
+    expect(s.players.p1.leader).toEqual({ name: 'Luke', set: 'SOR', number: 1 });
+    expect(s.players.p1.secondLeader).toEqual({ name: 'Leia', set: 'SOR', number: 9 });
+    expect(s.players.p2.leader).toEqual({ name: 'Vader', set: 'SOR', number: 10 });
+    expect(s.players.p2).not.toHaveProperty('secondLeader');
+    expect(D.buildReplayFilename(0, D.extractMetaFromFile(p).players)).toMatch(/_Luke-Echo_Base_Alice_vs_Vader-Command_Center_Bob\.karareplay$/);
+  });
+
   it('handles a payload with no winner yet (mid-match summary)', () => {
     const p = payload();
     p.events.pop(); // drop the winner patch
