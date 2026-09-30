@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { NavLink } from '@/app/_components/NavLink';
 import { SessionMenu } from '@/app/_components/SessionMenu';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
+import { ForgeAnnouncementButton } from '@/app/_components/forgeAnnouncement/ForgeAnnouncement';
 
 // Top header bar for SIGNED-OUT visitors (public/marketing + anonymous shared-
 // replay viewing). Signed-in users get the left-sidebar AppShell instead, so
@@ -107,6 +108,10 @@ export function HeaderBar({ hasLinkedExtension }: { hasLinkedExtension: boolean 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <span className="kb-desktop-cluster" style={{ alignItems: 'center', gap: 14 }}>
           {showInstall && <InstallExtensionCta variant="header" />}
+          <ForgeAnnouncementButton variant="header" />
+        </span>
+        <span className="kb-hamburger" style={{ alignItems: 'center' }}>
+          <ForgeAnnouncementButton variant="icon" />
         </span>
         <SessionMenu compact />
 

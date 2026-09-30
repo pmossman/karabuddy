@@ -7,6 +7,7 @@ import { signOut, useSession } from 'next-auth/react';
 import { InstallExtensionCta } from '@/app/_components/InstallExtensionCta';
 import { PrivateMatchup } from '@/app/_components/PrivateMatchup';
 import { useActiveTeam } from '@/app/_components/ActiveTeamContext';
+import { ForgeAnnouncementButton } from '@/app/_components/forgeAnnouncement/ForgeAnnouncement';
 import type { TeamRef } from '@/lib/activeTeam';
 import type { LastReplayRef } from '@/lib/lastReplay';
 
@@ -195,7 +196,10 @@ export function Sidebar({
           </svg>
         </button>
         <Logo slug={activeTeam?.slug ?? null} />
-        <AccountAvatar />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ForgeAnnouncementButton variant="icon" />
+          <AccountAvatar />
+        </div>
       </div>
 
       {drawerOpen && (
@@ -265,7 +269,10 @@ function SidebarBody({
         </NavGroup>
       </div>
 
-      {/* Pinned bottom: install CTA + account. */}
+      {/* Pinned bottom: SWU Forge note, install CTA + account. */}
+      <div style={{ padding: '10px 4px 0' }}>
+        <ForgeAnnouncementButton variant="sidebar" />
+      </div>
       {!hasLinkedExtension && (
         <div style={{ padding: '10px 8px 0' }}>
           <InstallExtensionCta variant="header" />

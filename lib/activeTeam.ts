@@ -21,14 +21,18 @@ export interface TeamRef {
   name: string;
 }
 
+export interface MyTeamRef extends TeamRef {
+  role: string;
+}
+
 // The caller's teams, ordered by join time (oldest first) — the fallback
 // "first team" is therefore the longest-standing membership. This query was
 // duplicated across page.tsx / replays / clips / stats; route them all through
 // here to kill the drift.
-export async function getMyTeams(userId: string): Promise<TeamRef[]> {
+export async function getMyTeams(userId: string): Promise<MyTeamRef[]> {
   const db = getDb();
   return db
-    .select({ slug: teams.slug, name: teams.name })
+    .select({ slug: teams.slug, name: teams.name, role: teamMembers.role })
     .from(teamMembers)
     .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
     .where(eq(teamMembers.userId, userId))
@@ -53,7 +57,7 @@ export function selectActiveTeam(teams: TeamRef[], cookieSlug: string | null): T
 // call site is already force-dynamic.
 export async function resolveActiveTeam(
   userId: string | null,
-): Promise<{ active: TeamRef | null; teams: TeamRef[] }> {
+): Promise<{ active: TeamRef | null; teams: MyTeamRef[] }> {
   if (!userId) return { active: null, teams: [] };
   const myTeams = await getMyTeams(userId);
   const cookieSlug = (await cookies()).get(ACTIVE_TEAM_COOKIE)?.value ?? null;

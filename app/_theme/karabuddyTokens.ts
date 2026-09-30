@@ -97,6 +97,28 @@ export const tokens = {
   font: {
     family: 'var(--font-barlow), -apple-system, BlinkMacSystemFont, sans-serif',
   },
+  // SWU Forge's own identity (its dark theme in src/app.css + its logo mark),
+  // for the surfaces that speak as SWU Forge. Not KaraBuddy chrome.
+  forge: {
+    headerBg: '#12131a',
+    bg: '#171820',
+    surface: '#1e2030',
+    surface2: '#252840',
+    border: '#2e3150',
+    text: '#f8f8f8',
+    textMuted: '#8892a4',
+    accent: '#4073d4',
+    accentHover: '#5585e8',
+    softBg: 'rgba(85, 133, 232, 0.18)',
+    softBorder: 'rgba(85, 133, 232, 0.45)',
+    softText: '#7eaaef',
+    markBlue: '#4da8da',
+    markOrange: '#e8842f',
+    markRing: '#8a9bae',
+    markCore: '#7ab8d4',
+    radius: 8,
+    font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+  },
 } as const;
 
 export type Tokens = typeof tokens;
