@@ -35,9 +35,9 @@ describe('showMoveSection', () => {
     expect(showMoveSection('page', base)).toBe(false);
   });
 
-  it('shows the sign-in hint on the page only', () => {
+  it('shows the sign-in hint to signed-out visitors', () => {
     expect(showMoveSection('page', { ...base, signedIn: false })).toBe(true);
-    expect(showMoveSection('modal', { ...base, signedIn: false })).toBe(false);
+    expect(showMoveSection('modal', { ...base, signedIn: false })).toBe(true);
   });
 
   it('hides everywhere when team moves are not configured', () => {

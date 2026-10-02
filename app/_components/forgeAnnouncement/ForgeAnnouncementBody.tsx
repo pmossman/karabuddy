@@ -69,8 +69,10 @@ export function ForgeAnnouncementBody({
 
 function SectionBlock({ section, page, children }: { section: Section; page: boolean; children?: ReactNode }) {
   const body: CSSProperties = { margin: '6px 0 0', fontSize: page ? 15.5 : 14, lineHeight: 1.6, color: f.text, opacity: 0.86, maxWidth: '64ch' };
+  const panel: CSSProperties | undefined =
+    section.id === 'move' ? { padding: page ? '18px 20px' : '14px 16px', background: f.softBg, border: `1px solid ${f.softBorder}`, borderRadius: f.radius } : undefined;
   return (
-    <section>
+    <section style={panel}>
       <h3 style={{ margin: 0, fontSize: page ? 18 : 14.5, fontWeight: 700, color: f.text, display: 'flex', alignItems: 'center', gap: 8 }}>
         <span aria-hidden="true" style={{ width: 6, height: 6, transform: 'rotate(45deg)', background: sectionTick(section.id), flexShrink: 0 }} />
         {section.heading}

@@ -18,8 +18,8 @@ export function shouldAutoOpen({ signedIn, pathname, dismissed }: { signedIn: bo
   return signedIn && !dismissed && pathname !== FULL_NOTE_PATH;
 }
 
-export function showMoveSection(variant: 'modal' | 'page', t: ForgeTeamContext): boolean {
+export function showMoveSection(_variant: 'modal' | 'page', t: ForgeTeamContext): boolean {
   if (!t.canMove) return false;
-  if (t.ownedTeams.length > 0 || t.memberTeamCount > 0) return true;
-  return variant === 'page' && !t.signedIn;
+  if (!t.signedIn) return true;
+  return t.ownedTeams.length > 0 || t.memberTeamCount > 0;
 }

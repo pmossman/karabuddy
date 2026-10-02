@@ -38,6 +38,16 @@ export interface Section {
 
 export const sections: Section[] = [
   {
+    id: 'move',
+    heading: 'Bring your team over',
+    short: (
+      <>
+        You pick everyone&apos;s role, each teammate gets an email invitation, and your KaraBuddy team stays as it is.
+        You&apos;ll need an SWU Forge account with the same email.
+      </>
+    ),
+  },
+  {
     id: 'why',
     heading: "Why I'm doing this",
     short: (
@@ -54,16 +64,6 @@ export const sections: Section[] = [
     id: 'hosting',
     heading: 'Until then',
     short: <>KaraBuddy stays as it is, and I&apos;ll fix what breaks.</>,
-  },
-  {
-    id: 'move',
-    heading: 'Bring your team over',
-    short: (
-      <>
-        You pick everyone&apos;s role, each teammate gets an email invitation, and your KaraBuddy team stays as it is.
-        You&apos;ll need an SWU Forge account with the same email.
-      </>
-    ),
   },
   {
     id: 'forge',
