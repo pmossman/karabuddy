@@ -16,6 +16,13 @@ export const forgeStyles = `
   .kbf-quiet:hover { color: ${f.text}; }
   .kbf-nav { transition: border-color 0.18s ease; }
   .kbf-nav:hover { border-color: ${f.softBorder} !important; }
+  .kbf-glow { background: ${f.glowTint}, ${f.surface} !important; border-color: ${f.glowRing} !important; animation: kbf-glow 3.2s ease-in-out infinite; }
+  .kbf-glow:hover { border-color: ${f.softText} !important; box-shadow: 0 0 0 1px ${f.glowRing}, 0 0 20px 0 ${f.glowStrong}; }
+  @keyframes kbf-glow {
+    0%, 100% { box-shadow: 0 0 0 1px ${f.glowRing}, 0 0 10px -3px ${f.glowSoft}; }
+    50% { box-shadow: 0 0 0 1px ${f.glowRing}, 0 0 18px -1px ${f.glowStrong}, 0 0 28px -8px ${f.glowWarm}; }
+  }
+  @media (prefers-reduced-motion: reduce) { .kbf-glow { animation: none; box-shadow: 0 0 0 1px ${f.glowRing}, 0 0 14px -2px ${f.glowSoft}; } }
   .kbf-primary:focus-visible, .kbf-soft:focus-visible, .kbf-quiet:focus-visible, .kbf-nav:focus-visible { outline: 2px solid ${f.markBlue}; outline-offset: 2px; }
 `;
 

@@ -116,13 +116,13 @@ export function ForgeAnnouncementButton({ variant }: { variant: 'sidebar' | 'ico
 
   if (!ctx) {
     return (
-      <Link href={FULL_NOTE_PATH} prefetch={false} aria-label={label} title={label} className="kbf-nav" style={common}>
+      <Link href={FULL_NOTE_PATH} prefetch={false} aria-label={label} title={label} className="kbf-nav kbf-glow" style={common}>
         {content}
       </Link>
     );
   }
   return (
-    <button type="button" onClick={ctx.open} aria-label={label} title={label} className="kbf-nav" style={common}>
+    <button type="button" onClick={ctx.open} aria-label={label} title={label} className="kbf-nav kbf-glow" style={common}>
       {content}
       {variant === 'icon' && showNew && (
         <span aria-hidden="true" style={{ position: 'absolute', top: -3, right: -3, width: 9, height: 9, borderRadius: 999, background: f.markOrange, border: `2px solid ${f.headerBg}` }} />
