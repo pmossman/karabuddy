@@ -23,10 +23,8 @@ export const lede: ReactNode = (
     Hi everyone,
     <br />
     <br />
-    I wanted to tell you myself where my time is going. I&apos;ve moved most of my development over to SWU Forge, and my
-    goal is to bring the KaraBuddy experience there with it. I know a lot of you have made KaraBuddy part of how you
-    prep, and some of you prefer it to anything else out there. That means a lot to me, so I want to be upfront about
-    what this means for KaraBuddy and why I&apos;m doing it.
+    KaraBuddy will keep running through the Homeworlds and Icons sets. When Legacy of Skywalker releases in 2027,
+    I&apos;ll retire it and put my full effort into making SWU Forge as good as it can possibly be.
   </>
 );
 
@@ -40,92 +38,54 @@ export interface Section {
 
 export const sections: Section[] = [
   {
-    id: 'karabuddy',
-    heading: 'What this means for KaraBuddy',
+    id: 'why',
+    heading: "Why I'm doing this",
     short: (
       <>
-        KaraBuddy isn&apos;t going anywhere for now. I&apos;ll keep it running and fix things when they break. The difference
-        is that new features will mostly land on SWU Forge.
-      </>
-    ),
-    more: (
-      <>
-        If something stops working, let me know in the <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy Discord</Ext> and
-        I&apos;ll take a look.
+        If you remember Petranaki and Karabast, this will sound familiar. KaraBuddy is my Petranaki: I built it fast, on
+        shaky technical ground, to get something useful out to the community. Karabast&apos;s changes keep breaking its
+        extension-based recording and its modified copy of an old Karabast client. SWU Forge is built from scratch on a
+        foundation that can keep up, and a direct Karabast account link is on the way, so you won&apos;t need an extension
+        at all.
       </>
     ),
   },
   {
     id: 'hosting',
-    heading: 'Keeping it running for free',
+    heading: 'Until then',
     short: (
       <>
-        So that KaraBuddy can keep going for the long haul, I&apos;m moving it to free-tier hosting where it costs nothing
-        to run. The catch is that the free database is small, so replays older than 60 days will be deleted, along with the
-        stats that come from them. Public and clipped replays are kept.{' '}
-        <Tbd>when this starts; MIGRATION.md allows dropping 60 to 45 days if the free database runs short</Tbd>
-      </>
-    ),
-    more: (
-      <>
-        Replays more than 30 days old that nobody has opened will also lose their board playback, though their result and
-        decks stay until the 60-day mark. Public, clipped and reviewed replays keep their playback. If there&apos;s a game
-        you want to hang on to, make it public or clip it.
-      </>
-    ),
-  },
-  {
-    id: 'why',
-    heading: "Why I'm doing this",
-    short: (
-      <>
-        Honestly, KaraBuddy is fragile in ways I can&apos;t fix. It records games with a browser extension that reads
-        Karabast&apos;s page, and its replay viewer is built on a modified copy of the game board from an old Karabast
-        client. Whenever Karabast changes something, either one can break. It happened again this week, when
-        Karabast&apos;s second-leader change wiped the leaders from KaraBuddy replays. On SWU Forge I built the replay viewer
-        from scratch as its own client, so keeping up with Karabast is much easier. SWU Forge still records through a
-        browser extension today, but we&apos;re working on an integration that links your Karabast account directly to
-        your SWU Forge account, so you won&apos;t need an extension at all.
-      </>
-    ),
-  },
-  {
-    id: 'forge',
-    heading: "What you'll find on SWU Forge",
-    bullets: [
-      <>A deck builder built right in, with card search, deck versions and public decks.</>,
-      <>Battle Log, which records your Karabast games, links each one to the deck you played, and plays it back in SWU Forge&apos;s own replay viewer.</>,
-      <>Teams with shared deck folders, a team battle log, matchup tables and replay reviews.</>,
-    ],
-    more: (
-      <>
-        Every match gets its own link, and you decide whether only you, your teams or anyone can open it. Review requests
-        can ping you on Discord.
+        I&apos;ll keep KaraBuddy running and fix what breaks. To keep it free to run, I&apos;m moving it to free-tier
+        hosting, so replays older than 60 days will be deleted unless they&apos;re public or clipped.{' '}
+        <Tbd>when this starts</Tbd>
       </>
     ),
   },
   {
     id: 'move',
-    heading: 'Bringing your team with you',
-    more: (
+    heading: 'Bring your team over',
+    short: (
       <>
-        You&apos;ll need an SWU Forge account with the same email as your KaraBuddy account, and the move page will tell
-        you if you don&apos;t have one yet. Before anything is sent, you&apos;ll see your whole team and pick each
-        person&apos;s role. Nobody is added until they accept their invitation, and anyone without an email on KaraBuddy
-        can&apos;t be moved. Decks, replays, stats and your Discord bot setup stay on KaraBuddy. Only the team and its
-        people come across.
+        You pick everyone&apos;s role, each teammate gets an email invitation, and your KaraBuddy team stays as it is.
+        You&apos;ll need an SWU Forge account with the same email.
       </>
     ),
   },
   {
-    id: 'roadmap',
-    heading: "What's coming to SWU Forge",
+    id: 'forge',
+    heading: "What's on SWU Forge",
     bullets: [
-      <>Collection management, so you can keep track of which cards and printings you own.</>,
-      <>
-        Importing KaraBuddy replays into SWU Forge.{' '}
-        <Tbd>keep? Planned in Forge&apos;s docs/first-class-replays-plan.md, not built</Tbd>
-      </>,
+      <>A built-in deck builder, with versions and public decks.</>,
+      <>Battle Log and replays, linked to the deck you played.</>,
+      <>Teams with shared decks, matchup tables and replay reviews.</>,
+    ],
+  },
+  {
+    id: 'roadmap',
+    heading: 'Coming next',
+    bullets: [
+      <>Collection management, to track the cards you own.</>,
+      <Tbd>keep &quot;import KaraBuddy replays&quot;? planned, not built</Tbd>,
       <Tbd>more roadmap items?</Tbd>,
     ],
   },
@@ -134,29 +94,25 @@ export const sections: Section[] = [
     heading: "Tell me what you'd miss",
     short: (
       <>
-        If there&apos;s something you love about KaraBuddy that SWU Forge doesn&apos;t have yet, I really want to hear
-        about it. Tell me in the <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy Discord</Ext> or the{' '}
-        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll do my best to bring it over.
+        If there&apos;s something on KaraBuddy you&apos;d miss, tell me in the{' '}
+        <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy Discord</Ext> or the{' '}
+        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll try to bring it over before KaraBuddy retires.
       </>
     ),
   },
 ];
 
 export const moveCopy = {
-  ownerIntro: (count: number) =>
-    count === 1
-      ? "You own this team, so you can bring it over whenever you're ready. Moving it creates the team on SWU Forge with you as the owner and emails everyone an invitation. Your KaraBuddy team stays exactly as it is."
-      : "You own these teams, so you can bring any of them over whenever you're ready. Moving one creates it on SWU Forge with you as the owner and emails everyone an invitation. Your KaraBuddy team stays exactly as it is.",
+  ownerIntro: (count: number) => (count === 1 ? 'You own this team:' : 'You own these teams:'),
   ownerLink: 'Move to SWU Forge',
-  memberOnly: "Your team's owner can move the team to SWU Forge. When they do, you'll get an email invitation to join.",
-  memberToo: "For teams you don't own, the owner can move them, and you'll get an email invitation when they do.",
+  memberOnly: "Your team's owner can move your team, and you'll get an email invitation.",
+  memberToo: "For teams you don't own, the owner can move them.",
   signedOut: (
     <>
-      If you own a team,{' '}
       <Link href={`/signin?callbackUrl=${FULL_NOTE_PATH}`} style={{ color: tokens.forge.softText, fontWeight: 600 }}>
-        sign in
+        Sign in
       </Link>{' '}
-      and this page will list your teams with a link to move each one.
+      to see the teams you can move.
     </>
   ),
 };

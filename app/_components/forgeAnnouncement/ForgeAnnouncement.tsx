@@ -7,7 +7,7 @@ import { Modal } from '@/app/_components/Modal';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ForgeMark, ForgeWordmark } from './ForgeMark';
 import { ForgeAnnouncementBody, FullNoteLink, forgeButton, forgeStyles } from './ForgeAnnouncementBody';
-import { actions } from './copy';
+import { actions, sections } from './copy';
 import { FULL_NOTE_PATH, SWU_FORGE_URL } from './constants';
 import { dismissalKey, shouldAutoOpen, type ForgeTeamContext } from './rules';
 
@@ -75,7 +75,7 @@ export function ForgeAnnouncementProvider({
           <ForgeAnnouncementBody variant="modal" teams={teams} onNavigate={close} />
         </div>
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, padding: '12px 20px', background: f.headerBg, borderTop: `1px solid ${f.border}` }}>
-          {pathname !== FULL_NOTE_PATH && <FullNoteLink onNavigate={close} />}
+          {pathname !== FULL_NOTE_PATH && sections.some((section) => section.more) && <FullNoteLink onNavigate={close} />}
           <a href={SWU_FORGE_URL} target="_blank" rel="noopener noreferrer" onClick={close} className="kbf-primary" style={forgeButton}>
             {actions.primary}
           </a>
