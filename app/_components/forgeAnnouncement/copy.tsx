@@ -52,11 +52,10 @@ export const sections: Section[] = [
     heading: "Why I'm doing this",
     short: (
       <>
-        If you remember Petranaki and Karabast, this will sound familiar. KaraBuddy is my Petranaki: I built it fast, on
-        shaky technical ground, to get something useful out to the community. Karabast&apos;s changes keep breaking its
-        extension-based recording and its modified copy of an old Karabast client. SWU Forge is built from scratch on a
-        foundation that can keep up, and a direct Karabast account link is on the way, so you won&apos;t need an extension
-        at all.
+        I built KaraBuddy fast, on shaky technical ground, to get something useful out to the community. Karabast&apos;s
+        changes keep breaking its extension-based recording and its modified copy of an old Karabast client. SWU Forge is
+        built from scratch on a foundation that can keep up, and a direct Karabast account link is on the way, so you
+        won&apos;t need an extension at all.
       </>
     ),
   },
