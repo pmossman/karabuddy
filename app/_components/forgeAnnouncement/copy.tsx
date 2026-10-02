@@ -53,13 +53,7 @@ export const sections: Section[] = [
   {
     id: 'hosting',
     heading: 'Until then',
-    short: (
-      <>
-        I&apos;ll keep KaraBuddy running and fix what breaks. To keep it free to run, I&apos;m moving it to free-tier
-        hosting, so replays older than 60 days will be deleted unless they&apos;re public or clipped.{' '}
-        <Tbd>when this starts</Tbd>
-      </>
-    ),
+    short: <>KaraBuddy stays as it is, and I&apos;ll fix what breaks.</>,
   },
   {
     id: 'move',
