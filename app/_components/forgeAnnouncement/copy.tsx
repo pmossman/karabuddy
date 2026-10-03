@@ -23,7 +23,8 @@ export const lede: ReactNode = (
     Hi everyone,
     <br />
     <br />
-    KaraBuddy will keep running through the Homeworlds and Icons sets. When Legacy of Skywalker releases in 2027,
+    As some of you know, I joined SWU Forge a few months ago, and that&apos;s where most of my development time has gone
+    since. KaraBuddy will keep running through the Homeworlds and Icons sets. When Legacy of Skywalker releases in 2027,
     I&apos;ll retire it and put my full effort into making SWU Forge as good as it can possibly be.
   </>
 );
