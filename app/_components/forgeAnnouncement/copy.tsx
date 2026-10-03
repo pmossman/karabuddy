@@ -151,8 +151,12 @@ export const hubCopy = {
       { ownerOnly: true, text: 'Everyone gets an email invitation and joins when they accept it.' },
       { ownerOnly: true, text: 'You need a SWU Forge account. Sign in there once with the same email or Discord account you use here.' },
       { ownerOnly: false, text: 'Your KaraBuddy team stays as it is.' },
-      { ownerOnly: false, text: "Decks, replays and stats stay on KaraBuddy. Only the team and its people move. There's no replay import, and there won't be one." },
+      { ownerOnly: false, text: 'Decks, replays and stats stay on KaraBuddy. Only the team and its people move.' },
     ],
+  },
+  replays: {
+    heading: 'Replays stay on KaraBuddy',
+    body: "KaraBuddy replays and stats won't be moved to SWU Forge. The two apps store and keep replays and stats differently, and both lose most of their value as soon as a new set releases. They stay on KaraBuddy until it retires.",
   },
   learn: {
     heading: 'Learn about SWU Forge',

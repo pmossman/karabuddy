@@ -97,26 +97,35 @@ export default async function SwuForgeHubPage({ searchParams }: { searchParams: 
           </div>
         </header>
 
-        {showMoveSection(teams) && (
-          <HubMoveRow
-            key={moveTeam?.slug ?? ''}
-            teams={teams}
-            status={moveStatus}
-            initialTeam={moveTeam?.slug ?? null}
-            facts={
-              <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                {facts.map((fact) => (
-                  <li key={fact.text} style={{ display: 'flex', gap: 10, fontSize: 14, lineHeight: 1.55, color: f.text, opacity: 0.88 }}>
-                    <span style={{ marginTop: 8, display: 'inline-flex' }}>
-                      <SectionTick color={f.softText} size={5} />
-                    </span>
-                    {fact.text}
-                  </li>
-                ))}
-              </ul>
-            }
-          />
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {showMoveSection(teams) && (
+            <HubMoveRow
+              key={moveTeam?.slug ?? ''}
+              teams={teams}
+              status={moveStatus}
+              initialTeam={moveTeam?.slug ?? null}
+              facts={
+                <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  {facts.map((fact) => (
+                    <li key={fact.text} style={{ display: 'flex', gap: 10, fontSize: 14, lineHeight: 1.55, color: f.text, opacity: 0.88 }}>
+                      <span style={{ marginTop: 8, display: 'inline-flex' }}>
+                        <SectionTick color={f.softText} size={5} />
+                      </span>
+                      {fact.text}
+                    </li>
+                  ))}
+                </ul>
+              }
+            />
+          )}
+          <section aria-labelledby="hub-replays" style={{ padding: '0 4px' }}>
+            <h3 id="hub-replays" style={{ ...h3, fontSize: 14.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <SectionTick color={f.markOrange} size={5} />
+              {hubCopy.replays.heading}
+            </h3>
+            <p style={{ ...body, margin: '4px 0 0', fontSize: 14, color: f.textMuted, opacity: 1 }}>{hubCopy.replays.body}</p>
+          </section>
+        </div>
 
         <section aria-labelledby="hub-learn">
           <h2 id="hub-learn" style={h2}>
