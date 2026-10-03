@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { headline, lede, moveCopy, sections, signOff, type Section } from './copy';
 import { showMoveSection, type ForgeTeamContext } from './rules';
+import { hubMovePath } from './constants';
 
 const f = tokens.forge;
 
@@ -101,7 +102,7 @@ export function MoveTeams({ teams, onNavigate }: { teams: ForgeTeamContext; onNa
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '10px 12px', borderTop: i === 0 ? 'none' : `1px solid ${f.border}` }}
               >
                 <span style={{ fontSize: 14, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
-                <Link href={`/teams/${t.slug}/move`} prefetch={false} onClick={onNavigate} className="kbf-soft" style={{ ...forgeButton, padding: '6px 12px', fontSize: 13 }}>
+                <Link href={hubMovePath(t.slug)} prefetch={false} onClick={onNavigate} className="kbf-soft" style={{ ...forgeButton, padding: '6px 12px', fontSize: 13 }}>
                   {moveCopy.ownerLink}
                 </Link>
               </li>

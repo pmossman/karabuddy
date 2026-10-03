@@ -144,6 +144,8 @@ export const hubCopy = {
     },
     show: 'Details',
     hide: 'Hide',
+    pickLabel: 'Team to move',
+    pickPlaceholder: 'Choose a team',
     facts: [
       { ownerOnly: true, text: "You pick each person's role." },
       { ownerOnly: true, text: 'Everyone gets an email invitation and joins when they accept it.' },

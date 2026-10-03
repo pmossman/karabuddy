@@ -1,13 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { Panel } from '@/app/_components/Panel';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Select } from '@/app/_components/Select';
 import { ErrorNote, Loading } from '@/app/_components/StatusUi';
-import { glowButtonStyle } from '@/app/_components/glowButton';
-import { btnGhost } from '@/app/_components/buttonStyles';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { forgeButton } from './ForgeAnnouncementBody';
 import {
   FORGE_TEAM_NAME_MAX,
   forgeTeamName,
@@ -51,6 +48,8 @@ interface MigrationResponse {
   initiator: { userId: string; name: string | null; email: string };
 }
 
+const f = tokens.forge;
+
 const ROLE_OPTIONS: ReadonlyArray<readonly [ForgeRole, string]> = [
   ['ADMIN', 'Admin'],
   ['EDITOR', 'Editor'],
@@ -76,7 +75,7 @@ const ACTION_TAG: Record<ForgeMemberAction, { label: string; fg: string; bg: str
   },
   skipped_already_offered: {
     label: 'already offered',
-    fg: tokens.color.textMuted,
+    fg: f.textMuted,
     bg: 'rgba(255, 255, 255, 0.05)',
     title: 'Already offered a place on a previous move. Never asked twice.',
   },
@@ -88,15 +87,28 @@ const ACTION_TAG: Record<ForgeMemberAction, { label: string; fg: string; bg: str
   },
   skipped_existing_member: {
     label: 'already a member',
-    fg: tokens.color.accent,
-    bg: tokens.color.primarySoft,
+    fg: f.softText,
+    bg: f.softBg,
     title: 'Already on the Forge team — their role there is left exactly as it is.',
   },
 };
 
-const GRID = 'minmax(0, 1fr) 140px 160px';
+const moveStyles = `
+  .kbf-move { container-type: inline-size; font-family: ${f.font}; color: ${f.text}; }
+  .kbf-move-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 160px; gap: 12px; align-items: center; padding: 10px 14px; }
+  .kbf-move-name:focus { border-color: ${f.softText} !important; }
+  @container (max-width: 560px) {
+    .kbf-move-row { grid-template-columns: minmax(0, 1fr) 128px; gap: 6px 12px; }
+    .kbf-move-row > :nth-child(2) { grid-row: 2; grid-column: 1; }
+    .kbf-move-row > :nth-child(3) { grid-row: 1 / span 2; grid-column: 2; }
+    .kbf-move-head > :nth-child(2) { display: none; }
+  }
+`;
 
-export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initialTeamName: string }) {
+const note: CSSProperties = { margin: 0, fontSize: 13, lineHeight: 1.55, color: f.textMuted };
+const quietLink: CSSProperties = { color: f.softText, textDecoration: 'none', fontFamily: tokens.led.mono };
+
+export function MoveTeamPreview({ slug, initialTeamName, onCancel }: { slug: string; initialTeamName: string; onCancel: () => void }) {
   const [phase, setPhase] = useState<'loading' | 'ready' | 'blocked' | 'error' | 'sending' | 'done'>('loading');
   const [preview, setPreview] = useState<MigrationResponse | null>(null);
   const [result, setResult] = useState<MigrationResponse | null>(null);
@@ -192,50 +204,66 @@ export function MoveTeamPreview({ slug, initialTeamName }: { slug: string; initi
 
   if (phase === 'loading') {
     return (
-      <Panel>
+      <Shell>
         {/* The dry run — Forge runs every idempotency rule and writes nothing. */}
-        <Loading label="what this move would do, from SWU Forge" />
-      </Panel>
+        <Loading label="what this move would do, from SWU Forge" style={{ fontSize: 14, color: f.textMuted }} />
+      </Shell>
     );
   }
 
   if (phase === 'blocked' && block) {
-    return <MoveBlocked block={block} slug={slug} onRecheck={runDryRun} />;
+    return (
+      <Shell>
+        <MoveBlocked block={block} onRecheck={runDryRun} />
+      </Shell>
+    );
   }
 
   if (phase === 'error' || !preview) {
     return (
-      <Panel style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Couldn&apos;t reach SWU Forge</div>
-        <ErrorNote>{error}</ErrorNote>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={runDryRun} style={btnGhost}>
+      <Shell>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Couldn&apos;t reach SWU Forge</div>
+          <ErrorNote style={{ fontSize: 13 }}>{error}</ErrorNote>
+          <button type="button" onClick={runDryRun} className="kbf-soft" style={forgeButton}>
             Try again
           </button>
-          <Link href={`/teams/${slug}?tab=settings`} style={{ ...btnGhost, textDecoration: 'none' }}>
-            Back to settings
-          </Link>
         </div>
-      </Panel>
+      </Shell>
     );
   }
 
   if (phase === 'done' && result) {
-    return <MoveResult slug={slug} data={result} />;
+    return (
+      <Shell>
+        <MoveResult data={result} />
+      </Shell>
+    );
   }
 
   return (
-    <MoveForm
-      slug={slug}
-      data={preview}
-      teamName={teamName}
-      setTeamName={setTeamName}
-      roles={roles}
-      setRoles={setRoles}
-      onConfirm={confirm}
-      sending={phase === 'sending'}
-      error={error}
-    />
+    <Shell>
+      <MoveForm
+        data={preview}
+        teamName={teamName}
+        setTeamName={setTeamName}
+        roles={roles}
+        setRoles={setRoles}
+        onConfirm={confirm}
+        onCancel={onCancel}
+        sending={phase === 'sending'}
+        error={error}
+      />
+    </Shell>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <div className="kbf-move">
+      <style>{moveStyles}</style>
+      {children}
+    </div>
   );
 }
 
@@ -264,23 +292,23 @@ function messageFor(status: number): string {
 // --- The preview form ---
 
 function MoveForm({
-  slug,
   data,
   teamName,
   setTeamName,
   roles,
   setRoles,
   onConfirm,
+  onCancel,
   sending,
   error,
 }: {
-  slug: string;
   data: MigrationResponse;
   teamName: string;
   setTeamName: (v: string) => void;
   roles: Record<string, ForgeRole>;
   setRoles: (fn: (prev: Record<string, ForgeRole>) => Record<string, ForgeRole>) => void;
   onConfirm: () => void;
+  onCancel: () => void;
   sending: boolean;
   error: string | null;
 }) {
@@ -298,99 +326,93 @@ function MoveForm({
   // willing to act on ARE the ones who are new since last time — so we can
   // highlight them without KaraBuddy tracking anything itself.
   const isRerun = data.plan.outcome !== 'created';
+  const blocked = sending || summary.actionable === 0 || !teamName.trim();
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 860 }}>
-      <Panel style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: tokens.color.text }}>Team name on SWU Forge</div>
-          <input
-            data-testid="forge-team-name"
-            value={teamName}
-            onChange={(e) => setTeamName(e.target.value)}
-            maxLength={FORGE_TEAM_NAME_MAX}
-            aria-label="Team name on SWU Forge"
-            style={{
-              display: 'block',
-              width: '100%',
-              marginTop: 8,
-              background: tokens.color.bg,
-              color: tokens.color.text,
-              border: `1px solid ${tokens.color.border}`,
-              borderRadius: tokens.radius.md,
-              padding: '8px 10px',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              outline: 'none',
-            }}
-          />
-          <p style={{ margin: '6px 0 0', fontSize: 11.5, color: tokens.color.textMuted }}>
-            SWU Forge allows {FORGE_TEAM_NAME_MAX} characters ({teamName.trim().length}/{FORGE_TEAM_NAME_MAX}).
-            {isRerun &&
-              (data.plan.teamName
-                ? ` This team already exists on Forge as “${data.plan.teamName}”, so that name is left as it is.`
-                : ' This team already exists on Forge, so the name there is left as it is.')}
-          </p>
-          {/* ⚠ `teamUrl` is NULL on the first preview — the Forge team does not
-              exist yet, so it has no id and no URL, and Forge refuses to invent
-              one. We say so rather than printing a link that 404s. */}
-          <p data-testid="forge-team-url-note" style={{ margin: '4px 0 0', fontSize: 11.5, color: tokens.color.textMuted }}>
-            {data.plan.teamUrl ? (
-              <>
-                Already on SWU Forge:{' '}
-                <a
-                  href={data.plan.teamUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-testid="forge-existing-team-link"
-                  style={{ color: tokens.color.accentBright, textDecoration: 'none', fontFamily: tokens.led.mono }}
-                >
-                  {data.plan.teamUrl}
-                </a>
-              </>
-            ) : (
-              'Nothing exists on SWU Forge yet — the team and its link are created when you confirm.'
-            )}
-          </p>
-        </div>
-
-        <MemberTable
-          data={data}
-          byEmail={byEmail}
-          roles={roles}
-          setRoles={setRoles}
-          highlightActionable={isRerun}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <label htmlFor="kbf-move-name" style={{ fontSize: 14, fontWeight: 600 }}>
+          Team name on SWU Forge
+        </label>
+        <input
+          id="kbf-move-name"
+          className="kbf-move-name"
+          data-testid="forge-team-name"
+          value={teamName}
+          onChange={(e) => setTeamName(e.target.value)}
+          maxLength={FORGE_TEAM_NAME_MAX}
+          style={{
+            display: 'block',
+            width: '100%',
+            maxWidth: 480,
+            marginTop: 8,
+            background: f.bg,
+            color: f.text,
+            border: `1px solid ${f.border}`,
+            borderRadius: f.radius,
+            padding: '9px 12px',
+            fontSize: 14,
+            fontFamily: 'inherit',
+            outline: 'none',
+          }}
         />
+        <p style={{ ...note, marginTop: 6, fontSize: 12.5 }}>
+          SWU Forge allows {FORGE_TEAM_NAME_MAX} characters ({teamName.trim().length}/{FORGE_TEAM_NAME_MAX}).
+          {isRerun &&
+            (data.plan.teamName
+              ? ` This team already exists on Forge as “${data.plan.teamName}”, so that name is left as it is.`
+              : ' This team already exists on Forge, so the name there is left as it is.')}
+        </p>
+        {/* ⚠ `teamUrl` is NULL on the first preview — the Forge team does not
+            exist yet, so it has no id and no URL, and Forge refuses to invent
+            one. We say so rather than printing a link that 404s. */}
+        <p data-testid="forge-team-url-note" style={{ ...note, marginTop: 4, fontSize: 12.5, overflowWrap: 'anywhere' }}>
+          {data.plan.teamUrl ? (
+            <>
+              Already on SWU Forge:{' '}
+              <a href={data.plan.teamUrl} target="_blank" rel="noopener noreferrer" data-testid="forge-existing-team-link" style={quietLink}>
+                {data.plan.teamUrl}
+              </a>
+            </>
+          ) : (
+            'Nothing exists on SWU Forge yet — the team and its link are created when you confirm.'
+          )}
+        </p>
+      </div>
 
-        <Totals summary={summary} />
+      <MemberTable
+        data={data}
+        byEmail={byEmail}
+        roles={roles}
+        setRoles={setRoles}
+        highlightActionable={isRerun}
+      />
 
-        <ErrorNote>{error}</ErrorNote>
+      <Totals summary={summary} />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <Link href={`/teams/${slug}?tab=settings`} style={{ ...btnGhost, textDecoration: 'none' }}>
-            Cancel
-          </Link>
-          <button
-            type="button"
-            data-testid="forge-confirm"
-            onClick={onConfirm}
-            disabled={sending || summary.actionable === 0 || !teamName.trim()}
-            style={{
-              ...glowButtonStyle,
-              opacity: sending || summary.actionable === 0 || !teamName.trim() ? 0.5 : 1,
-              cursor: sending || summary.actionable === 0 ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {sending
-              ? 'Sending…'
-              : summary.actionable === 0
-                ? 'Nothing new to send'
-                : `Send ${summary.actionable} invitation${summary.actionable === 1 ? '' : 's'}`}
-          </button>
-        </div>
-      </Panel>
+      <ErrorNote style={{ fontSize: 13 }}>{error}</ErrorNote>
 
-      <p style={{ margin: 0, fontSize: 12, color: tokens.color.textMuted, lineHeight: 1.6, maxWidth: 640 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <button type="button" onClick={onCancel} className="kbf-quiet" style={{ ...forgeButton, paddingLeft: 0 }}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          data-testid="forge-confirm"
+          onClick={onConfirm}
+          disabled={blocked}
+          className="kbf-primary"
+          style={{ ...forgeButton, opacity: blocked ? 0.5 : 1, cursor: blocked ? 'not-allowed' : 'pointer' }}
+        >
+          {sending
+            ? 'Sending…'
+            : summary.actionable === 0
+              ? 'Nothing new to send'
+              : `Send ${summary.actionable} invitation${summary.actionable === 1 ? '' : 's'}`}
+        </button>
+      </div>
+
+      <p style={{ ...note, fontSize: 12.5, maxWidth: '72ch' }}>
         Nothing has left KaraBuddy yet. Decks, replays, stats and the Discord bot install do not come along —
         only the team and its people. Your KaraBuddy team keeps working exactly as it does now.
       </p>
@@ -412,19 +434,18 @@ function MemberTable({
   highlightActionable: boolean;
 }) {
   return (
-    <div style={{ border: `1px solid ${tokens.surface.panelBorder}`, borderRadius: tokens.radius.md, overflow: 'hidden' }}>
+    <div style={{ border: `1px solid ${f.border}`, borderRadius: f.radius, overflow: 'hidden', background: f.surface }}>
       <div
+        className="kbf-move-row kbf-move-head"
         style={{
-          display: 'grid',
-          gridTemplateColumns: GRID,
-          gap: 12,
-          padding: '8px 14px',
-          background: 'rgba(0,0,0,0.22)',
-          fontSize: 10.5,
+          paddingTop: 8,
+          paddingBottom: 8,
+          background: f.headerBg,
+          fontSize: 11,
           fontWeight: 700,
-          letterSpacing: '0.1em',
+          letterSpacing: '0.08em',
           textTransform: 'uppercase',
-          color: tokens.color.textMuted,
+          color: f.textMuted,
         }}
       >
         <span>Member</span>
@@ -438,7 +459,7 @@ function MemberTable({
       <Row
         name={data.initiator.name}
         email={data.initiator.email}
-        tag={<Tag label="you" fg={tokens.color.accent} bg={tokens.color.primarySoft} title="You create and own the Forge team." />}
+        tag={<Tag label="you" fg={f.softText} bg={f.softBg} title="You create and own the Forge team." />}
         roleCell={<LockedRole role="OWNER" title="A team needs an owner, and an invitation can't own anything." />}
       />
 
@@ -467,7 +488,7 @@ function MemberTable({
               ) : tagInfo ? (
                 <Tag label={tagInfo.label} fg={tagInfo.fg} bg={tagInfo.bg} title={tagInfo.title} />
               ) : (
-                <span style={{ fontSize: 11, color: tokens.color.textMuted }}>—</span>
+                <span style={{ fontSize: 12, color: f.textMuted }}>—</span>
               )
             }
             roleCell={
@@ -478,7 +499,8 @@ function MemberTable({
                   options={ROLE_OPTIONS}
                   ariaLabel={`Role for ${m.name || m.email}`}
                   testId={`forge-role-${m.userId}`}
-                  style={{ width: '100%', maxWidth: '100%' }}
+                  size="md"
+                  style={{ width: '100%', maxWidth: '100%', background: f.bg, color: f.text, border: `1px solid ${f.border}`, padding: '7px 10px', fontSize: 13 }}
                 />
               ) : (
                 <LockedRole
@@ -525,7 +547,7 @@ function MemberTable({
               />
             )
           }
-          roleCell={<span style={{ fontSize: 11.5, color: tokens.color.textMuted }}>—</span>}
+          roleCell={<span style={{ fontSize: 12, color: f.textMuted }}>—</span>}
         />
       ))}
     </div>
@@ -542,32 +564,21 @@ function Row({
 }: {
   name: string | null;
   email: string;
-  tag: React.ReactNode;
-  roleCell: React.ReactNode;
+  tag: ReactNode;
+  roleCell: ReactNode;
   background?: string;
   dim?: boolean;
 }) {
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: GRID,
-        gap: 12,
-        alignItems: 'center',
-        padding: '9px 14px',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-        background,
-        opacity: dim ? 0.62 : 1,
-      }}
-    >
+    <div className="kbf-move-row" style={{ borderTop: `1px solid ${f.border}`, background, opacity: dim ? 0.62 : 1 }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: tokens.color.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: f.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {name || email}
         </div>
         <div
           style={{
-            fontSize: 11,
-            color: tokens.color.textMuted,
+            fontSize: 12,
+            color: f.textMuted,
             fontFamily: tokens.led.mono,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -589,12 +600,12 @@ function Tag({ label, fg, bg, title }: { label: string; fg: string; bg: string; 
       title={title}
       style={{
         display: 'inline-block',
-        fontSize: 10,
+        fontSize: 10.5,
         fontWeight: 700,
         letterSpacing: '0.06em',
         textTransform: 'uppercase',
         padding: '3px 7px',
-        borderRadius: tokens.radius.sm,
+        borderRadius: 4,
         color: fg,
         background: bg,
         whiteSpace: 'nowrap',
@@ -607,7 +618,7 @@ function Tag({ label, fg, bg, title }: { label: string; fg: string; bg: string; 
 
 function LockedRole({ role, title }: { role: string; title: string }) {
   return (
-    <span title={title} style={{ fontSize: 11.5, color: tokens.color.textMuted, fontFamily: tokens.led.mono }}>
+    <span title={title} style={{ fontSize: 12, color: f.textMuted, fontFamily: tokens.led.mono }}>
       {role} 🔒
     </span>
   );
@@ -635,16 +646,14 @@ function Totals({ summary }: { summary: ReturnType<typeof summarizePlan> }) {
       style={{
         display: 'flex',
         flexWrap: 'wrap',
-        gap: 18,
-        paddingTop: 12,
-        borderTop: '1px solid rgba(255,255,255,0.08)',
-        fontSize: 12.5,
-        color: tokens.color.textSecondary,
+        gap: '6px 18px',
+        fontSize: 13.5,
+        color: f.textMuted,
       }}
     >
       {parts.map((p) => (
         <span key={p.label}>
-          <strong style={{ color: tokens.color.text, fontVariantNumeric: 'tabular-nums' }}>{p.n}</strong> {p.label}
+          <strong style={{ color: f.text, fontVariantNumeric: 'tabular-nums' }}>{p.n}</strong> {p.label}
         </span>
       ))}
     </div>
@@ -657,33 +666,14 @@ function Totals({ summary }: { summary: ReturnType<typeof summarizePlan> }) {
 // each of these names a different thing the owner has to go and do, and the
 // whole reason Forge answers them on a dry run is so a human reads them here,
 // with nothing written and the roster still in front of them.
-function MoveBlocked({ block, slug, onRecheck }: { block: MigrationBlock; slug: string; onRecheck: () => void }) {
+function MoveBlocked({ block, onRecheck }: { block: MigrationBlock; onRecheck: () => void }) {
   const copy = describeBlock(block);
   return (
-    <Panel style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
-      <div
-        data-testid={`forge-blocked-${block.code}`}
-        style={{
-          display: 'flex',
-          gap: 12,
-          alignItems: 'flex-start',
-          padding: '14px 16px',
-          borderRadius: tokens.radius.md,
-          background: 'rgba(255, 122, 122, 0.08)',
-          border: '1px solid rgba(255, 122, 122, 0.3)',
-        }}
-      >
-        <span style={{ fontSize: 17, lineHeight: 1.3 }} aria-hidden>
-          {copy.icon}
-        </span>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#ffd0d0' }}>{copy.title}</div>
-          <p style={{ margin: '4px 0 0', fontSize: 12.5, color: tokens.color.textSecondary, lineHeight: 1.55 }}>
-            {copy.body}
-          </p>
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
+      <Notice testId={`forge-blocked-${block.code}`} icon={copy.icon} tone="danger" title={copy.title}>
+        {copy.body}
+      </Notice>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {/* 🔒 Forge's own sign-in URL, returned in the 409 body. Absent = no
             button, because the alternative is a link we invented. */}
         {block.code === 'initiator_has_no_forge_account' && block.signInUrl && (
@@ -692,19 +682,56 @@ function MoveBlocked({ block, slug, onRecheck }: { block: MigrationBlock; slug: 
             target="_blank"
             rel="noopener noreferrer"
             data-testid="forge-signup"
-            style={glowButtonStyle}
+            className="kbf-primary"
+            style={forgeButton}
           >
             Create your Forge account →
           </a>
         )}
-        <button type="button" onClick={onRecheck} style={btnGhost} data-testid="forge-recheck">
+        <button type="button" onClick={onRecheck} className="kbf-soft" style={forgeButton} data-testid="forge-recheck">
           {copy.recheck}
         </button>
-        <Link href={`/teams/${slug}?tab=settings`} style={{ ...btnGhost, textDecoration: 'none' }}>
-          Back to settings
-        </Link>
       </div>
-    </Panel>
+    </div>
+  );
+}
+
+const NOTICE_TONE = {
+  danger: { bg: 'rgba(255, 122, 122, 0.08)', border: 'rgba(255, 122, 122, 0.3)', title: '#ffd0d0' },
+  success: { bg: 'rgba(107, 217, 104, 0.09)', border: 'rgba(107, 217, 104, 0.35)', title: f.text },
+};
+
+function Notice({
+  icon,
+  tone,
+  title,
+  titleTestId,
+  testId,
+  children,
+}: {
+  icon: string;
+  tone: keyof typeof NOTICE_TONE;
+  title: ReactNode;
+  titleTestId?: string;
+  testId?: string;
+  children: ReactNode;
+}) {
+  const t = NOTICE_TONE[tone];
+  return (
+    <div
+      data-testid={testId}
+      style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '14px 16px', borderRadius: f.radius, background: t.bg, border: `1px solid ${t.border}` }}
+    >
+      <span style={{ fontSize: 17, lineHeight: 1.3 }} aria-hidden>
+        {icon}
+      </span>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: t.title }} data-testid={titleTestId}>
+          {title}
+        </div>
+        <p style={{ margin: '4px 0 0', fontSize: 13.5, color: f.text, opacity: 0.86, lineHeight: 1.55 }}>{children}</p>
+      </div>
+    </div>
   );
 }
 
@@ -795,90 +822,61 @@ function describeBlock(block: MigrationBlock): { icon: string; title: string; bo
   }
 }
 
-function MoveResult({ slug, data }: { slug: string; data: MigrationResponse }) {
+function MoveResult({ data }: { data: MigrationResponse }) {
   const summary = summarizePlan(data.plan);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 720 }}>
-      <Panel accent style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 720 }}>
+      <Notice icon="✓" tone="success" titleTestId="forge-result-heading" title={`${forgeTeamName(data.plan, data.teamName)} is on SWU Forge`}>
+        <strong style={{ color: f.text }}>{summary.invited}</strong> invited by email — each joins when they accept
+        {summary.joined > 0 && <> · {summary.joined} added straight away</>}
+        {summary.alreadyOffered > 0 && <> · {summary.alreadyOffered} already offered, not asked again</>}
+        {summary.declined > 0 && <> · {summary.declined} declined, not asked again</>}
+        {summary.existingMember > 0 && <> · {summary.existingMember} already on the team</>}.
+      </Notice>
+
+      {/* A commit always comes back with the team's id, so this is the normal
+          shape. Still guarded: the link is Forge's to give, and we render no
+          link at all rather than assembling one out of an origin and a guess. */}
+      {data.plan.teamUrl ? (
         <div
           style={{
             display: 'flex',
-            gap: 12,
-            alignItems: 'flex-start',
-            padding: '14px 16px',
-            borderRadius: tokens.radius.md,
-            background: 'rgba(107, 217, 104, 0.09)',
-            border: '1px solid rgba(107, 217, 104, 0.35)',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            background: f.bg,
+            border: `1px solid ${f.border}`,
+            borderRadius: f.radius,
+            padding: '8px 8px 8px 12px',
+            fontFamily: tokens.led.mono,
+            fontSize: 12.5,
+            color: f.textMuted,
+            overflowWrap: 'anywhere',
           }}
         >
-          <span style={{ fontSize: 17, lineHeight: 1.3 }} aria-hidden>
-            ✓
-          </span>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: tokens.color.text }} data-testid="forge-result-heading">
-              {forgeTeamName(data.plan, data.teamName)} is on SWU Forge
-            </div>
-            <p style={{ margin: '4px 0 0', fontSize: 12.5, color: tokens.color.textSecondary, lineHeight: 1.55 }}>
-              <strong style={{ color: tokens.color.text }}>{summary.invited}</strong> invited by email — each joins
-              when they accept
-              {summary.joined > 0 && <> · {summary.joined} added straight away</>}
-              {summary.alreadyOffered > 0 && <> · {summary.alreadyOffered} already offered, not asked again</>}
-              {summary.declined > 0 && <> · {summary.declined} declined, not asked again</>}
-              {summary.existingMember > 0 && <> · {summary.existingMember} already on the team</>}.
-            </p>
-          </div>
-        </div>
-
-        {/* A commit always comes back with the team's id, so this is the normal
-            shape. Still guarded: the link is Forge's to give, and we render no
-            link at all rather than assembling one out of an origin and a guess. */}
-        {data.plan.teamUrl ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              flexWrap: 'wrap',
-              background: tokens.color.bgDeep,
-              border: `1px solid ${tokens.color.border}`,
-              borderRadius: tokens.radius.md,
-              padding: '9px 12px',
-              fontFamily: tokens.led.mono,
-              fontSize: 12,
-              color: tokens.color.textSecondary,
-              overflowWrap: 'anywhere',
-            }}
+          <span>{data.plan.teamUrl}</span>
+          <a
+            href={data.plan.teamUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="forge-team-link"
+            className="kbf-soft"
+            style={{ ...forgeButton, marginLeft: 'auto', padding: '6px 12px', fontSize: 13 }}
           >
-            <span>{data.plan.teamUrl}</span>
-            <a
-              href={data.plan.teamUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="forge-team-link"
-              style={{ ...btnGhost, marginLeft: 'auto', textDecoration: 'none', fontFamily: 'inherit' }}
-            >
-              Open on Forge →
-            </a>
-          </div>
-        ) : (
-          <p style={{ margin: 0, fontSize: 12.5, color: tokens.color.textMuted, lineHeight: 1.55 }}>
-            SWU Forge didn’t return a link for the team. Everything above was still carried out — open SWU Forge
-            and it will be in your teams list.
-          </p>
-        )}
-
-        <p style={{ margin: 0, fontSize: 12.5, color: tokens.color.textSecondary, lineHeight: 1.55 }}>
-          Your KaraBuddy team is unchanged — not archived, not locked, not deleted. Press{' '}
-          <strong style={{ color: tokens.color.text }}>Move team</strong> again later to invite anyone who joins
-          after today; nobody is ever asked twice.
-        </p>
-
-        <div>
-          <Link href={`/teams/${slug}?tab=settings`} style={{ ...btnGhost, textDecoration: 'none' }}>
-            Back to settings
-          </Link>
+            Open on SWU Forge →
+          </a>
         </div>
-      </Panel>
+      ) : (
+        <p style={note}>
+          SWU Forge didn’t return a link for the team. Everything above was still carried out — open SWU Forge
+          and it will be in your teams list.
+        </p>
+      )}
+
+      <p style={note}>
+        Your KaraBuddy team is unchanged — not archived, not locked, not deleted. Move it again from here later to
+        invite anyone who joins after today; nobody is ever asked twice.
+      </p>
     </div>
   );
 }

@@ -6,10 +6,11 @@ import { forgeMigrationEnabled } from '@/lib/forgeMigration';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ForgeMark } from '@/app/_components/forgeAnnouncement/ForgeMark';
 import { ForgeLetterButton } from '@/app/_components/forgeAnnouncement/ForgeAnnouncement';
-import { MoveTeams, SectionTick, forgeButton } from '@/app/_components/forgeAnnouncement/ForgeAnnouncementBody';
+import { SectionTick, forgeButton } from '@/app/_components/forgeAnnouncement/ForgeAnnouncementBody';
+import { HubMoveRow } from '@/app/_components/forgeAnnouncement/HubMoveRow';
 import { actions, hubCopy } from '@/app/_components/forgeAnnouncement/copy';
 import { KARABUDDY_DISCORD_URL, SWU_FORGE_DISCORD_URL, SWU_FORGE_DOCS_URL, SWU_FORGE_URL } from '@/app/_components/forgeAnnouncement/constants';
-import { showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
+import { requestedMoveTeam, showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,9 @@ const hubStyles = `
   .kbf-hub-move .kbf-when-open { display: none; }
   .kbf-hub-move[open] .kbf-when-open { display: inline; }
   .kbf-hub-move[open] .kbf-when-closed { display: none; }
-  .kbf-hub-move-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; padding: 4px 16px 18px; }
+  .kbf-hub-move-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); grid-template-areas: "pick facts"; gap: 28px; padding: 4px 16px 18px; }
+  .kbf-hub-move-grid.kbf-hub-moving { grid-template-areas: "pick facts" "flow flow"; }
+  .kbf-hub-move-flow { padding-top: 20px; border-top: 1px solid ${f.softBorder}; }
   @media (prefers-reduced-motion: reduce) { .kbf-hub-move-toggle svg { transition: none; } }
   .kbf-hub-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 26px; }
   .kbf-link { color: ${f.softText}; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -43,6 +46,8 @@ const hubStyles = `
   @container (max-width: 720px) {
     .kbf-hub-wrap { padding: 32px 16px 64px; gap: 40px; }
     .kbf-hub-move-grid, .kbf-hub-features { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .kbf-hub-move-grid { grid-template-areas: "pick" "facts"; }
+    .kbf-hub-move-grid.kbf-hub-moving { grid-template-areas: "pick" "flow" "facts"; }
   }
 `;
 
@@ -58,12 +63,13 @@ function ExtLink({ href, children }: { href: string; children: string }) {
   );
 }
 
-export default async function SwuForgeHubPage() {
+export default async function SwuForgeHubPage({ searchParams }: { searchParams: Promise<{ team?: string | string[] }> }) {
   const session = await auth();
   const userId = session?.user?.id ?? null;
   const myTeams = userId ? await getMyTeams(userId) : [];
   const ownedTeams = myTeams.filter((t) => t.role === 'owner').map(({ slug, name }) => ({ slug, name }));
   const teams: ForgeTeamContext = { signedIn: !!userId, ownedTeams, memberTeamCount: myTeams.length - ownedTeams.length, canMove: forgeMigrationEnabled() };
+  const moveTeam = requestedMoveTeam(teams, (await searchParams).team);
   const mayOwn = !teams.signedIn || ownedTeams.length > 0;
   const facts = hubCopy.move.facts.filter((fact) => mayOwn || !fact.ownerOnly);
   const moveStatus = !teams.signedIn
@@ -92,25 +98,12 @@ export default async function SwuForgeHubPage() {
         </header>
 
         {showMoveSection(teams) && (
-          <details className="kbf-hub-move">
-            <summary>
-              <span id="hub-move" style={{ ...h2, fontSize: 17 }}>
-                <SectionTick color={f.markBlue} size={6} />
-                {hubCopy.move.heading}
-              </span>
-              <span className="kbf-hub-move-status">{moveStatus}</span>
-              <span className="kbf-hub-move-toggle">
-                <span className="kbf-when-closed">{hubCopy.move.show}</span>
-                <span className="kbf-when-open">{hubCopy.move.hide}</span>
-                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                  <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-            </summary>
-            <div className="kbf-hub-move-grid">
-              <div>
-                <MoveTeams teams={teams} />
-              </div>
+          <HubMoveRow
+            key={moveTeam?.slug ?? ''}
+            teams={teams}
+            status={moveStatus}
+            initialTeam={moveTeam?.slug ?? null}
+            facts={
               <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
                 {facts.map((fact) => (
                   <li key={fact.text} style={{ display: 'flex', gap: 10, fontSize: 14, lineHeight: 1.55, color: f.text, opacity: 0.88 }}>
@@ -121,8 +114,8 @@ export default async function SwuForgeHubPage() {
                   </li>
                 ))}
               </ul>
-            </div>
-          </details>
+            }
+          />
         )}
 
         <section aria-labelledby="hub-learn">

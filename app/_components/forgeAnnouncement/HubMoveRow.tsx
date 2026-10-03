@@ -1,0 +1,98 @@
+'use client';
+
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Select } from '@/app/_components/Select';
+import { tokens } from '@/app/_theme/karabuddyTokens';
+import type { TeamRef } from '@/lib/activeTeam';
+import { MoveTeams, SectionTick } from './ForgeAnnouncementBody';
+import { MoveTeamPreview } from './MoveTeamPreview';
+import { hubCopy, moveCopy } from './copy';
+import type { ForgeTeamContext } from './rules';
+
+const f = tokens.forge;
+
+const note: CSSProperties = { margin: '10px 0 0', fontSize: 14, lineHeight: 1.6, color: f.text, opacity: 0.86, maxWidth: '64ch' };
+
+export function HubMoveRow({
+  teams,
+  status,
+  initialTeam,
+  facts,
+}: {
+  teams: ForgeTeamContext;
+  status: string;
+  initialTeam: string | null;
+  facts: ReactNode;
+}) {
+  const owned = teams.ownedTeams;
+  const [open, setOpen] = useState(initialTeam !== null);
+  const [slug, setSlug] = useState(initialTeam ?? (owned.length === 1 ? owned[0].slug : ''));
+  const team = owned.find((t) => t.slug === slug) ?? null;
+  const moving = open && team !== null;
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const want = moving ? slug : null;
+    if (url.searchParams.get('team') === want) return;
+    if (want) url.searchParams.set('team', want);
+    else url.searchParams.delete('team');
+    window.history.replaceState(null, '', url);
+  }, [moving, slug]);
+
+  return (
+    <details className="kbf-hub-move" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        <span id="hub-move" style={{ margin: 0, fontSize: 17, lineHeight: 1.25, fontWeight: 700, letterSpacing: '-0.005em', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SectionTick color={f.markBlue} size={6} />
+          {hubCopy.move.heading}
+        </span>
+        <span className="kbf-hub-move-status">{status}</span>
+        <span className="kbf-hub-move-toggle">
+          <span className="kbf-when-closed">{hubCopy.move.show}</span>
+          <span className="kbf-when-open">{hubCopy.move.hide}</span>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </summary>
+      <div className={moving ? 'kbf-hub-move-grid kbf-hub-moving' : 'kbf-hub-move-grid'}>
+        <div style={{ gridArea: 'pick' }}>
+          {owned.length > 0 ? (
+            <TeamPicker owned={owned} slug={slug} onPick={setSlug} memberToo={teams.memberTeamCount > 0} />
+          ) : (
+            <MoveTeams teams={teams} />
+          )}
+        </div>
+        <div style={{ gridArea: 'facts' }}>{facts}</div>
+        {moving && (
+          <div className="kbf-hub-move-flow" style={{ gridArea: 'flow' }}>
+            <MoveTeamPreview key={team.slug} slug={team.slug} initialTeamName={team.name} onCancel={() => setOpen(false)} />
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function TeamPicker({ owned, slug, onPick, memberToo }: { owned: TeamRef[]; slug: string; onPick: (slug: string) => void; memberToo: boolean }) {
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: f.textMuted }}>{hubCopy.move.pickLabel}</div>
+      {owned.length === 1 ? (
+        <div style={{ marginTop: 6, fontSize: 16, fontWeight: 700 }}>{owned[0].name}</div>
+      ) : (
+        <Select<string>
+          value={slug}
+          onChange={onPick}
+          options={owned.map((t) => [t.slug, t.name] as const)}
+          placeholder={hubCopy.move.pickPlaceholder}
+          ariaLabel={hubCopy.move.pickLabel}
+          testId="hub-move-team"
+          size="md"
+          style={{ marginTop: 8, width: '100%', maxWidth: 360, background: f.bg, color: f.text, border: `1px solid ${f.border}`, fontFamily: f.font }}
+        />
+      )}
+      {memberToo && <p style={note}>{moveCopy.memberToo}</p>}
+    </div>
+  );
+}

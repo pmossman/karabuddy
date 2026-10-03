@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dismissalKey, shouldAutoOpen, showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
-import { FORGE_ANNOUNCEMENT_VERSION } from '@/app/_components/forgeAnnouncement/constants';
+import { dismissalKey, requestedMoveTeam, shouldAutoOpen, showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
+import { FORGE_ANNOUNCEMENT_VERSION, hubMovePath } from '@/app/_components/forgeAnnouncement/constants';
 
 describe('forge announcement dismissal key', () => {
   it('is versioned and per user', () => {
@@ -39,5 +39,30 @@ describe('showMoveSection', () => {
 
   it('hides when team moves are not configured', () => {
     expect(showMoveSection({ ...base, canMove: false, ownedTeams: [{ slug: 'a', name: 'A' }] })).toBe(false);
+  });
+});
+
+describe('the hub deep link to a team move', () => {
+  const owner: ForgeTeamContext = { signedIn: true, ownedTeams: [{ slug: 'orgrnd', name: 'Outer Rim' }, { slug: 'tnd001', name: 'Tuesday' }], memberTeamCount: 1, canMove: true };
+
+  it('points at the hub with the team', () => {
+    expect(hubMovePath('orgrnd')).toBe('/swu-forge?team=orgrnd');
+    expect(hubMovePath('a b&c')).toBe('/swu-forge?team=a%20b%26c');
+  });
+
+  it('opens on a team the viewer owns', () => {
+    expect(requestedMoveTeam(owner, 'tnd001')).toEqual({ slug: 'tnd001', name: 'Tuesday' });
+  });
+
+  it('ignores a team the viewer does not own, a repeated param and no param', () => {
+    expect(requestedMoveTeam(owner, 'hyplan')).toBeNull();
+    expect(requestedMoveTeam(owner, ['orgrnd', 'tnd001'])).toBeNull();
+    expect(requestedMoveTeam(owner, undefined)).toBeNull();
+  });
+
+  it('ignores it for members, signed-out visitors and while moves are off', () => {
+    expect(requestedMoveTeam({ ...owner, ownedTeams: [] }, 'orgrnd')).toBeNull();
+    expect(requestedMoveTeam({ signedIn: false, ownedTeams: [], memberTeamCount: 0, canMove: true }, 'orgrnd')).toBeNull();
+    expect(requestedMoveTeam({ ...owner, canMove: false }, 'orgrnd')).toBeNull();
   });
 });

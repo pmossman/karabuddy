@@ -6,9 +6,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 //
 // ⚠ This is NOT a security boundary and is not pretending to be one — it only
 // keeps the entry point out of the way while the feature is being shaken out.
-// What actually protects the move is owners-only, enforced on the server at
-// /teams/<slug>/move and at POST /api/teams/<slug>/forge-migration, plus the
-// shared secret without which neither exists.
+// What actually protects the move is owners-only, enforced on the server by
+// the SWU Forge hub (it only offers teams you own) and at POST
+// /api/teams/<slug>/forge-migration, plus the shared secret without which
+// neither exists.
 //
 // Turn it on with `localStorage.setItem('kb:forge-move', '1')` in devtools, or
 // by loading team settings once with `?forge-move=1` (which writes the key, so

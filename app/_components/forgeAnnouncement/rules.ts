@@ -23,3 +23,8 @@ export function showMoveSection(t: ForgeTeamContext): boolean {
   if (!t.signedIn) return true;
   return t.ownedTeams.length > 0 || t.memberTeamCount > 0;
 }
+
+export function requestedMoveTeam(t: ForgeTeamContext, requested: string | string[] | undefined): TeamRef | null {
+  if (!showMoveSection(t) || typeof requested !== 'string') return null;
+  return t.ownedTeams.find((team) => team.slug === requested) ?? null;
+}

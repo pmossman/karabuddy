@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Panel } from '@/app/_components/Panel';
 import { glowButtonStyle } from '@/app/_components/glowButton';
 import { tokens } from '@/app/_theme/karabuddyTokens';
+import { hubMovePath } from '@/app/_components/forgeAnnouncement/constants';
 
 // Team-settings entry point for the KaraBuddy → SWU Forge move. Owners only,
 // and only once `forgeMigrationEnabled()` — the page gates both, so this
@@ -34,7 +35,7 @@ export function MoveTeamToForge({ slug, teamName }: { slug: string; teamName: st
           </p>
         </div>
         <Link
-          href={`/teams/${slug}/move`}
+          href={hubMovePath(slug)}
           data-testid="move-to-forge"
           style={{ ...glowButtonStyle, whiteSpace: 'nowrap' }}
         >
