@@ -23,9 +23,8 @@ export const lede: ReactNode = (
     Hi everyone,
     <br />
     <br />
-    As some of you know, I joined SWU Forge a few months ago, and that&apos;s where most of my development time has gone
-    since. KaraBuddy will keep running through the Homeworlds and Icons sets. When Legacy of Skywalker releases in 2027,
-    I&apos;ll retire it and put my full effort into making SWU Forge as good as it can possibly be.
+    As some of you know, I joined SWU Forge a few months ago, and most of my development time has gone there since. I
+    want to be upfront about what that means for KaraBuddy.
   </>
 );
 
@@ -39,12 +38,24 @@ export interface Section {
 
 export const sections: Section[] = [
   {
+    id: 'karabuddy',
+    heading: 'The plan for KaraBuddy',
+    short: (
+      <>
+        KaraBuddy will keep running as it is through the Homeworlds and Icons sets, and I&apos;ll fix what breaks. When
+        Legacy of Skywalker releases in 2027, I&apos;ll retire it, so I can put my full effort into making SWU Forge as
+        good as it can possibly be.
+      </>
+    ),
+  },
+  {
     id: 'move',
     heading: 'Bring your team over',
     short: (
       <>
-        You pick everyone&apos;s role, each teammate gets an email invitation, and your KaraBuddy team stays as it is.
-        You&apos;ll need an SWU Forge account with the same email.
+        You don&apos;t have to wait until then. If you run a team, you can move it today. You pick everyone&apos;s role,
+        each teammate gets an email invitation, and your KaraBuddy team stays as it is. You&apos;ll need an SWU Forge
+        account with the same email.
       </>
     ),
   },
@@ -53,17 +64,12 @@ export const sections: Section[] = [
     heading: "Why I'm doing this",
     short: (
       <>
-        I built KaraBuddy fast, on shaky technical ground, to get something useful out to the community. Karabast&apos;s
-        changes keep breaking its extension-based recording and its modified copy of an old Karabast client. SWU Forge is
-        built from scratch on a foundation that can keep up, and a direct Karabast account link is on the way, so you
-        won&apos;t need an extension at all.
+        I built KaraBuddy fast, on shaky technical ground, to get something useful out to the community, and that has
+        caught up with it. When Karabast changes, its extension-based recording and its modified copy of an old Karabast
+        client often break. SWU Forge is built from scratch on a foundation that can keep up, and we&apos;re working on
+        linking Karabast accounts to it directly, so you won&apos;t need an extension at all.
       </>
     ),
-  },
-  {
-    id: 'hosting',
-    heading: 'Until then',
-    short: <>KaraBuddy stays as it is, and I&apos;ll fix what breaks.</>,
   },
   {
     id: 'forge',
@@ -88,9 +94,9 @@ export const sections: Section[] = [
     heading: "Tell me what you'd miss",
     short: (
       <>
-        If there&apos;s something on KaraBuddy you&apos;d miss, tell me in the{' '}
+        If SWU Forge is missing something you love about KaraBuddy, tell me in the{' '}
         <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy Discord</Ext> or the{' '}
-        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll try to bring it over before KaraBuddy retires.
+        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll try to bring it over before 2027.
       </>
     ),
   },
