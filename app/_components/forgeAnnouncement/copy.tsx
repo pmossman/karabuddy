@@ -25,8 +25,8 @@ export const lede: ReactNode = (
     <br />
     As some of you know, I joined SWU Forge a few months ago. It started when I got chatting with @InvisibleLuis, SWU
     Forge&apos;s sole developer, about building community tools. We realized how aligned we are on the community, user
-    privacy and how software should be built, and that we&apos;d work well together. Here&apos;s what that means for
-    KaraBuddy.
+    privacy and building software, so when he asked if I&apos;d like to work on it with him, I said yes. Here&apos;s what
+    that means for KaraBuddy.
   </>
 );
 
