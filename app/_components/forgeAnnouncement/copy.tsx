@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { FULL_NOTE_PATH, KARABUDDY_DISCORD_URL, SWU_FORGE_DISCORD_URL } from './constants';
+import { HUB_PATH, KARABUDDY_DISCORD_URL, SWU_FORGE_DISCORD_URL, SWU_FORGE_DOCS_URL } from './constants';
 
 
 function Ext({ href, children }: { href: string; children: ReactNode }) {
@@ -35,7 +35,6 @@ export interface Section {
   heading: string;
   short?: ReactNode;
   bullets?: ReactNode[];
-  more?: ReactNode;
 }
 
 export const sections: Section[] = [
@@ -110,7 +109,7 @@ export const moveCopy = {
   memberToo: "For teams you don't own, the owner can move them.",
   signedOut: (
     <>
-      <Link href={`/signin?callbackUrl=${FULL_NOTE_PATH}`} style={{ color: tokens.forge.softText, fontWeight: 600 }}>
+      <Link href={`/signin?callbackUrl=${HUB_PATH}`} style={{ color: tokens.forge.softText, fontWeight: 600 }}>
         Sign in
       </Link>{' '}
       to see the teams you can move.
@@ -120,7 +119,7 @@ export const moveCopy = {
 
 export const actions = {
   primary: 'Open SWU Forge',
-  fullNote: 'Read the full note',
+  hub: 'Go to the SWU Forge hub',
   close: 'Close',
 };
 
@@ -132,3 +131,51 @@ export const signOff: ReactNode = (
     Parker
   </>
 );
+
+export const hubCopy = {
+  intro: "I've joined SWU Forge, and it's where I'll put my full effort when KaraBuddy retires in 2027.",
+  letterButton: 'The future of KaraBuddy',
+  move: {
+    heading: 'Move your team',
+    facts: [
+      { ownerOnly: true, text: "You pick each person's role." },
+      { ownerOnly: true, text: 'Everyone gets an email invitation and joins when they accept it.' },
+      { ownerOnly: true, text: 'You need a SWU Forge account. Sign in there once with the same email or Discord account you use here.' },
+      { ownerOnly: false, text: 'Your KaraBuddy team stays as it is.' },
+      { ownerOnly: false, text: "Decks, replays and stats stay on KaraBuddy. Only the team and its people move. There's no replay import, and there won't be one." },
+    ],
+  },
+  learn: {
+    heading: 'Learn about SWU Forge',
+    replays: {
+      title: 'Replays',
+      body: 'When I joined SWU Forge, the first thing I did was rewrite its replay viewer from the ground up, using what I learned building KaraBuddy. On SWU Forge, your games and replays are in the Battle Log.',
+      link: { label: 'Battle Log guide', href: `${SWU_FORGE_DOCS_URL}/battle-log/battle-log` },
+    },
+    features: [
+      {
+        title: 'Matchup and deck stats',
+        body: "Stats are tied to the exact deck version you played. KaraBuddy has no deck builder, so it can't do that.",
+        link: { label: 'Deck versioning guide', href: `${SWU_FORGE_DOCS_URL}/decks/managing-decks/deck-versioning` },
+      },
+      {
+        title: 'Deck builder',
+        body: 'Build and save decks on SWU Forge, and start a new version when you change the list.',
+        link: { label: 'Workshop guide', href: `${SWU_FORGE_DOCS_URL}/decks/workshop` },
+      },
+      {
+        title: 'Teams',
+        body: 'Share games, stats and decks with your team, and review replays together.',
+        link: { label: 'Team Battle Log guide', href: `${SWU_FORGE_DOCS_URL}/teams/team-battle-log` },
+      },
+    ],
+    soon: 'Coming soon: collection management.',
+    docs: 'All SWU Forge guides',
+  },
+  community: {
+    heading: 'Community',
+    body: "If SWU Forge is missing something you love about KaraBuddy, tell me in either Discord and I'll try to bring it over.",
+    karabuddyDiscord: 'KaraBuddy Discord',
+    forgeDiscord: 'SWU Forge Discord',
+  },
+};
