@@ -73,11 +73,21 @@ export const sections: Section[] = [
   },
   {
     id: 'forge',
-    heading: "What's on SWU Forge",
+    heading: 'Replays, and a lot more',
+    short: (
+      <>
+        Replays are the heart of KaraBuddy, and SWU Forge does them better. Its replay viewer was built from scratch, so
+        it&apos;s sturdier and easier to improve, and you can share any match with your team or with anyone who has the
+        link.
+      </>
+    ),
     bullets: [
-      <>A built-in deck builder, with versions and public decks.</>,
-      <>Battle Log and replays, linked to the deck you played.</>,
-      <>Teams with shared decks, matchup tables and replay reviews.</>,
+      <>
+        More accurate, more useful matchup and deck stats. Every game is tied to the exact deck version you played in
+        the deck builder, which KaraBuddy, with no decks of its own, could never do.
+      </>,
+      <>A built-in deck builder with card search, versions and public decks.</>,
+      <>Teams with shared deck folders and replay reviews.</>,
     ],
   },
   {
