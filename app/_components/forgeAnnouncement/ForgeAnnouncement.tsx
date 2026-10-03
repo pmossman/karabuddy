@@ -105,7 +105,7 @@ export function ForgeAnnouncementButton({ variant }: { variant: 'sidebar' | 'ico
       aria-current={pathname === HUB_PATH ? 'page' : undefined}
       title={variant === 'icon' ? 'SWU Forge' : undefined}
       className="kbf-nav kbf-glow"
-      style={{ ...style, fontFamily: f.font, cursor: 'pointer', textDecoration: 'none', position: 'relative' }}
+      style={{ ...style, boxSizing: 'border-box', fontFamily: f.font, cursor: 'pointer', textDecoration: 'none', position: 'relative' }}
     >
       {variant === 'icon' ? (
         <>
