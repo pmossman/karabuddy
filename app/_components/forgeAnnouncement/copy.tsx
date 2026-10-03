@@ -136,7 +136,14 @@ export const hubCopy = {
   intro: 'KaraBuddy keeps running until Legacy of Skywalker releases in 2027. Development continues on SWU Forge.',
   letterButton: 'The future of KaraBuddy',
   move: {
-    heading: 'Move your team',
+    heading: 'Move your team to SWU Forge',
+    status: {
+      signedOut: 'Sign in to see the teams you can move.',
+      owner: (count: number) => (count === 1 ? 'You own 1 team you can move.' : `You own ${count} teams you can move.`),
+      member: "Your team's owner can move it.",
+    },
+    show: 'Details',
+    hide: 'Hide',
     facts: [
       { ownerOnly: true, text: "You pick each person's role." },
       { ownerOnly: true, text: 'Everyone gets an email invitation and joins when they accept it.' },

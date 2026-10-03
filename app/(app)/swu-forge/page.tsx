@@ -23,15 +23,25 @@ const f = tokens.forge;
 const hubStyles = `
   .kbf-hub { container-type: inline-size; }
   .kbf-hub-wrap { max-width: 880px; margin: 0 auto; padding: 52px 28px 88px; display: flex; flex-direction: column; gap: 48px; }
-  .kbf-hub-move { padding: 26px 28px 28px; background: ${f.softBg}; border: 1px solid ${f.softBorder}; border-radius: ${f.radius * 1.5}px; box-shadow: 0 0 0 1px ${f.glowRing}, 0 0 32px -10px ${f.glowStrong}; }
-  .kbf-hub-move-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 32px; margin-top: 14px; }
+  .kbf-hub-move { background: ${f.softBg}; border: 1px solid ${f.softBorder}; border-radius: ${f.radius}px; box-shadow: 0 0 0 1px ${f.glowRing}, 0 0 18px -10px ${f.glowStrong}; }
+  .kbf-hub-move > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 12px 16px; border-radius: ${f.radius}px; }
+  .kbf-hub-move > summary::-webkit-details-marker { display: none; }
+  .kbf-hub-move > summary:focus-visible { outline: 2px solid ${f.markBlue}; outline-offset: 2px; }
+  .kbf-hub-move-status { font-size: 14px; color: ${f.textMuted}; }
+  .kbf-hub-move-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: ${f.softText}; }
+  .kbf-hub-move-toggle svg { transition: transform 0.15s ease; }
+  .kbf-hub-move[open] .kbf-hub-move-toggle svg { transform: rotate(180deg); }
+  .kbf-hub-move .kbf-when-open { display: none; }
+  .kbf-hub-move[open] .kbf-when-open { display: inline; }
+  .kbf-hub-move[open] .kbf-when-closed { display: none; }
+  .kbf-hub-move-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; padding: 4px 16px 18px; }
+  @media (prefers-reduced-motion: reduce) { .kbf-hub-move-toggle svg { transition: none; } }
   .kbf-hub-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 26px; }
   .kbf-link { color: ${f.softText}; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
   .kbf-link:hover { color: #fff; }
   .kbf-link:focus-visible { outline: 2px solid ${f.markBlue}; outline-offset: 2px; border-radius: 2px; }
   @container (max-width: 720px) {
     .kbf-hub-wrap { padding: 32px 16px 64px; gap: 40px; }
-    .kbf-hub-move { padding: 20px 18px 22px; }
     .kbf-hub-move-grid, .kbf-hub-features { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   }
 `;
@@ -56,6 +66,11 @@ export default async function SwuForgeHubPage() {
   const teams: ForgeTeamContext = { signedIn: !!userId, ownedTeams, memberTeamCount: myTeams.length - ownedTeams.length, canMove: forgeMigrationEnabled() };
   const mayOwn = !teams.signedIn || ownedTeams.length > 0;
   const facts = hubCopy.move.facts.filter((fact) => mayOwn || !fact.ownerOnly);
+  const moveStatus = !teams.signedIn
+    ? hubCopy.move.status.signedOut
+    : ownedTeams.length > 0
+      ? hubCopy.move.status.owner(ownedTeams.length)
+      : hubCopy.move.status.member;
   const { learn, community } = hubCopy;
 
   return (
@@ -77,11 +92,21 @@ export default async function SwuForgeHubPage() {
         </header>
 
         {showMoveSection(teams) && (
-          <section className="kbf-hub-move" aria-labelledby="hub-move">
-            <h2 id="hub-move" style={h2}>
-              <SectionTick color={f.markBlue} size={7} />
-              {hubCopy.move.heading}
-            </h2>
+          <details className="kbf-hub-move">
+            <summary>
+              <span id="hub-move" style={{ ...h2, fontSize: 17 }}>
+                <SectionTick color={f.markBlue} size={6} />
+                {hubCopy.move.heading}
+              </span>
+              <span className="kbf-hub-move-status">{moveStatus}</span>
+              <span className="kbf-hub-move-toggle">
+                <span className="kbf-when-closed">{hubCopy.move.show}</span>
+                <span className="kbf-when-open">{hubCopy.move.hide}</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                  <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </summary>
             <div className="kbf-hub-move-grid">
               <div>
                 <MoveTeams teams={teams} />
@@ -97,7 +122,7 @@ export default async function SwuForgeHubPage() {
                 ))}
               </ul>
             </div>
-          </section>
+          </details>
         )}
 
         <section aria-labelledby="hub-learn">
