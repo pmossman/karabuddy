@@ -133,7 +133,7 @@ export const signOff: ReactNode = (
 );
 
 export const hubCopy = {
-  intro: "I've joined SWU Forge, and it's where I'll put my full effort when KaraBuddy retires in 2027.",
+  intro: 'KaraBuddy keeps running until Legacy of Skywalker releases in 2027. Development continues on SWU Forge.',
   letterButton: 'The future of KaraBuddy',
   move: {
     heading: 'Move your team',
@@ -149,7 +149,7 @@ export const hubCopy = {
     heading: 'Learn about SWU Forge',
     replays: {
       title: 'Replays',
-      body: 'When I joined SWU Forge, the first thing I did was rewrite its replay viewer from the ground up, using what I learned building KaraBuddy. On SWU Forge, your games and replays are in the Battle Log.',
+      body: "SWU Forge's replay viewer was rebuilt from the ground up, using everything learned from building KaraBuddy. Your games and replays live in the Battle Log.",
       link: { label: 'Battle Log guide', href: `${SWU_FORGE_DOCS_URL}/battle-log/battle-log` },
     },
     features: [
@@ -174,7 +174,7 @@ export const hubCopy = {
   },
   community: {
     heading: 'Community',
-    body: "If SWU Forge is missing something you love about KaraBuddy, tell me in either Discord and I'll try to bring it over.",
+    body: 'If SWU Forge is missing something you love about KaraBuddy, say so in either Discord.',
     karabuddyDiscord: 'KaraBuddy Discord',
     forgeDiscord: 'SWU Forge Discord',
   },
