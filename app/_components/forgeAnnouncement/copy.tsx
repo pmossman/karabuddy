@@ -86,7 +86,7 @@ export const sections: Section[] = [
       </>,
       <>A built-in deck builder.</>,
       <>
-        Coming soon: collection management. <Tbd>keep &quot;import KaraBuddy replays&quot;? more roadmap items?</Tbd>
+        Coming soon: collection management. <Tbd>more roadmap items?</Tbd>
       </>,
     ],
   },
