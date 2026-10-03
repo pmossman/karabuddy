@@ -7,7 +7,7 @@ import { Modal } from '@/app/_components/Modal';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ForgeMark, ForgeWordmark } from './ForgeMark';
 import { ForgeAnnouncementBody, forgeButton, forgeStyles } from './ForgeAnnouncementBody';
-import { actions, hubCopy } from './copy';
+import { actions, headline, hubCopy } from './copy';
 import { HUB_PATH, SWU_FORGE_URL } from './constants';
 import { dismissalKey, shouldAutoOpen, type ForgeTeamContext } from './rules';
 
@@ -60,7 +60,7 @@ export function ForgeAnnouncementProvider({
     <ForgeAnnouncementContext.Provider value={{ open, seen }}>
       <style>{forgeStyles}</style>
       {children}
-      <Modal open={isOpen} onClose={close} ariaLabel="A note about KaraBuddy and SWU Forge" width="min(600px, 96vw)" maxHeight="90vh">
+      <Modal open={isOpen} onClose={close} ariaLabel={headline} width="min(600px, 96vw)" maxHeight="90vh">
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', background: f.headerBg, borderBottom: `1px solid ${f.border}` }}>
           <ForgeWordmark size={24} fontSize={17} />
           <button type="button" onClick={close} className="kbf-quiet" style={{ ...forgeButton, padding: '6px 10px', fontSize: 13 }}>

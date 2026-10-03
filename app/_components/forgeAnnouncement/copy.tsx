@@ -16,7 +16,7 @@ function Tbd({ children }: { children: ReactNode }) {
   return <mark style={{ background: 'rgba(232, 132, 47, 0.18)', color: tokens.forge.markOrange, padding: '0 3px', borderRadius: 3 }}>[TBD: {children}]</mark>;
 }
 
-export const headline = 'A note about KaraBuddy and SWU Forge';
+export const headline = 'The future of KaraBuddy';
 
 export const lede: ReactNode = (
   <>
