@@ -26,7 +26,7 @@ export const lede: ReactNode = (
     As some of you know, I joined SWU Forge a few months ago. @InvisibleLuis and I got talking about building community
     tools solo, and found we&apos;re aligned on community, user privacy and how to build software. SWU
     Forge isn&apos;t a big team that swallowed my project. It&apos;s two solo developers who realized we&apos;d work well
-    together. Here&apos;s what that means for KaraBuddy.
+    together. Here&apos;s what this means for KaraBuddy.
   </>
 );
 
@@ -54,8 +54,8 @@ export const sections: Section[] = [
     heading: 'Bring your team over',
     short: (
       <>
-        You don&apos;t have to wait. If you run a team, you can move it today. You pick everyone&apos;s role,
-        everyone gets an email invitation, and your KaraBuddy team stays as it is.
+        You don&apos;t have to wait until 2027. If you run a team, you can move it today. You pick everyone&apos;s role,
+        each teammate gets an email invitation, and your KaraBuddy team stays as it is.
       </>
     ),
   },
@@ -65,8 +65,8 @@ export const sections: Section[] = [
     short: (
       <>
         I built KaraBuddy fast, on shaky technical ground, and Karabast&apos;s changes keep breaking its extension recording
-        and its old, modified Karabast client. SWU Forge is built to keep up, and we&apos;re working on linking Karabast
-        accounts directly, so you won&apos;t need an extension.
+        and its old, modified Karabast client. SWU Forge is built to keep up, and a direct Karabast account link is
+        coming, so you won&apos;t need an extension.
       </>
     ),
   },
@@ -81,8 +81,8 @@ export const sections: Section[] = [
     ),
     bullets: [
       <>
-        More accurate, more insightful matchup and deck stats, tied to the exact deck version you played. KaraBuddy,
-        without decks, never could.
+        More accurate, more insightful matchup and deck stats, tied to the exact deck version you played. KaraBuddy, with
+        no decks, never could.
       </>,
       <>A built-in deck builder.</>,
       <>
@@ -97,7 +97,7 @@ export const sections: Section[] = [
       <>
         If SWU Forge is missing something you love about KaraBuddy, tell me in the{' '}
         <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy Discord</Ext> or{' '}
-        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll try to bring it over before 2027.
+        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll try to bring it over.
       </>
     ),
   },
