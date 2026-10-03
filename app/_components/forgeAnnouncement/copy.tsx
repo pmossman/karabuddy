@@ -66,7 +66,7 @@ export const sections: Section[] = [
       <>
         I built KaraBuddy fast, on shaky technical ground, to get something useful out to the community, and that has
         caught up with it. When Karabast changes, its extension-based recording and its modified copy of an old Karabast
-        client often break. SWU Forge is built from scratch on a foundation that can keep up, and we&apos;re working on
+        client often break. SWU Forge is built on a foundation that can keep up, and we&apos;re working on
         linking Karabast accounts to it directly, so you won&apos;t need an extension at all.
       </>
     ),
