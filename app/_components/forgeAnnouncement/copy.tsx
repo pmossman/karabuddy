@@ -76,9 +76,9 @@ export const sections: Section[] = [
     heading: 'Replays, and a lot more',
     short: (
       <>
-        Replays are the heart of KaraBuddy, and SWU Forge does them better. Its replay viewer was built from scratch, so
-        it&apos;s sturdier and easier to improve, and you can share any match with your team or with anyone who has the
-        link.
+        Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I did when I joined SWU Forge
+        was rewrite its replay viewer from the ground up, using everything I learned building KaraBuddy to make it even
+        better. You can share any match with your team or with anyone who has the link.
       </>
     ),
     bullets: [
