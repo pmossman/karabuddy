@@ -54,7 +54,7 @@ export const sections: Section[] = [
     short: (
       <>
         You don&apos;t have to wait until then. If you run a team, you can move it today. You pick everyone&apos;s role,
-        each teammate gets an email invitation, and your KaraBuddy team stays as it is. You&apos;ll need an SWU Forge
+        each teammate gets an email invitation, and your KaraBuddy team stays as it is. You&apos;ll need a SWU Forge
         account with the same email.
       </>
     ),

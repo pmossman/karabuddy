@@ -716,7 +716,7 @@ function describeBlock(block: MigrationBlock): { icon: string; title: string; bo
     case 'initiator_has_no_forge_account':
       return {
         icon: '✋',
-        title: 'You need an SWU Forge account first',
+        title: 'You need a SWU Forge account first',
         body:
           'A team needs an owner, and an invitation can’t own anything — so we check before offering the move ' +
           'rather than creating a half-owned team. Sign in to SWU Forge once with the same email or Discord ' +
