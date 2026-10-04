@@ -14,7 +14,7 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 // supply their own header chrome (e.g. the decks tabs). Children own the body
 // layout/scroll below the optional header — the panel is a flex column.
 export function Modal({
-  open, onClose, title, ariaLabel, headerRight,
+  open, onClose, title, ariaLabel, ariaLabelledBy, headerRight,
   width = 'min(560px, 96vw)', maxHeight = '88vh', height,
   lockScroll = true, z = 300, children,
 }: {
@@ -22,6 +22,7 @@ export function Modal({
   onClose: () => void;
   title?: string;
   ariaLabel?: string;
+  ariaLabelledBy?: string;
   headerRight?: ReactNode; // extra controls in the header, left of Close
   width?: string;
   maxHeight?: string;
@@ -70,7 +71,8 @@ export function Modal({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title || ariaLabel}
+        aria-label={ariaLabelledBy ? undefined : title || ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{

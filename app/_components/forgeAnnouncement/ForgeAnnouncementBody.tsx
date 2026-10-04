@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { headline, lede, moveCopy, movedCopy, sections, signOff, type Section } from './copy';
+import { lede, moveCopy, movedCopy, sections, signOff, type Section } from './copy';
 import { showMoveSection, type ForgeTeamContext, type MovedTeam } from './rules';
 import { hubMovePath } from './constants';
 
@@ -37,10 +37,7 @@ export function ForgeAnnouncementBody({ teams, onNavigate }: { teams: ForgeTeamC
 
   return (
     <div style={{ fontFamily: f.font, color: f.text }}>
-      <h2 style={{ margin: 0, fontSize: 22, lineHeight: 1.2, fontWeight: 700, letterSpacing: '-0.01em', maxWidth: '22ch' }}>
-        {headline}
-      </h2>
-      <p style={{ margin: '10px 0 0', fontSize: 14.5, lineHeight: 1.6, color: f.text, opacity: 0.9, maxWidth: '62ch' }}>
+      <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.6, color: f.text, opacity: 0.9, maxWidth: '62ch' }}>
         {lede}
       </p>
 

@@ -15,12 +15,3 @@ export function ForgeMark({ size = 22 }: { size?: number }) {
     </svg>
   );
 }
-
-export function ForgeWordmark({ size = 22, fontSize = 17 }: { size?: number; fontSize?: number }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: Math.round(size * 0.36), fontFamily: f.font }}>
-      <ForgeMark size={size} />
-      <span style={{ fontSize, fontWeight: 700, letterSpacing: '0.02em', color: f.text, whiteSpace: 'nowrap' }}>SWU Forge</span>
-    </span>
-  );
-}

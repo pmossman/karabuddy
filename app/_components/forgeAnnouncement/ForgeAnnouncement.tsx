@@ -1,11 +1,11 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Modal } from '@/app/_components/Modal';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { ForgeMark, ForgeWordmark } from './ForgeMark';
+import { ForgeMark } from './ForgeMark';
 import { ForgeAnnouncementBody, forgeButton, forgeStyles } from './ForgeAnnouncementBody';
 import { actions, headline, hubCopy } from './copy';
 import { FORGE_ANNOUNCEMENT_VERSION, HUB_PATH, SWU_FORGE_URL } from './constants';
@@ -38,6 +38,7 @@ export function ForgeAnnouncementProvider({
   const [dismissedHere, setDismissedHere] = useState(false);
   const seen = !userId || dismissedHere || isDismissed(dismissedVersion);
   const channel = useRef<BroadcastChannel | null>(null);
+  const titleId = useId();
 
   useEffect(() => {
     if (shouldAutoOpen({ signedIn: !!userId, dismissed: seen, pathname, search: window.location.search })) setIsOpen(true);
@@ -77,9 +78,11 @@ export function ForgeAnnouncementProvider({
     <ForgeAnnouncementContext.Provider value={{ open, seen }}>
       <style>{forgeStyles}</style>
       {children}
-      <Modal open={isOpen} onClose={close} ariaLabel={headline} width="min(600px, 96vw)" maxHeight="90vh">
+      <Modal open={isOpen} onClose={close} ariaLabelledBy={titleId} width="min(600px, 96vw)" maxHeight="90vh">
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', background: f.headerBg, borderBottom: `1px solid ${f.border}` }}>
-          <ForgeWordmark size={24} fontSize={17} />
+          <h2 id={titleId} style={{ margin: 0, fontFamily: f.font, fontSize: 18, lineHeight: 1.25, fontWeight: 700, letterSpacing: '-0.005em', color: f.text }}>
+            {headline}
+          </h2>
           <button type="button" onClick={close} className="kbf-quiet" style={{ ...forgeButton, padding: '6px 10px', fontSize: 13 }}>
             {actions.close}
           </button>
