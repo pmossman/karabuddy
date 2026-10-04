@@ -59,7 +59,7 @@ export const sections: Section[] = [
       <>
         I built KaraBuddy fast, on shaky technical ground, because I wanted to get something useful out to the community.
         That shortcut has caught up with it. Whenever Karabast changes, KaraBuddy&apos;s extension-based recording and its
-        modified copy of an old Karabast client can break. SWU Forge is my chance to do it properly. It&apos;s built
+        modified copy of an old Karabast client can break. With SWU Forge, we can do it properly. It&apos;s built
         on a foundation that can keep up, and a
         direct Karabast account link is on the way, so you won&apos;t need a browser extension to record your replays
         (including games you play on a mobile device!).
