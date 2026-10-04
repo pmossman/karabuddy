@@ -40,3 +40,7 @@ playwright-report/
 coverage/
 .vitest-cache/
 .next-test/
+
+# Local eye-check labs (seed, restart script, seat switcher)
+.lab/
+app/dev/

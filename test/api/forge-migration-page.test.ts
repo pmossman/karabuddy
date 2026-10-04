@@ -3,12 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db';
 import { teamMembers, teams, users } from '@/lib/schema';
 
-// /teams/<slug>/move's own gate: the shared secret, then owners-only. It has
-// to hold here and not just on the API route, because typing the URL is
-// exactly how someone finds a feature whose settings card is merely hidden —
-// and hiding the card is all the localStorage flag does. Anyone who fails
-// either check gets `notFound()`, the same nothing as while the feature is
-// dark. An owner who passes is sent on to the SWU Forge hub, which runs the move.
+// /teams/<slug>/move's own gate: the shared secret, then owners-only. Anyone
+// who fails either check gets `notFound()`, the same nothing as while the
+// feature is dark. An owner who passes is sent on to the SWU Forge hub, which
+// runs the move.
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
 

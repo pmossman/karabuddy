@@ -14,7 +14,6 @@ import { RemoveMember } from './RemoveMember';
 import { DeleteTeam } from './DeleteTeam';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { MoveTeamToForge } from './MoveTeamToForge';
-import { ForgeMoveFlag } from './ForgeMoveFlag';
 import { TeamOverview } from './TeamOverview';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
@@ -264,17 +263,8 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                 />
                 {/* KaraBuddy → SWU Forge team migration. Owner-only, and dark
                     until TEAM_MIGRATION_SECRET is set — the shared secret IS
-                    the flag, and it is the one variable this feature needs.
-                    Entry point only — the preview screen is where anything
-                    happens. ⚠ ForgeMoveFlag only HIDES this card behind a
-                    localStorage key; it is not a security boundary. The real
-                    one is owners-only, right here and on both server
-                    entrances. */}
-                {forgeMigrationEnabled() && (
-                  <ForgeMoveFlag>
-                    <MoveTeamToForge slug={slug} teamName={team.name} />
-                  </ForgeMoveFlag>
-                )}
+                    the flag, and it is the one variable this feature needs. */}
+                {forgeMigrationEnabled() && <MoveTeamToForge slug={slug} teamName={team.name} />}
                 {/* B160: hand the team to another member (you step down). */}
                 <TransferOwnership slug={slug} members={members} viewerUserId={userId} />
                 {/* Remove a member from the team (owner only, are-you-sure confirm). */}

@@ -12,9 +12,8 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-// 404 (not 403) for non-owners, while the feature is dark, and for anyone
-// outside the limited-trial allowlist — so a route that isn't live yet, or
-// isn't live for you, is indistinguishable from one that doesn't exist.
+// 404 (not 403) for non-owners and while the feature is dark, so a route that
+// isn't live, or isn't yours, is indistinguishable from one that doesn't exist.
 export default async function MoveTeamPage({ params }: PageProps) {
   const { slug } = await params;
 
