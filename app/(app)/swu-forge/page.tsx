@@ -143,6 +143,20 @@ export default async function SwuForgeHubPage({ searchParams }: { searchParams: 
               <ExtLink href={learn.replays.link.href}>{learn.replays.link.label}</ExtLink>
             </p>
           </div>
+          <div style={{ marginTop: 22 }}>
+            <h3 style={h3}>{learn.anyDeck.title}</h3>
+            <p style={{ ...body, fontSize: 15 }}>{learn.anyDeck.intro}</p>
+            <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: '64ch' }}>
+              {learn.anyDeck.points.map((point) => (
+                <li key={point} style={{ display: 'flex', gap: 10, fontSize: 14.5, lineHeight: 1.55, color: f.text, opacity: 0.86 }}>
+                  <span style={{ marginTop: 8, display: 'inline-flex' }}>
+                    <SectionTick color={f.softText} size={5} />
+                  </span>
+                  {point}
+                </li>
+              ))}
+            </ul>
+          </div>
           <div className="kbf-hub-features">
             {learn.features.map((feature) => (
               <div key={feature.title} style={{ paddingTop: 16, borderTop: `1px solid ${f.border}` }}>

@@ -71,10 +71,8 @@ export const sections: Section[] = [
     heading: 'Better replays and stats',
     short: (
       <>
-        Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I worked on there was rewriting its replay viewer from the ground up, using everything I learned building KaraBuddy. You also shouldn&apos;t have to build your decks on SWU Forge just to
-        get replays. KaraBuddy records any deck, and @InvisibleLuis and I are both committed to SWU Forge doing the same,
-        which is why much of my recent work has gone into separating replays from decklists. If you do build your decks
-        there, every game is tied to the exact deck version you played. That makes its matchup and deck
+        Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I worked on there was rewriting its replay viewer from the ground up, using everything I learned building KaraBuddy. SWU Forge also has its own deck builder, so every game is tied to the exact
+        deck version you played. That makes its matchup and deck
         stats more accurate and insightful than KaraBuddy&apos;s.
       </>
     ),
@@ -171,8 +169,18 @@ export const hubCopy = {
     heading: 'Learn about SWU Forge',
     replays: {
       title: 'Replays',
-      body: "SWU Forge's replay viewer was rebuilt from the ground up, using everything learned from building KaraBuddy. Your games and replays live in the Battle Log. Replays are being separated from decklists, so any game can be recorded whatever deck you played, just like on KaraBuddy. Until that's done, SWU Forge records games played with decks saved on SWU Forge, yours or your team's.",
+      body: "SWU Forge's replay viewer was rebuilt from the ground up, using everything learned from building KaraBuddy. Your games and replays live in the Battle Log.",
       link: { label: 'Battle Log guide', href: `${SWU_FORGE_DOCS_URL}/battle-log/battle-log` },
+    },
+    anyDeck: {
+      title: 'Replays for any deck',
+      intro: 'KaraBuddy records every game, whatever deck you played. SWU Forge is being built to do the same.',
+      points: [
+        "Today, SWU Forge records a game when its deck matches one saved on SWU Forge, yours or your team's. Games played with other decks aren't recorded yet.",
+        'Replays are being separated from decklists, so every game you play gets recorded, whatever deck you used.',
+        "Each match page will show the deck you played in each game, and you'll be able to save it as a SWU Forge deck if you want to. Nothing is created for you automatically.",
+        'A direct link between your Karabast and SWU Forge accounts is also in the works. It will replace the browser extension and let you record games you play on a phone or tablet.',
+      ],
     },
     features: [
       {
