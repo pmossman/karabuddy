@@ -20,7 +20,7 @@ export const lede: ReactNode = (
     <br />
     As some of you know, I joined SWU Forge a few months ago. It started when I got chatting with @InvisibleLuis, SWU
     Forge&apos;s sole developer, about building community tools. We realized how aligned we are on the community, user
-    privacy and building software, so when he asked if I&apos;d like to work on it with him, I said yes. Here&apos;s what
+    privacy and building software, so when he asked me to work on it with him, I said yes. Here&apos;s what
     that means for KaraBuddy.
   </>
 );
@@ -38,7 +38,7 @@ export const sections: Section[] = [
     heading: 'The plan for KaraBuddy',
     short: (
       <>
-        KaraBuddy will run as it is through the Homeworlds and Icons sets, and I&apos;ll fix what breaks. When
+        KaraBuddy will run as is through the Homeworlds and Icons sets, and I&apos;ll fix what breaks. When
         Legacy of Skywalker releases in 2027, I&apos;ll retire it and put my full effort into SWU Forge.
       </>
     ),
@@ -57,9 +57,9 @@ export const sections: Section[] = [
     heading: "Why I'm doing this",
     short: (
       <>
-        I built KaraBuddy fast, on shaky technical ground, and Karabast&apos;s changes keep breaking its extension recording
-        and its old, modified Karabast client. SWU Forge is built to keep up, and a direct Karabast account link is
-        coming, so you won&apos;t need an extension.
+        I built KaraBuddy fast, on shaky technical ground, and Karabast&apos;s changes keep breaking its recording and its
+        old, modified Karabast client. SWU Forge is built to keep up, and a direct Karabast account link is coming, so
+        you won&apos;t need a browser extension to record replays (including games you play on a mobile device!).
       </>
     ),
   },
@@ -70,8 +70,8 @@ export const sections: Section[] = [
       <>
         Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I did there was rewrite its
         replay viewer from the ground up, using everything KaraBuddy taught me. SWU Forge also has its own deck builder,
-        so every game is tied to the exact deck version you played. That makes its matchup and deck stats more accurate
-        and insightful than KaraBuddy&apos;s.
+        so every game is tied to the exact deck version you played, which makes its matchup and deck stats more accurate
+        and insightful.
       </>
     ),
   },
@@ -81,7 +81,7 @@ export const sections: Section[] = [
     short: (
       <>
         If SWU Forge is missing something you love about KaraBuddy, tell me in the{' '}
-        <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy Discord</Ext> or{' '}
+        <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy</Ext> or{' '}
         <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll try to bring it over.
       </>
     ),
