@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 
@@ -30,6 +30,19 @@ export function Modal({
   z?: number;
   children: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement;
+    const panel = panelRef.current;
+    if (panel && !panel.contains(opener)) panel.focus({ preventScroll: true });
+    return () => {
+      const lost = document.activeElement === document.body || !!panel?.contains(document.activeElement);
+      if (lost && opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -54,12 +67,14 @@ export function Modal({
       style={{ position: 'fixed', inset: 0, zIndex: z, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
     >
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={title || ariaLabel}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{
-          width, maxHeight, ...(height ? { height } : {}),
+          width, maxHeight, ...(height ? { height } : {}), outline: 'none',
           display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden',
           background: tokens.color.bg, border: `1px solid ${tokens.color.border}`, borderRadius: tokens.radius.lg,
           color: tokens.color.text, fontFamily: 'var(--font-barlow), sans-serif', boxShadow: '0 16px 50px rgba(0,0,0,0.6)',
