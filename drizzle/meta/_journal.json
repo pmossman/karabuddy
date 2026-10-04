@@ -351,6 +351,13 @@
       "when": 1788892871634,
       "tag": "0049_announcement_dismissed_version",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788892872634,
+      "tag": "0050_team_forge_move",
+      "breakpoints": true
     }
   ]
 }

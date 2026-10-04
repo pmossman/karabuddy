@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { POST as forgeMigration } from '@/app/api/teams/[slug]/forge-migration/route';
 import { getDb } from '@/lib/db';
 import { accounts, teamMembers, teams, users } from '@/lib/schema';
@@ -525,5 +526,80 @@ describe('what comes back', () => {
     await seedTeam(o.id);
     as(o.id);
     expect((await post('nosuch', { dryRun: true })).status).toBe(404);
+  });
+});
+
+describe('what KaraBuddy records about the move', () => {
+  const recorded = async (slug: string) => {
+    const [row] = await getDb()
+      .select({ id: teams.forgeTeamId, url: teams.forgeTeamUrl, movedAt: teams.forgeMovedAt })
+      .from(teams)
+      .where(eq(teams.slug, slug));
+    return row;
+  };
+  const nothing = { id: null, url: null, movedAt: null };
+
+  it('stores where the team went and when, after a commit', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    stubForge(200, planFor([]));
+    const before = Date.now();
+    expect((await post(slug, { dryRun: false })).status).toBe(200);
+    const row = await recorded(slug);
+    expect(row.id).toBe('ckteam1');
+    expect(row.url).toBe(`${ORIGIN}/teams/ckteam1`);
+    expect(row.movedAt!.getTime()).toBeGreaterThanOrEqual(before - 5_000);
+  });
+
+  it('writes nothing on a dry run, even for a team Forge already has', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    stubForge(200, planFor([], { outcome: 'updated' }));
+    expect((await post(slug, { dryRun: true })).status).toBe(200);
+    expect(await recorded(slug)).toEqual(nothing);
+  });
+
+  it('writes nothing when the commit is refused or fails', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    stubForge(409, { error: 'seats_full', cap: 25, used: 25, requested: 1 });
+    expect((await post(slug, { dryRun: false })).status).toBe(409);
+    stubForge(403, { error: 'forbidden' });
+    expect((await post(slug, { dryRun: false })).status).toBe(502);
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED'); }));
+    expect((await post(slug, { dryRun: false })).status).toBe(502);
+
+    expect(await recorded(slug)).toEqual(nothing);
+    spy.mockRestore();
+  });
+
+  it('keeps the first move date on a re-run, and takes the URL Forge reports now', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    stubForge(200, planFor([]));
+    await post(slug, { dryRun: false });
+    const first = await recorded(slug);
+
+    await new Promise((r) => setTimeout(r, 20));
+    stubForge(200, planFor([], { outcome: 'noop', teamUrl: `${ORIGIN}/teams/ckteam1-renamed` }));
+    expect((await post(slug, { dryRun: false })).status).toBe(200);
+    const again = await recorded(slug);
+    expect(again.movedAt).toEqual(first.movedAt);
+    expect(again.url).toBe(`${ORIGIN}/teams/ckteam1-renamed`);
+  });
+
+  it('ignores a team URL it could not link to', async () => {
+    const o = await seedUser();
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    stubForge(200, planFor([], { teamUrl: 'javascript:alert(1)' }));
+    expect((await post(slug, { dryRun: false })).status).toBe(200);
+    expect(await recorded(slug)).toEqual(nothing);
   });
 });

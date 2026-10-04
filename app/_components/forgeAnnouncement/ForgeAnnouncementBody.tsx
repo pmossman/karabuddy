@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import { headline, lede, moveCopy, sections, signOff, type Section } from './copy';
-import { showMoveSection, type ForgeTeamContext } from './rules';
+import { headline, lede, moveCopy, movedCopy, sections, signOff, type Section } from './copy';
+import { showMoveSection, type ForgeTeamContext, type MovedTeam } from './rules';
 import { hubMovePath } from './constants';
 
 const f = tokens.forge;
@@ -86,7 +86,7 @@ function sectionTick(id: Section['id']): string {
   return id === 'karabuddy' || id === 'hosting' || id === 'why' ? f.markOrange : f.markBlue;
 }
 
-export function MoveTeams({ teams, onNavigate }: { teams: ForgeTeamContext; onNavigate?: () => void }) {
+export function MoveTeams({ teams, onNavigate, detailed }: { teams: ForgeTeamContext; onNavigate?: () => void; detailed?: boolean }) {
   const note: CSSProperties = { margin: '6px 0 0', fontSize: 14, lineHeight: 1.6, color: f.text, opacity: 0.86, maxWidth: '64ch' };
   if (!teams.signedIn) return <p style={note}>{moveCopy.signedOut}</p>;
   const owned = teams.ownedTeams;
@@ -110,7 +110,49 @@ export function MoveTeams({ teams, onNavigate }: { teams: ForgeTeamContext; onNa
           </ul>
         </>
       )}
-      {teams.memberTeamCount > 0 && <p style={note}>{owned.length > 0 ? moveCopy.memberToo : moveCopy.memberOnly}</p>}
+      <MemberTeamLines teams={teams} detailed={detailed} />
     </>
+  );
+}
+
+export function MemberTeamLines({ teams, detailed = false }: { teams: ForgeTeamContext; detailed?: boolean }) {
+  const note: CSSProperties = { margin: '6px 0 0', fontSize: 14, lineHeight: 1.6, color: f.text, opacity: 0.86, maxWidth: '64ch' };
+  const notMoved = teams.memberTeamCount - teams.movedMemberTeams.length;
+  return (
+    <>
+      {teams.movedMemberTeams.map((t) =>
+        detailed ? (
+          <MovedTeamDetails key={t.slug} team={t} />
+        ) : (
+          <p key={t.slug} style={note}>
+            {moveCopy.memberMoved(t.name)}{' '}
+            <a href={t.url} target="_blank" rel="noopener noreferrer" style={inlineLink}>
+              {movedCopy.open}
+            </a>
+          </p>
+        ),
+      )}
+      {notMoved > 0 && <p style={note}>{teams.ownedTeams.length > 0 ? moveCopy.memberToo : moveCopy.memberOnly}</p>}
+    </>
+  );
+}
+
+export const inlineLink: CSSProperties = { color: f.softText, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 };
+
+export function MovedGuidance({ style }: { style?: CSSProperties }) {
+  return <p style={{ margin: '6px 0 0', fontSize: 14, lineHeight: 1.6, color: f.text, opacity: 0.86, maxWidth: '64ch', ...style }}>{movedCopy.guidance.join(' ')}</p>;
+}
+
+function MovedTeamDetails({ team }: { team: MovedTeam }) {
+  return (
+    <div style={{ marginTop: 6, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px 12px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>{movedCopy.title(team.name)}</span>
+        <a href={team.url} target="_blank" rel="noopener noreferrer" className="kbf-primary" style={{ ...forgeButton, padding: '6px 12px', fontSize: 13 }}>
+          {movedCopy.open}
+        </a>
+      </div>
+      <MovedGuidance />
+    </div>
   );
 }

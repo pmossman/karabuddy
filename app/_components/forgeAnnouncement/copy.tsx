@@ -93,8 +93,9 @@ export const sections: Section[] = [
 export const moveCopy = {
   ownerIntro: (count: number) => (count === 1 ? 'You own this team:' : 'You own these teams:'),
   ownerLink: 'Move to SWU Forge',
-  memberOnly: "Your team's owner can move your team, and you'll get an email invitation.",
+  memberOnly: "Ask your team's owner to move it, and you'll get an email invitation.",
   memberToo: "For teams you don't own, the owner can move them.",
+  memberMoved: (team: string) => `${team} has moved to SWU Forge. Look for an invitation from hello@swuforge.com.`,
   signedOut: (
     <>
       <Link href={`/signin?callbackUrl=${HUB_PATH}`} style={{ color: tokens.forge.softText, fontWeight: 600 }}>
@@ -103,6 +104,20 @@ export const moveCopy = {
       to see the teams you can move.
     </>
   ),
+};
+
+export const movedCopy = {
+  title: (team: string) => `${team} has moved to SWU Forge`,
+  ownerTitle: (team: string, movedOn: string) => `${team} moved to SWU Forge on ${movedOn}`,
+  open: 'Open on SWU Forge',
+  guidance: [
+    'Invitations come from hello@swuforge.com and last 14 days.',
+    'Accept yours with the same email or Discord account you use on KaraBuddy.',
+    "If it's missing or expired, a team admin can resend it from the team's Members page on SWU Forge.",
+  ],
+  ownerInvite: 'Invite anyone who joined since',
+  ownerInviteRest: ' from the SWU Forge hub.',
+  hide: 'Hide for now',
 };
 
 export const actions = {
@@ -128,12 +143,16 @@ export const hubCopy = {
     status: {
       signedOut: 'Sign in to see the teams you can move.',
       owner: (count: number) => (count === 1 ? 'You own 1 team you can move.' : `You own ${count} teams you can move.`),
-      member: "Your team's owner can move it.",
+      ownerMoved: (movedOn: string) => `Moved ${movedOn}. Invite anyone who joined since.`,
+      member: "Ask your team's owner to move it.",
+      memberMoved: (teams: string[]) =>
+        teams.length === 1 ? `${teams[0]} has moved to SWU Forge.` : `${teams.length} of your teams have moved to SWU Forge.`,
     },
     show: 'Details',
     hide: 'Hide',
     pickLabel: 'Team to move',
     pickPlaceholder: 'Choose a team',
+    movedNote: (movedOn: string) => `Moved ${movedOn}. Moving it again invites anyone who joined since or whose invitation expired.`,
     facts: [
       { ownerOnly: true, text: "You pick each person's role." },
       { ownerOnly: true, text: 'Everyone gets an email invitation and joins when they accept it.' },

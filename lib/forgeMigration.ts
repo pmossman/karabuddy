@@ -371,3 +371,14 @@ export function rosterRole(planned: ForgeMigrationPlanMember | undefined, chosen
 export function forgeTeamName(plan: ForgeMigrationPlan, sentName: string): string {
   return plan.teamName || sentName;
 }
+
+// The team URL is rendered as a link on KaraBuddy, so only a web URL is kept.
+export function forgeTeamLink(plan: ForgeMigrationPlan): string | null {
+  if (!plan.teamUrl) return null;
+  try {
+    const { protocol } = new URL(plan.teamUrl);
+    return protocol === 'https:' || protocol === 'http:' ? plan.teamUrl : null;
+  } catch {
+    return null;
+  }
+}

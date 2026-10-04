@@ -23,6 +23,8 @@ export interface TeamRef {
 
 export interface MyTeamRef extends TeamRef {
   role: string;
+  forgeTeamUrl: string | null;
+  forgeMovedAt: Date | null;
 }
 
 // The caller's teams, ordered by join time (oldest first) — the fallback
@@ -32,7 +34,13 @@ export interface MyTeamRef extends TeamRef {
 export async function getMyTeams(userId: string): Promise<MyTeamRef[]> {
   const db = getDb();
   return db
-    .select({ slug: teams.slug, name: teams.name, role: teamMembers.role })
+    .select({
+      slug: teams.slug,
+      name: teams.name,
+      role: teamMembers.role,
+      forgeTeamUrl: teams.forgeTeamUrl,
+      forgeMovedAt: teams.forgeMovedAt,
+    })
     .from(teamMembers)
     .innerJoin(teams, eq(teams.slug, teamMembers.teamSlug))
     .where(eq(teamMembers.userId, userId))

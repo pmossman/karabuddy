@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { and, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { auth } from '@/auth';
@@ -14,6 +15,7 @@ import { RemoveMember } from './RemoveMember';
 import { DeleteTeam } from './DeleteTeam';
 import { TeamDiscordConnect } from './TeamDiscordConnect';
 import { MoveTeamToForge } from './MoveTeamToForge';
+import { ForgeMovedBanner } from './ForgeMovedBanner';
 import { TeamOverview } from './TeamOverview';
 import { TeamReplays } from './TeamReplays';
 import { TeamDiscussion } from './TeamDiscussion';
@@ -26,6 +28,8 @@ import { StatsClient } from '@/app/(app)/stats/StatsClient';
 import { teamClips } from '@/lib/clipBrowser';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { forgeMigrationEnabled } from '@/lib/forgeMigration';
+import { movedTeam } from '@/app/_components/forgeAnnouncement/rules';
+import { FORGE_MOVED_HIDDEN_COOKIE, hubMovePath } from '@/app/_components/forgeAnnouncement/constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,6 +134,8 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
     : [];
 
   const isGauntlet = tab === 'openings';
+  const moved = movedTeam(team);
+  const forgeBannerHidden = !!moved && (await cookies()).get(FORGE_MOVED_HIDDEN_COOKIE)?.value === '1';
 
   return (
     <main
@@ -173,6 +179,17 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
           non-private teams. Shows on every tab so it can't be missed. */}
       {(team as any).privateMode && (
         <MyPrivateAccess variant="banner" teamName={team.name} teamKeyId={(team as any).teamKeyId ?? null} />
+      )}
+
+      {moved && !isGauntlet && !forgeBannerHidden && (
+        <ForgeMovedBanner
+          slug={slug}
+          teamName={team.name}
+          url={moved.url}
+          movedOn={moved.movedOn}
+          owner={me.role === 'owner'}
+          inviteHref={forgeMigrationEnabled() ? hubMovePath(slug) : null}
+        />
       )}
 
       {/* Section nav lives in the left sidebar now — no in-page tab bar. */}
@@ -264,7 +281,7 @@ export default async function TeamPage({ params, searchParams }: PageProps) {
                 {/* KaraBuddy → SWU Forge team migration. Owner-only, and dark
                     until TEAM_MIGRATION_SECRET is set — the shared secret IS
                     the flag, and it is the one variable this feature needs. */}
-                {forgeMigrationEnabled() && <MoveTeamToForge slug={slug} teamName={team.name} />}
+                {forgeMigrationEnabled() && <MoveTeamToForge slug={slug} teamName={team.name} movedOn={moved?.movedOn ?? null} />}
                 {/* B160: hand the team to another member (you step down). */}
                 <TransferOwnership slug={slug} members={members} viewerUserId={userId} />
                 {/* Remove a member from the team (owner only, are-you-sure confirm). */}

@@ -10,7 +10,7 @@ import { SectionTick, forgeButton } from '@/app/_components/forgeAnnouncement/Fo
 import { HubMoveRow } from '@/app/_components/forgeAnnouncement/HubMoveRow';
 import { actions, hubCopy } from '@/app/_components/forgeAnnouncement/copy';
 import { KARABUDDY_DISCORD_URL, SWU_FORGE_DISCORD_URL, SWU_FORGE_DOCS_URL, SWU_FORGE_URL } from '@/app/_components/forgeAnnouncement/constants';
-import { requestedMoveTeam, showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
+import { forgeTeamContext, requestedMoveTeam, showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,20 +63,24 @@ function ExtLink({ href, children }: { href: string; children: string }) {
   );
 }
 
+function moveRowStatus({ signedIn, ownedTeams, movedMemberTeams }: ForgeTeamContext): string {
+  const { status } = hubCopy.move;
+  if (!signedIn) return status.signedOut;
+  if (ownedTeams.length === 1 && ownedTeams[0].movedOn) return status.ownerMoved(ownedTeams[0].movedOn);
+  if (ownedTeams.length > 0) return status.owner(ownedTeams.length);
+  if (movedMemberTeams.length > 0) return status.memberMoved(movedMemberTeams.map((t) => t.name));
+  return status.member;
+}
+
 export default async function SwuForgeHubPage({ searchParams }: { searchParams: Promise<{ team?: string | string[] }> }) {
   const session = await auth();
   const userId = session?.user?.id ?? null;
-  const myTeams = userId ? await getMyTeams(userId) : [];
-  const ownedTeams = myTeams.filter((t) => t.role === 'owner').map(({ slug, name }) => ({ slug, name }));
-  const teams: ForgeTeamContext = { signedIn: !!userId, ownedTeams, memberTeamCount: myTeams.length - ownedTeams.length, canMove: forgeMigrationEnabled() };
+  const teams = forgeTeamContext(!!userId, userId ? await getMyTeams(userId) : [], forgeMigrationEnabled());
+  const { ownedTeams, movedMemberTeams } = teams;
   const moveTeam = requestedMoveTeam(teams, (await searchParams).team);
   const mayOwn = !teams.signedIn || ownedTeams.length > 0;
   const facts = hubCopy.move.facts.filter((fact) => mayOwn || !fact.ownerOnly);
-  const moveStatus = !teams.signedIn
-    ? hubCopy.move.status.signedOut
-    : ownedTeams.length > 0
-      ? hubCopy.move.status.owner(ownedTeams.length)
-      : hubCopy.move.status.member;
+  const moveStatus = moveRowStatus(teams);
   const { learn, community } = hubCopy;
 
   return (
@@ -103,6 +107,7 @@ export default async function SwuForgeHubPage({ searchParams }: { searchParams: 
               teams={teams}
               status={moveStatus}
               initialTeam={moveTeam?.slug ?? null}
+              defaultOpen={!mayOwn && movedMemberTeams.length > 0}
               facts={
                 <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
                   {facts.map((fact) => (

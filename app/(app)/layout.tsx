@@ -9,6 +9,7 @@ import { AutoClaim } from '@/app/_components/AutoClaim';
 import { ExtensionSigninReturn } from '@/app/_components/ExtensionSigninReturn';
 import { KaraBuddyThemeProvider } from '@/app/_components/KaraBuddyThemeProvider';
 import { ForgeAnnouncementProvider } from '@/app/_components/forgeAnnouncement/ForgeAnnouncement';
+import { forgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
 import { forgeMigrationEnabled } from '@/lib/forgeMigration';
 import { getDismissedAnnouncementVersion } from '@/lib/announcements';
 
@@ -27,14 +28,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     userId ? getMyLastReplay(userId) : Promise.resolve(null),
     userId ? getDismissedAnnouncementVersion(userId) : Promise.resolve(null),
   ]);
-  const ownedTeams = teams.filter((t) => t.role === 'owner').map(({ slug, name }) => ({ slug, name }));
 
   return (
     <KaraBuddyThemeProvider>
       <ForgeAnnouncementProvider
         userId={userId}
         dismissedVersion={dismissedVersion}
-        teams={{ signedIn, ownedTeams, memberTeamCount: teams.length - ownedTeams.length, canMove: forgeMigrationEnabled() }}
+        teams={forgeTeamContext(signedIn, teams, forgeMigrationEnabled())}
       >
         <ActiveTeamProvider active={active} teams={teams}>
           <AppShell signedIn={signedIn} hasLinkedExtension={hasLinkedExtension} lastReplay={lastReplay}>

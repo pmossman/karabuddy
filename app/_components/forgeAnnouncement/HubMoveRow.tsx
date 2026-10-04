@@ -4,10 +4,9 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Select } from '@/app/_components/Select';
 import { tokens } from '@/app/_theme/karabuddyTokens';
-import type { TeamRef } from '@/lib/activeTeam';
-import { MoveTeams, SectionTick } from './ForgeAnnouncementBody';
+import { MemberTeamLines, MoveTeams, SectionTick } from './ForgeAnnouncementBody';
 import { MoveTeamPreview } from './MoveTeamPreview';
-import { hubCopy, moveCopy } from './copy';
+import { hubCopy } from './copy';
 import type { ForgeTeamContext } from './rules';
 
 const f = tokens.forge;
@@ -18,15 +17,17 @@ export function HubMoveRow({
   teams,
   status,
   initialTeam,
+  defaultOpen = false,
   facts,
 }: {
   teams: ForgeTeamContext;
   status: string;
   initialTeam: string | null;
+  defaultOpen?: boolean;
   facts: ReactNode;
 }) {
   const owned = teams.ownedTeams;
-  const [open, setOpen] = useState(initialTeam !== null);
+  const [open, setOpen] = useState(initialTeam !== null || defaultOpen);
   const [slug, setSlug] = useState(initialTeam ?? (owned.length === 1 ? owned[0].slug : ''));
   const team = owned.find((t) => t.slug === slug) ?? null;
   const moving = open && team !== null;
@@ -70,9 +71,9 @@ export function HubMoveRow({
       <div className={moving ? 'kbf-hub-move-grid kbf-hub-moving' : 'kbf-hub-move-grid'}>
         <div style={{ gridArea: 'pick' }}>
           {owned.length > 0 ? (
-            <TeamPicker owned={owned} slug={slug} onPick={setSlug} memberToo={teams.memberTeamCount > 0} />
+            <TeamPicker teams={teams} slug={slug} onPick={setSlug} />
           ) : (
-            <MoveTeams teams={teams} />
+            <MoveTeams teams={teams} detailed />
           )}
         </div>
         <div style={{ gridArea: 'facts' }}>{facts}</div>
@@ -86,7 +87,9 @@ export function HubMoveRow({
   );
 }
 
-function TeamPicker({ owned, slug, onPick, memberToo }: { owned: TeamRef[]; slug: string; onPick: (slug: string) => void; memberToo: boolean }) {
+function TeamPicker({ teams, slug, onPick }: { teams: ForgeTeamContext; slug: string; onPick: (slug: string) => void }) {
+  const owned = teams.ownedTeams;
+  const movedOn = owned.find((t) => t.slug === slug)?.movedOn;
   return (
     <div style={{ marginTop: 6 }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: f.textMuted }}>{hubCopy.move.pickLabel}</div>
@@ -104,7 +107,8 @@ function TeamPicker({ owned, slug, onPick, memberToo }: { owned: TeamRef[]; slug
           style={{ marginTop: 8, width: '100%', maxWidth: 360, background: f.bg, color: f.text, border: `1px solid ${f.border}`, fontFamily: f.font }}
         />
       )}
-      {memberToo && <p style={note}>{moveCopy.memberToo}</p>}
+      {movedOn && <p style={note}>{hubCopy.move.movedNote(movedOn)}</p>}
+      <MemberTeamLines teams={teams} detailed />
     </div>
   );
 }

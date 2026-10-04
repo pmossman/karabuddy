@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { accounts, teamMembers, teams, users } from '@/lib/schema';
@@ -9,6 +9,7 @@ import {
   defaultRoleFor,
   FORGE_MAX_MEMBERS,
   forgeMigrationEnabled,
+  forgeTeamLink,
   isForgeRole,
   normalizeEmail,
   sourceTeamId,
@@ -31,8 +32,9 @@ export const runtime = 'nodejs';
 // client. `TEAM_MIGRATION_SECRET` likewise never leaves the server; a 403 from
 // Forge collapses into a generic failure so the credential is never surfaced.
 //
-// Nothing about migration state is recorded in KaraBuddy: the idempotency
-// ledger lives on Forge, and a second copy here would drift.
+// The idempotency ledger lives on Forge. KaraBuddy keeps only where a
+// committed move went and when it first happened (teams.forge_*), never who
+// was offered what.
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
@@ -211,6 +213,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         `${'detail' in failure ? ` ${failure.detail}` : ''}`,
     );
     return NextResponse.json({ ok: false, error: 'forge_unavailable' }, { status: 502 });
+  }
+
+  const teamUrl = forgeTeamLink(result.plan);
+  if (!dryRun && result.plan.forgeTeamId && teamUrl) {
+    try {
+      await db
+        .update(teams)
+        .set({
+          forgeTeamId: result.plan.forgeTeamId,
+          forgeTeamUrl: teamUrl,
+          forgeMovedAt: sql`coalesce(${teams.forgeMovedAt}, now())`,
+        })
+        .where(eq(teams.slug, slug));
+    } catch (e) {
+      console.error(`[karabuddy] forge migration committed for team ${slug} but recording it failed: ${(e as Error)?.message}`);
+    }
   }
 
   return NextResponse.json({

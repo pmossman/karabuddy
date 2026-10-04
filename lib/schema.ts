@@ -339,6 +339,11 @@ export const teams = pgTable('teams', {
   // NEVER stored or received by the server. Null until private mode is enabled.
   privateMode: boolean('private_mode').notNull().default(false),
   teamKeyId: text('team_key_id'),
+  // Set by a committed move to SWU Forge. forge_moved_at is the FIRST move;
+  // later re-runs (inviting newcomers) refresh the id and URL but keep it.
+  forgeTeamId: text('forge_team_id'),
+  forgeTeamUrl: text('forge_team_url'),
+  forgeMovedAt: timestamp('forge_moved_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

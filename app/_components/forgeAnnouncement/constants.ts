@@ -10,3 +10,5 @@ export const HUB_PATH = '/swu-forge';
 export function hubMovePath(teamSlug: string): string {
   return `${HUB_PATH}?team=${encodeURIComponent(teamSlug)}`;
 }
+
+export const FORGE_MOVED_HIDDEN_COOKIE = 'kb_forge_moved_hidden';
