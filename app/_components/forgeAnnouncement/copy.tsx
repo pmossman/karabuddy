@@ -156,7 +156,7 @@ export const hubCopy = {
   },
   replays: {
     heading: 'Replays stay on KaraBuddy',
-    body: "KaraBuddy replays and stats won't be moved to SWU Forge. The two apps store and keep replays and stats differently, and both lose most of their value as soon as a new set releases. They stay on KaraBuddy until it retires.",
+    body: "KaraBuddy replays and stats won't be moved to SWU Forge. The two apps store and keep replays and stats differently, and both lose most of their value as soon as a new set releases, so building a transfer isn't worth the effort or the risk of inaccurate stats. They stay on KaraBuddy until it retires.",
   },
   learn: {
     heading: 'Learn about SWU Forge',
