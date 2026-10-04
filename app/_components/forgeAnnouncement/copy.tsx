@@ -19,9 +19,8 @@ export const lede: ReactNode = (
     <br />
     <br />
     As some of you know, I joined SWU Forge a few months ago. It started when I got chatting with @InvisibleLuis, SWU
-    Forge&apos;s sole developer, about building community tools. We realized how aligned we are on the community, user
-    privacy and building software, so when he asked me to work on it with him, I said yes. Here&apos;s what
-    that means for KaraBuddy.
+    Forge&apos;s sole developer, about building community tools on our own. We kept finding we think alike about the community, user privacy and how software should be built, so when he asked if I
+    wanted to build SWU Forge with him, I jumped at the chance. Here&apos;s what that means for KaraBuddy.
   </>
 );
 
@@ -38,8 +37,8 @@ export const sections: Section[] = [
     heading: 'The plan for KaraBuddy',
     short: (
       <>
-        KaraBuddy will run as is through the Homeworlds and Icons sets, and I&apos;ll fix what breaks. When
-        Legacy of Skywalker releases in 2027, I&apos;ll retire it and put my full effort into SWU Forge.
+        KaraBuddy will keep running as it is through the Homeworlds and Icons sets, and I&apos;ll fix things when they break. When Legacy of Skywalker releases in 2027, I&apos;ll retire it, so I can put my full effort into making
+        SWU Forge as good as it can possibly be.
       </>
     ),
   },
@@ -48,7 +47,8 @@ export const sections: Section[] = [
     heading: 'Bring your team over',
     short: (
       <>
-        You don&apos;t have to wait until 2027. If you run a team, you can move it today. Everyone gets an email invitation, and your KaraBuddy team stays as it is.
+        You don&apos;t have to wait until 2027. If you run a team, you can move it today. You pick everyone&apos;s
+        role, each teammate gets an email invitation, and your KaraBuddy team stays as it is.
       </>
     ),
   },
@@ -57,9 +57,11 @@ export const sections: Section[] = [
     heading: "Why I'm doing this",
     short: (
       <>
-        I built KaraBuddy fast, on shaky technical ground, and Karabast&apos;s changes keep breaking its recording and its
-        old, modified Karabast client. SWU Forge is built to keep up, and a direct Karabast account link is coming, so
-        you won&apos;t need a browser extension to record replays (including games you play on a mobile device!).
+        I built KaraBuddy fast, on shaky technical ground, because I wanted to get something useful out to the community.
+        That shortcut has caught up with it. Whenever Karabast changes, KaraBuddy&apos;s extension-based recording and its
+        modified copy of an old Karabast client can break. SWU Forge is built on a foundation that can keep up, and a
+        direct Karabast account link is on the way, so you won&apos;t need a browser extension to record your replays
+        (including games you play on a mobile device!).
       </>
     ),
   },
@@ -68,10 +70,9 @@ export const sections: Section[] = [
     heading: 'Better replays and stats',
     short: (
       <>
-        Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I did there was rewrite its
-        replay viewer from the ground up, using everything KaraBuddy taught me. SWU Forge also has its own deck builder,
-        so every game is tied to the exact deck version you played, which makes its matchup and deck stats more accurate
-        and insightful.
+        Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I worked on there was rewriting its replay viewer from the ground up, using everything I learned building KaraBuddy. SWU Forge also has
+        its own deck builder, so every game is tied to the exact deck version you played. That makes its matchup and deck
+        stats more accurate and insightful than KaraBuddy&apos;s.
       </>
     ),
   },
@@ -80,9 +81,9 @@ export const sections: Section[] = [
     heading: "Tell me what you'd miss",
     short: (
       <>
-        If SWU Forge is missing something you love about KaraBuddy, tell me in the{' '}
-        <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy</Ext> or{' '}
-        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll try to bring it over.
+        If SWU Forge is missing something you love about KaraBuddy, I really want to hear about it. Tell me in the{' '}
+        <Ext href={KARABUDDY_DISCORD_URL}>KaraBuddy Discord</Ext> or the{' '}
+        <Ext href={SWU_FORGE_DISCORD_URL}>SWU Forge Discord</Ext>, and I&apos;ll do my best to bring it over.
       </>
     ),
   },
