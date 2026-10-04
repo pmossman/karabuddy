@@ -404,11 +404,7 @@ function MoveForm({
           className="kbf-primary"
           style={{ ...forgeButton, opacity: blocked ? 0.5 : 1, cursor: blocked ? 'not-allowed' : 'pointer' }}
         >
-          {sending
-            ? 'Sending…'
-            : summary.actionable === 0
-              ? 'Nothing new to send'
-              : `Send ${summary.actionable} invitation${summary.actionable === 1 ? '' : 's'}`}
+          {confirmLabel(isRerun, sending, summary.actionable)}
         </button>
       </div>
 
@@ -879,4 +875,11 @@ function MoveResult({ data }: { data: MigrationResponse }) {
       </p>
     </div>
   );
+}
+
+function confirmLabel(isRerun: boolean, sending: boolean, actionable: number): string {
+  if (sending) return isRerun ? 'Sending…' : 'Creating…';
+  if (actionable === 0) return isRerun ? 'Nothing new to send' : 'No teammates to invite';
+  const invitations = `${actionable} invitation${actionable === 1 ? '' : 's'}`;
+  return isRerun ? `Send ${invitations}` : `Create team and send ${invitations}`;
 }
