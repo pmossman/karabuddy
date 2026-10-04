@@ -8,14 +8,26 @@ export interface ForgeTeamContext {
   canMove: boolean;
 }
 
-export const DISMISSAL_KEY_PREFIX = 'kb:announcement:swu-forge:';
-
-export function dismissalKey(userId: string | null, version: number = FORGE_ANNOUNCEMENT_VERSION): string {
-  return `${DISMISSAL_KEY_PREFIX}v${version}:${userId ?? 'signed-out'}`;
+export function isDismissed(dismissedVersion: number | null, version: number = FORGE_ANNOUNCEMENT_VERSION): boolean {
+  return dismissedVersion !== null && dismissedVersion >= version;
 }
 
-export function shouldAutoOpen({ signedIn, dismissed }: { signedIn: boolean; dismissed: boolean }): boolean {
-  return signedIn && !dismissed;
+export function shouldAutoOpen({
+  signedIn,
+  dismissed,
+  pathname,
+  search,
+}: {
+  signedIn: boolean;
+  dismissed: boolean;
+  pathname: string;
+  search: string;
+}): boolean {
+  if (!signedIn || dismissed) return false;
+  // The replay and clip viewers grab Space and the arrow keys at window level,
+  // and the extension's sign-in popup closes itself straight away.
+  if (/^\/[rc]\//.test(pathname)) return false;
+  return new URLSearchParams(search).get('fromExtension') !== '1';
 }
 
 export function showMoveSection(t: ForgeTeamContext): boolean {

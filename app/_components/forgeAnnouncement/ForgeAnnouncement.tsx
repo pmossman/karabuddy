@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Modal } from '@/app/_components/Modal';
@@ -8,10 +8,12 @@ import { tokens } from '@/app/_theme/karabuddyTokens';
 import { ForgeMark, ForgeWordmark } from './ForgeMark';
 import { ForgeAnnouncementBody, forgeButton, forgeStyles } from './ForgeAnnouncementBody';
 import { actions, headline, hubCopy } from './copy';
-import { HUB_PATH, SWU_FORGE_URL } from './constants';
-import { dismissalKey, shouldAutoOpen, type ForgeTeamContext } from './rules';
+import { FORGE_ANNOUNCEMENT_VERSION, HUB_PATH, SWU_FORGE_URL } from './constants';
+import { isDismissed, shouldAutoOpen, type ForgeTeamContext } from './rules';
 
 const f = tokens.forge;
+const DISMISSAL_URL = '/api/me/announcement-dismissal';
+const DISMISSAL_CHANNEL = 'kb:announcement-dismissal';
 
 interface Ctx {
   open: () => void;
@@ -22,37 +24,52 @@ const ForgeAnnouncementContext = createContext<Ctx | null>(null);
 
 export function ForgeAnnouncementProvider({
   userId,
+  dismissedVersion,
   teams,
   children,
 }: {
   userId: string | null;
+  dismissedVersion: number | null;
   teams: ForgeTeamContext;
   children: ReactNode;
 }) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
-  const [seen, setSeen] = useState(true);
-
-  const persist = useCallback(() => {
-    setSeen(true);
-    try {
-      window.localStorage.setItem(dismissalKey(userId), '1');
-    } catch {}
-  }, [userId]);
+  const [dismissedHere, setDismissedHere] = useState(false);
+  const seen = !userId || dismissedHere || isDismissed(dismissedVersion);
+  const channel = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
-    let dismissed = true;
-    try {
-      dismissed = window.localStorage.getItem(dismissalKey(userId)) === '1';
-    } catch {}
-    setSeen(dismissed);
-    if (shouldAutoOpen({ signedIn: !!userId, dismissed })) setIsOpen(true);
+    if (shouldAutoOpen({ signedIn: !!userId, dismissed: seen, pathname, search: window.location.search })) setIsOpen(true);
+  }, [userId, seen, pathname]);
+
+  useEffect(() => {
+    if (!userId || typeof BroadcastChannel === 'undefined') return;
+    const c = new BroadcastChannel(DISMISSAL_CHANNEL);
+    c.onmessage = (e: MessageEvent<{ userId?: string; version?: number }>) => {
+      if (e.data?.userId !== userId || !isDismissed(e.data.version ?? null)) return;
+      setIsOpen(false);
+      setDismissedHere(true);
+    };
+    channel.current = c;
+    return () => {
+      c.close();
+      channel.current = null;
+    };
   }, [userId]);
 
   const close = useCallback(() => {
     setIsOpen(false);
-    persist();
-  }, [persist]);
+    if (seen) return;
+    setDismissedHere(true);
+    channel.current?.postMessage({ userId, version: FORGE_ANNOUNCEMENT_VERSION });
+    fetch(DISMISSAL_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ version: FORGE_ANNOUNCEMENT_VERSION }),
+      keepalive: true,
+    }).catch(() => {});
+  }, [userId, seen]);
 
   const open = useCallback(() => setIsOpen(true), []);
 
@@ -119,7 +136,7 @@ export function ForgeAnnouncementButton({ variant }: { variant: 'sidebar' | 'ico
           <ForgeMark size={variant === 'sidebar' ? 20 : 18} />
           <span style={{ fontSize: variant === 'sidebar' ? 14 : 13, fontWeight: 700, letterSpacing: '0.02em', color: f.text, whiteSpace: 'nowrap' }}>SWU Forge</span>
           {showNew && (
-            <span style={{ marginLeft: variant === 'sidebar' ? 'auto' : 0, padding: '1px 6px', borderRadius: 999, background: f.markOrange, color: '#fff', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.5 }}>
+            <span style={{ marginLeft: variant === 'sidebar' ? 'auto' : 0, padding: '1px 6px', borderRadius: 999, background: f.markOrange, color: f.headerBg, fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.5 }}>
               New
             </span>
           )}

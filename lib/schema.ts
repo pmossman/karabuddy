@@ -55,6 +55,7 @@ export const users = pgTable('users', {
   // (opt-out model); the global aggregates are anonymized + min-N gated, and
   // personal/team scopes ignore this flag entirely. Toggle on /settings.
   excludeFromGlobalStats: boolean('exclude_from_global_stats').notNull().default(false),
+  announcementDismissedVersion: integer('announcement_dismissed_version'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

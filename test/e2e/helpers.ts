@@ -1,6 +1,7 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { syntheticReplayPayload, type SyntheticReplayOpts } from './fixtures/replay-payload';
+import { FORGE_ANNOUNCEMENT_VERSION } from '../../app/_components/forgeAnnouncement/constants';
 
 // Test sign-in helper. Calls the test-only /api/test/sign-in endpoint
 // to mint a real Auth.js session in the DB, then sets the cookie on
@@ -12,9 +13,12 @@ import { syntheticReplayPayload, type SyntheticReplayOpts } from './fixtures/rep
 // and would still be anonymous).
 //
 // Real session via the real auth() flow — only OAuth itself is bypassed.
+//
+// The SWU Forge letter auto-opens over the page for anyone who hasn't
+// dismissed it, so this dismisses it unless `showAnnouncement` is set.
 export async function signInAsTestUser(
   page: Page,
-  opts: { email?: string; name?: string } = {}
+  opts: { email?: string; name?: string; showAnnouncement?: boolean } = {}
 ): Promise<{ userId: string }> {
   const res = await page.request.post('/api/test/sign-in', {
     data: { email: opts.email, name: opts.name ?? 'Test User' },
@@ -33,6 +37,12 @@ export async function signInAsTestUser(
       httpOnly: true,
     },
   ]);
+  if (!opts.showAnnouncement) {
+    const dismissed = await page.request.post('/api/me/announcement-dismissal', {
+      data: { version: FORGE_ANNOUNCEMENT_VERSION },
+    });
+    if (!dismissed.ok()) throw new Error(`announcement dismissal failed: ${dismissed.status()}`);
+  }
   return { userId: body.userId };
 }
 

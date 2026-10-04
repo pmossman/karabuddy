@@ -10,6 +10,7 @@ import { ExtensionSigninReturn } from '@/app/_components/ExtensionSigninReturn';
 import { KaraBuddyThemeProvider } from '@/app/_components/KaraBuddyThemeProvider';
 import { ForgeAnnouncementProvider } from '@/app/_components/forgeAnnouncement/ForgeAnnouncement';
 import { forgeMigrationEnabled } from '@/lib/forgeMigration';
+import { getDismissedAnnouncementVersion } from '@/lib/announcements';
 
 // Wraps every "regular" page with the app chrome. The chrome itself is chosen
 // by <AppShell> (route-aware): a signed-in member with an active team gets the
@@ -20,10 +21,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await auth();
   const signedIn = !!session?.user;
   const userId: string | null = session?.user?.id ?? null;
-  const [hasLinkedExtension, { active, teams }, lastReplay] = await Promise.all([
+  const [hasLinkedExtension, { active, teams }, lastReplay, dismissedVersion] = await Promise.all([
     userHasLinkedExtension(userId),
     resolveActiveTeam(userId),
     userId ? getMyLastReplay(userId) : Promise.resolve(null),
+    userId ? getDismissedAnnouncementVersion(userId) : Promise.resolve(null),
   ]);
   const ownedTeams = teams.filter((t) => t.role === 'owner').map(({ slug, name }) => ({ slug, name }));
 
@@ -31,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <KaraBuddyThemeProvider>
       <ForgeAnnouncementProvider
         userId={userId}
+        dismissedVersion={dismissedVersion}
         teams={{ signedIn, ownedTeams, memberTeamCount: teams.length - ownedTeams.length, canMove: forgeMigrationEnabled() }}
       >
         <ActiveTeamProvider active={active} teams={teams}>

@@ -1,23 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import { dismissalKey, requestedMoveTeam, shouldAutoOpen, showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
+import { isDismissed, requestedMoveTeam, shouldAutoOpen, showMoveSection, type ForgeTeamContext } from '@/app/_components/forgeAnnouncement/rules';
 import { FORGE_ANNOUNCEMENT_VERSION, hubMovePath } from '@/app/_components/forgeAnnouncement/constants';
 
-describe('forge announcement dismissal key', () => {
-  it('is versioned and per user', () => {
-    expect(dismissalKey('u1')).toBe(`kb:announcement:swu-forge:v${FORGE_ANNOUNCEMENT_VERSION}:u1`);
-    expect(dismissalKey('u1')).not.toBe(dismissalKey('u2'));
-    expect(dismissalKey('u1', 1)).not.toBe(dismissalKey('u1', 2));
+describe('isDismissed', () => {
+  it('is dismissed once this version or a newer one was dismissed', () => {
+    expect(isDismissed(FORGE_ANNOUNCEMENT_VERSION)).toBe(true);
+    expect(isDismissed(FORGE_ANNOUNCEMENT_VERSION + 1)).toBe(true);
+  });
+
+  it('still shows when nothing, or only an older version, was dismissed', () => {
+    expect(isDismissed(null)).toBe(false);
+    expect(isDismissed(FORGE_ANNOUNCEMENT_VERSION - 1)).toBe(false);
+  });
+
+  it('shows again when the version is bumped', () => {
+    expect(isDismissed(1, 1)).toBe(true);
+    expect(isDismissed(1, 2)).toBe(false);
   });
 });
 
 describe('shouldAutoOpen', () => {
+  const page = { pathname: '/', search: '' };
+
   it('opens once for a signed-in user who has not dismissed it', () => {
-    expect(shouldAutoOpen({ signedIn: true, dismissed: false })).toBe(true);
-    expect(shouldAutoOpen({ signedIn: true, dismissed: true })).toBe(false);
+    expect(shouldAutoOpen({ ...page, signedIn: true, dismissed: false })).toBe(true);
+    expect(shouldAutoOpen({ ...page, signedIn: true, dismissed: true })).toBe(false);
   });
 
   it('never opens for signed-out visitors', () => {
-    expect(shouldAutoOpen({ signedIn: false, dismissed: false })).toBe(false);
+    expect(shouldAutoOpen({ ...page, signedIn: false, dismissed: false })).toBe(false);
+  });
+
+  it('waits out the replay and clip viewers', () => {
+    const fresh = { signedIn: true, dismissed: false, search: '' };
+    expect(shouldAutoOpen({ ...fresh, pathname: '/r/abc123' })).toBe(false);
+    expect(shouldAutoOpen({ ...fresh, pathname: '/c/abc123' })).toBe(false);
+    expect(shouldAutoOpen({ ...fresh, pathname: '/replays' })).toBe(true);
+    expect(shouldAutoOpen({ ...fresh, pathname: '/clips' })).toBe(true);
+  });
+
+  it('waits out the extension sign-in popup', () => {
+    const fresh = { signedIn: true, dismissed: false, pathname: '/' };
+    expect(shouldAutoOpen({ ...fresh, search: '?fromExtension=1' })).toBe(false);
+    expect(shouldAutoOpen({ ...fresh, search: '?tab=mine' })).toBe(true);
   });
 });
 
