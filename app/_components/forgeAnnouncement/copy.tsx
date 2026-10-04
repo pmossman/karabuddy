@@ -57,8 +57,8 @@ export const sections: Section[] = [
     heading: "Why I'm doing this",
     short: (
       <>
-        I built KaraBuddy fast, on shaky technical ground, because I wanted to get something useful out to the community.
-        That shortcut has caught up with it. Whenever Karabast changes, KaraBuddy&apos;s extension-based recording and its
+        I built KaraBuddy fast, on shaky technical ground, to get something useful out to the community. Whenever
+        Karabast changes, its extension-based recording and its
         modified copy of an old Karabast client can break. With SWU Forge, we can do it properly. It&apos;s built
         on a foundation that can keep up, and we&apos;re working on a direct Karabast account link, so in the near future you won&apos;t need a browser
         extension to record your replays
@@ -71,8 +71,10 @@ export const sections: Section[] = [
     heading: 'Better replays and stats',
     short: (
       <>
-        Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I worked on there was rewriting its replay viewer from the ground up, using everything I learned building KaraBuddy. SWU Forge also has
-        its own deck builder, so every game is tied to the exact deck version you played. That makes its matchup and deck
+        Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I worked on there was rewriting its replay viewer from the ground up, using everything I learned building KaraBuddy. You also shouldn&apos;t have to build your decks on SWU Forge just to
+        get replays. KaraBuddy records any deck, and @InvisibleLuis and I are both committed to SWU Forge doing the same,
+        which is why much of my recent work has gone into separating replays from decklists. If you do build your decks
+        there, every game is tied to the exact deck version you played. That makes its matchup and deck
         stats more accurate and insightful than KaraBuddy&apos;s.
       </>
     ),
@@ -169,7 +171,7 @@ export const hubCopy = {
     heading: 'Learn about SWU Forge',
     replays: {
       title: 'Replays',
-      body: "SWU Forge's replay viewer was rebuilt from the ground up, using everything learned from building KaraBuddy. Your games and replays live in the Battle Log.",
+      body: "SWU Forge's replay viewer was rebuilt from the ground up, using everything learned from building KaraBuddy. Your games and replays live in the Battle Log. Replays are being separated from decklists, so any game can be recorded whatever deck you played, just like on KaraBuddy. Until that's done, SWU Forge records games played with decks saved on SWU Forge, yours or your team's.",
       link: { label: 'Battle Log guide', href: `${SWU_FORGE_DOCS_URL}/battle-log/battle-log` },
     },
     features: [
