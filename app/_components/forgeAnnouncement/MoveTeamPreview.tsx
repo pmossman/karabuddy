@@ -326,7 +326,7 @@ function MoveForm({
   // willing to act on ARE the ones who are new since last time — so we can
   // highlight them without KaraBuddy tracking anything itself.
   const isRerun = data.plan.outcome !== 'created';
-  const blocked = sending || summary.actionable === 0 || !teamName.trim();
+  const blocked = sending || (isRerun && summary.actionable === 0) || !teamName.trim();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -388,7 +388,7 @@ function MoveForm({
         highlightActionable={isRerun}
       />
 
-      <Totals summary={summary} />
+      <Totals summary={summary} isRerun={isRerun} />
 
       <ErrorNote style={{ fontSize: 13 }}>{error}</ErrorNote>
 
@@ -620,10 +620,12 @@ function LockedRole({ role, title }: { role: string; title: string }) {
   );
 }
 
-function Totals({ summary }: { summary: ReturnType<typeof summarizePlan> }) {
-  const parts: { n: number; label: string }[] = [
-    { n: summary.total, label: summary.total === 1 ? 'member' : 'members' },
-  ];
+function Totals({ summary, isRerun }: { summary: ReturnType<typeof summarizePlan>; isRerun: boolean }) {
+  if (summary.total === 0 && !isRerun) {
+    return <p style={{ ...note, fontSize: 13.5 }}>Just you for now. SWU Forge creates the team with you as its owner.</p>;
+  }
+  const parts: { n: number; label: string }[] = [];
+  if (summary.total) parts.push({ n: summary.total, label: summary.total === 1 ? 'member' : 'members' });
   if (summary.joined) {
     parts.push({
       n: summary.joined,
@@ -823,11 +825,17 @@ function MoveResult({ data }: { data: MigrationResponse }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 720 }}>
       <Notice icon="✓" tone="success" titleTestId="forge-result-heading" title={`${forgeTeamName(data.plan, data.teamName)} is on SWU Forge`}>
-        <strong style={{ color: f.text }}>{summary.invited}</strong> invited by email — each joins when they accept
-        {summary.joined > 0 && <> · {summary.joined} added straight away</>}
-        {summary.alreadyOffered > 0 && <> · {summary.alreadyOffered} already offered, not asked again</>}
-        {summary.declined > 0 && <> · {summary.declined} declined, not asked again</>}
-        {summary.existingMember > 0 && <> · {summary.existingMember} already on the team</>}.
+        {summary.total === 0 ? (
+          'You’re its only member for now.'
+        ) : (
+          <>
+            <strong style={{ color: f.text }}>{summary.invited}</strong> invited by email — each joins when they accept
+            {summary.joined > 0 && <> · {summary.joined} added straight away</>}
+            {summary.alreadyOffered > 0 && <> · {summary.alreadyOffered} already offered, not asked again</>}
+            {summary.declined > 0 && <> · {summary.declined} declined, not asked again</>}
+            {summary.existingMember > 0 && <> · {summary.existingMember} already on the team</>}.
+          </>
+        )}
       </Notice>
 
       {/* A commit always comes back with the team's id, so this is the normal
@@ -879,7 +887,7 @@ function MoveResult({ data }: { data: MigrationResponse }) {
 
 function confirmLabel(isRerun: boolean, sending: boolean, actionable: number): string {
   if (sending) return isRerun ? 'Sending…' : 'Creating…';
-  if (actionable === 0) return isRerun ? 'Nothing new to send' : 'No teammates to invite';
+  if (actionable === 0) return isRerun ? 'Nothing new to send' : 'Create team on SWU Forge';
   const invitations = `${actionable} invitation${actionable === 1 ? '' : 's'}`;
   return isRerun ? `Send ${invitations}` : `Create team and send ${invitations}`;
 }

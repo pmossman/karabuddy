@@ -118,11 +118,8 @@ describe('gating', () => {
     expect((await post(slug, { dryRun: true })).status).toBe(403);
   });
 
-  // ⭐ There is no per-user allowlist here any more. The settings card is
-  // hidden behind a localStorage flag, which hides only the entry point; the
-  // boundary this route enforces is owners-only plus the shared secret, both
-  // above. An owner who finds the flag can move their OWN team — a deliberate,
-  // accepted trade on a hobby site.
+  // ⭐ There is no per-user allowlist. The boundary this route enforces is
+  // owners-only plus the shared secret, both above.
   it('lets any owner through once the secret is set', async () => {
     const o = await seedUser({ email: 'anyone@e.com' });
     const slug = await seedTeam(o.id);
@@ -226,6 +223,21 @@ describe('the payload KaraBuddy sends', () => {
     const fetchMock = stubForge(200, planFor([]));
     expect((await post(slug, { dryRun: true, teamName: '   ' })).status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('moves a team of one with an empty roster, on the dry run and the commit', async () => {
+    const o = await seedUser({ email: 'owner@e.com' });
+    const slug = await seedTeam(o.id);
+    as(o.id);
+    const fetchMock = stubForge(200, planFor([]));
+
+    expect((await post(slug, { dryRun: true })).status).toBe(200);
+    expect((await post(slug, { dryRun: false })).status).toBe(200);
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse((c as unknown as [string, RequestInit])[1].body as string));
+    expect(bodies.map((b) => [b.dryRun, b.members])).toEqual([
+      [true, []],
+      [false, []],
+    ]);
   });
 
   it('leaves out a member with no email, and names them as excluded', async () => {
