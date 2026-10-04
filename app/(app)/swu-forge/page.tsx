@@ -151,7 +151,6 @@ export default async function SwuForgeHubPage({ searchParams }: { searchParams: 
             ))}
           </div>
           <p style={{ margin: '26px 0 0', fontSize: 14.5, lineHeight: 1.6, color: f.textMuted, display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
-            <span>{learn.soon}</span>
             <ExtLink href={SWU_FORGE_DOCS_URL}>{learn.docs}</ExtLink>
           </p>
         </section>

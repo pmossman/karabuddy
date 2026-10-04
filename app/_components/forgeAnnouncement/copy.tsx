@@ -3,17 +3,12 @@ import Link from 'next/link';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import { HUB_PATH, KARABUDDY_DISCORD_URL, SWU_FORGE_DISCORD_URL, SWU_FORGE_DOCS_URL } from './constants';
 
-
 function Ext({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: tokens.forge.softText, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}>
       {children}
     </a>
   );
-}
-
-function Tbd({ children }: { children: ReactNode }) {
-  return <mark style={{ background: 'rgba(232, 132, 47, 0.18)', color: tokens.forge.markOrange, padding: '0 3px', borderRadius: 3 }}>[TBD: {children}]</mark>;
 }
 
 export const headline = 'The future of KaraBuddy';
@@ -84,9 +79,6 @@ export const sections: Section[] = [
         no decks, never could.
       </>,
       <>A built-in deck builder.</>,
-      <>
-        Coming soon: collection management. <Tbd>more roadmap items?</Tbd>
-      </>,
     ],
   },
   {
@@ -182,7 +174,6 @@ export const hubCopy = {
         link: { label: 'Team Battle Log guide', href: `${SWU_FORGE_DOCS_URL}/teams/team-battle-log` },
       },
     ],
-    soon: 'Coming soon: collection management.',
     docs: 'All SWU Forge guides',
   },
   community: {
