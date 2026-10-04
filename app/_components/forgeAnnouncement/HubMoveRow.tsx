@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Select } from '@/app/_components/Select';
 import { tokens } from '@/app/_theme/karabuddyTokens';
 import type { TeamRef } from '@/lib/activeTeam';
@@ -30,6 +31,17 @@ export function HubMoveRow({
   const team = owned.find((t) => t.slug === slug) ?? null;
   const moving = open && team !== null;
 
+  const urlTeam = useSearchParams().get('team');
+  const [followed, setFollowed] = useState(urlTeam);
+  if (urlTeam !== followed) {
+    setFollowed(urlTeam);
+    if (urlTeam === null) setOpen(false);
+    else if (owned.some((t) => t.slug === urlTeam)) {
+      setSlug(urlTeam);
+      setOpen(true);
+    }
+  }
+
   useEffect(() => {
     const url = new URL(window.location.href);
     const want = moving ? slug : null;
@@ -42,10 +54,10 @@ export function HubMoveRow({
   return (
     <details className="kbf-hub-move" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
-        <span id="hub-move" style={{ margin: 0, fontSize: 17, lineHeight: 1.25, fontWeight: 700, letterSpacing: '-0.005em', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <h2 id="hub-move" style={{ margin: 0, fontSize: 17, lineHeight: 1.25, fontWeight: 700, letterSpacing: '-0.005em', display: 'flex', alignItems: 'center', gap: 10 }}>
           <SectionTick color={f.markBlue} size={6} />
           {hubCopy.move.heading}
-        </span>
+        </h2>
         <span className="kbf-hub-move-status">{status}</span>
         <span className="kbf-hub-move-toggle">
           <span className="kbf-when-closed">{hubCopy.move.show}</span>

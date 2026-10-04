@@ -100,7 +100,6 @@ export default async function SwuForgeHubPage({ searchParams }: { searchParams: 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {showMoveSection(teams) && (
             <HubMoveRow
-              key={moveTeam?.slug ?? ''}
               teams={teams}
               status={moveStatus}
               initialTeam={moveTeam?.slug ?? null}
@@ -119,10 +118,10 @@ export default async function SwuForgeHubPage({ searchParams }: { searchParams: 
             />
           )}
           <section aria-labelledby="hub-replays" style={{ padding: '0 4px' }}>
-            <h3 id="hub-replays" style={{ ...h3, fontSize: 14.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h2 id="hub-replays" style={{ ...h3, fontSize: 14.5, display: 'flex', alignItems: 'center', gap: 8 }}>
               <SectionTick color={f.markOrange} size={5} />
               {hubCopy.replays.heading}
-            </h3>
+            </h2>
             <p style={{ ...body, margin: '4px 0 0', fontSize: 14, color: f.textMuted, opacity: 1 }}>{hubCopy.replays.body}</p>
           </section>
         </div>
