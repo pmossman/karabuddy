@@ -48,8 +48,7 @@ export const sections: Section[] = [
     heading: 'Bring your team over',
     short: (
       <>
-        You don&apos;t have to wait until 2027. If you run a team, you can move it today. You pick everyone&apos;s role,
-        each teammate gets an email invitation, and your KaraBuddy team stays as it is.
+        You don&apos;t have to wait until 2027. If you run a team, you can move it today. Everyone gets an email invitation, and your KaraBuddy team stays as it is.
       </>
     ),
   },
@@ -66,20 +65,15 @@ export const sections: Section[] = [
   },
   {
     id: 'forge',
-    heading: 'Replays, and more',
+    heading: 'Better replays and stats',
     short: (
       <>
         Replays are the heart of KaraBuddy, and SWU Forge does them better. The first thing I did there was rewrite its
-        replay viewer from the ground up, using everything KaraBuddy taught me.
+        replay viewer from the ground up, using everything KaraBuddy taught me. SWU Forge also has its own deck builder,
+        so every game is tied to the exact deck version you played. That makes its matchup and deck stats more accurate
+        and insightful than KaraBuddy&apos;s.
       </>
     ),
-    bullets: [
-      <>
-        More accurate, more insightful matchup and deck stats, tied to the exact deck version you played. KaraBuddy, with
-        no decks, never could.
-      </>,
-      <>A built-in deck builder.</>,
-    ],
   },
   {
     id: 'feedback',
