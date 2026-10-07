@@ -12,7 +12,7 @@
 // drizzle query builder (portable across neon / pg / pglite).
 
 import { and, eq, exists, inArray, isNotNull, isNull, or, sql, gte, lte } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
 import { matchPlayers, matches, replays, cards } from './schema';
 
@@ -57,9 +57,11 @@ export interface LeaderMatchup {
 
 // A "deck" = leader + base-IDENTITY, where base-identity collapses vanilla
 // (no-ability) bases to their aspect but keeps ability bases (Tarkintown, the
-// LAW splash bases, …) distinct — see cards.has_ability. So baseId is set ONLY
-// for ability bases; vanilla decks carry baseAspect instead. Exactly one of the
-// two is non-null for a normal row (both null = base unknown/unseeded).
+// LAW splash bases, …) distinct — see cards.has_ability. So baseId is set for
+// ability bases AND for bases the catalog doesn't know yet (a new set before
+// it's seeded: unknown ability → its own deck, never merged); vanilla decks
+// carry baseAspect instead. Exactly one of the two is non-null for a row with a
+// base (both null = no base recorded).
 export interface DeckStat {
   leader: string;
   baseId: string | null; // cardId, for ability bases
@@ -83,14 +85,18 @@ export interface DeckMatchup {
   winRate: number | null;
 }
 
-// SQL for the two base-identity columns given a `cards` alias joined on the
-// base cardId: baseId is the cardId for ability bases (else null); baseAspect
-// is the lowercased aspect for vanilla/unknown bases (else null). One non-null
-// per row, so grouping on the pair partitions games into decks.
-function baseIdentityCols(bc: ReturnType<typeof alias>) {
+// SQL for the two base-identity columns, given the base column (`baseCol`) and a
+// `cards` alias LEFT-joined on it. Only a base the catalog KNOWS has no ability
+// (has_ability = false) collapses to its aspect; an ability base, or one with no
+// catalog row / unknown ability (unseeded set), is its own deck, keyed by the
+// base column itself (the catalog row may not exist). One non-null per row, so
+// grouping on the pair partitions games into decks. `applySelfBaseFilter` is the
+// inverse — keep the two in lockstep so every deck row round-trips as a filter.
+function baseIdentityCols(bc: ReturnType<typeof alias>, baseCol: AnyPgColumn) {
+  const hasAbility = (bc as any).hasAbility;
   return {
-    baseId: sql<string | null>`case when ${(bc as any).hasAbility} then ${(bc as any).cardId} else null end`,
-    baseAspect: sql<string | null>`case when ${(bc as any).hasAbility} then null else lower(${(bc as any).aspects}->>0) end`,
+    baseId: sql<string | null>`case when coalesce(${hasAbility}, true) then ${baseCol} else null end`,
+    baseAspect: sql<string | null>`case when ${hasAbility} = false then lower(${(bc as any).aspects}->>0) else null end`,
   };
 }
 
@@ -211,10 +217,12 @@ const timeCond = (opts: { from?: Date | null; to?: Date | null }) =>
     opts.to ? lte(matches.createdAt, opts.to) : undefined,
   );
 
-// Self-side deck filter shared by leader-scoped producers (drill-in): exact base
-// for an ability base (`baseId`), or any vanilla base of an aspect (`baseAspect`,
-// excluding ability bases — they're their own decks). Pushes its WHERE conditions
-// into `conds` and returns the (possibly base-card-joined) dynamic builder.
+// Self-side deck filter shared by the leader-scoped producers (drill-in, card
+// stats) — the inverse of baseIdentityCols: exact base for a `baseId` deck (an
+// ability base, or one the catalog doesn't know yet), or any KNOWN no-ability
+// base of an aspect (`baseAspect`; ability and unseeded bases are their own
+// decks). Pushes its WHERE conditions into `conds` and returns the (possibly
+// base-card-joined) dynamic builder.
 function applySelfBaseFilter(qb: any, opts: { baseId?: string | null; baseAspect?: string | null }, conds: any[]): any {
   if (opts.baseId) {
     conds.push(eq(matchPlayers.base, opts.baseId));
@@ -222,7 +230,7 @@ function applySelfBaseFilter(qb: any, opts: { baseId?: string | null; baseAspect
     const bc = alias(cards, 'self_base');
     qb = qb.innerJoin(bc, eq(bc.cardId, matchPlayers.base));
     conds.push(sql`${(bc as any).aspects} @> ${JSON.stringify([opts.baseAspect])}::jsonb`);
-    conds.push(sql`coalesce(${(bc as any).hasAbility}, false) = false`);
+    conds.push(sql`${(bc as any).hasAbility} = false`);
   }
   return qb;
 }
@@ -313,7 +321,7 @@ export interface ResourcingGame {
 export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number }): Promise<ResourcingGame[]> {
   const db = getDb();
   const bc = alias(cards, 'base_card');
-  const idCols = baseIdentityCols(bc);
+  const idCols = baseIdentityCols(bc, matchPlayers.base);
   // Personal presents YOUR sibling; team the persisted representative (B233).
   const { rt, on } = scopedReplaySource(opts.scope);
   const base = db
@@ -472,17 +480,7 @@ export async function getCardStats(
   const conds: any[] = [opts.format ? eq(matches.format, opts.format) : undefined, timeCond(opts), perspectiveCond(opts.scope), scopePredicate(opts.scope)];
   if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
   if (opts.opponentLeader) conds.push(eq(matchPlayers.opponentLeader, opts.opponentLeader));
-  if (opts.baseId) {
-    // An ability base IS the deck — match the exact base card.
-    conds.push(eq(matchPlayers.base, opts.baseId));
-  } else if (opts.baseAspect) {
-    // A vanilla deck = any no-ability base of this aspect (ability bases of
-    // the same aspect are their own decks, so exclude them here).
-    const baseCard = alias(cards, 'base_card');
-    base = base.innerJoin(baseCard, eq(baseCard.cardId, matchPlayers.base));
-    conds.push(sql`${baseCard.aspects} @> ${JSON.stringify([opts.baseAspect])}::jsonb`);
-    conds.push(sql`coalesce(${baseCard.hasAbility}, false) = false`);
-  }
+  base = applySelfBaseFilter(base, opts, conds);
   const sub = base.where(and(...conds)).as('obs');
   const rows = await db
     .select({
@@ -511,7 +509,7 @@ export async function getDecks(opts: StatsQueryOpts & { leader?: string | null }
   const minGames = opts.minGames ?? 1;
   const db = getDb();
   const bc = alias(cards, 'base_card');
-  const idCols = baseIdentityCols(bc);
+  const idCols = baseIdentityCols(bc, matchPlayers.base);
   const base = db
     .select({
       leader: matchPlayers.leader,
@@ -545,8 +543,8 @@ export async function getDeckMatchups(opts: StatsQueryOpts): Promise<DeckMatchup
   const db = getDb();
   const sbc = alias(cards, 'self_base');
   const obc = alias(cards, 'opp_base');
-  const self = baseIdentityCols(sbc);
-  const opp = baseIdentityCols(obc);
+  const self = baseIdentityCols(sbc, matchPlayers.base);
+  const opp = baseIdentityCols(obc, matchPlayers.opponentBase);
   const base = db
     .select({
       leader: matchPlayers.leader,

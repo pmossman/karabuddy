@@ -567,3 +567,70 @@ describe('B195 matchup drill-in producers', () => {
     expect(rows.every((r) => r.won === true)).toBe(true);
   });
 });
+
+// A base from a set the catalog hasn't been seeded with (HMW before its seed):
+// no `cards` row, so has_ability is unknown. It used to come back with BOTH
+// identity columns null ("?"), merging every such base a leader played into one
+// row that no filter could select. Unknown ability now = its own deck, keyed by
+// the base id, and that key round-trips through every self-base filter.
+describe('base identity: unseeded bases', () => {
+  let u: string;
+  const scope = () => ({ kind: 'personal' as const, userId: u });
+  beforeEach(async () => {
+    u = await seedUser(false);
+    await getDb().insert(cards).values([
+      { cardId: 'B_VIG2', type: 'base', aspects: ['vigilance'], hasAbility: false, name: 'Another Vanilla Vigilance' },
+      // Self-healed from gameplay, never seeded: aspects known, ability unknown.
+      { cardId: 'B_OBS', type: 'base', aspects: ['command'], hasAbility: null, name: 'Observed Base', source: 'observed' },
+    ]);
+    const g = (gameId: string, base: string, won: boolean, oppBase = 'B_VIG') =>
+      seedMatch({ gameId, userId: u, p1: { leader: 'LU', won, base }, p2: { leader: 'LX', won: !won, base: oppBase },
+        events: [{ side: 'p1', cardId: `C_${base}`, event: 'drawn' }] });
+    await g('u1', 'HMW_021', true);
+    await g('u2', 'HMW_021', false);
+    await g('u3', 'HMW_030', true, 'HMW_040'); // unseeded on both sides
+    await g('u4', 'B_VIG', true); // two DIFFERENT seeded vanilla vigilance bases…
+    await g('u5', 'B_VIG2', false); // …still one deck
+    await g('u6', 'B_OBS', true); // known aspect, unknown ability → its own deck
+  });
+
+  it('an unseeded base gets its own deck row; seeded vanilla bases still group by aspect', async () => {
+    const decks = await getDecks({ scope: scope(), leader: 'LU' });
+    const byKey = Object.fromEntries(decks.map((d) => [d.baseId ? `base:${d.baseId}` : `asp:${d.baseAspect}`, d]));
+    expect(Object.keys(byKey).sort()).toEqual(['asp:vigilance', 'base:B_OBS', 'base:HMW_021', 'base:HMW_030']);
+    expect(byKey['base:HMW_021']).toMatchObject({ baseAspect: null, games: 2, wins: 1 });
+    expect(byKey['base:HMW_030']).toMatchObject({ baseAspect: null, games: 1, wins: 1 });
+    expect(byKey['asp:vigilance']).toMatchObject({ baseId: null, games: 2, wins: 1 });
+    expect(byKey['base:B_OBS']).toMatchObject({ baseAspect: null, games: 1 });
+    expect(decks.some((d) => !d.baseId && !d.baseAspect)).toBe(false); // no "?" row
+  });
+
+  it('the deck-vs-deck matrix keys unseeded bases on both sides', async () => {
+    const rows = await getDeckMatchups({ scope: scope() });
+    expect(rows.find((r) => r.leader === 'LU' && r.baseId === 'HMW_030')).toMatchObject({ opponentBaseId: 'HMW_040', opponentBaseAspect: null, games: 1 });
+    expect(rows.find((r) => r.leader === 'LU' && r.baseId === 'HMW_021')).toMatchObject({ opponentBaseId: null, opponentBaseAspect: 'vigilance', games: 2 });
+  });
+
+  it('an unseeded deck round-trips through the drill-in filters (matchups, replays, card stats)', async () => {
+    const opts = { scope: scope(), leader: 'LU', baseId: 'HMW_021' };
+    expect((await getLeaderMatchups(opts)).reduce((n, r) => n + r.games, 0)).toBe(2);
+    expect((await getEntityReplays(opts)).map((r) => r.gameId).sort()).toEqual(['u1', 'u2']);
+    expect((await getCardStats({ ...opts, event: 'drawn' })).map((c) => c.cardId)).toEqual(['C_HMW_021']);
+  });
+
+  it('the aspect deck holds only KNOWN no-ability bases (not unseeded or unknown-ability ones)', async () => {
+    const opts = { scope: scope(), leader: 'LU', baseAspect: 'vigilance' };
+    expect((await getEntityReplays(opts)).map((r) => r.gameId).sort()).toEqual(['u4', 'u5']);
+    expect((await getCardStats({ ...opts, event: 'drawn' })).map((c) => c.cardId).sort()).toEqual(['C_B_VIG', 'C_B_VIG2']);
+    // B_OBS is a command base of unknown ability: its own deck, not "command vanilla".
+    expect(await getEntityReplays({ scope: scope(), leader: 'LU', baseAspect: 'command' })).toHaveLength(0);
+    expect((await getEntityReplays({ scope: scope(), leader: 'LU', baseId: 'B_OBS' })).map((r) => r.gameId)).toEqual(['u6']);
+  });
+
+  it('resourcing games carry the same identity', async () => {
+    await getDb().update(matchPlayers).set({ resourceAvailable: 10, resourceWasted: 1, resourceCountedRounds: 3 })
+      .where(and(eq(matchPlayers.gameId, 'u1'), eq(matchPlayers.playerId, 'p1')));
+    const [g] = await getResourcingGames({ scope: scope() });
+    expect(g).toMatchObject({ gameId: 'u1', baseId: 'HMW_021', baseAspect: null });
+  });
+});
