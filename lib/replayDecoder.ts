@@ -133,6 +133,17 @@ export function normalizeLeaders(state: any): any {
   return state;
 }
 
+// Fortify (Homeworlds): an upgrade attached to a BASE rides on the base's own
+// summary — players[pid].base.upgrades — with zone 'base' and parentCardId =
+// the base uuid. It is never in a cardPiles entry (forceteki #2657: it lives in
+// the BaseZone, which Player.getStateSummary doesn't list as a pile). Only the
+// base's controller can attach one, so these cards are that player's. Empty for
+// every replay recorded before HMW.
+export function baseUpgradesOf(player: any): any[] {
+  const list = player?.base?.upgrades;
+  return Array.isArray(list) ? list.filter((c) => c && typeof c === 'object') : [];
+}
+
 export interface Frame {
   t: number;
   state: any;
@@ -295,9 +306,9 @@ export function summarizePlayers(snapshotPlayers: any): ReplayPlayerSummary[] {
 
 // B65: scan every frame's gamestate for cards that appeared in a given
 // player's VISIBLE zones (groundArena, spaceArena, discard, capturedZone,
-// plus attached upgrades). Hand + deck + resources are masked/face-down
-// and excluded. Dedupe by uuid so the same card appearing in many frames
-// counts once; aggregate copies seen by card id.
+// plus attached upgrades and the Fortify upgrades on their base). Hand + deck
+// + resources are masked/face-down and excluded. Dedupe by uuid so the same
+// card appearing in many frames counts once; aggregate copies seen by card id.
 export function extractSeenCards(frames: Frame[], playerId: string): DeckCardRef[] {
   const seenUuids = new Set<string>();
   const byCardId = new Map<string, { count: number; cost?: number | null }>();
@@ -329,6 +340,7 @@ export function extractSeenCards(frames: Frame[], playerId: string): DeckCardRef
       const zone = piles[zoneName];
       if (Array.isArray(zone)) for (const c of zone) addCard(c);
     }
+    for (const c of baseUpgradesOf(player)) addCard(c);
   }
 
   return Array.from(byCardId.entries()).map(([id, v]) => ({

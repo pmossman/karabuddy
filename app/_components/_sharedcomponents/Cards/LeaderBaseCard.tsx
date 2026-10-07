@@ -9,17 +9,22 @@ import { useLeaderCardFlipPreview } from '@/app/_hooks/useLeaderPreviewFlip';
 import { useLongPress } from '@/app/_hooks/useLongPress';
 import { DistributionEntry } from '@/app/_hooks/useDistributionPrompt';
 import { DamageCounterToken } from '@/app/_components/_sharedcomponents/_styledcomponents/damageCounterToken';
+import { fortificationTabs } from './fortificationBand';
 
 const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
     card,
     title,
     cardStyle = LeaderBaseCardStyle.Plain,
     capturedCards = [],
+    upgrades = [],
     disabled = false,
     isLeader = false,
 }) => {
     const { sendGameMessage, connectedPlayer, getConnectedPlayerPrompt, distributionPromptData, gameState, hoveredChatCard } = useGame();
     const [previewImage, setPreviewImage] = React.useState<string | null>(null);
+    // karabuddy (Fortify): the "+N" chip on a base's fortification band previews
+    // every card it collapsed, side by side.
+    const [previewImages, setPreviewImages] = React.useState<string[] | null>(null);
     const [anchorElement, setAnchorElement] = React.useState<HTMLElement | null>(null);
     const hoverTimeout = React.useRef<number | undefined>(undefined);
     const open = Boolean(anchorElement);
@@ -44,17 +49,32 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
 
     const [isTouchDevice, setIsTouchDevice] = React.useState(false);
 
+    // karabuddy (Fortify): a "+N" chip carries every collapsed card's image URL.
+    const multiPreviewOf = (target: HTMLElement): string[] | null => {
+        const raw = target.getAttribute('data-card-urls');
+        if (!raw) return null;
+        try {
+            const urls = JSON.parse(raw);
+            return Array.isArray(urls) && urls.length > 0 ? urls.map((u) => `url(${u})`) : null;
+        } catch {
+            return null;
+        }
+    };
+
     const longPressHandlers = useLongPress({
         onLongPress: (target) => {
+            const many = multiPreviewOf(target);
             const imageUrl = target.getAttribute('data-card-url');
-            if (!imageUrl) return;
+            if (!imageUrl && !many) return;
             setIsTouchDevice(true);
             setAnchorElement(target);
-            setPreviewImage(`url(${imageUrl})`);
+            setPreviewImages(many);
+            setPreviewImage(imageUrl ? `url(${imageUrl})` : null);
         },
         onRelease: () => {
             setAnchorElement(null);
             setPreviewImage(null);
+            setPreviewImages(null);
         },
     });
 
@@ -65,6 +85,7 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
             clearTimeout(hoverTimeout.current);
             setAnchorElement(null);
             setPreviewImage(null);
+            setPreviewImages(null);
         };
         document.addEventListener('touchstart', onTouchStart);
         return () => document.removeEventListener('touchstart', onTouchStart);
@@ -85,12 +106,14 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
         if (window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(any-pointer: fine)').matches) return;
 
         const target = event.currentTarget;
+        const many = multiPreviewOf(target);
         const imageUrl = target.getAttribute('data-card-url');
-        if (!imageUrl) return;
+        if (!imageUrl && !many) return;
 
         hoverTimeout.current = window.setTimeout(() => {
             setAnchorElement(target);
-            setPreviewImage(`url(${imageUrl})`);
+            setPreviewImages(many);
+            setPreviewImage(imageUrl ? `url(${imageUrl})` : null);
         }, 200);
     };
 
@@ -98,6 +121,7 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
         clearTimeout(hoverTimeout.current);
         setAnchorElement(null);
         setPreviewImage(null);
+        setPreviewImages(null);
     };
 
     const defaultClickFunction = () => {
@@ -433,6 +457,66 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
             position: 'relative',
             zIndex: 2, // Text layer above background
         },
+        // karabuddy (Fortify): the base's fortification band. One row of
+        // aspect-colored strips (the same art as captured cards and unit
+        // upgrades) hanging off the base's BOARD-FACING edge — above the POV
+        // player's base, below the opponent's — tucked 2px under the base so it
+        // reads as attached. Absolutely positioned: it never moves the board,
+        // and it stays clear of the damage badge in the middle of the base.
+        fortBand: {
+            position: 'absolute',
+            left: '4%',
+            width: '92%',
+            aspectRatio: '7.6 / 1',
+            ...(isConnectedPlayer ? { bottom: 'calc(100% - 2px)' } : { top: 'calc(100% - 2px)' }),
+            display: 'flex',
+            flexDirection: 'row',
+            gap: '2px',
+            pointerEvents: 'auto',
+        },
+        fortTab: {
+            position: 'relative',
+            flex: '1 1 0',
+            minWidth: 0,
+            height: '100%',
+            cursor: 'default',
+        },
+        fortStrip: {
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 6%',
+            boxSizing: 'border-box',
+        },
+        fortStripBackground: {
+            position: 'absolute',
+            inset: 0,
+            backgroundSize: '100% 100%',
+            backgroundRepeat: 'no-repeat',
+            // The aspect-colored edge faces the base, like a unit's upgrade strip.
+            transform: isConnectedPlayer ? 'scaleY(-1)' : 'none',
+        },
+        fortName: {
+            position: 'relative',
+            fontSize: 'clamp(4px, .6vw, 11px)',
+            fontWeight: 800,
+            lineHeight: 1,
+            color: 'black',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            userSelect: 'none',
+            mt: isConnectedPlayer ? '-1px' : '1px',
+        },
+        fortChip: {
+            position: 'relative',
+            flex: '0 0 auto',
+            minWidth: '18%',
+            height: '100%',
+            cursor: 'default',
+        },
     };
 
     const capturedCardsDecoration = (
@@ -486,15 +570,66 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
         </Box>
     )
 
+    // karabuddy (Fortify, Homeworlds): the upgrades attached to this base, as a
+    // band of tabs (see styles.fortBand). Up to three named tabs; past that the
+    // oldest collapse into a "+N" chip whose hover previews all of them. Each
+    // tab carries data-card-uuid so the replay FrameAnimator can land a played
+    // fortification on it (and fade a defeated one out of it), and its strip
+    // carries data-upgrade-uuid so the animator can hide it until the card lands.
+    const fortTabs = fortificationTabs(upgrades);
+    const fortificationBand = (
+        <Box sx={styles.fortBand} data-testid="fortification-band" data-count={upgrades.length}>
+            {fortTabs.collapsed.length > 0 && (
+                <Box
+                    sx={styles.fortChip}
+                    data-testid="fortification-overflow"
+                    data-card-type="upgrade"
+                    data-card-urls={JSON.stringify(fortTabs.collapsed.map((u) => s3CardImageURL(u)))}
+                    aria-label={`${fortTabs.collapsed.length} more: ${fortTabs.collapsed.map((u) => u.name).join(', ')}`}
+                    onMouseEnter={handlePreviewOpen}
+                    onMouseLeave={handlePreviewClose}
+                    {...longPressHandlers}
+                >
+                    <Box sx={styles.fortStrip}>
+                        <Box sx={{ ...styles.fortStripBackground, backgroundImage: 'url(/upgrade-grey.png)' }} />
+                        <Typography sx={styles.fortName}>+{fortTabs.collapsed.length}</Typography>
+                    </Box>
+                </Box>
+            )}
+            {fortTabs.shown.map((upgrade: ICardData) => (
+                <Box
+                    key={`base-upgrade-${upgrade.uuid}`}
+                    sx={styles.fortTab}
+                    data-card-uuid={upgrade.uuid}
+                    data-testid="fortification-tab"
+                    data-card-url={s3CardImageURL(upgrade)}
+                    data-card-type={upgrade.printedType ?? 'upgrade'}
+                    data-card-id={upgrade.setId ? upgrade.setId.set + '_' + upgrade.setId.number : upgrade.id}
+                    onClick={() => subcardClick(upgrade)}
+                    onMouseEnter={handlePreviewOpen}
+                    onMouseLeave={handlePreviewClose}
+                    {...longPressHandlers}
+                >
+                    <Box sx={styles.fortStrip} data-upgrade-uuid={upgrade.uuid}>
+                        <Box sx={{ ...styles.fortStripBackground, backgroundImage: `url(${capturedCardBackground(upgrade) ?? '/upgrade-grey.png'})` }} />
+                        <Typography sx={styles.fortName}>{upgrade.name}</Typography>
+                    </Box>
+                </Box>
+            ))}
+        </Box>
+    );
+
     return (
         // B104: data-card-uuid so the replay FrameAnimator can locate the base
         // (and an undeployed leader). When a leader is DEPLOYED it also renders
         // as a unit in the arena (its own GameCard owns the uuid then), so skip
         // it here to avoid a duplicate that the animator would mistakenly grab.
         <Box
-            sx={{ width: '100%' }}
+            sx={{ width: '100%', position: 'relative' }}
             data-card-uuid={card.zone === 'groundArena' || card.zone === 'spaceArena' ? undefined : card.uuid}
         >
+            {/* karabuddy (Fortify): first in the DOM so the base card paints over its tucked edge. */}
+            {upgrades.length > 0 && cardStyle === LeaderBaseCardStyle.Base && fortificationBand}
             {capturedCards.length > 0 && isConnectedPlayer && capturedCardsDecoration}
             <Box
                 sx={isDeployed ? styles.deployedPlaceholder : styles.card}
@@ -514,7 +649,7 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
                 { showValueAdjuster() && <CardValueAdjuster card={card} /> }
                 {cardStyle === LeaderBaseCardStyle.Base && (
                     <>
-                        <Box sx={styles.damageCounterContainer}>
+                        <Box sx={styles.damageCounterContainer} data-testid="base-damage">
                             { !!distributionAmount &&(
                                 <DamageCounterToken value={distributionAmount} variant={distributeHealing ? 'distributeHealing' : 'distributeDamage'} />
                             )}
@@ -549,10 +684,19 @@ const LeaderBaseCard: React.FC<ILeaderBaseCardProps> = ({
                     disableRestoreFocus
                     slotProps={{ paper: { sx: { backgroundColor: 'transparent', boxShadow: 'none' } } }}
                 >
-                    <Box sx={{
-                        ...styles.cardPreview,backgroundImage: previewImage
-                    }} >
-                    </Box>
+                    {previewImages ? (
+                        // karabuddy (Fortify): a "+N" chip previews every card it holds.
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'flex-end', maxWidth: '92vw' }}>
+                            {previewImages.map((img, i) => (
+                                <Box key={i} sx={{ ...styles.cardPreview, width: 'clamp(120px, 40vw, 13rem)', backgroundImage: img }} />
+                            ))}
+                        </Box>
+                    ) : (
+                        <Box sx={{
+                            ...styles.cardPreview,backgroundImage: previewImage
+                        }} >
+                        </Box>
+                    )}
                     {isLeader && !isTouchDevice && (
                         <Typography variant={'body1'} sx={styles.ctrlText}
                         >CTRL: View Flipside</Typography>

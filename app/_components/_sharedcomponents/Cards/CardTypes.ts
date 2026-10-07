@@ -50,6 +50,8 @@ export interface ICardData {
     type: string;
     subcards?: ICardData[];
     capturedCards?: ICardData[];
+    // A base's Fortify upgrades (forceteki BaseCard.getSummary; forceteki-client #806).
+    upgrades?: ICardData[];
     aspects?: IAspect[];
     printedType?: string;
     sentinel?: boolean;
@@ -128,6 +130,8 @@ export interface ILeaderBaseCardProps {
     title?: string;
     card: ICardData | null;
     capturedCards?: ICardData[];
+    // Fortify upgrades attached to this base (karabuddy: rendered as a tab band).
+    upgrades?: ICardData[];
     disabled?: boolean;
     cardStyle?: LeaderBaseCardStyle;
     isLeader?: boolean;

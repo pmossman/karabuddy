@@ -3,12 +3,18 @@
 // NO DOM and NO animation — so it's unit-testable in isolation. The animator's
 // effect calls these, hands the results to the (also pure) planner, then renders.
 
+import { baseUpgradesOf } from '@/lib/replayDecoder';
+
 export interface FrameCard {
   zone: string;
   ctrl: string | undefined;
   // B134: upgrades live in an arena pile but carry a parentCardId pointing at
   // the unit they attach to (rendered as a subcard strip under that unit).
   parentCardId?: string;
+  // Fortify: an upgrade attached to a BASE (zone 'base', parentCardId = the
+  // base uuid). It rides on players[pid].base.upgrades, not in a pile, and
+  // renders as a tab on the base's fortification band.
+  onBase?: boolean;
   // B134: {set, number} for building a face-up card image when a hidden-hand
   // play has no full-card render to clone (an upgrade renders only as a strip).
   setId?: { set: string; number: number };
@@ -28,8 +34,9 @@ export interface InteractionEvent {
 }
 
 // Per-card zone + controller (cardPiles) PLUS each player's leader (which lives
-// on players[pid].leader, not in a pile). The leader's zone lets the planner
-// tell a deploy/return (arena ↔ 'base' slot) from a plain arena reflow.
+// on players[pid].leader, not in a pile) PLUS the Fortify upgrades on each base
+// (players[pid].base.upgrades). The leader's zone lets the planner tell a
+// deploy/return (arena ↔ 'base' slot) from a plain arena reflow.
 export function extractFrameCards(state: any): { cards: Map<string, FrameCard>; leaders: Set<string> } {
   const cards = new Map<string, FrameCard>();
   const leaders = new Set<string>();
@@ -40,6 +47,10 @@ export function extractFrameCards(state: any): { cards: Map<string, FrameCard>; 
       for (const c of piles[z] || []) {
         if (c?.uuid) cards.set(c.uuid, { zone: c.zone || z, ctrl: c.controllerId, parentCardId: c.parentCardId, setId: c.setId, isAttacker: c.isAttacker, isDefender: c.isDefender });
       }
+    }
+    for (const c of baseUpgradesOf(player)) {
+      if (!c.uuid) continue;
+      cards.set(c.uuid, { zone: c.zone || 'base', ctrl: c.controllerId ?? pid, parentCardId: c.parentCardId ?? player.base?.uuid, setId: c.setId, onBase: true });
     }
     const leader = player.leader;
     if (leader?.uuid) {
@@ -312,10 +323,12 @@ export function extractBases(state: any): Map<string, string> {
 // planner's staged-play branch, so "what kind of play is this" is judged ONE way.
 //   • discard          → an EVENT (flies out, presents, drops to discard)
 //   • arena + parent    → an UPGRADE (tucks under its host unit)
+//   • on a base         → an UPGRADE too (Fortify: tucks into the base's band)
 //   • arena (no parent) → a UNIT play
 export type PlayKind = 'event' | 'upgrade' | 'unit';
 export function playKindOf(info: FrameCard | undefined): PlayKind | null {
   if (!info) return null;
+  if (info.onBase) return info.parentCardId ? 'upgrade' : null;
   if (info.zone === 'discard') return 'event';
   if (info.zone !== 'groundArena' && info.zone !== 'spaceArena') return null;
   return info.parentCardId ? 'upgrade' : 'unit';

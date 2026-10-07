@@ -407,3 +407,102 @@ describe('planFrameAnimations', () => {
     expect(is.find((i) => i.type === 'exit')).toMatchObject({ type: 'exit', uuid: 'dead', delay: 0 });
   });
 });
+
+// Fortify (HMW): an upgrade attached to a BASE. It rides on the base summary
+// (zone 'base', parentCardId = the base uuid) and renders as a tab on the base's
+// band — a measured rect keyed by its own uuid.
+describe('planFrameAnimations — Fortify', () => {
+  const myBase = snap(600, 500, 'B1', 140, 100);
+  const oppBase = snap(600, 300, 'B2', 140, 100);
+  const fort = (ctrl: string, base: string): FrameCard => ({ zone: 'base', ctrl, parentCardId: base, setId: { set: 'HMW', number: 81 }, onBase: true });
+
+  it('stages an own-hand play: present above my base, then tuck into its tab', () => {
+    const tab = snap(606, 482, 'T', 128, 18);
+    const is = plan({
+      prev: snapshot({ f: snap(500, 760, 'H', 90, 126), b1: myBase }),
+      next: snapshot({ f: tab, b1: myBase }),
+      prevZones: new Map([['f', 'hand'], ['b1', 'base']]),
+      cards: cardsOf({ f: fort('me', 'b1') }),
+      eventPlays: [{ uuid: 'f' }],
+      localPlayerId: 'me',
+    });
+    expect(types(is)).toEqual(['upgradeStage']); // no stray move/enter/exit for the card
+    const u = is[0] as Extract<Intent, { type: 'upgradeStage' }>;
+    expect(u.unit).toEqual(myBase);
+    expect(u.unitOld).toBeNull(); // nothing to hold: the base's render doesn't change
+    expect(u.faceDown).toBe(false);
+    expect(u.stage).toEqual({ x: 670, y: 550 - 75 }); // lifted toward the board's middle
+    expect(u.end).toEqual({ x: 670, y: 491, scale: 80 / 126 });
+  });
+
+  it('stages the opponent’s hidden-hand play below their base, flipping face-up', () => {
+    const is = plan({
+      prev: snapshot({ 'replay-hidden-opp-0': snap(500, 20, 'X', 40, 56), b2: oppBase }),
+      next: snapshot({ f: snap(606, 398, 'T', 128, 18), b2: oppBase }),
+      prevZones: new Map([['replay-hidden-opp-0', 'hand'], ['b2', 'base']]),
+      cards: cardsOf({ f: fort('opp', 'b2') }),
+      eventPlays: [{ uuid: 'f' }],
+      localPlayerId: 'me',
+    });
+    expect(types(is)).toEqual(['upgradeStage']); // the hidden card is paired, not exited
+    const u = is[0] as Extract<Intent, { type: 'upgradeStage' }>;
+    expect(u.faceDown).toBe(true);
+    expect(u.faceUp).toContain('/HMW/');
+    expect(u.stage.y).toBe(350 + 75);
+  });
+
+  it('lands on the base edge when the band collapsed the new card into "+N"', () => {
+    const is = plan({
+      prev: snapshot({ f: snap(500, 760, 'H', 90, 126), b1: myBase }),
+      next: snapshot({ b1: myBase }),
+      prevZones: new Map([['f', 'hand'], ['b1', 'base']]),
+      cards: cardsOf({ f: fort('me', 'b1') }),
+      eventPlays: [{ uuid: 'f' }],
+      localPlayerId: 'me',
+    });
+    const u = is[0] as Extract<Intent, { type: 'upgradeStage' }>;
+    expect(u.end).toMatchObject({ x: 670, y: 500 });
+  });
+
+  it('fades a defeated fortification out of its tab, after the event presents', () => {
+    const tab = snap(606, 398, 'T', 128, 18);
+    const is = plan({
+      prev: snapshot({ f: tab, b2: oppBase }),
+      next: snapshot({ b2: oppBase }),
+      prevZones: new Map([['f', 'base'], ['b2', 'base'], ['ev', 'hand']]),
+      cards: cardsOf({ f: { zone: 'discard', ctrl: 'opp' }, ev: { zone: 'discard', ctrl: 'me' } }),
+      eventPlays: [{ uuid: 'ev' }],
+    });
+    expect(is.find((i) => i.type === 'exit')).toEqual({ type: 'exit', uuid: 'f', rect: tab, delay: 650 });
+  });
+
+  it('a tab collapsing into "+N" (or reappearing) is not the card leaving (or arriving)', () => {
+    const is = plan({
+      prev: snapshot({ old: snap(606, 398, 'T', 64, 18) }),
+      next: snapshot({ back: snap(606, 398, 'T', 64, 18) }),
+      prevZones: new Map([['old', 'base'], ['back', 'base']]),
+      cards: cardsOf({ old: fort('opp', 'b2'), back: fort('opp', 'b2') }),
+    });
+    expect(is).toEqual([]);
+  });
+
+  it('a band reflow (tabs re-splitting the width) snaps', () => {
+    const is = plan({
+      prev: snapshot({ a: snap(606, 398, 'T', 128, 18) }),
+      next: snapshot({ a: snap(606, 398, 'T', 64, 18) }),
+      prevZones: new Map([['a', 'base']]),
+      cards: cardsOf({ a: fort('opp', 'b2') }),
+    });
+    expect(is).toEqual([]);
+  });
+
+  it('fades in a fortification that arrived without a "plays" line', () => {
+    const is = plan({
+      prev: snapshot({}),
+      next: snapshot({ f: snap(606, 398, 'T', 128, 18) }),
+      prevZones: new Map([['f', 'deck']]),
+      cards: cardsOf({ f: fort('opp', 'b2') }),
+    });
+    expect(is).toEqual([{ type: 'enter', uuid: 'f', delay: 0 }]);
+  });
+});

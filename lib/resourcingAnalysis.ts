@@ -26,6 +26,7 @@
 //          resourcing was forced.
 
 import type { Frame } from './replayDecoder';
+import { baseUpgradesOf } from './replayDecoder';
 import { cardIdOf } from './statsExtract';
 
 const ZONES = ['deck', 'hand', 'resources', 'groundArena', 'spaceArena', 'discard'] as const;
@@ -129,10 +130,14 @@ export function analyzeResourcing(frames: Frame[], opts: AnalyzeOpts): Resourcin
   const life = new Map<string, Life>();
   const lastZone = new Map<string, string>();
   frames.forEach((f, i) => {
-    const piles = f.state?.players?.[recorderId]?.cardPiles || {};
+    const player = f.state?.players?.[recorderId];
+    const piles = player?.cardPiles || {};
     const rd = frameRound(i);
-    for (const z of ZONES) {
-      for (const c of piles[z] || []) {
+    // 'base' = the Fortify upgrades on the recorder's base: played, like a unit.
+    const lists: [string, any[]][] = ZONES.map((z) => [z, piles[z] || []]);
+    lists.push(['base', baseUpgradesOf(player)]);
+    for (const [z, list] of lists) {
+      for (const c of list) {
         const id = cardIdOf(c); if (!id) continue; const uuid = c.uuid || id;
         if (!life.has(uuid)) life.set(uuid, { cardId: id, handRounds: new Set() });
         const L = life.get(uuid)!;
@@ -140,7 +145,7 @@ export function analyzeResourcing(frames: Frame[], opts: AnalyzeOpts): Resourcin
         const prev = lastZone.get(uuid); if (prev === z) continue; lastZone.set(uuid, z);
         if (z === 'hand' && (prev === undefined || prev === 'deck') && L.drawn == null) L.drawn = rd;
         if (z === 'resources' && prev === 'hand' && L.resourced == null) L.resourced = rd;
-        if ((z === 'groundArena' || z === 'spaceArena') && L.played == null) L.played = rd;
+        if ((z === 'groundArena' || z === 'spaceArena' || z === 'base') && L.played == null) L.played = rd;
       }
     }
   });

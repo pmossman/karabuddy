@@ -21,7 +21,7 @@
 // and leave turn derivation to a later phase.
 
 import type { DecodedReplay, MatchMeta } from './replayDecoder';
-import { HIDDEN_SET, leadersOf } from './replayDecoder';
+import { HIDDEN_SET, baseUpgradesOf, leadersOf } from './replayDecoder';
 
 export type CardEventType = 'drawn' | 'resourced' | 'played' | 'discarded';
 export type Attribution = 'both' | 'recorder';
@@ -96,8 +96,10 @@ export interface ExtractOptions {
 }
 
 const ZONES = ['hand', 'deck', 'resources', 'groundArena', 'spaceArena', 'discard', 'capturedZone'] as const;
-type Zone = (typeof ZONES)[number];
-const ARENA: Zone[] = ['groundArena', 'spaceArena'];
+// 'base' is not a pile: it stands for the Fortify upgrades on the player's base
+// (baseUpgradesOf), which are in play like a unit's upgrades.
+type Zone = (typeof ZONES)[number] | 'base';
+const IN_PLAY: Zone[] = ['groundArena', 'spaceArena', 'base'];
 
 // B230: "played" is derived from the game LOG ("<player> plays <card>"), the
 // ground truth for a card being played, instead of arena-entry. Zone-entry
@@ -225,8 +227,9 @@ function buildCardEvents(
     for (const playerId of Object.keys(players)) {
       const piles = players[playerId]?.cardPiles;
       if (!piles || typeof piles !== 'object') continue;
-      for (const zone of ZONES) {
-        const list = piles[zone];
+      const lists: [Zone, unknown][] = ZONES.map((z) => [z, piles[z]]);
+      lists.push(['base', baseUpgradesOf(players[playerId])]);
+      for (const [zone, list] of lists) {
         if (!Array.isArray(list)) continue;
         for (const card of list) {
           const cardId = cardIdOf(card);
@@ -252,12 +255,13 @@ function buildCardEvents(
           } else if (zone === 'resources' && prev === 'hand') {
             emit(playerId, uuid, cardId, 'resourced', 'recorder', frameIndex);
           } else if (zone === 'discard') {
-            // A PLAYED card reaching discard from a NON-arena zone is an event
+            // A PLAYED card reaching discard from outside play is an event
             // resolving (the play IS its trip to discard), not a discard. Unit
-            // deaths (arena to discard), mills (deck to discard), and hand-
-            // discards of UNPLAYED cards stay 'discarded'. Arena entry no longer
-            // emits 'played' at all: the game log (pass 1) owns that.
-            const resolvedPlay = playedUuids.has(uuid) && !ARENA.includes(prev as Zone);
+            // deaths (arena to discard), defeated Fortify upgrades (base to
+            // discard), mills (deck to discard), and hand-discards of UNPLAYED
+            // cards stay 'discarded'. Arena entry no longer emits 'played' at
+            // all: the game log (pass 1) owns that.
+            const resolvedPlay = playedUuids.has(uuid) && !IN_PLAY.includes(prev as Zone);
             if (!resolvedPlay) emit(playerId, uuid, cardId, 'discarded', 'both', frameIndex);
           }
         }

@@ -8,6 +8,8 @@
 // and resource CONTENTS (those are masked differently per perspective, so
 // including them guarantees a miss). Pure → unit-tested.
 
+import { baseUpgradesOf } from './replayDecoder';
+
 interface FrameLike { state: any }
 
 // A board card reduced to the fields both recordings share for the same card:
@@ -42,7 +44,9 @@ export function frameSignature(state: any): string {
         // moments and are cheaper + robust to ordering differences.
         discard: Array.isArray(piles.discard) ? piles.discard.length : 0,
         resources: Array.isArray(piles.resources) ? piles.resources.length : 0,
-        base: { d: p.base?.damage ?? 0 },
+        // The Fortify upgrades on the base are public (both recordings carry
+        // them with the same uuids), so playing or losing one is a moment.
+        base: { d: p.base?.damage ?? 0, up: baseUpgradesOf(p).map((c) => c.uuid ?? null).sort() },
         leader: { z: p.leader?.zone ?? null, d: p.leader?.damage ?? 0, dep: p.leader?.deployed ?? null },
         active: !!p.isActionPhaseActivePlayer,
       };

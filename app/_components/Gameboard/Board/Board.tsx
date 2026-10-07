@@ -267,6 +267,7 @@ const Board: React.FC<IBoardProps> = ({
                                 cardStyle={LeaderBaseCardStyle.Base}
                                 card={opponentBase}
                                 capturedCards={opponentBase.capturedCards || []}
+                                upgrades={opponentBase.upgrades || []}
                             />
                         </Box>
                     </Box>
@@ -277,6 +278,7 @@ const Board: React.FC<IBoardProps> = ({
                                 cardStyle={LeaderBaseCardStyle.Base}
                                 card={playerBase}
                                 capturedCards={playerBase.capturedCards || []}
+                                upgrades={playerBase.upgrades || []}
                             />
                         </Box>
                         <Box sx={styles.leaderBaseWrapper}>

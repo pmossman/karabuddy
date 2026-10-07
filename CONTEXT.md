@@ -38,6 +38,13 @@ for the decisions behind the model.
   captured for both players; karabast masks the opponent's full decklist, so
   for the opponent only leader + base are known (the rest is recovered as
   **seen cards** — every card observed in play across frames).
+- **Fortification (Fortify)** — a Homeworlds (HMW) upgrade that attaches to
+  its controller's own BASE instead of a unit. On the wire it is NOT in any
+  `cardPiles` entry: it rides on the base summary, `players[pid].base.upgrades`
+  (zone `'base'`, `parentCardId` = the base uuid; forceteki #2657). Read it via
+  `lib/replayDecoder.baseUpgradesOf`. The viewer shows it as a band of
+  aspect-colored tabs on the base's board-facing edge (`LeaderBaseCard`; past
+  three, the oldest collapse into a "+N" chip).
 
 ## Identity & accounts
 

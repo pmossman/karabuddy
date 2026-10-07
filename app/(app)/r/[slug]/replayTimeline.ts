@@ -98,6 +98,7 @@ function resourcePileTotal(state: any): number {
 // stripped log can't hide a deploy/play from the dwell.
 //   • a LEADER going base → arena      = leader deploy (incl. pilot)
 //   • a non-leader newly IN an arena   = a unit play (or an upgrade tuck)
+//   • a card newly ON a base (Fortify) = an upgrade tuck
 
 function boardAnims(prevState: any, curState: any): AnimSpec[] {
   const prev = extractFrameCards(prevState);
@@ -109,6 +110,10 @@ function boardAnims(prevState: any, curState: any): AnimSpec[] {
     if (pz === 'base' && isArena(nz)) out.push({ kind: 'leaderDeploy', uuid: u });
   }
   for (const [u, info] of cur.cards) {
+    if (info.onBase) {
+      if (!prev.cards.get(u)?.onBase) out.push({ kind: 'upgrade', uuid: u });
+      continue;
+    }
     if (cur.leaders.has(u) || !isArena(info.zone)) continue;     // leaders handled above
     if (isArena(prev.cards.get(u)?.zone)) continue;              // already on board = a move
     out.push({ kind: info.parentCardId ? 'upgrade' : 'play', uuid: u });

@@ -448,7 +448,7 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       // handing off to the real upgrade strip rendered beneath the overlay. A
       // hidden-hand play flips face-down → card-art mid-flight. Migrated onto
       // stagePresent + flip; byte-identical to the old executor.
-      const { from, unit, unitUuid, unitOld, faceDown, faceUp, stage, pile } = intent;
+      const { from, unit, unitUuid, unitOld, faceDown, faceUp, stage, pile, end } = intent;
       // Reveal the (pre-hidden) upgrade strip as the clone starts tucking down.
       const upg = scheduleUpgradeReveal(upgHidden, intent.uuid, (UPGRADE_DEPART * UPGRADE_TOTAL_MS) / rate);
       // Hold the host's pre-attach stats until the upgrade lands.
@@ -457,10 +457,11 @@ function runIntent(intent: Intent, ctx: Ctx): void {
       const dxS = stage.x - fcx, dyS = stage.y - fcy;
       const tStage = `translate(${dxS}px, ${dyS}px) scale(${UPGRADE_STAGE_SCALE})`;
       // Land at the unit, biased to its lower edge, scaled to the unit width —
-      // reads as the upgrade sliding beneath the unit.
-      const dxE = (unit.x + unit.w / 2) - fcx;
-      const dyE = (unit.y + unit.h * 0.62) - fcy;
-      const tEnd = `translate(${dxE}px, ${dyE}px) scale(${unit.w / from.w})`;
+      // reads as the upgrade sliding beneath the unit. A Fortify upgrade lands
+      // on its tab on the base's band instead (`end`, from the planner).
+      const dxE = end ? end.x - fcx : (unit.x + unit.w / 2) - fcx;
+      const dyE = end ? end.y - fcy : (unit.y + unit.h * 0.62) - fcy;
+      const tEnd = `translate(${dxE}px, ${dyE}px) scale(${end ? end.scale : unit.w / from.w})`;
       const { inner } = stagePresent(ctx, {
         from, tStage, tEnd,
         arrive: UPGRADE_ARRIVE, depart: UPGRADE_DEPART, total: UPGRADE_TOTAL_MS,

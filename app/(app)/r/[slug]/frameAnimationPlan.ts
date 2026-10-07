@@ -41,7 +41,10 @@ export type Intent =
   // then tuck under that unit (`unit` rect) handing off to the rendered strip.
   // `unitUuid`/`unitOld` hold the host's PRE-attach render until the upgrade
   // lands (the board buffs the host's stats instantly otherwise).
-  | { type: 'upgradeStage'; uuid: string; from: Snap; unit: Snap; unitUuid: string; unitOld: Snap | null; faceDown: boolean; faceUp: string | null; stage: Point; pile?: boolean }
+  // Fortify: the host is a BASE. `end` then overrides the unit landing: the
+  // clone tucks into the card's own tab on the base's band (centre + scale
+  // relative to `from`), since a card scaled to a base's width would swamp it.
+  | { type: 'upgradeStage'; uuid: string; from: Snap; unit: Snap; unitUuid: string; unitOld: Snap | null; faceDown: boolean; faceUp: string | null; stage: Point; pile?: boolean; end?: { x: number; y: number; scale: number } }
   // B134: a RESOURCE — a card committed from hand to the resource pile. Grows,
   // pauses, then shrinks into the pile (`pile` rect). A face-up source flips to
   // the cardback (your own / hands-up reveal); a `faceDown` source (the
@@ -249,6 +252,25 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     }
     staged.add(uuid);
 
+    if (isUpgrade && info?.onBase) {
+      // Fortify: present on the base's board-facing side (up for the POV
+      // player at the bottom, down for the opponent at the top), then tuck into
+      // the card's own tab on the base's band — or, when the band has collapsed
+      // it into "+N", into the band's edge of the base.
+      const host = next.get(info.parentCardId!) ?? prev.get(info.parentCardId!);
+      if (!host) { staged.delete(uuid); continue; }
+      const fromRect = pile ? sizedAt(center(from), (fullCardDim ?? from).w, (fullCardDim ?? from).h) : from;
+      const liftSign = !localPlayerId || info.ctrl === localPlayerId ? -1 : 1;
+      const hc = center(host);
+      const stage: Point = { x: hc.x, y: hc.y + liftSign * host.h * 0.75 };
+      const tab = next.get(uuid);
+      const land = tab ? center(tab) : { x: hc.x, y: liftSign < 0 ? host.y : host.y + host.h };
+      const end = { ...land, scale: (host.h * 0.8) / fromRect.h };
+      const faceUp = faceDown && info.setId ? cardImageUrl({ set: info.setId.set, number: info.setId.number }) : null;
+      stageIntents.push({ type: 'upgradeStage', uuid, from: fromRect, unit: host, unitUuid: info.parentCardId!, unitOld: null, faceDown, faceUp, stage, pile, end });
+      continue;
+    }
+
     if (isUpgrade) {
       // Land target = the unit it attaches to (upgrades render only as a strip
       // under the unit, so they have no own rect). Skip if we can't place it.
@@ -382,11 +404,23 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
     intents.push({ type: 'pilotDeploy', uuid, from, unit, unitUuid: info.parentCardId, unitOld: prev.get(info.parentCardId) ?? null, stage, faceUp });
   }
 
+  // Fortify tabs on a base's band. The band can collapse tabs into a "+N" chip
+  // and re-split its width as cards come and go, so a tab appearing or vanishing
+  // is NOT a card arriving or leaving. Tabs follow their ZONE: only a card
+  // newly on a base animates in, only one that left the base animates out.
+  const wasOnBase = (u: string) => prevZones.get(u) === 'base' && !leaders.has(u);
+
   // MOVES / ENTERS / LEADER-FLIPS — iterate the new frame's cards.
   for (const [uuid, n] of next) {
     if (attackers.has(uuid)) continue; // the lunge owns the attacker this frame
     if (staged.has(uuid)) continue;    // the eventStage owns a played event
     const o = prev.get(uuid);
+    if (cards.get(uuid)?.onBase) {
+      // Already there → a band reflow, snap. Newly there without a staged play
+      // (no "plays" line) → fade the tab in where it sits.
+      if (!wasOnBase(uuid)) intents.push({ type: 'enter', uuid, delay: ENTER_DELAY });
+      continue;
+    }
     if (o) {
       const oz = prevZones.get(uuid);
       const nz = zoneOf(uuid);
@@ -424,6 +458,7 @@ export function planFrameAnimations(input: PlanInput): Intent[] {
   // EXITS — gone from the new frame.
   for (const [uuid, o] of prev) {
     if (next.has(uuid) || pairedExit.has(uuid) || attackers.has(uuid) || staged.has(uuid)) continue;
+    if (wasOnBase(uuid) && cards.get(uuid)?.onBase) continue; // still on the base, its tab just collapsed
     intents.push({ type: 'exit', uuid, rect: o, delay: EXIT_DELAY });
   }
 

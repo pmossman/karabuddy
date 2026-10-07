@@ -9,7 +9,11 @@
 // per-player totals (damage dealt to the opposing base, base damage healed,
 // cards played, enemy units defeated, resources floated).
 
+import { baseUpgradesOf } from './replayDecoder';
+
 const isArena = (z: string) => z === 'groundArena' || z === 'spaceArena';
+// Pseudo-zone for the Fortify upgrades on a player's base (not a cardPiles key).
+const BASE_UPGRADES = 'base';
 
 // Every SWU base has 30 HP. We read `base.hp` from the state when present, but
 // fall back to this so base-destruction detection (and therefore the
@@ -23,7 +27,7 @@ export interface PlayerEndStats {
   won: boolean | null;
   baseDamageDealt: number; // gross damage this player dealt to the opposing base
   baseDamageHealed: number; // gross damage healed off this player's own base
-  cardsPlayed: number; // distinct cards this player put into an arena
+  cardsPlayed: number; // distinct cards this player put into an arena (or onto their base: Fortify)
   unitsDefeated: number; // enemy units sent from an arena to the discard (kills)
   resourcesFloated: number; // unspent ready resources summed over completed rounds
   finalBaseDamage: number;
@@ -91,11 +95,13 @@ export function computeEndGameStats(
       }
       prevBaseDmg[pid] = dmg;
 
-      // Zone transitions → plays (into an arena) + deaths (arena → discard).
+      // Zone transitions → plays (into an arena, or onto the base as a Fortify
+      // upgrade) + deaths (arena → discard).
       const piles = p.cardPiles;
       if (piles && typeof piles === 'object') {
-        for (const zone of Object.keys(piles)) {
-          const list = piles[zone];
+        const lists: [string, unknown][] = Object.keys(piles).map((z) => [z, piles[z]]);
+        lists.push([BASE_UPGRADES, baseUpgradesOf(p)]);
+        for (const [zone, list] of lists) {
           if (!Array.isArray(list)) continue;
           for (const card of list) {
             const uuid = card?.uuid;
@@ -104,7 +110,7 @@ export function computeEndGameStats(
             const prev = lastZone.get(key);
             if (prev === zone) continue;
             lastZone.set(key, zone);
-            if (isArena(zone)) {
+            if (isArena(zone) || zone === BASE_UPGRADES) {
               if (!playedSeen.has(key)) { playedSeen.add(key); cardsPlayed[pid] += 1; }
             } else if (zone === 'discard' && prev && isArena(prev)) {
               if (!deathSeen.has(key)) { deathSeen.add(key); deaths[pid] += 1; }
