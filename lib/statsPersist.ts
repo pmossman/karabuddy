@@ -1,13 +1,13 @@
 // B101/P0 (ADR 0007): materialize a replay's mined facts into Postgres,
-// idempotent on gameId. Called from the upload path (non-blocking) + the
-// backfill. Steps:
+// idempotent on gameId. Called from the upload path, manual result assignment
+// and the backfill. Steps:
 //   1. self-heal the card catalog — insert any observed cardId not yet known
 //      (covers spoiler-season cards; known cards left untouched);
-//   2. replace the match + its child facts in one transaction (delete by
-//      gameId cascades match_players + card_events, then re-insert) so a
-//      re-upload of the same game is a clean overwrite, never a duplicate.
+//   2. upsert the match row, then upsert one row per seat, so a re-upload of
+//      the same game overwrites in place, never duplicates.
 
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
 import { cards, matches, matchPlayers } from './schema';
 import { aggregateCardEvents, extractReplayFacts, type ExtractOptions } from './statsExtract';
@@ -50,7 +50,7 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
       .onConflictDoNothing();
   }
 
-  // 2. Replace the match + children atomically.
+  // 2. Upsert the match + its seats.
   const players = matchFact.players;
   const opponentOf = (pid: string) => (players.length === 2 ? players.find((p) => p.playerId !== pid) ?? null : null);
 
@@ -81,61 +81,94 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
         }
       : {};
 
-  // Replace the match + its child facts. Deliberately NOT wrapped in an
-  // interactive db.transaction(): the prod Neon HTTP driver throws "No
-  // transactions support in neon-http driver", which silently broke ALL live
-  // stats persistence (every upload's write threw + was swallowed; the only
-  // facts that ever landed came from manual pg-driver backfill runs). These run
-  // sequentially instead — ordered so FKs hold (match before its children; the
-  // delete cascades the old children). The write is idempotent + replace-style,
-  // so the lost atomicity is harmless: a concurrent stats read might briefly see
-  // a match mid-rewrite, and the next upload/backfill re-writes it cleanly.
-  // B237 (DB size): card facts are kept for RECORDED seats only. The opponent's
-  // side of a single-recorder game carried only what's board-visible
-  // (played/discarded) — 38 MB nobody's stats needed. But a co-recorded game
-  // (both players upload) must keep BOTH recorders' full facts, and each upload
-  // replaces the match wholesale — so before replacing, remember the existing
-  // rows that were written as a recorder and carry their facts over.
-  const prior = await db
-    .select({ playerId: matchPlayers.playerId, isRecorder: matchPlayers.isRecorder, cardEvents: matchPlayers.cardEvents })
-    .from(matchPlayers)
-    .where(eq(matchPlayers.gameId, matchFact.gameId));
-  const recordedBefore = new Map(prior.filter((r) => r.isRecorder).map((r) => [r.playerId, r.cardEvents ?? null]));
+  // Two single-statement upserts, no delete and no read-then-write. Each
+  // statement is atomic on its own, so this works on every driver (the prod Neon
+  // HTTP driver has no interactive transactions) and is safe when two uploads of
+  // the same game persist at once — which is the NORM for a co-recorded game:
+  // both players' extensions upload the moment it ends. The old shape (read the
+  // prior rows, delete the match, re-insert it and its seats) raced there: the
+  // loser hit matches_pkey / a match_players FK or PK error and its recorder's
+  // facts were lost, or silently wiped without an error.
+  //
+  // The match row keeps its created_at (the date filters key on it), so a
+  // re-persist (manual result, backfill --force, a later upload) doesn't move
+  // the game to the day it was re-persisted.
+  await db
+    .insert(matches)
+    .values({
+      gameId: matchFact.gameId,
+      replaySlug,
+      format: matchFact.format,
+      cardPool: matchFact.cardPool,
+      bo3: matchFact.bo3,
+      result: matchFact.result,
+      durationMs: matchFact.durationMs,
+    })
+    .onConflictDoUpdate({
+      target: matches.gameId,
+      set: {
+        replaySlug: sql`excluded.replay_slug`,
+        format: sql`excluded.format`,
+        cardPool: sql`excluded.card_pool`,
+        bo3: sql`excluded.bo3`,
+        result: sql`excluded.result`,
+        durationMs: sql`excluded.duration_ms`,
+      },
+    });
 
-  await db.delete(matches).where(eq(matches.gameId, matchFact.gameId)); // cascades children
-  await db.insert(matches).values({
-    gameId: matchFact.gameId,
-    replaySlug,
-    format: matchFact.format,
-    cardPool: matchFact.cardPool,
-    bo3: matchFact.bo3,
-    result: matchFact.result,
-    durationMs: matchFact.durationMs,
-  });
   // B235: card facts ride on the side's own row (event → cardId → first frame).
+  // B237 (DB size): they are kept for RECORDED seats only — the opponent side of
+  // a single-recorder game carries no facts. A co-recorded game (both players
+  // upload) must keep BOTH recorders' facts, though each upload only has its own:
+  // so a seat stays a recorded seat once any upload recorded it, and its card
+  // facts + resourcing rating come only from the upload made FROM that seat.
+  // The merge happens inside the upsert, row-atomically, so it can't race.
   const cardMaps = aggregateCardEvents(events);
-  await db.insert(matchPlayers).values(
-    players.map((p) => {
-      const opp = opponentOf(p.playerId);
-      const carried = !p.isRecorder && recordedBefore.has(p.playerId);
-      return {
-        cardEvents: p.isRecorder ? (cardMaps.get(p.playerId) ?? null) : carried ? recordedBefore.get(p.playerId) ?? null : null,
-        gameId: matchFact.gameId,
-        playerId: p.playerId,
-        username: p.username,
-        leader: p.leader,
-        base: p.base,
-        aspects: p.aspects,
-        // A seat that recorded its own upload earlier stays a recorded seat.
-        isRecorder: p.isRecorder || carried,
-        won: p.won,
-        opponentLeader: opp?.leader ?? null,
-        opponentBase: opp?.base ?? null,
-        format: matchFact.format,
-        ...ratingCols(p.playerId),
-      };
-    }),
-  );
+  const fromRecorderSeat = (c: AnyPgColumn) =>
+    sql`case when excluded.is_recorder then excluded.${sql.identifier(c.name)} when ${matchPlayers.isRecorder} then ${c} else null end`;
+  await db
+    .insert(matchPlayers)
+    .values(
+      players.map((p) => {
+        const opp = opponentOf(p.playerId);
+        return {
+          gameId: matchFact.gameId,
+          playerId: p.playerId,
+          username: p.username,
+          leader: p.leader,
+          base: p.base,
+          aspects: p.aspects,
+          isRecorder: p.isRecorder,
+          won: p.won,
+          opponentLeader: opp?.leader ?? null,
+          opponentBase: opp?.base ?? null,
+          format: matchFact.format,
+          cardEvents: p.isRecorder ? (cardMaps.get(p.playerId) ?? null) : null,
+          ...ratingCols(p.playerId),
+        };
+      }),
+    )
+    .onConflictDoUpdate({
+      target: [matchPlayers.gameId, matchPlayers.playerId],
+      set: {
+        username: sql`excluded.username`,
+        leader: sql`excluded.leader`,
+        base: sql`excluded.base`,
+        aspects: sql`excluded.aspects`,
+        won: sql`excluded.won`,
+        opponentLeader: sql`excluded.opponent_leader`,
+        opponentBase: sql`excluded.opponent_base`,
+        format: sql`excluded.format`,
+        isRecorder: sql`${matchPlayers.isRecorder} or excluded.is_recorder`,
+        cardEvents: fromRecorderSeat(matchPlayers.cardEvents),
+        resourceAvailable: fromRecorderSeat(matchPlayers.resourceAvailable),
+        resourceWasted: fromRecorderSeat(matchPlayers.resourceWasted),
+        resourceForced: fromRecorderSeat(matchPlayers.resourceForced),
+        resourceUnderspend: fromRecorderSeat(matchPlayers.resourceUnderspend),
+        resourceDeadCards: fromRecorderSeat(matchPlayers.resourceDeadCards),
+        resourceCountedRounds: fromRecorderSeat(matchPlayers.resourceCountedRounds),
+      },
+    });
 
   return { matchWritten: true, cardEvents: events.length };
 }

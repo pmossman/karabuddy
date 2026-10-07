@@ -11,6 +11,7 @@
 
 import { decodeReplay } from './replayDecoder';
 import { persistReplayFacts } from './statsPersist';
+import { withTransientDbRetry } from './dbRetry';
 import { reconcileBo3ForReplay } from './bo3Reconcile';
 import { reconcileSideboardsForReplay } from './sideboardPersist';
 import { persistOpening } from './openingPersist';
@@ -24,14 +25,19 @@ export async function persistReplayStats(slug: string, parsed: any, gameId: stri
     return;
   }
   try {
-    await persistReplayFacts({
-      decoded,
-      replaySlug: slug,
-      gameId,
-      winners,
-      ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
-      durationMs: typeof parsed.durationMs === 'number' ? parsed.durationMs : null,
-    });
+    // The write is idempotent (catalog insert-or-ignore + upserts), so a
+    // deadlock on the shared cards catalog or a CockroachDB 40001 just retries.
+    await withTransientDbRetry(
+      () => persistReplayFacts({
+        decoded,
+        replaySlug: slug,
+        gameId,
+        winners,
+        ownerPlayerId: typeof parsed.localPlayerId === 'string' ? parsed.localPlayerId : null,
+        durationMs: typeof parsed.durationMs === 'number' ? parsed.durationMs : null,
+      }),
+      { onRetry: (e, attempt) => console.warn('[stats] transient DB error persisting', slug, `(attempt ${attempt}), retrying:`, String((e as any)?.message ?? e).slice(0, 120)) },
+    );
   } catch (e) {
     console.error('[stats] persistReplayFacts failed for', slug, e);
   }

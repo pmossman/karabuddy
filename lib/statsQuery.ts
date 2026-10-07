@@ -98,8 +98,8 @@ function baseIdentityCols(bc: ReturnType<typeof alias>) {
 // row for that game whose ownerPlayerId is that seat — NOT when the game's single
 // `matches.replaySlug` happens to point at your upload.
 //
-// Why: `matches` is one row per gameId carrying ONE replaySlug (delete+reinsert
-// per upload in lib/statsPersist, so last writer wins), and match_players.isRecorder
+// Why: `matches` is one row per gameId carrying ONE replaySlug (upserted per
+// upload in lib/statsPersist, so last writer wins), and match_players.isRecorder
 // flags only that persisting side. But `replays` is deliberately one row PER
 // RECORDER (B158) — both players who record the same karabast game keep their own.
 // So for a co-recorded game whose sibling was persisted last, the old pair
@@ -320,8 +320,8 @@ export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number
     .select({
       gameId: matchPlayers.gameId,
       replaySlug: rt.slug,
-      // the replay's createdAt (upload time) is STABLE across a facts re-persist;
-      // matches.createdAt resets on the delete+reinsert, so it can't order a trend.
+      // the replay's createdAt (upload time) — the trend's order. (matches.createdAt
+      // used to reset on every re-persist; it's stable now, but this stays per-replay.)
       createdAt: rt.createdAt,
       leader: matchPlayers.leader,
       baseId: idCols.baseId,

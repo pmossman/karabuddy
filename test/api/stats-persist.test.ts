@@ -4,6 +4,9 @@ import { getDb } from '@/lib/db';
 import { replays, matches, matchPlayers, cards } from '@/lib/schema';
 import { and, eq } from 'drizzle-orm';
 import { persistReplayFacts } from '@/lib/statsPersist';
+import { persistReplayStats } from '@/lib/replayStatsPersist';
+import { setReplayResult } from '@/lib/replayResult';
+import { putPayload } from '@/lib/blob';
 
 // B101/P0: persisting mined facts is idempotent on gameId and self-heals the
 // card catalog. Runs on pglite (real Postgres semantics: FKs, transactions,
@@ -182,3 +185,151 @@ describe('persistReplayFacts', () => {
     expect(Object.values(alice.cardEvents ?? {}).reduce((n, m) => n + Object.keys(m!).length, 0)).toBe(3); // not 6
   });
 });
+
+// The same fixture with p2 drawing a card too, so BOTH recorders have card facts
+// of their own (each upload only carries its own seat's drawn/resourced).
+function coRecordedFixture() {
+  const d = decodedFixture();
+  const bobCard = card('SHD', 50, 'q', { name: 'Bob Card', type: 'unit' });
+  d.frames[0].state.players.p2.cardPiles = { deck: [bobCard], hand: [] };
+  d.frames[1].state.players.p2.cardPiles = { deck: [], hand: [bobCard] };
+  d.frames[2].state.players.p2.cardPiles = { deck: [], hand: [bobCard] };
+  return d;
+}
+const seatsOf = async (gameId: string) => {
+  const mp = await getDb().select().from(matchPlayers).where(eq(matchPlayers.gameId, gameId));
+  return { p1: mp.find((r) => r.playerId === 'p1')!, p2: mp.find((r) => r.playerId === 'p2')!, count: mp.length };
+};
+
+describe('persistReplayFacts — two uploads of the same game at once', () => {
+  // Both players of a co-recorded game upload the moment it ends. The old
+  // read/delete/re-insert raced: one persist threw matches_pkey (or a
+  // match_players FK/PK error) and that recorder's facts were lost. Start both in
+  // the same tick, offset by 0..8 microtask hops, to walk the interleavings.
+  for (const hops of [0, 1, 2, 3, 4, 6, 8]) {
+    it(`both persists succeed and both recorders keep their facts (B starts ${hops} hops later)`, async () => {
+      const gameId = 'race-' + randomUUID().slice(0, 6);
+      const slugA = await seedReplay(gameId);
+      const slugB = await seedReplay(gameId);
+      const persist = async (slug: string, seat: string, n: number) => {
+        for (let i = 0; i < n; i++) await Promise.resolve();
+        return persistReplayFacts({ decoded: coRecordedFixture(), replaySlug: slug, gameId, winners: ['p1'], ownerPlayerId: seat, durationMs: 1 });
+      };
+      const results = await Promise.allSettled([persist(slugA, 'p1', 0), persist(slugB, 'p2', hops)]);
+      expect(results.map((r) => (r.status === 'rejected' ? String((r.reason as any)?.cause?.message ?? r.reason) : 'ok'))).toEqual(['ok', 'ok']);
+
+      expect(await getDb().select().from(matches).where(eq(matches.gameId, gameId))).toHaveLength(1);
+      const { p1, p2, count } = await seatsOf(gameId);
+      expect(count).toBe(2);
+      expect(p1).toMatchObject({ isRecorder: true, won: true, leader: 'SOR_001' });
+      expect(p2).toMatchObject({ isRecorder: true, won: false, leader: 'SHD_005' });
+      expect(Object.keys(p1.cardEvents?.drawn ?? {})).toEqual(expect.arrayContaining(['SOR_100', 'SOR_102']));
+      expect(Object.keys(p2.cardEvents?.drawn ?? {})).toEqual(['SHD_050']);
+    });
+  }
+});
+
+describe('persistReplayFacts — re-persisting an existing game', () => {
+  it('keeps matches.created_at (the date filters key on it) while refreshing the facts', async () => {
+    const gameId = 'gc-' + randomUUID().slice(0, 6);
+    const slug = await seedReplay(gameId);
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slug, gameId, winners: null, ownerPlayerId: 'p1', durationMs: 1 });
+    const playedAt = new Date('2026-10-07T03:00:00Z');
+    await getDb().update(matches).set({ createdAt: playedAt }).where(eq(matches.gameId, gameId));
+
+    // e.g. a manual result days later, or backfill-stats --force.
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slug, gameId, winners: ['p2'], ownerPlayerId: 'p1', durationMs: 1 });
+    const [m] = await getDb().select().from(matches).where(eq(matches.gameId, gameId));
+    expect(m.createdAt.toISOString()).toBe(playedAt.toISOString());
+    expect(m.result).toBe('decisive');
+    const { p1, p2 } = await seatsOf(gameId);
+    expect([p1.won, p2.won]).toEqual([false, true]);
+  });
+
+  it('a later upload from the OTHER seat keeps the earlier recorder\'s resourcing rating', async () => {
+    // Rated recorder fixture (as in the resourcing test above): p1 floats 2 in R2.
+    const c = (n: number, uuid: string) => card('SOR', n, uuid);
+    const me = (zones: Record<string, any[]>, avail: number) => ({
+      user: { username: 'Rec' }, leader: { setId: { set: 'SOR', number: 1 } }, base: { setId: { set: 'SOR', number: 20 } },
+      availableResources: avail, ...piles(zones),
+    });
+    const opp = { user: { username: 'Opp' }, leader: { setId: { set: 'SHD', number: 5 } }, base: { setId: { set: 'SHD', number: 9 } }, ...piles({}) };
+    const F = (phase: string, zones: Record<string, any[]>, avail: number) => ({ t: 0, state: { phase, newMessages: [], players: { p1: me(zones, avail), p2: opp } } });
+    const frames = [
+      F('action', { deck: [c(102, 'p')], hand: [c(101, 'h')], resources: [], groundArena: [] }, 0),
+      F('regroup', {}, 0),
+      F('action', { hand: [c(101, 'h')], resources: [c(103, 'r')], groundArena: [c(102, 'p')] }, 2),
+      F('regroup', {}, 0),
+      F('action', { hand: [c(101, 'h')], resources: [c(103, 'r')], groundArena: [c(102, 'p')] }, 4),
+    ];
+    const decoded = { frames, sideEvents: [], activeByFrame: [], messagesByFrame: [], meta: { version: 2, match: { gameFormat: 'premier' } }, tags: [] } as any;
+    const gameId = 'gr2-' + randomUUID().slice(0, 6);
+    const slugA = await seedReplay(gameId);
+    const slugB = await seedReplay(gameId);
+    await persistReplayFacts({ decoded, replaySlug: slugA, gameId, winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+    const rated = (await seatsOf(gameId)).p1;
+    expect(rated.resourceUnderspend).toBe(2);
+
+    await persistReplayFacts({ decoded, replaySlug: slugB, gameId, winners: ['p1'], ownerPlayerId: 'p2', durationMs: 1 });
+    const { p1, p2 } = await seatsOf(gameId);
+    // Before: the carried seat kept its card facts but its rating was wiped.
+    expect(p1).toMatchObject({
+      isRecorder: true,
+      resourceAvailable: rated.resourceAvailable, resourceWasted: rated.resourceWasted, resourceUnderspend: 2,
+      resourceCountedRounds: rated.resourceCountedRounds,
+    });
+    expect(p2.isRecorder).toBe(true);
+  });
+
+  it('a seat no upload recorded carries no card facts (B237), even if an old row had some', async () => {
+    const gameId = 'gl-' + randomUUID().slice(0, 6);
+    const slug = await seedReplay(gameId);
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slug, gameId, winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+    // A pre-B237 row: the opponent side kept board-visible facts.
+    await getDb().update(matchPlayers).set({ cardEvents: { played: { SHD_099: 4 } } })
+      .where(and(eq(matchPlayers.gameId, gameId), eq(matchPlayers.playerId, 'p2')));
+    await persistReplayFacts({ decoded: decodedFixture(), replaySlug: slug, gameId, winners: ['p1'], ownerPlayerId: 'p1', durationMs: 1 });
+    const { p2 } = await seatsOf(gameId);
+    expect(p2).toMatchObject({ isRecorder: false, cardEvents: null });
+  });
+});
+
+describe('manual result assignment re-persists through the same path', () => {
+  // A raw karabast-shaped payload (what the extension uploads), stored in the
+  // in-memory blob so setReplayResult can read it back like prod does.
+  function rawPayload(gameId: string) {
+    const side = (name: string, leader: number, base: number) => ({
+      user: { username: name }, leader: { name: 'L', setId: { set: 'SOR', number: leader } }, base: { name: 'B', setId: { set: 'SOR', number: base } },
+    });
+    return {
+      version: 2, actionCount: 10, durationMs: 1000, localPlayerId: 'p1',
+      events: [{ event: 'gamestate', args: [{ full: { id: gameId, players: { p1: side('Alice', 1, 20), p2: side('Bob', 5, 21) } } }] }],
+      tags: [],
+    };
+  }
+
+  it('a result set days later keeps the game on the day it was played', async () => {
+    const gameId = 'gm-' + randomUUID().slice(0, 6);
+    const slug = 'r_' + randomUUID().slice(0, 8);
+    const payload = rawPayload(gameId);
+    const { url } = await putPayload(`replays/${slug}.json`, JSON.stringify(payload));
+    const replay = { slug, gameId, ownerPlayerId: 'p1', players: [{ id: 'p1' }, { id: 'p2' }], payloadBlobUrl: url, encrypted: false };
+    await getDb().insert(replays).values({ ...replay, ownerToken: 'kbx_' + randomUUID(), durationMs: 1 });
+
+    // The upload persisted it with no result (karabast "leave game")…
+    await persistReplayStats(slug, payload, gameId, null);
+    const playedAt = new Date('2026-10-06T22:00:00Z');
+    await getDb().update(matches).set({ createdAt: playedAt }).where(eq(matches.gameId, gameId));
+    expect((await seatsOf(gameId)).p1.won).toBeNull();
+
+    // …and the owner asserts a win later.
+    expect(await setReplayResult(replay, 'win')).toBe('ok');
+    const [m] = await getDb().select().from(matches).where(eq(matches.gameId, gameId));
+    expect(m.createdAt.toISOString()).toBe(playedAt.toISOString());
+    expect(m.result).toBe('decisive');
+    const { p1, p2 } = await seatsOf(gameId);
+    expect([p1.won, p2.won]).toEqual([true, false]);
+    expect(p1.isRecorder).toBe(true);
+  });
+});
+
