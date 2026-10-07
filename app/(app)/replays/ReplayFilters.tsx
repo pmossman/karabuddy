@@ -26,7 +26,7 @@ import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { DateRangeSelect } from '@/app/_components/DateRangeSelect';
-import { inDateRange, dateRangeLabel } from '@/lib/dateRange';
+import { dateRangeFilter, dateRangeLabel, localTimeZone } from '@/lib/dateRange';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
 
@@ -284,6 +284,7 @@ export function ReplayFilters({
   }, [rows]);
 
   const filtered = useMemo(() => {
+    const inSince = since ? dateRangeFilter(since, { timeZone: localTimeZone() }) : null;
     return rows.filter((r) => {
       if (removed.has(r.slug)) return false; // optimistic post-bulk-op hide
       if (cf.active && cf.frames && !(r.slug in cf.frames)) return false;
@@ -294,7 +295,7 @@ export function ReplayFilters({
       if (myBase && r.ownBaseKind?.key !== myBase) return false;
       if (vsBase && r.oppBaseKind?.key !== vsBase) return false;
       if (uploadedBy && r.ownerName !== uploadedBy) return false;
-      if (since && !inDateRange(r.createdAt, since)) return false;
+      if (inSince && !inSince(r.createdAt)) return false;
       if (format && r.match?.gameFormat !== format) return false;
       if (mode && r.match?.gamesToWinMode !== mode) return false;
       if (label) {

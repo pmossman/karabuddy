@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { dateRangeBounds, dateRangeLabel } from '@/lib/dateRange';
+import { dateRangeLabel, isDayRange } from '@/lib/dateRange';
 
 // Shared TIME filter (openings / replay browser / stats): rolling presets
 // PLUS an explicit from/to date range — "Past 30 days" is not enough when
@@ -60,7 +60,7 @@ export function DateRangeSelect({
   const applyCustom = () => {
     if (!from && !to) return;
     const v = `${from}..${to}`;
-    if (!dateRangeBounds(v).from && !dateRangeBounds(v).to) return;
+    if (!isDayRange(v)) return;
     onChange(v);
     setOpen(false);
   };

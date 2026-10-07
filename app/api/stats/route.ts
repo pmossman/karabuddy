@@ -5,13 +5,18 @@ import { teamMembers } from '@/lib/schema';
 import { resolveUserIdFromRequest } from '@/lib/userResolution';
 import { teamGameIds } from '@/lib/teamSurface';
 import { getLeaderStats, getLeaderMatchups, getCardStats, getDecks, getDeckMatchups, getResourcingGames, getEntityReplays, type StatsScope, type CardEventKind } from '@/lib/statsQuery';
-import { dateRangeBounds } from '@/lib/dateRange';
+import { dateRangeBounds, isDayRange, normalizeTimeZone } from '@/lib/dateRange';
 import { cachedRead, CACHE_TAGS } from '@/lib/cached';
 
 // B101/P1 (ADR 0007): the Stats/Meta read API. One endpoint, dispatched by
 // `type`, over a resolved + authorized `scope`:
 //   GET /api/stats?type=leaders|matchups|cards|decks|resourcing&scope=personal|team
 //       &team=<slug>&format=<f>&event=drawn|resourced|played|discarded
+//       &range=<lib/dateRange grammar>&tz=<IANA zone>
+//
+// `range` days are the VIEWER's calendar days, so the client sends its zone as
+// `tz` (validated; missing or bogus → UTC, which is what clients from before
+// `tz` existed always got on Vercel).
 //
 // Scope auth: personal needs a session; team needs membership (else 403).
 // Global/community stats are intentionally NOT exposed — the feature is scoped
@@ -34,6 +39,9 @@ interface StatsKey {
   games: string;
   format: string | null;
   range: string; // lib/dateRange grammar ('' | '30d' | 'from..to')
+  // The zone a calendar-day range is read in. '' when the range has no days
+  // (any time / presets), so those keep ONE shared entry across time zones.
+  tz: string;
   byBase: boolean;
   event: CardEventKind;
   leader: string | null;
@@ -52,7 +60,7 @@ const computeStats = cachedRead(
       const restrictGameIds = k.games === 'external' ? sets.external : k.games === 'all' ? [...sets.internal, ...sets.external] : sets.internal;
       scope = { kind: 'team', teamSlug: k.teamSlug!, restrictGameIds, internalGameIds: sets.internal };
     }
-    const { from, to } = dateRangeBounds(k.range);
+    const { from, to } = dateRangeBounds(k.range, { timeZone: k.tz || 'UTC' });
     const opts = { scope, format: k.format, from, to, minGames: 1 };
     switch (k.type) {
       // Leader lens accepts a self-side leader/deck filter (drill-in: one leader's
@@ -103,9 +111,11 @@ export async function GET(req: Request) {
     games = url.searchParams.get('games') || 'internal';
   }
 
+  const range = url.searchParams.get('range') || '';
   const data = await computeStats({
     type, scopeKind, userId: userId ?? null, teamSlug, games, format,
-    range: url.searchParams.get('range') || '',
+    range,
+    tz: isDayRange(range) ? normalizeTimeZone(url.searchParams.get('tz')) : '',
     byBase: url.searchParams.get('byBase') === '1',
     event,
     leader: url.searchParams.get('leader') || null,

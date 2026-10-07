@@ -8,7 +8,7 @@ import { filterMinGames, sortStatRows, type SortKey, type SortDir } from '@/lib/
 import { useSortable, SortHeader } from '@/app/_components/SortHeader';
 import { Select } from '@/app/_components/Select';
 import { DateRangeSelect } from '@/app/_components/DateRangeSelect';
-import { dateRangeLabel } from '@/lib/dateRange';
+import { dateRangeLabel, isDayRange, localTimeZone } from '@/lib/dateRange';
 import { LeaderSelect } from '@/app/_components/LeaderSelect';
 import { Segmented } from '@/app/_components/Segmented';
 import { FilterChip, Field } from '@/app/_components/FilterToolbar';
@@ -93,6 +93,8 @@ export function StatsClient({
     const p = new URLSearchParams({ scope });
     if (format) p.set('format', format);
     if (range) p.set('range', range);
+    // Calendar days are the viewer's: the server reads them in this zone.
+    if (isDayRange(range)) p.set('tz', localTimeZone());
     if (scope === 'team' && teamSlug) p.set('team', teamSlug);
     if (scope === 'team') p.set('games', teamGames);
     return p;

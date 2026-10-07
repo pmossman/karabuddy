@@ -13,7 +13,7 @@ import { Select } from '@/app/_components/Select';
 import { LeaderSelect, type LeaderSelectOption } from '@/app/_components/LeaderSelect';
 import { LedToggle } from '@/app/_components/LedToggle';
 import { DateRangeSelect } from '@/app/_components/DateRangeSelect';
-import { inDateRange, dateRangeLabel } from '@/lib/dateRange';
+import { dateRangeFilter, dateRangeLabel, localTimeZone } from '@/lib/dateRange';
 import { useFilterMemory, FilterMemoryMenu } from '@/app/_components/filterMemory';
 import { LeaderBasePair } from '@/app/_components/LeaderBasePair';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -145,6 +145,7 @@ export function TeamDrills({
 
   const filtered = useMemo(() => {
     if (!items) return [];
+    const inSince = since === ALL ? null : dateRangeFilter(since, { timeZone: localTimeZone() });
     return items.filter(
       (i) =>
         (deck === ALL || leaderName(i.ownLeader) === deck) &&
@@ -152,7 +153,7 @@ export function TeamDrills({
         (vs === ALL || leaderName(i.oppLeader) === vs) &&
         (vsBase === ALL || i.oppBaseKind?.key === vsBase) &&
         (format === ALL || i.format === format) &&
-        (since === ALL || inDateRange(i.createdAt, since)),
+        (!inSince || inSince(i.createdAt)),
     );
   }, [items, deck, base, vs, vsBase, format, since]);
 
