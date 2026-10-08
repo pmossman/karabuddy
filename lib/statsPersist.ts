@@ -28,12 +28,18 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
 
   const db = getDb();
 
+  // Multi-row inserts lock their rows in VALUES order, so every insert below
+  // goes in key order: two writers touching the same rows (concurrent uploads,
+  // a concurrent backfill — the cards catalog is shared by every game) then
+  // lock in the same order and can't deadlock each other.
+  const byKey = <T>(key: (x: T) => string) => (a: T, b: T) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+
   // 1. Catalog self-heal — insert unknown cards from what we just observed.
   if (observedCards.length) {
     await db
       .insert(cards)
       .values(
-        observedCards.map((c) => {
+        [...observedCards].sort(byKey((c) => c.cardId)).map((c) => {
           const [set, num] = c.cardId.split('_');
           return {
             cardId: c.cardId,
@@ -129,7 +135,7 @@ export async function persistReplayFacts(input: PersistInput): Promise<{ matchWr
   await db
     .insert(matchPlayers)
     .values(
-      players.map((p) => {
+      [...players].sort(byKey((p) => p.playerId)).map((p) => {
         const opp = opponentOf(p.playerId);
         return {
           gameId: matchFact.gameId,

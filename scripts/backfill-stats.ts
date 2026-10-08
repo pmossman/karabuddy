@@ -1,114 +1,77 @@
-// B101/P0 (ADR 0007): one-shot backfill of Stats/Meta facts over existing
-// replays. Fetches each payload blob, decodes it, and runs the same
-// persistReplayFacts the upload path uses. Idempotent + resumable: by default
-// it skips any replay whose gameId already has facts, so a re-run continues
-// where it left off.
+// B101/P0 (ADR 0007): backfill / re-persist Stats/Meta facts from stored replay
+// payloads. Fetches each payload, decodes it, and runs the same persistReplayFacts
+// the upload path uses (upserts: idempotent, matches.created_at kept). Core in
+// lib/statsBackfill.ts. Needs only DB credentials: payload URLs are public.
 //
 // Run (confirm the target DB — never prod without intent):
-//   KARABUDDY_DB_DRIVER=pg POSTGRES_URL="<db>" npx tsx scripts/backfill-stats.ts
+//   KARABUDDY_DB_DRIVER=pg POSTGRES_URL="<db>" npx tsx scripts/backfill-stats.ts [flags] [<slug>]
+// Selection (pick one):
+//   <slug>               re-persist just that replay
+//   --slugs-file=PATH    re-persist exactly the replays listed (one slug per line;
+//                        blanks and `#` comments ignored) — the repair / re-run mode.
+//                        Failed slugs are written to --failed-file (default
+//                        PATH.failed) so `--slugs-file=PATH.failed` retries them.
+//   (neither)            every replay; skips games that already have facts
+//                        unless --force, then --offset / --limit
 // Flags:
-//   --force            re-persist every replay (refresh facts) instead of skipping
-//   --limit=N          process at most N replays this run (batching)
-//   --concurrency=N    process N replays in parallel (default 1). Each replay is
-//                      ~90% idle waiting on blob-fetch + Neon round-trips, so this
-//                      is near-linear; pair with KARABUDDY_PG_POOL_MAX>=N so the
-//                      DB pool isn't the bottleneck.
-//   <slug>             backfill only that one replay
+//   --force              with no selection: re-persist every replay
+//   --offset=N --limit=N with no selection: batching
+//   --concurrency=N      replays in parallel (default 1). Each replay is ~90% idle
+//                        on blob fetch + DB round-trips, so this is near-linear;
+//                        with the pg driver pair it with KARABUDDY_PG_POOL_MAX>=N.
+//   --dry-run            resolve the selection, report found / missing / pruned,
+//                        write nothing
+//   --failed-file=PATH   where to write failed slugs (slugs-file mode)
+//   --progress=N         progress line every N replays (default 500, 100 with a slugs file)
 
-import { eq } from 'drizzle-orm';
-import { getDb } from '../lib/db';
-import { replays, matches } from '../lib/schema';
-import { decodeReplay } from '../lib/replayDecoder';
-import { persistReplayFacts } from '../lib/statsPersist';
-import { readBlobJson } from '../lib/blob';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { backfillStats, parseSlugList } from '../lib/statsBackfill';
 
 async function main() {
   const args = process.argv.slice(2);
-  const force = args.includes('--force');
-  const limitArg = args.find((a) => a.startsWith('--limit='));
-  const limit = limitArg ? Number(limitArg.split('=')[1]) : Infinity;
+  const val = (k: string) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : undefined; };
+  const num = (k: string) => { const v = val(k); if (v === undefined) return undefined; const n = Number(v); if (!Number.isFinite(n)) throw new Error(`bad --${k}: ${v}`); return n; };
+  const known = ['force', 'dry-run', 'slugs-file', 'failed-file', 'offset', 'limit', 'concurrency', 'progress'];
+  for (const a of args) if (a.startsWith('--') && !known.includes(a.slice(2).split('=')[0])) throw new Error(`unknown flag ${a}`);
+
+  const slugsFile = val('slugs-file');
   const slugArg = args.find((a) => !a.startsWith('--'));
-  const db = getDb();
+  if (slugsFile && slugArg) throw new Error('pass either <slug> or --slugs-file, not both');
+  const slugs = slugsFile ? parseSlugList(readFileSync(slugsFile, 'utf8')) : slugArg ? [slugArg] : undefined;
+  const force = args.includes('--force');
+  const dryRun = args.includes('--dry-run');
+  const concurrency = num('concurrency') ?? 1;
 
-  let rows = slugArg
-    ? await db.select().from(replays).where(eq(replays.slug, slugArg))
-    : await db.select().from(replays);
+  const what = slugsFile ? `${slugs!.length} listed slug(s) from ${slugsFile}` : slugArg ? `replay ${slugArg}` : force ? 'every replay (force)' : 'replays without facts';
+  console.log(`${dryRun ? 'DRY RUN — ' : ''}backfilling stats for ${what} @ concurrency ${concurrency}`);
 
-  // Resumable: skip replays whose gameId already has facts (unless --force).
-  if (!force && !slugArg) {
-    const done = new Set((await db.select({ gameId: matches.gameId }).from(matches)).map((r) => r.gameId));
-    rows = rows.filter((r) => !done.has(r.gameId));
+  const s = await backfillStats({
+    slugs, force, dryRun, concurrency,
+    offset: num('offset'), limit: num('limit'),
+    progressEvery: num('progress') ?? (slugsFile ? 100 : 500),
+    log: (l) => console.log(l),
+  });
+
+  if (dryRun) {
+    console.log(`would re-persist ${s.selected - s.wouldSkipPruned} replay(s); ${s.wouldSkipPruned} have a pruned payload (would skip); ${s.missing.length} listed slug(s) not found`);
+    return;
   }
-  const offsetArg = args.find((a) => a.startsWith('--offset='));
-  const offset = offsetArg ? Number(offsetArg.split('=')[1]) : 0;
-  if (offset > 0) rows = rows.slice(offset);
-  if (Number.isFinite(limit)) rows = rows.slice(0, limit);
-  const concArg = args.find((a) => a.startsWith('--concurrency='));
-  const concurrency = Math.max(1, concArg ? Number(concArg.split('=')[1]) : 1);
-
-  console.log(`backfilling stats for ${rows.length} replay(s)${force ? ' (force)' : ''} @ concurrency ${concurrency}`);
-  let ok = 0, skipped = 0, failed = 0, done = 0;
-  const failReasons = new Map<string, number>();
-  const started = Date.now();
-
-  const processOne = async (row: (typeof rows)[number]) => {
-    try {
-      const payload = row.payloadPrunedAt ? null : await readBlobJson(row.payloadBlobUrl);
-      if (!payload) { skipped++; return; }
-      const decoded = decodeReplay(payload);
-      // persistReplayFacts is NON-transactional (Neon HTTP has no interactive
-      // transactions), so a concurrent-deadlock failure would leave the replay
-      // half-written. Deadlocks (mostly on the shared cards catalog) are
-      // transient — retry with backoff so every replay lands consistent.
-      let r;
-      for (let attempt = 1; ; attempt++) {
-        try {
-          r = await persistReplayFacts({
-            decoded,
-            replaySlug: row.slug,
-            gameId: row.gameId,
-            winners: (row.winners as string[] | null) ?? null,
-            ownerPlayerId: row.ownerPlayerId ?? null,
-            durationMs: row.durationMs ?? null,
-          });
-          break;
-        } catch (e) {
-          if (attempt >= 8) throw e;
-          await new Promise((rz) => setTimeout(rz, attempt * 200 + Math.random() * 300));
-        }
-      }
-      if (r.matchWritten) ok++; else skipped++;
-    } catch (e: any) {
-      failed++;
-      // Bucket by reason (strip ids/params) so the tail shows a clean breakdown.
-      const reason = String(e?.message || e).replace(/[0-9a-f-]{20,}/g, '<id>').slice(0, 60);
-      failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
-    } finally {
-      done++;
-      if (done % 500 === 0 || done === rows.length) {
-        const rate = done / ((Date.now() - started) / 1000);
-        const eta = Math.round((rows.length - done) / rate / 60);
-        console.log(`  ${done}/${rows.length} (${rate.toFixed(1)}/s, ~${eta}m left) — ok ${ok}, skip ${skipped}, fail ${failed}`);
-      }
-    }
-  };
-
-  // Simple worker pool: `concurrency` workers pull from a shared cursor.
-  let cursor = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, rows.length) }, async () => {
-      while (cursor < rows.length) await processOne(rows[cursor++]);
-    }),
-  );
-  console.log(`done — ${ok} ok, ${skipped} skipped, ${failed} failed in ${Math.round((Date.now() - started) / 1000)}s`);
-  if (failReasons.size) {
+  console.log(`done — ${s.ok} ok, ${s.skipped} skipped, ${s.failed} failed (of ${s.selected}${s.missing.length ? `; ${s.missing.length} listed slug(s) not found` : ''})`);
+  const reasons = Object.entries(s.failReasons).sort((a, b) => b[1] - a[1]);
+  if (reasons.length) {
     console.log('failure reasons:');
-    for (const [reason, n] of [...failReasons.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${n}\t${reason}`);
+    for (const [reason, n] of reasons) console.log(`  ${n}\t${reason}`);
   }
+  if (slugsFile) {
+    const failedFile = val('failed-file') ?? `${slugsFile}.failed`;
+    writeFileSync(failedFile, s.failedSlugs.length ? s.failedSlugs.join('\n') + '\n' : '');
+    console.log(`${s.failedSlugs.length} failed slug(s) written to ${failedFile}${s.failedSlugs.length ? ` — re-run with --slugs-file=${failedFile}` : ''}`);
+  }
+  if (s.failed) process.exitCode = 1;
 }
 
 main()
-  .then(() => process.exit(0))
+  .then(() => process.exit(process.exitCode ?? 0))
   .catch((err) => {
     console.error(err);
     process.exit(1);
