@@ -689,8 +689,8 @@ function RecentGames({ replays }: { replays: any[] | null }) {
 }
 
 // Possessive subject for the "whose games are these" cue, folded into the record
-// copy: personal stats are strictly YOUR recorded side (isRecorder), team stats
-// are the team's games. Keeps the perspective clear without a dedicated info box.
+// copy: personal stats are strictly YOUR side (the seat you recorded), team stats
+// are the team members' sides of the team's games. Keeps the perspective clear without a dedicated info box.
 const subjectPoss = (scope: Scope, teamName?: string) => (scope === 'team' ? `${teamName || 'your team'}’s` : 'your');
 
 const dim: React.CSSProperties = { color: '#6c7588', fontStyle: 'italic', padding: '32px 0', textAlign: 'center' };

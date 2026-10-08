@@ -11,10 +11,10 @@
 // audiences can never leak into each other. Aggregation is plain SQL via the
 // drizzle query builder (portable across neon / pg / pglite).
 
-import { and, eq, exists, inArray, isNotNull, isNull, or, sql, gte, lte } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNotNull, isNull, notExists, or, sql, gte, lte } from 'drizzle-orm';
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { getDb } from './db';
-import { matchPlayers, matches, replays, cards } from './schema';
+import { matchPlayers, matches, replays, cards, teamMembers, replayTeamShares } from './schema';
 
 export type StatsScope =
   | { kind: 'personal'; userId: string }
@@ -100,41 +100,76 @@ function baseIdentityCols(bc: ReturnType<typeof alias>, baseCol: AnyPgColumn) {
   };
 }
 
-// B233: personal scope is SEAT-based. A fact row is YOURS when you hold a replay
-// row for that game whose ownerPlayerId is that seat — NOT when the game's single
-// `matches.replaySlug` happens to point at your upload.
+// B233: stats are SEAT-based, in BOTH scopes. A match_players row (one seat of a
+// game) belongs to whoever holds a replay of that game RECORDED FROM that seat —
+// replays.ownerPlayerId = the seat. Personal = a replay of yours; team = a replay
+// of a team member's.
 //
 // Why: `matches` is one row per gameId carrying ONE replaySlug (upserted per
-// upload in lib/statsPersist, so last writer wins), and match_players.isRecorder
-// flags only that persisting side. But `replays` is deliberately one row PER
-// RECORDER (B158) — both players who record the same karabast game keep their own.
-// So for a co-recorded game whose sibling was persisted last, the old pair
-// (replays.slug = matches.replaySlug) + isRecorder resolved to the OTHER player:
-// the game silently left your stats while still listing in /replays, and every
-// number built on it (win rate, matchup cells, card stats) was computed on the
-// surviving subset. Keying on (your replay row, its ownerPlayerId) is independent
-// of who uploaded last, so both recorders see their own side of the same game.
+// upload in lib/statsPersist, so last writer wins). But `replays` is deliberately
+// one row PER RECORDER (B158) — both players who record the same karabast game
+// keep their own. Anything keyed on "the persisted replay" or on
+// match_players.isRecorder therefore depends on who uploaded last:
+//   - personal used (replays.slug = matches.replaySlug) + isRecorder, so a game
+//     whose opponent persisted last silently left your stats;
+//   - team used isRecorder alone, assuming "the recorder row is always a member".
+//     That stopped holding when isRecorder became sticky per seat (B237, then the
+//     race fix): on an EXTERNAL game co-recorded by an outsider who also runs
+//     KaraBuddy, BOTH seats are recorded, so the outsider's leader counted as a
+//     team play.
+// The seat owner's replay row is independent of upload order, so each recorder
+// gets exactly their own side, and a team gets exactly its members' sides.
 //
-// Legacy fallback: pre-B59 and anonymous-claimed rows carry a null ownerPlayerId
-// and can't be seat-matched. Those fall back to EXACTLY the old behaviour
-// (persisted slug + isRecorder), so this change can only ever add games back,
-// never take one away.
-function personalSeatCond(userId: string, gameIdCol: any, playerIdCol: any, isRecorderCol: any) {
+// isRecorder still means "some upload was recorded from this seat" — it says the
+// seat's card facts / resourcing rating are first-person (lib/statsPersist) — but
+// it is NOT an ownership signal and no scope keys on it, except:
+//
+// Legacy fallback: pre-B59 and anonymous-claimed replays carry a null
+// ownerPlayerId and can't be seat-matched. Such a replay owns the seat its upload
+// was persisted as (replays.slug = matches.replaySlug + isRecorder) — but only if
+// no OTHER replay of the game claims that seat by ownerPlayerId, since with sticky
+// isRecorder the persisted slug no longer singles out one recorded seat. So the
+// fallback only ever adds a seat nobody else owns; it can't hand you someone
+// else's.
+function seatOwnedBy(sr: any, playerIdCol: AnyPgColumn) {
+  const claim = alias(replays, 'seat_claim');
+  return or(
+    eq(sr.ownerPlayerId, playerIdCol),
+    and(
+      isNull(sr.ownerPlayerId),
+      eq(sr.slug, matches.replaySlug),
+      eq(matchPlayers.isRecorder, true),
+      notExists(
+        getDb()
+          .select({ one: sql`1` })
+          .from(claim)
+          .where(and(eq(claim.gameId, sr.gameId), eq(claim.ownerPlayerId, playerIdCol))),
+      ),
+    ),
+  );
+}
+
+// "This seat is the signed-in user's" — a replay of theirs owns it.
+function personalSeatCond(userId: string) {
   const sr = alias(replays, 'seat_replay');
   return exists(
     getDb()
       .select({ one: sql`1` })
       .from(sr)
-      .where(
-        and(
-          eq(sr.userId, userId),
-          eq(sr.gameId, gameIdCol),
-          or(
-            eq(sr.ownerPlayerId, playerIdCol),
-            and(isNull(sr.ownerPlayerId), eq(sr.slug, matches.replaySlug), eq(isRecorderCol, true)),
-          ),
-        ),
-      ),
+      .where(and(eq(sr.userId, userId), eq(sr.gameId, matchPlayers.gameId), seatOwnedBy(sr, matchPlayers.playerId))),
+  );
+}
+
+// "This seat is a team member's" — a replay recorded by a member owns it.
+function teamSeatCond(teamSlug: string) {
+  const sr = alias(replays, 'team_seat_replay');
+  const tm = alias(teamMembers, 'team_seat_member');
+  return exists(
+    getDb()
+      .select({ one: sql`1` })
+      .from(sr)
+      .innerJoin(tm, and(eq(tm.userId, sr.userId), eq(tm.teamSlug, teamSlug)))
+      .where(and(eq(sr.gameId, matchPlayers.gameId), seatOwnedBy(sr, matchPlayers.playerId))),
   );
 }
 
@@ -142,9 +177,9 @@ function personalSeatCond(userId: string, gameIdCol: any, playerIdCol: any, isRe
 // (see personalSeatCond). Team = the precomputed eligible-gameId set (team-member
 // recorded + shared), filtered by GAMEID so a co-recorded game counts no matter
 // which sibling was persisted last — an empty set means "no games" (always-false).
+// Which SEATS of those games count for a team is perspectiveCond's job.
 function scopePredicate(scope: StatsScope) {
-  if (scope.kind === 'personal')
-    return personalSeatCond(scope.userId, matchPlayers.gameId, matchPlayers.playerId, matchPlayers.isRecorder);
+  if (scope.kind === 'personal') return personalSeatCond(scope.userId);
   if (scope.restrictGameIds.length === 0) return sql`false`;
   return inArray(matches.gameId, scope.restrictGameIds);
 }
@@ -152,61 +187,65 @@ function scopePredicate(scope: StatsScope) {
 // Which match_players rows count, by audience.
 //
 // Personal needs nothing here: scopePredicate already pins the row to YOUR seat,
-// so a game you recorded counts your leader, not your opponent's. (Filtering on
-// isRecorder as well would re-introduce the bug — on a co-recorded game your seat
-// is the NON-recorder row whenever your opponent uploaded last.)
+// so a game you recorded counts your leader, not your opponent's.
 //
-// Team = a team MEMBER's plays, never an outsider's. The recorder row is always a
-// member (the uploader); the opponent row counts ONLY for INTERNAL games, where
-// that "opponent" is another teammate — so the matrix still shows both sides of an
-// internal game. For an EXTERNAL game the opponent is an outsider and is dropped —
-// this is the fix for team stats counting the opponent's leader as one you played.
+// Team = a team MEMBER's plays, never an outsider's: the seat must be owned by a
+// member's replay (teamSeatCond). Both sides of an INTERNAL game (≥2 member
+// recorders, lib/teamSurface.teamGameIds) count — the matrix shows both
+// teammates — and that stays an explicit OR so an internal game with a legacy
+// null-owner sibling keeps both rows. For an EXTERNAL game only the member's seat
+// counts, whoever uploaded last and whether or not the outsider recorded too.
 const perspectiveCond = (scope: StatsScope) =>
   scope.kind === 'personal'
     ? undefined
     : scope.internalGameIds.length
-      ? or(eq(matchPlayers.isRecorder, true), inArray(matches.gameId, scope.internalGameIds))
-      : eq(matchPlayers.isRecorder, true);
+      ? or(teamSeatCond(scope.teamSlug), inArray(matches.gameId, scope.internalGameIds))
+      : teamSeatCond(scope.teamSlug);
 
 // The replay row a stats row should be PRESENTED as, for the two producers that
-// return replay fields (resourcing trend, drill-in lists). Personal = your own
-// sibling, seat-matched; team = the persisted representative, as before.
+// return replay fields (resourcing trend, drill-in lists): the replay that owns
+// the row's seat (seatOwnedBy), so it's shown from that player's point of view —
+// personal = your own sibling, team = the member's own sibling. The join doubles
+// as the "my side only" filter: a seat no replay in the set owns joins nothing.
 //
 // A user can hold two replay rows for the same game+seat — the upload route
 // dedupes per (gameId, ownerToken), so recording the same game from a second
 // browser/install mints a second row (98 such pairs in prod at time of writing).
-// distinct-on collapses them to the earliest, so the seat join can't fan out and
-// double-count.
+// distinct-on collapses them to one, so the seat join can't fan out and
+// double-count. For a team, the sibling shared WITH the team wins (a teammate
+// can open it), then the earliest.
+const replayCols = {
+  slug: replays.slug,
+  gameId: replays.gameId,
+  ownerPlayerId: replays.ownerPlayerId,
+  createdAt: replays.createdAt,
+  players: replays.players,
+  winners: replays.winners,
+  displayName: replays.displayName,
+};
+
 function myReplaysFor(userId: string) {
   return getDb()
-    .selectDistinctOn([replays.gameId, replays.ownerPlayerId], {
-      slug: replays.slug,
-      gameId: replays.gameId,
-      ownerPlayerId: replays.ownerPlayerId,
-      createdAt: replays.createdAt,
-      players: replays.players,
-      winners: replays.winners,
-      displayName: replays.displayName,
-    })
+    .selectDistinctOn([replays.gameId, replays.ownerPlayerId], replayCols)
     .from(replays)
     .where(eq(replays.userId, userId))
     .orderBy(replays.gameId, replays.ownerPlayerId, replays.createdAt)
     .as('my_replay');
 }
 
+function teamReplaysFor(teamSlug: string) {
+  return getDb()
+    .selectDistinctOn([replays.gameId, replays.ownerPlayerId], replayCols)
+    .from(replays)
+    .innerJoin(teamMembers, and(eq(teamMembers.userId, replays.userId), eq(teamMembers.teamSlug, teamSlug)))
+    .leftJoin(replayTeamShares, and(eq(replayTeamShares.replaySlug, replays.slug), eq(replayTeamShares.teamSlug, teamSlug)))
+    .orderBy(replays.gameId, replays.ownerPlayerId, sql`${replayTeamShares.replaySlug} is null`, replays.createdAt)
+    .as('team_replay');
+}
+
 function scopedReplaySource(scope: StatsScope): { rt: any; on: any } {
-  if (scope.kind !== 'personal') return { rt: replays, on: eq(replays.slug, matches.replaySlug) };
-  const my = myReplaysFor(scope.userId) as any;
-  return {
-    rt: my,
-    on: and(
-      eq(my.gameId, matchPlayers.gameId),
-      or(
-        eq(my.ownerPlayerId, matchPlayers.playerId),
-        and(isNull(my.ownerPlayerId), eq(my.slug, matches.replaySlug), eq(matchPlayers.isRecorder, true)),
-      ),
-    ),
-  };
+  const rt = (scope.kind === 'personal' ? myReplaysFor(scope.userId) : teamReplaysFor(scope.teamSlug)) as any;
+  return { rt, on: and(eq(rt.gameId, matchPlayers.gameId), seatOwnedBy(rt, matchPlayers.playerId)) };
 }
 
 const fmtCond = (format?: string | null) => (format ? eq(matchPlayers.format, format) : undefined);
@@ -322,7 +361,7 @@ export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number
   const db = getDb();
   const bc = alias(cards, 'base_card');
   const idCols = baseIdentityCols(bc, matchPlayers.base);
-  // Personal presents YOUR sibling; team the persisted representative (B233).
+  // Presents the seat owner's sibling: yours, or the member's (B233).
   const { rt, on } = scopedReplaySource(opts.scope);
   const base = db
     .select({
@@ -346,10 +385,9 @@ export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number
     .innerJoin(rt, on)
     .leftJoin(bc, eq(bc.cardId, matchPlayers.base))
     .$dynamic();
-  // Personal: the seat join IS the scope (and the my-side-only filter). Team keeps
-  // the recorder-row filter — resourcing is first-person over a member's own game.
-  const scopeConds =
-    opts.scope.kind === 'personal' ? [] : [eq(matchPlayers.isRecorder, true), scopePredicate(opts.scope)];
+  // The seat join IS the my-side filter in both scopes (a member's own seat for a
+  // team — resourcing is first-person); team also narrows to its eligible games.
+  const scopeConds = opts.scope.kind === 'personal' ? [] : [scopePredicate(opts.scope)];
   const rows = await base
     .where(and(...scopeConds, isNotNull(matchPlayers.resourceAvailable), fmtCond(opts.format), timeCond(opts)))
     .orderBy(sql`${rt.createdAt} desc`)
@@ -370,11 +408,11 @@ export async function getResourcingGames(opts: StatsQueryOpts & { limit?: number
   }));
 }
 
-// B194 drill-in: the recorder's recent replays on a given leader (and optionally a
-// deck). "My side only" — `isRecorder` rows where matchPlayers.leader = the focus
-// leader, so it lists games where YOU played that leader (not games you faced it).
-// Returns the replay fields the viewer cards need + the recorder's result, newest
-// first by the STABLE replays.createdAt (matches.createdAt resets on re-persist).
+// B194 drill-in: the recent replays on a given leader (and optionally a deck).
+// "My side only" — seats in scope (yours / a member's) where matchPlayers.leader =
+// the focus leader, so it lists games where YOU played that leader (not games you
+// faced it). Returns the replay fields the viewer cards need + that seat's result,
+// newest first by the seat owner's replays.createdAt.
 export interface EntityReplay {
   gameId: string;
   slug: string;
@@ -390,9 +428,9 @@ export async function getEntityReplays(
   opts: StatsQueryOpts & { leader?: string | null; baseId?: string | null; baseAspect?: string | null; opponentLeader?: string | null; limit?: number },
 ): Promise<EntityReplay[]> {
   const db = getDb();
-  // Personal lists YOUR OWN replay rows (seat-matched), so a co-recorded game
-  // links to your capture rather than being absent because your opponent's
-  // upload was persisted last (B233). Team keeps the persisted representative.
+  // Lists the seat owner's OWN replay row (seat-matched): yours for personal, the
+  // member's for a team — so a co-recorded game links to that player's capture
+  // whoever's upload was persisted last (B233).
   const { rt, on } = scopedReplaySource(opts.scope);
   let base = db
     .select({
@@ -409,13 +447,13 @@ export async function getEntityReplays(
     .innerJoin(matches, eq(matches.gameId, matchPlayers.gameId))
     .innerJoin(rt, on)
     .$dynamic();
-  // My side only — independent of perspectiveCond (which, for team, also counts
-  // opponent rows): a "replays on leader X" list means games I played X. Personal
-  // gets that from the seat join; team still needs the recorder-row filter.
+  // My side only — a "replays on leader X" list means games WE played X. The seat
+  // join gives that in both scopes (a member's own seat for a team); team also
+  // narrows to its eligible games.
   const conds: any[] =
     opts.scope.kind === 'personal'
       ? [fmtCond(opts.format), timeCond(opts)]
-      : [eq(matchPlayers.isRecorder, true), fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)];
+      : [fmtCond(opts.format), timeCond(opts), scopePredicate(opts.scope)];
   if (opts.leader) conds.push(eq(matchPlayers.leader, opts.leader));
   if (opts.opponentLeader) conds.push(eq(matchPlayers.opponentLeader, opts.opponentLeader));
   base = applySelfBaseFilter(base, opts, conds);

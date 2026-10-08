@@ -691,6 +691,10 @@ export const matchPlayers = pgTable(
     leader: text('leader'), // cardId
     base: text('base'),
     aspects: jsonb('aspects').$type<string[]>(),
+    // "Some upload was recorded FROM this seat" — sticky once set (lib/statsPersist),
+    // so a co-recorded game has both seats true. It says the seat's card facts /
+    // resourcing rating are first-person; it is NOT who the seat belongs to — stats
+    // scope matches seats to replays.ownerPlayerId (lib/statsQuery, B233).
     isRecorder: boolean('is_recorder').notNull().default(false),
     won: boolean('won'),
     opponentLeader: text('opponent_leader'),

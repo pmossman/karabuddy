@@ -634,3 +634,174 @@ describe('base identity: unseeded bases', () => {
     expect(g).toMatchObject({ gameId: 'u1', baseId: 'HMW_021', baseAspect: null });
   });
 });
+
+// Team scope is SEAT-based too. Team stats used to count every match_players row
+// with isRecorder = true, assuming the recorder is always a member. Since the
+// flag became sticky per seat (B237, then the persist race fix), a game an
+// outsider who also runs KaraBuddy co-recorded has BOTH seats flagged — so the
+// outsider's leader counted as a team play. A seat now counts for a team only
+// when a member's replay was recorded from it (or the game is internal).
+describe('team scope — seat-based (members’ seats only)', () => {
+  const T = 'tSeat';
+  let m1: string, m2: string, outsider: string;
+  beforeEach(async () => {
+    m1 = await seedUser(false);
+    m2 = await seedUser(false);
+    outsider = await seedUser(false);
+    await getDb().insert(teams).values({ slug: T, name: 'Seat Team', createdBy: m1 });
+    await getDb().insert(teamMembers).values([
+      { teamSlug: T, userId: m1, role: 'owner' },
+      { teamSlug: T, userId: m2, role: 'member' },
+    ]);
+  });
+
+  // One game, with a replay per recorder and the stored facts as given.
+  // `recorded` = which seats have a replay (whose, owner seat — null = legacy);
+  // `flags` = match_players.is_recorder per seat; `persisted` = whose replay
+  // matches.replay_slug points at; members' replays are shared with the team.
+  async function seedGame(o: {
+    gameId: string;
+    p1: { leader: string; won: boolean; base?: string; played?: string; rating?: number };
+    p2: { leader: string; won: boolean; base?: string; played?: string; rating?: number };
+    recorded: Array<{ user: string; seat: 'p1' | 'p2' | null }>;
+    flags: { p1: boolean; p2: boolean };
+    persisted: number; // index into `recorded`
+  }) {
+    const db = getDb();
+    const slugs = o.recorded.map((r, i) => `r_${o.gameId}_${i}`);
+    await db.insert(replays).values(o.recorded.map((r, i) => ({
+      slug: slugs[i], gameId: o.gameId, userId: r.user, ownerToken: 'kbx_' + id(), ownerPlayerId: r.seat,
+      players: [], payloadBlobUrl: 'memory://x', durationMs: 1,
+    })));
+    const memberSlugs = slugs.filter((_, i) => o.recorded[i].user === m1 || o.recorded[i].user === m2);
+    if (memberSlugs.length) await db.insert(replayTeamShares).values(memberSlugs.map((s) => ({ replaySlug: s, teamSlug: T, sharedBy: m1 })));
+    await db.insert(matches).values({ gameId: o.gameId, replaySlug: slugs[o.persisted], format: 'premier', result: 'decisive' });
+    const row = (pid: 'p1' | 'p2', me: typeof o.p1, opp: typeof o.p1) => ({
+      gameId: o.gameId, playerId: pid, leader: me.leader, base: me.base ?? null, opponentLeader: opp.leader, opponentBase: opp.base ?? null,
+      won: me.won, isRecorder: o.flags[pid], format: 'premier',
+      cardEvents: me.played ? { played: { [me.played]: 3 } } : null,
+      ...(me.rating ? { resourceAvailable: me.rating, resourceWasted: 1, resourceCountedRounds: 3 } : {}),
+    });
+    await db.insert(matchPlayers).values([row('p1', o.p1, o.p2), row('p2', o.p2, o.p1)]);
+    return slugs;
+  }
+  const teamScope = async () => {
+    const sets = await teamGameIds(T);
+    return { sets, scope: { kind: 'team' as const, teamSlug: T, restrictGameIds: [...sets.internal, ...sets.external], internalGameIds: sets.internal } };
+  };
+
+  // Member m1 (p1, leader MEM) vs an outsider who ALSO recorded (p2, leader OUT).
+  for (const persistedBy of ['member', 'outsider'] as const) {
+    it(`external co-recorded game, both seats flagged, ${persistedBy} persisted last: only the member's seat counts`, async () => {
+      const slugs = await seedGame({
+        gameId: `ext-${persistedBy}`,
+        p1: { leader: 'MEM', won: true, base: 'B_ABIL', played: 'C_MEM', rating: 20 },
+        p2: { leader: 'OUT', won: false, base: 'B_VIG', played: 'C_OUT', rating: 30 },
+        recorded: [{ user: m1, seat: 'p1' }, { user: outsider, seat: 'p2' }],
+        flags: { p1: true, p2: true }, // what B237 / the race fix store for a co-recorded game
+        persisted: persistedBy === 'member' ? 0 : 1,
+      });
+      const { sets, scope } = await teamScope();
+      expect(sets.external).toEqual([`ext-${persistedBy}`]);
+
+      const leaders = byLeader(await getLeaderStats({ scope }));
+      expect(Object.keys(leaders)).toEqual(['MEM']);
+      expect(leaders.MEM).toMatchObject({ games: 1, wins: 1 });
+      expect((await getLeaderMatchups({ scope })).map((r) => `${r.leader}>${r.opponentLeader}`)).toEqual(['MEM>OUT']);
+      expect((await getDecks({ scope })).map((d) => d.leader)).toEqual(['MEM']);
+      expect((await getDeckMatchups({ scope })).map((r) => r.leader)).toEqual(['MEM']);
+      expect((await getCardStats({ scope, event: 'played' })).map((c) => c.cardId)).toEqual(['C_MEM']);
+      expect((await getResourcingGames({ scope })).map((g) => [g.leader, g.available])).toEqual([['MEM', 20]]);
+      expect(await getEntityReplays({ scope, leader: 'OUT' })).toHaveLength(0);
+      // The member's row is presented as the MEMBER's replay, whoever persisted last.
+      expect((await getEntityReplays({ scope, leader: 'MEM' })).map((r) => [r.slug, r.ownerPlayerId])).toEqual([[slugs[0], 'p1']]);
+    });
+  }
+
+  it('external co-recorded game under the OLD flags (only the last persister recorded): the member still counts, the outsider never', async () => {
+    // Before B237 the persisted sibling alone carried isRecorder — here the
+    // outsider's, so the old team rule counted the outsider and dropped the member.
+    await seedGame({
+      gameId: 'ext-old', p1: { leader: 'MEM', won: true }, p2: { leader: 'OUT', won: false },
+      recorded: [{ user: m1, seat: 'p1' }, { user: outsider, seat: 'p2' }],
+      flags: { p1: false, p2: true }, persisted: 1,
+    });
+    const { scope } = await teamScope();
+    expect(Object.keys(byLeader(await getLeaderStats({ scope })))).toEqual(['MEM']);
+  });
+
+  it('a single-recorder external game counts the member only', async () => {
+    await seedGame({
+      gameId: 'ext-solo', p1: { leader: 'OUT', won: true }, p2: { leader: 'MEM', won: false, rating: 12 },
+      recorded: [{ user: m1, seat: 'p2' }], flags: { p1: false, p2: true }, persisted: 0,
+    });
+    const { scope } = await teamScope();
+    expect(byLeader(await getLeaderStats({ scope }))).toMatchObject({ MEM: { games: 1, wins: 0 } });
+    expect(byLeader(await getLeaderStats({ scope })).OUT).toBeUndefined();
+    expect((await getResourcingGames({ scope })).map((g) => g.leader)).toEqual(['MEM']);
+  });
+
+  it('an internal co-recorded game counts BOTH teammates’ seats, each presented as their own replay', async () => {
+    const slugs = await seedGame({
+      gameId: 'int-co', p1: { leader: 'M1L', won: true, rating: 10 }, p2: { leader: 'M2L', won: false, rating: 11 },
+      recorded: [{ user: m1, seat: 'p1' }, { user: m2, seat: 'p2' }], flags: { p1: true, p2: true }, persisted: 1,
+    });
+    const { sets, scope } = await teamScope();
+    expect(sets.internal).toEqual(['int-co']);
+    expect(Object.keys(byLeader(await getLeaderStats({ scope }))).sort()).toEqual(['M1L', 'M2L']);
+    expect((await getResourcingGames({ scope })).map((g) => g.leader).sort()).toEqual(['M1L', 'M2L']);
+    expect((await getEntityReplays({ scope, leader: 'M1L' })).map((r) => r.slug)).toEqual([slugs[0]]);
+    expect((await getEntityReplays({ scope, leader: 'M2L' })).map((r) => r.slug)).toEqual([slugs[1]]);
+  });
+
+  it('an internal game whose siblings are legacy (null owner) still counts both seats', async () => {
+    await seedGame({
+      gameId: 'int-legacy', p1: { leader: 'M1L', won: true }, p2: { leader: 'M2L', won: false },
+      recorded: [{ user: m1, seat: null }, { user: m2, seat: null }], flags: { p1: true, p2: false }, persisted: 0,
+    });
+    const { scope } = await teamScope();
+    expect(Object.keys(byLeader(await getLeaderStats({ scope }))).sort()).toEqual(['M1L', 'M2L']);
+  });
+
+  it('legacy null-owner member replay: counts the seat it was persisted as, never a seat another replay owns', async () => {
+    // (a) single legacy recording: the old isRecorder + persisted-slug rule still applies.
+    await seedGame({
+      gameId: 'leg-solo', p1: { leader: 'MEM', won: true }, p2: { leader: 'OUT', won: false },
+      recorded: [{ user: m1, seat: null }], flags: { p1: true, p2: false }, persisted: 0,
+    });
+    // (b) legacy member recording + an outsider's seat-tagged one, both flagged (sticky):
+    // the persisted slug is the member's, but p2 is claimed by the outsider's replay.
+    await seedGame({
+      gameId: 'leg-co', p1: { leader: 'MEM2', won: true }, p2: { leader: 'OUT2', won: false },
+      recorded: [{ user: m1, seat: null }, { user: outsider, seat: 'p2' }], flags: { p1: true, p2: true }, persisted: 0,
+    });
+    const { scope } = await teamScope();
+    expect(Object.keys(byLeader(await getLeaderStats({ scope }))).sort()).toEqual(['MEM', 'MEM2']);
+    // Same guard in personal scope: m1's legacy replay doesn't hand them the outsider's seat.
+    expect(Object.keys(byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: m1 } }))).sort()).toEqual(['MEM', 'MEM2']);
+  });
+
+  it('a member who switched seats between games: their leader counts from whichever seat they had', async () => {
+    await seedGame({
+      gameId: 'sw-1', p1: { leader: 'MEM_A', won: true }, p2: { leader: 'OUT_A', won: false },
+      recorded: [{ user: m1, seat: 'p1' }, { user: outsider, seat: 'p2' }], flags: { p1: true, p2: true }, persisted: 1,
+    });
+    await seedGame({
+      gameId: 'sw-2', p1: { leader: 'OUT_B', won: true }, p2: { leader: 'MEM_B', won: false },
+      recorded: [{ user: m1, seat: 'p2' }, { user: outsider, seat: 'p1' }], flags: { p1: true, p2: true }, persisted: 1,
+    });
+    const { scope } = await teamScope();
+    expect(Object.keys(byLeader(await getLeaderStats({ scope }))).sort()).toEqual(['MEM_A', 'MEM_B']);
+    expect((await getLeaderMatchups({ scope })).map((r) => `${r.leader}>${r.opponentLeader}`).sort()).toEqual(['MEM_A>OUT_A', 'MEM_B>OUT_B']);
+  });
+
+  it('personal scope is unchanged: each co-recorder sees exactly their own seat', async () => {
+    await seedGame({
+      gameId: 'pers-co', p1: { leader: 'MEM', won: true, rating: 20 }, p2: { leader: 'OUT', won: false, rating: 30 },
+      recorded: [{ user: m1, seat: 'p1' }, { user: outsider, seat: 'p2' }], flags: { p1: true, p2: true }, persisted: 1,
+    });
+    expect(Object.keys(byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: m1 } })))).toEqual(['MEM']);
+    expect(Object.keys(byLeader(await getLeaderStats({ scope: { kind: 'personal', userId: outsider } })))).toEqual(['OUT']);
+    expect((await getResourcingGames({ scope: { kind: 'personal', userId: outsider } })).map((g) => g.available)).toEqual([30]);
+  });
+});
