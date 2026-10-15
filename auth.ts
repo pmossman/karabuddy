@@ -27,7 +27,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // it could enable account takeover. Discord + Google both verify, so
     // it's safe here. When adding karabast as a provider later, only opt
     // it in once you've confirmed they verify email too.
-    Discord({ allowDangerousEmailAccountLinking: true }),
+    // Discord now returns an RFC 9207 `iss` param on the OAuth callback. The
+    // built-in provider declares no issuer, so Auth.js checks `iss` against its
+    // "https://authjs.dev" placeholder and every Discord sign-in fails with
+    // "unexpected iss" → the Configuration error page. Its token and userinfo
+    // URLs are explicit, so setting the issuer triggers no discovery. (SWU Forge
+    // hit the same thing and fixed it the same way.)
+    Discord({ issuer: 'https://discord.com', allowDangerousEmailAccountLinking: true }),
     Google({ allowDangerousEmailAccountLinking: true }),
   ],
   session: { strategy: 'database' },
